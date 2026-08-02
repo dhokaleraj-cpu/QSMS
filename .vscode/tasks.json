@@ -1,0 +1,18 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "QSMS: Run Phase 1",
+      "type": "shell",
+      "command": "source .venv/bin/activate && python -m streamlit run streamlit_app.py --server.port 8510",
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "QSMS: Validate",
+      "type": "shell",
+      "command": "source .venv/bin/activate && python scripts/verify_phase1.py && python -m pytest -q",
+      "problemMatcher": []
+    }
+  ]
+}

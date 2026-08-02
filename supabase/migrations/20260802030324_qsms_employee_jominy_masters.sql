@@ -1,0 +1,2 @@
+-- Already applied to project xxrxopzxzyjnzumrwuwy.
+-- Creates employees and jominy_distance_master with RLS and seeded 1/16 through 16/16 distances.

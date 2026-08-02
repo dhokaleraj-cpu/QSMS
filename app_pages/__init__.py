@@ -1,0 +1,1 @@
+"""Focused QSMS application pages."""

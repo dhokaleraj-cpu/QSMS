@@ -1,0 +1,42 @@
+[application]
+id = "qsms"
+name = "Quality System Monitoring System"
+short_name = "Quality"
+description = "Automotive quality master data and end-to-end material genealogy"
+owner_department = "Quality"
+phase = "Focused - Masters and RMTC Entry"
+icon = "verified"
+accent = "#176B87"
+
+[runtime]
+platform = "Python"
+framework = "Streamlit"
+entrypoint = "streamlit_app.py"
+local_port = 8510
+health_path = "/_stcore/health"
+repository_visibility = "private"
+
+[identity]
+provider = "Supabase Auth"
+profile_table = "public.profiles"
+tenant_table = "public.tenants"
+row_level_security = true
+portal_sso_phase = "Portal Phase 2"
+roles = ["ADMIN", "QUALITY_MANAGER", "MASTER_DATA", "QUALITY_ENGINEER", "METLAB_APPROVER", "PRODUCTION", "SQA", "AUDITOR", "VIEWER"]
+
+[links]
+local_url = "http://localhost:8510"
+portal_local_url = "http://localhost:8500"
+url_secret = "QSMS_APP_URL"
+portal_url_secret = "FSI_PORTAL_URL"
+
+[navigation]
+workspaces = ["Dashboard", "Masters", "RMTC Entry", "Material Inward", "Inspections", "Records Centre", "Heat Steel Ledger", "Templates"]
+portal_return_enabled = true
+company_app_launcher_enabled = true
+
+[deployment]
+source_control = "GitHub"
+hosting = "Streamlit Community Cloud or private Streamlit host"
+database = "Supabase PostgreSQL"
+secrets_location = ".streamlit/secrets.toml / Streamlit Cloud Secrets"

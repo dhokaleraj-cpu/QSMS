@@ -1,0 +1,51 @@
+{
+  "contract_version": "1.2",
+  "app_id": "qsms",
+  "display_name": "Quality System Monitoring System",
+  "category": "Manufacturing Quality",
+  "technology": {
+    "language": "Python",
+    "web_framework": "Streamlit",
+    "database_and_auth": "Supabase",
+    "source_control": "GitHub",
+    "developer_workspace": "VS Code"
+  },
+  "routes": {
+    "local": "http://localhost:8510",
+    "online_env_key": "QSMS_APP_URL",
+    "health": "/_stcore/health"
+  },
+  "identity": {
+    "current": "Supabase Auth per application",
+    "target": "Common FSI portal identity with SSO",
+    "tenant_claim_source": "public.profiles.tenant_id",
+    "role_claim_source": "public.profiles.role"
+  },
+  "phase_1_scope": [
+    "Dashboard",
+    "Masters",
+    "RMTC Entry",
+    "Material Inward",
+    "Inspection Layouts",
+    "Dimensional Report",
+    "MetLAB Report"
+  ],
+  "data_ownership": {
+    "portal": [
+      "app access",
+      "common user profile",
+      "company announcements",
+      "cross-app audit"
+    ],
+    "qsms": [
+      "quality masters",
+      "employee approval authority",
+      "RMTC transactions",
+      "material inward transactions",
+      "part/process/stage inspection layouts",
+      "dimensional inspection reports",
+      "MetLAB reports",
+      "quality documents"
+    ]
+  }
+}

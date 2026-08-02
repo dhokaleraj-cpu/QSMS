@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run QSMS Phase 1",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "streamlit",
+      "args": ["run", "streamlit_app.py", "--server.port", "8510"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}
