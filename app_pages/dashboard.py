@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from core.inspection_queue import build_inspection_queue, pending_count
 from core.repository import Repository
 from core.ui import dashboard_card, kpi_grid, page_header, section_bar, style_status_dataframe
 
@@ -59,6 +60,11 @@ def render() -> None:
     rmtc_rows = repo.select("rmtc_approvals", order_by="created_at", desc=True, limit=2000)
     inward_rows = repo.select("v_qsms_inward_register", order_by="created_at", desc=True, limit=2000)
     recent_inwards = inward_rows[:30]
+    inspection_queue = build_inspection_queue(
+        inward_rows,
+        repo.select("inspection_reports", eq={"report_type": "DIMENSIONAL"}, order_by="created_at", desc=True, limit=4000),
+        repo.select("lab_tests", eq={"test_type": "METLAB"}, order_by="created_at", desc=True, limit=4000),
+    )
 
     counts = {
         "rmtc_pending": _count(repo, "rmtc_approvals", {"status": "APPROVAL_PENDING"}),
@@ -69,8 +75,8 @@ def render() -> None:
         "inward": len(inward_rows),
         "quality_hold": _count(repo, "inward_lots", {"status": "HOLD_PENDING_INSPECTION"}),
         "released": _count(repo, "inward_lots", {"status": "RELEASED"}),
-        "dim_pending": _count(repo, "inspection_reports", {"report_type": "DIMENSIONAL", "disposition": "PENDING"}),
-        "met_pending": _count(repo, "lab_tests", {"test_type": "METLAB", "disposition": "PENDING"}),
+        "dim_pending": pending_count(inspection_queue, "DIMENSIONAL"),
+        "met_pending": pending_count(inspection_queue, "METLAB"),
         "dim_hold": _count(repo, "inspection_reports", {"report_type": "DIMENSIONAL", "disposition": "ON_HOLD"}),
         "met_hold": _count(repo, "lab_tests", {"test_type": "METLAB", "disposition": "ON_HOLD"}),
     }
@@ -103,8 +109,8 @@ def render() -> None:
         ("RMTC", f"{counts['rmtc_draft']} drafts", "#7C3AED", "rmtc-records", "Open RMTC"),
         ("Material Inward", f"{counts['inward']} records", "#00897B", "inward-records", "Open Inward"),
         ("Inspection Layouts", "Part / process / stage", "#F59E0B", "inspection-layout-records", "Open Layouts"),
-        ("Dimensional", f"{counts['dim_pending']} pending", "#0284C7", "dimensional-records", "Open Dimensional"),
-        ("MetLAB", f"{counts['met_pending']} pending", "#16A34A", "metlab-records", "Open MetLAB"),
+        ("Dimensional", f"{counts['dim_pending']} pending", "#0284C7", "dimensional-entry", "Open Dimensional"),
+        ("MetLAB", f"{counts['met_pending']} pending", "#16A34A", "metlab-entry", "Open MetLAB"),
         ("Records Centre", "All module registers", "#C026D3", "records-center", "Open Records"),
         ("Templates", "Excel downloads", "#475569", "templates", "Open Templates"),
     ]

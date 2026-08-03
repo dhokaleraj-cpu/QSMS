@@ -32,6 +32,19 @@ def _inward_label(row: dict, parts: dict[str, dict], parties: dict[str, dict]) -
     )
 
 
+def _pending_frame(rows: list[dict], parts: dict[str, dict], parties: dict[str, dict]) -> pd.DataFrame:
+    return pd.DataFrame([{
+        "Inward": row.get("inward_number"),
+        "Date": row.get("inward_date"),
+        "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"),
+        "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"),
+        "Heat Number": row.get("heat_number"),
+        "Steel kg": row.get("steel_quantity_kg") or row.get("quantity_received"),
+        "Production pcs": row.get("production_quantity_pcs"),
+        "Status": row.get("metlab_queue_status"),
+    } for row in rows])
+
+
 def _existing_rows(existing: dict | None, key: str) -> list[dict]:
     payload = (existing or {}).get("results") or {}
     if isinstance(payload, dict):
@@ -94,6 +107,15 @@ def render_entry() -> None:
     template_download_row([("MetLAB_Report_Layout_Template.xlsx", "Download MetLAB Report Template")], key_prefix="metlab_report")
     service = InspectionService(); perms = current_permissions("METLAB_REPORT")
     parts, parties, processes, stages, employee_map = _maps(service)
+    pending_queue = [row for row in service.inspection_queue() if row.get("metlab_pending")]
+    section_bar("METLAB PENDING LIST")
+    if pending_queue:
+        st.dataframe(
+            style_status_dataframe(_pending_frame(pending_queue, parts, parties)),
+            hide_index=True, width="stretch", height=min(300, 84 + 38 * len(pending_queue)),
+        )
+    else:
+        st.success("No Metlab inspections are pending.")
     inward_rows = service.inward_lots()
     if not inward_rows:
         st.warning("No Accepted or Accepted Under Reserve Material Inward is available.")

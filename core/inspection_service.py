@@ -9,6 +9,7 @@ import pandas as pd
 
 from core.database import get_session_client
 from core.dimensional_import import parse_dimensional_workbook_bytes
+from core.inspection_queue import build_inspection_queue, pending_rows
 from core.repository import Repository
 
 FINAL_DISPOSITIONS = ("ON_HOLD", "ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED")
@@ -71,6 +72,16 @@ class InspectionService:
             if str(row.get("receipt_disposition") or "") in ("ACCEPTED", "ACCEPTED_UNDER_RESERVE")
             and str(row.get("status") or "") != "REJECTED"
         ]
+
+    def inspection_queue(self) -> list[dict]:
+        return build_inspection_queue(
+            self.inward_lots(),
+            self.dimensional_reports(),
+            self.metlab_reports(),
+        )
+
+    def pending_inward_lots(self, report_type: str) -> list[dict]:
+        return pending_rows(self.inspection_queue(), report_type)
 
     def plans(
         self,

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
+from core.inspection_queue import pending_count
+from core.inspection_service import InspectionService
 from core.repository import Repository
-from core.ui import dashboard_card, kpi_grid, page_header, section_bar, subpage_navigation
+from core.ui import dashboard_card, kpi_grid, page_header, section_bar, style_status_dataframe, subpage_navigation
 
 
 def _count(repo: Repository, table: str, eq: dict | None = None) -> int:
@@ -13,20 +16,99 @@ def _count(repo: Repository, table: str, eq: dict | None = None) -> int:
         return 0
 
 
+def _worklist_frame(rows: list[dict], parts: dict[str, dict], parties: dict[str, dict]) -> pd.DataFrame:
+    return pd.DataFrame([
+        {
+            "Inward": row.get("inward_number"),
+            "Date": row.get("inward_date"),
+            "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"),
+            "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"),
+            "Part Description": (parts.get(str(row.get("part_id"))) or {}).get("part_name"),
+            "Heat Number": row.get("heat_number"),
+            "Steel kg": row.get("steel_quantity_kg") or row.get("quantity_received"),
+            "Production pcs": row.get("production_quantity_pcs"),
+            "Dimensional": row.get("dimensional_queue_status"),
+            "MetLAB": row.get("metlab_queue_status"),
+            "Inward Status": row.get("status"),
+        }
+        for row in rows
+    ])
+
+
 def render() -> None:
     subpage_navigation(("dashboard", "Dashboard", ":material/dashboard:"), ("masters", "Masters", ":material/dataset:"), ("inward-records", "Material Inward", ":material/input:"))
     page_header("Inspection & Validation", context="Post-inward quality gate")
+
     repo = Repository()
+    service = InspectionService()
+    queue = service.inspection_queue()
+    parts = {str(row["id"]): row for row in service.parts()}
+    parties = {str(row["id"]): row for row in service.parties()}
+
     plans = _count(repo, "inspection_plans")
-    dim_pending = _count(repo, "inspection_reports", {"report_type": "DIMENSIONAL", "disposition": "PENDING"})
-    met_pending = _count(repo, "lab_tests", {"test_type": "METLAB", "disposition": "PENDING"})
+    dim_pending = pending_count(queue, "DIMENSIONAL")
+    met_pending = pending_count(queue, "METLAB")
     released = _count(repo, "inward_lots", {"status": "RELEASED"})
+
     kpi_grid([
         {"label": "Layouts", "value": plans, "foot": "Part / process / stage"},
-        {"label": "Dimensional Pending", "value": dim_pending, "foot": "Awaiting decision"},
-        {"label": "MetLAB Pending", "value": met_pending, "foot": "Awaiting decision"},
+        {"label": "Dimensional Pending", "value": dim_pending, "foot": "Inward lots requiring action"},
+        {"label": "MetLAB Pending", "value": met_pending, "foot": "Inward lots requiring action"},
         {"label": "Released Heats", "value": released, "foot": "Eligible for next process"},
     ])
+
+    section_bar("PENDING INSPECTION WORKLIST")
+    pending = [row for row in queue if row.get("dimensional_pending") or row.get("metlab_pending")]
+    if not pending:
+        st.success("No Material Inward records are pending Dimensional or MetLAB inspection.")
+    else:
+        st.dataframe(
+            style_status_dataframe(_worklist_frame(pending, parts, parties)),
+            hide_index=True,
+            width="stretch",
+            height=min(360, 84 + 38 * len(pending)),
+        )
+        options = {str(row["id"]): row for row in pending}
+        selected_id = st.selectbox(
+            "Select Pending Material Inward",
+            list(options),
+            format_func=lambda value: (
+                f"{options[value].get('inward_number')} · "
+                f"{(parts.get(str(options[value].get('part_id'))) or {}).get('part_number')} · "
+                f"Heat {options[value].get('heat_number')}"
+            ),
+            key="inspection_pending_inward_select",
+        )
+        selected = options[selected_id]
+        st.session_state["inspection_inward_id"] = selected_id
+
+        if selected.get("dimensional_report_id"):
+            st.session_state["edit_dimensional_id"] = str(selected.get("dimensional_report_id"))
+        else:
+            st.session_state.pop("edit_dimensional_id", None)
+        if selected.get("metlab_report_id"):
+            st.session_state["edit_metlab_id"] = str(selected.get("metlab_report_id"))
+        else:
+            st.session_state.pop("edit_metlab_id", None)
+
+        c1, c2 = st.columns(2, gap="small")
+        with c1:
+            st.page_link(
+                st.session_state["_qsms_pages"]["dimensional-entry"],
+                label=f"Open Dimensional · {selected.get('dimensional_queue_status')}",
+                icon=":material/straighten:",
+                width="stretch",
+                disabled=not bool(selected.get("dimensional_pending")),
+            )
+        with c2:
+            st.page_link(
+                st.session_state["_qsms_pages"]["metlab-entry"],
+                label=f"Open MetLAB · {selected.get('metlab_queue_status')}",
+                icon=":material/science:",
+                width="stretch",
+                disabled=not bool(selected.get("metlab_pending")),
+            )
+
     section_bar("WORKSPACES")
     c1, c2, c3 = st.columns(3, gap="small")
     with c1:
