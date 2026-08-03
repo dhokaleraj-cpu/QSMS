@@ -4,3 +4,7 @@ pandas>=2.3,<4
 python-dotenv>=1.1,<2
 openpyxl>=3.1,<4
 pytest>=9,<10
+
+# Direct production dependencies used by QSMS
+plotly>=6.0,<7
+httpx>=0.28,<1
