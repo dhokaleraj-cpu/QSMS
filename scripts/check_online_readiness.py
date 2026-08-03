@@ -41,11 +41,17 @@ required = [
     "app_pages/dimensional_report.py",
     "app_pages/metlab_report.py",
     "data/Dimensional Report.xlsx",
+    "core/osp_service.py",
+    "app_pages/osp_transactions.py",
+    "app_pages/osp_inspections.py",
+    "supabase/migrations/20260803231000_qsms_osp_transactions_v490.sql",
+    "tests/test_v490_osp_transactions.py",
+    "docs/RELEASE_4_9_0.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QSMS 4.8.6 - Supplier RMTC Identity and Heat Steel Ledger",
+    "phase": "QSMS 4.9.0 - OSP Transactions and Two-Stage Quality Gate",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

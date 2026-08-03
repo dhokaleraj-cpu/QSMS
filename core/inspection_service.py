@@ -90,6 +90,7 @@ class InspectionService:
         approved_only: bool = False,
         process_id: str | None = None,
         stage_id: str | None = None,
+        inward_type: str | None = None,
     ) -> list[dict]:
         eq: dict[str, Any] = {}
         if layout_type:
@@ -102,6 +103,8 @@ class InspectionService:
             eq["process_id"] = process_id
         if stage_id:
             eq["inspection_stage_id"] = stage_id
+        if inward_type:
+            eq["inward_type"] = inward_type
         return self.repo.select("inspection_plans", eq=eq, order_by="plan_number", limit=3000)
 
     def ranked_plans(
@@ -110,9 +113,10 @@ class InspectionService:
         part_id: str,
         process_id: str | None = None,
         stage_id: str | None = None,
+        inward_type: str | None = None,
     ) -> list[dict]:
         """Return approved plans with exact part/process/stage match first."""
-        plans = self.plans(layout_type, part_id, approved_only=True)
+        plans = self.plans(layout_type, part_id, approved_only=True, inward_type=inward_type)
 
         def score(row: dict) -> tuple[int, str, str]:
             process_match = not process_id or str(row.get("process_id") or "") == str(process_id)

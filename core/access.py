@@ -14,6 +14,7 @@ MODULES = (
     ("EMPLOYEE_MASTER", "Employee Master"),
     ("RMTC_ENTRY", "RMTC Entry"),
     ("MATERIAL_INWARD", "Material Inward"),
+    ("OSP_TRANSACTIONS", "OSP Transactions"),
     ("INSPECTION_LAYOUTS", "Inspection Layouts"),
     ("DIMENSIONAL_REPORT", "Dimensional Report"),
     ("METLAB_REPORT", "MetLAB Report"),
@@ -36,8 +37,8 @@ def module_permissions(profile: Mapping[str, Any] | None, module_key: str, repo:
         inward_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "SQA", "PRODUCTION"}
         return {
             "can_view": True,
-            "can_create": inward_write if module_key in {"MATERIAL_INWARD", "DIMENSIONAL_REPORT"} else default_write,
-            "can_edit": inward_write if module_key in {"MATERIAL_INWARD", "DIMENSIONAL_REPORT"} else default_write,
+            "can_create": inward_write if module_key in {"MATERIAL_INWARD", "OSP_TRANSACTIONS", "DIMENSIONAL_REPORT"} else default_write,
+            "can_edit": inward_write if module_key in {"MATERIAL_INWARD", "OSP_TRANSACTIONS", "DIMENSIONAL_REPORT"} else default_write,
             "can_archive": False,
             "can_approve": role in {"QUALITY_MANAGER", "METLAB_APPROVER"},
         }

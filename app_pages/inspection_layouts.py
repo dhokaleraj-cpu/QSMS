@@ -50,6 +50,7 @@ def render_entry() -> None:
     template_download_row([("Inspection_Layout_Template.xlsx", "Download Generic Layout Template"), ("Dimensional_Inspection_Report_Template.xlsx", "Download Dimensional Template"), ("MetLAB_Report_Layout_Template.xlsx", "Download MetLAB Template")], key_prefix="inspection_layout")
     service = InspectionService(); perms = current_permissions("INSPECTION_LAYOUTS")
     parts, part_map, process_map, stage_map = _maps(service)
+    process_rows = {str(row["id"]): row for row in service.processes()}
     if not parts:
         st.warning("Create an active Part Master first.")
         return
@@ -73,13 +74,21 @@ def render_entry() -> None:
     current_part = str((existing or {}).get("part_id") or next(iter(part_map)))
     current_process = str((existing or {}).get("process_id") or "")
     current_stage = str((existing or {}).get("inspection_stage_id") or "")
-    c1, c2, c3, c4 = st.columns(4, gap="small")
+    inward_type_options = ["MATERIAL_INWARD", "OSP_PROCESS"]
+    current_inward_type = str((existing or {}).get("inward_type") or "MATERIAL_INWARD")
+    c1, c2, c3, c4, c5 = st.columns(5, gap="small")
     part_id = c1.selectbox("Part Number", list(part_map), index=list(part_map).index(current_part) if current_part in part_map else 0, format_func=lambda value: part_map[value])
-    process_options = [""] + list(process_map)
-    process_id = c2.selectbox("Process", process_options, index=process_options.index(current_process) if current_process in process_options else 0, format_func=lambda value: process_map.get(value, "— Not selected —"))
+    inward_type = c2.selectbox("Inward Type", inward_type_options, index=inward_type_options.index(current_inward_type) if current_inward_type in inward_type_options else 0, format_func=lambda value: value.replace("_", " ").title())
+    allowed_process_ids = [pid for pid in process_map if inward_type != "OSP_PROCESS" or str((process_rows.get(pid) or {}).get("process_type")) == "OUTSOURCED"]
+    process_options = [""] + allowed_process_ids
+    if current_process and current_process not in process_options:
+        process_options.append(current_process)
+    process_id = c3.selectbox("Process", process_options, index=process_options.index(current_process) if current_process in process_options else 0, format_func=lambda value: process_map.get(value, "— Not selected —"))
     stage_options = [""] + list(stage_map)
-    stage_id = c3.selectbox("Inspection Stage", stage_options, index=stage_options.index(current_stage) if current_stage in stage_options else 0, format_func=lambda value: stage_map.get(value, "— Not selected —"))
-    status = c4.selectbox("Status", ["DRAFT", "APPROVAL_PENDING", "APPROVED", "SUPERSEDED"], index=["DRAFT", "APPROVAL_PENDING", "APPROVED", "SUPERSEDED"].index(str((existing or {}).get("status") or "DRAFT")))
+    stage_id = c4.selectbox("Inspection Stage", stage_options, index=stage_options.index(current_stage) if current_stage in stage_options else 0, format_func=lambda value: stage_map.get(value, "— Not selected —"))
+    status = c5.selectbox("Status", ["DRAFT", "APPROVAL_PENDING", "APPROVED", "SUPERSEDED"], index=["DRAFT", "APPROVAL_PENDING", "APPROVED", "SUPERSEDED"].index(str((existing or {}).get("status") or "DRAFT")))
+    if inward_type == "OSP_PROCESS" and not process_id:
+        st.warning("An OSP Process layout requires the outsourced Process selected in the Part Master specification.")
 
     c1, c2, c3, c4 = st.columns(4, gap="small")
     plan_no = c1.text_input("Plan Number", value=str((existing or {}).get("plan_number") or ""))
@@ -146,8 +155,12 @@ def render_entry() -> None:
         try:
             if not plan_no.strip() or not layout_name.strip():
                 raise ValueError("Plan Number and Layout Name are required.")
+            if inward_type == "OSP_PROCESS" and not process_id:
+                raise ValueError("Select the outsourced Process for an OSP Process layout.")
+            if inward_type == "OSP_PROCESS" and str((process_rows.get(process_id) or {}).get("process_type")) != "OUTSOURCED":
+                raise ValueError("OSP Process layouts can use only an OUTSOURCED Process Master.")
             payload = {
-                "part_id": part_id, "process_id": process_id or None, "inspection_stage_id": stage_id or None,
+                "part_id": part_id, "process_id": process_id or None, "inspection_stage_id": stage_id or None, "inward_type": inward_type,
                 "plan_number": plan_no.strip(), "revision": revision.strip() or "00", "effective_date": effective.isoformat(),
                 "sample_plan": f"{int(default_sample)} samples", "status": status, "layout_type": layout_type,
                 "layout_name": layout_name.strip(), "report_title": report_title.strip() or None,
@@ -208,6 +221,7 @@ def render_records() -> None:
     section_bar("LAYOUT REGISTER")
     display = pd.DataFrame([{
         "Plan Number": row.get("plan_number"), "Revision": row.get("revision"), "Layout Type": row.get("layout_type"),
+        "Inward Type": str(row.get("inward_type") or "MATERIAL_INWARD").replace("_", " ").title(),
         "Layout Name": row.get("layout_name"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"),
         "Process": (processes.get(str(row.get("process_id"))) or {}).get("process_name"),
         "Stage": (stages.get(str(row.get("inspection_stage_id"))) or {}).get("stage_name"),

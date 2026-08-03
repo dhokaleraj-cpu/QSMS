@@ -23,7 +23,9 @@ STATUS_STYLE = {
     "PENDING": ("#1e40af", "#dbeafe"), "APPROVAL_PENDING": ("#92400e", "#fef3c7"),
     "FAIL": ("#991b1b", "#fee2e2"), "REJECTED": ("#991b1b", "#fee2e2"),
     "LOCKED": ("#991b1b", "#fee2e2"), "HOLD": ("#92400e", "#fef3c7"), "ON_HOLD": ("#92400e", "#fef3c7"),
-    "HOLD_PENDING_INSPECTION": ("#92400e", "#fef3c7"), "NOT_APPLICABLE": ("#334155", "#e2e8f0"),
+    "HOLD_PENDING_INSPECTION": ("#92400e", "#fef3c7"), "HOLD_PENDING_OSP_INSPECTION": ("#92400e", "#fef3c7"),
+    "AT_VENDOR": ("#1e40af", "#dbeafe"), "AT_OSP": ("#1e40af", "#dbeafe"), "PART_RECEIVED": ("#92400e", "#fef3c7"),
+    "COMPLETED": ("#065f46", "#d1fae5"), "NOT_APPLICABLE": ("#334155", "#e2e8f0"),
 }
 
 
@@ -53,15 +55,15 @@ def disposition_label(value: Any) -> str:
 
 def status_css(value: Any) -> str:
     key = str(value or "").strip().upper().replace(" ", "_")
-    if key in {"ACCEPTED", "APPROVED", "PASS", "RELEASED", "ACTIVE", "FINAL"}:
+    if key in {"ACCEPTED", "APPROVED", "PASS", "RELEASED", "ACTIVE", "FINAL", "COMPLETED"}:
         return "background-color:#DCFCE7;color:#14532D;font-weight:700"
     if key in {"ACCEPTED_UNDER_RESERVE"}:
         return "background-color:#FFEDD5;color:#9A3412;font-weight:700"
-    if key in {"ON_HOLD", "HOLD", "HOLD_PENDING_INSPECTION", "APPROVAL_PENDING", "PARTIALLY_APPROVED"}:
+    if key in {"ON_HOLD", "HOLD", "HOLD_PENDING_INSPECTION", "HOLD_PENDING_OSP_INSPECTION", "PART_RECEIVED", "APPROVAL_PENDING", "PARTIALLY_APPROVED"}:
         return "background-color:#FEF3C7;color:#92400E;font-weight:700"
     if key in {"REJECTED", "FAIL", "LOCKED"}:
         return "background-color:#FEE2E2;color:#991B1B;font-weight:700"
-    if key in {"PENDING", "DRAFT", "NOT_EVALUATED"}:
+    if key in {"PENDING", "DRAFT", "NOT_EVALUATED", "AT_VENDOR", "AT_OSP"}:
         return "background-color:#DBEAFE;color:#1E3A8A;font-weight:700"
     if key in {"NOT_APPLICABLE", "INACTIVE", "CLOSED"}:
         return "background-color:#E2E8F0;color:#334155;font-weight:700"
@@ -354,7 +356,7 @@ def master_card(*, title: str, description: str, count_text: str, icon: str, col
 def disposition_cards(items: Sequence[Mapping[str, Any]]) -> None:
     def css_class(value: Any) -> str:
         key = str(value or "PENDING").upper().replace(" ", "_")
-        if key in {"ACCEPTED", "APPROVED", "PASS", "RELEASED", "ACTIVE", "FINAL"}: return "accepted"
+        if key in {"ACCEPTED", "APPROVED", "PASS", "RELEASED", "ACTIVE", "FINAL", "COMPLETED"}: return "accepted"
         if key in {"ACCEPTED_UNDER_RESERVE", "PARTIALLY_APPROVED"}: return "reserve"
         if key in {"ON_HOLD", "HOLD", "HOLD_PENDING_INSPECTION", "APPROVAL_PENDING"}: return "hold"
         if key in {"REJECTED", "FAIL", "LOCKED"}: return "rejected"
@@ -396,8 +398,17 @@ def info_strip(title: str, text: str) -> None:
 
 
 def kpi_grid(items: Sequence[Mapping[str, Any]]) -> None:
-    cards = ''.join(f'<div class="fsi-kpi"><div class="fsi-kpi-label">{safe(i.get("label"))}</div><div class="fsi-kpi-value">{safe(i.get("value"))}</div><div class="fsi-kpi-foot">{safe(i.get("foot"))}</div></div>' for i in items)
-    st.markdown(f'<div class="fsi-kpi-grid">{cards}</div>', unsafe_allow_html=True)
+    cards = []
+    for item in items:
+        color = str(item.get("color") or "#1469A8")
+        background = str(item.get("background") or "#FFFFFF")
+        cards.append(
+            f'<div class="fsi-kpi" style="border-left-color:{safe(color)};background:{safe(background)}">'
+            f'<div class="fsi-kpi-label" style="color:{safe(color)}">{safe(item.get("label"))}</div>'
+            f'<div class="fsi-kpi-value">{safe(item.get("value"))}</div>'
+            f'<div class="fsi-kpi-foot">{safe(item.get("foot"))}</div></div>'
+        )
+    st.markdown(f'<div class="fsi-kpi-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
 
 
 def section_heading(title: str, subtitle: str = "") -> None:

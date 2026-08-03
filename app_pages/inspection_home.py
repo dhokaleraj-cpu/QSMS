@@ -5,6 +5,7 @@ import streamlit as st
 
 from core.inspection_queue import pending_count
 from core.inspection_service import InspectionService
+from core.osp_service import OSPService
 from core.repository import Repository
 from core.ui import dashboard_card, kpi_grid, page_header, section_bar, style_status_dataframe, subpage_navigation
 
@@ -41,6 +42,7 @@ def render() -> None:
 
     repo = Repository()
     service = InspectionService()
+    osp_service = OSPService()
     queue = service.inspection_queue()
     parts = {str(row["id"]): row for row in service.parts()}
     parties = {str(row["id"]): row for row in service.parties()}
@@ -49,12 +51,17 @@ def render() -> None:
     dim_pending = pending_count(queue, "DIMENSIONAL")
     met_pending = pending_count(queue, "METLAB")
     released = _count(repo, "inward_lots", {"status": "RELEASED"})
+    osp_rows = osp_service.register()
+    osp_sample_pending = sum(bool(row.get("sample_received_date")) and str(row.get("sample_gate_status")) in {"PENDING", "ON_HOLD"} for row in osp_rows)
+    osp_receipt_pending = sum(float(row.get("quantity_received") or 0) > 0 and str(row.get("receipt_quality_disposition")) in {"PENDING", "ON_HOLD"} for row in osp_rows)
 
     kpi_grid([
-        {"label": "Layouts", "value": plans, "foot": "Part / process / stage"},
-        {"label": "Dimensional Pending", "value": dim_pending, "foot": "Inward lots requiring action"},
-        {"label": "MetLAB Pending", "value": met_pending, "foot": "Inward lots requiring action"},
-        {"label": "Released Heats", "value": released, "foot": "Eligible for next process"},
+        {"label": "Layouts", "value": plans, "foot": "Part / process / stage", "color": "#7C3AED", "background": "#F5F3FF"},
+        {"label": "Dimensional Pending", "value": dim_pending, "foot": "Inward lots requiring action", "color": "#D97706", "background": "#FFF7ED"},
+        {"label": "MetLAB Pending", "value": met_pending, "foot": "Inward lots requiring action", "color": "#D97706", "background": "#FFF7ED"},
+        {"label": "OSP Sample Pending", "value": osp_sample_pending, "foot": "Pre-inward gate", "color": "#D97706", "background": "#FFF7ED"},
+        {"label": "OSP Receipt Pending", "value": osp_receipt_pending, "foot": "Production release gate", "color": "#D97706", "background": "#FFF7ED"},
+        {"label": "Released Heats", "value": released, "foot": "Eligible for next process", "color": "#15803D", "background": "#F0FDF4"},
     ])
 
     section_bar("PENDING INSPECTION WORKLIST")
@@ -117,3 +124,12 @@ def render() -> None:
         dashboard_card(title="Dimensional Report", description="", count_text=f"{dim_pending} pending", color="#1469A8", page_path="dimensional-entry", button_label="Open Dimensional")
     with c3:
         dashboard_card(title="MetLAB Report", description="", count_text=f"{met_pending} pending", color="#0F8B6D", page_path="metlab-entry", button_label="Open MetLAB")
+
+    section_bar("OSP INSPECTION WORKSPACES")
+    c1, c2, c3 = st.columns(3, gap="small")
+    with c1:
+        dashboard_card(title="OSP Transactions", description="", count_text=f"{osp_sample_pending + osp_receipt_pending} quality gates pending", color="#DC2626", page_path="osp-home", button_label="Open OSP Home")
+    with c2:
+        dashboard_card(title="OSP Dimensional", description="", count_text="Sample and full-batch inspection", color="#0284C7", page_path="osp-dimensional", button_label="Open OSP Dimensional")
+    with c3:
+        dashboard_card(title="OSP MetLAB", description="", count_text="Process-specific inspection", color="#16A34A", page_path="osp-metlab", button_label="Open OSP MetLAB")

@@ -31,6 +31,9 @@ required = [
     "app_pages/dimensional_report.py",
     "app_pages/metlab_report.py",
     "app_pages/template_center.py",
+    "app_pages/osp_transactions.py",
+    "app_pages/osp_inspections.py",
+    "core/osp_service.py",
     "core/inspection_service.py",
     "core/dimensional_import.py",
     "core/calculations.py",
@@ -61,6 +64,8 @@ required = [
     "tests/test_v485_combined_heat_balance.py",
     "supabase/migrations/20260802213000_qsms_heat_supplier_rmtc_ledger_v486.sql",
     "tests/test_v486_heat_supplier_rmtc_ledger.py",
+    "supabase/migrations/20260803231000_qsms_osp_transactions_v490.sql",
+    "tests/test_v490_osp_transactions.py",
     "core/steel_balance.py",
     "supabase/migrations/20260802161000_qsms_auto_master_codes_dashboard_v482.sql",
     "templates/RMTC_Entry_Template.xlsx",
@@ -75,10 +80,11 @@ for item in required:
 app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
-    "dashboard", "masters", "rmtc-entry", "inward-entry", "inspection-home", "records-center", "heat-ledger", "templates",
+    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "inspection-home", "records-center", "heat-ledger", "templates",
     "part-entry", "part-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
     "user-access", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
+    "osp-material-out", "osp-sample-receipt", "osp-inward", "osp-dimensional", "osp-metlab", "osp-records",
     "inspection-layout-entry", "inspection-layout-records", "dimensional-entry",
     "dimensional-records", "metlab-entry", "metlab-records",
 }
@@ -147,7 +153,7 @@ if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
 report = {
-    "release": "QSMS 4.8.6 Supplier RMTC Identity & Heat Steel Ledger",
+    "release": "QSMS 4.9.0 OSP Transactions & Two-Stage Quality Gate",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -199,6 +205,11 @@ report = {
     "dimensional_report": True,
     "metlab_report": True,
     "post_inward_quality_gate": True,
+    "osp_material_out": True,
+    "osp_sample_quality_gate": True,
+    "osp_full_inward_gate": True,
+    "osp_production_release_gate": True,
+    "process_specific_osp_layouts": True,
     "portal_ready": True,
     "errors": errors,
 }

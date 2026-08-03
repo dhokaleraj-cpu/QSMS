@@ -158,7 +158,7 @@ def render() -> None:
     part_name_map = _map(parts, "id", "part_name")
     party_map = _map(parties, "id", "party_name")
 
-    tabs = st.tabs(["RMTC", "Material Inward", "Dimensional", "MetLAB", "Layouts", "Masters", "Heat Steel Ledger"])
+    tabs = st.tabs(["RMTC", "Material Inward", "OSP Transactions", "Dimensional", "MetLAB", "Layouts", "Masters", "Heat Steel Ledger"])
 
     with tabs[0]:
         rows = _rows(repo, "rmtc_approvals", order_by="created_at", desc=True)
@@ -210,7 +210,28 @@ def render() -> None:
         } for r in rows]))
         st.page_link(st.session_state["_qsms_pages"]["inward-records"], label="Open Material Inward Records and Actions", icon=":material/open_in_new:", width="stretch")
 
+
     with tabs[2]:
+        rows = _rows(repo, "v_qsms_osp_register", order_by="created_at", desc=True)
+        disposition_cards([
+            {"label": "Total OSP Jobs", "value": len(rows)},
+            {"label": "At Vendor", "value": sum(str(r.get("status")) == "AT_VENDOR" for r in rows)},
+            {"label": "Inspection Pending", "value": sum(str(r.get("status")) == "PART_RECEIVED" for r in rows)},
+            {"label": "Released", "value": sum(str(r.get("status")) == "COMPLETED" for r in rows)},
+        ])
+        section_bar("OSP TRANSACTION REGISTER")
+        _table(pd.DataFrame([{
+            "OSP Job": r.get("osp_job_number"), "Material Out Date": r.get("dispatch_date"),
+            "Heat Number": r.get("heat_number"), "Part Number": r.get("part_number"),
+            "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"),
+            "Out Qty pcs": r.get("quantity_dispatched"), "Vendor Batch": r.get("vendor_batch_number"),
+            "Sample Gate": r.get("sample_gate_status"), "OSP Inward": r.get("receipt_number"),
+            "Inward Qty pcs": r.get("quantity_received"), "Receipt Decision": r.get("receipt_quality_disposition"),
+            "Production Available pcs": r.get("production_available_quantity"), "Status": r.get("status"),
+        } for r in rows]))
+        st.page_link(st.session_state["_qsms_pages"]["osp-records"], label="Open OSP Records and Actions", icon=":material/open_in_new:", width="stretch")
+
+    with tabs[3]:
         rows = _rows(repo, "inspection_reports", eq={"report_type": "DIMENSIONAL"}, order_by="created_at", desc=True)
         section_bar("DIMENSIONAL INSPECTION REGISTER")
         _table(pd.DataFrame([{
@@ -226,7 +247,7 @@ def render() -> None:
         } for r in rows]))
         st.page_link(st.session_state["_qsms_pages"]["dimensional-records"], label="Open Dimensional Records and Actions", icon=":material/open_in_new:", width="stretch")
 
-    with tabs[3]:
+    with tabs[4]:
         rows = _rows(repo, "lab_tests", eq={"test_type": "METLAB"}, order_by="created_at", desc=True)
         section_bar("METLAB REGISTER")
         _table(pd.DataFrame([{
@@ -242,7 +263,7 @@ def render() -> None:
         } for r in rows]))
         st.page_link(st.session_state["_qsms_pages"]["metlab-records"], label="Open MetLAB Records and Actions", icon=":material/open_in_new:", width="stretch")
 
-    with tabs[4]:
+    with tabs[5]:
         rows = _rows(repo, "inspection_plans", order_by="updated_at", desc=True)
         section_bar("INSPECTION LAYOUT REGISTER")
         _table(pd.DataFrame([{
@@ -256,7 +277,7 @@ def render() -> None:
         } for r in rows]))
         st.page_link(st.session_state["_qsms_pages"]["inspection-layout-records"], label="Open Inspection Layout Records and Actions", icon=":material/open_in_new:", width="stretch")
 
-    with tabs[5]:
+    with tabs[6]:
         grade_rows = _rows(repo, "material_grades", order_by="grade_code")
         employee_rows = _rows(repo, "employees", order_by="employee_code")
         reference_rows = parties
@@ -276,6 +297,6 @@ def render() -> None:
         with c3: st.page_link(st.session_state["_qsms_pages"]["reference-records"], label="Reference Records", width="stretch")
         with c4: st.page_link(st.session_state["_qsms_pages"]["employee-records"], label="Employee Records", width="stretch")
 
-    with tabs[6]:
+    with tabs[7]:
         render_heat_ledger(embedded=True)
 

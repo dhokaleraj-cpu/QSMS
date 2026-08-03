@@ -238,6 +238,74 @@ def render_entry() -> None:
         except Exception as exc:
             st.error(str(exc))
 
+    section_bar("PROCESS & INWARD SPECIFICATIONS", "Part-wise Process Type, Inward Type and controlled specification used by Material Inward and OSP inspections.")
+    processes = repo.select("processes", eq={"status": "ACTIVE"}, order_by="process_name", limit=1000)
+    process_by_name = {str(row.get("process_name")): row for row in processes}
+    process_names = list(process_by_name)
+    process_specs = repo.select("part_process_specifications", eq={"part_id": part_id}, order_by="sequence_no", limit=500)
+    if password_delete_panel(
+        repo=repo, table="part_process_specifications", rows=process_specs,
+        labeler=lambda row: f"{(next((p.get('process_name') for p in processes if str(p.get('id')) == str(row.get('process_id'))), 'Process'))} · {str(row.get('inward_type') or '').replace('_',' ').title()}",
+        key=f"delete_process_spec_{part_id}", can_delete=perms["can_archive"],
+        title="Delete Process Specification row",
+        help_text="Current password and Part Master delete permission are required. A specification linked to an OSP transaction cannot be deleted.",
+    ):
+        st.rerun()
+    spec_frame = pd.DataFrame([{
+        "Process": next((p.get("process_name") for p in processes if str(p.get("id")) == str(row.get("process_id"))), ""),
+        "Process Type": next((p.get("process_type") for p in processes if str(p.get("id")) == str(row.get("process_id"))), ""),
+        "Inward Type": row.get("inward_type") or "OSP_PROCESS",
+        "Process Specification": row.get("process_specification") or "",
+        "Dimensional Required": bool(row.get("dimensional_required", True)),
+        "MetLAB Required": bool(row.get("metlab_required", True)),
+        "Sample Qty": int(row.get("sample_quantity") or 1),
+        "Status": row.get("status") or "ACTIVE",
+    } for row in process_specs], columns=["Process","Process Type","Inward Type","Process Specification","Dimensional Required","MetLAB Required","Sample Qty","Status"])
+    process_edit = st.data_editor(
+        spec_frame, num_rows="dynamic", hide_index=True, width="stretch",
+        height=min(420, max(220, 90 + max(len(spec_frame), 1) * 34)), key=f"part_process_specs_{part_id}",
+        disabled=True if not writable else ["Process Type"],
+        column_config={
+            "Process": st.column_config.SelectboxColumn(options=process_names, required=True),
+            "Process Type": st.column_config.TextColumn(),
+            "Inward Type": st.column_config.SelectboxColumn(options=["MATERIAL_INWARD", "OSP_PROCESS"], required=True),
+            "Process Specification": st.column_config.TextColumn(required=True, width="large"),
+            "Dimensional Required": st.column_config.CheckboxColumn(),
+            "MetLAB Required": st.column_config.CheckboxColumn(),
+            "Sample Qty": st.column_config.NumberColumn(min_value=1, max_value=20, step=1, required=True),
+            "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"], required=True),
+        },
+    )
+    st.caption("For OSP Process rows, select an OUTSOURCED Process Master. The same Part + Process + Inward Type controls automatic OSP inspection-layout selection.")
+    if st.button("Save Process & Inward Specifications", type="primary", disabled=not writable, width="stretch"):
+        try:
+            def mapper(row, index):
+                process_name = str(row.get("Process") or "").strip()
+                if not process_name:
+                    return {}
+                process = process_by_name.get(process_name)
+                if not process:
+                    raise ValueError(f"Select a valid Process for row {index + 1}.")
+                inward_type = str(row.get("Inward Type") or "OSP_PROCESS").upper()
+                if inward_type == "OSP_PROCESS" and str(process.get("process_type")) != "OUTSOURCED":
+                    raise ValueError(f"{process_name} must be an OUTSOURCED Process for OSP Process inward type.")
+                specification = str(row.get("Process Specification") or "").strip()
+                if not specification:
+                    raise ValueError(f"Process Specification is required for {process_name}.")
+                return {
+                    "process_id": process.get("id"), "inward_type": inward_type,
+                    "process_specification": specification,
+                    "dimensional_required": bool(row.get("Dimensional Required")),
+                    "metlab_required": bool(row.get("MetLAB Required")),
+                    "sample_quantity": int(row.get("Sample Qty") or 1),
+                    "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE"),
+                }
+            _save_rows(repo, "part_process_specifications", part_id, process_edit, ("process_id", "inward_type"), mapper)
+            st.success("Process and Inward Specifications saved.")
+            st.rerun()
+        except Exception as exc:
+            st.error(str(exc))
+
 
 def render_records() -> None:
     subpage_navigation(

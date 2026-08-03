@@ -12,6 +12,8 @@ from app_pages import (
     material_grade,
     material_inward,
     metlab_report,
+    osp_inspections,
+    osp_transactions,
     part_master,
     reference_master,
     records_center,
@@ -44,6 +46,7 @@ PAGE_ITEMS = (
     ("masters", st.Page(master_home.render, title="Masters", icon=":material/dataset:", url_path="masters")),
     ("rmtc-entry", st.Page(rmtc_pages.render_entry, title="RMTC Entry", icon=":material/fact_check:", url_path="rmtc-entry")),
     ("inward-entry", st.Page(material_inward.render_entry, title="Material Inward", icon=":material/input:", url_path="inward-entry")),
+    ("osp-home", st.Page(osp_transactions.render_home, title="OSP Transactions", icon=":material/factory:", url_path="osp-home")),
     ("inspection-home", st.Page(inspection_home.render, title="Inspections", icon=":material/biotech:", url_path="inspection-home")),
     ("records-center", st.Page(records_center.render, title="Records Centre", icon=":material/table_view:", url_path="records-center")),
     ("heat-ledger", st.Page(records_center.render_heat_ledger, title="Heat Steel Ledger", icon=":material/table_view:", url_path="heat-ledger")),
@@ -63,6 +66,12 @@ PAGE_ITEMS = (
     ("rmtc-records", st.Page(rmtc_pages.render_records, title="RMTC Records", icon=":material/table_view:", url_path="rmtc-records")),
     ("rmtc-approval", st.Page(rmtc_pages.render_approval, title="RMTC Approval", icon=":material/approval:", url_path="rmtc-approval")),
     ("inward-records", st.Page(material_inward.render_records, title="Material Inward Records", icon=":material/table_view:", url_path="inward-records")),
+    ("osp-material-out", st.Page(osp_transactions.render_material_out, title="OSP Material Out", icon=":material/output:", url_path="osp-material-out")),
+    ("osp-sample-receipt", st.Page(osp_transactions.render_sample_receipt, title="OSP Sample Receipt", icon=":material/experiment:", url_path="osp-sample-receipt")),
+    ("osp-inward", st.Page(osp_transactions.render_inward, title="OSP Material Inward", icon=":material/input:", url_path="osp-inward")),
+    ("osp-dimensional", st.Page(osp_inspections.render_dimensional, title="OSP Dimensional", icon=":material/straighten:", url_path="osp-dimensional")),
+    ("osp-metlab", st.Page(osp_inspections.render_metlab, title="OSP MetLAB", icon=":material/science:", url_path="osp-metlab")),
+    ("osp-records", st.Page(osp_transactions.render_records, title="OSP Records", icon=":material/table_view:", url_path="osp-records")),
 
     ("inspection-layout-entry", st.Page(inspection_layouts.render_entry, title="Inspection Layout Entry", icon=":material/edit_document:", url_path="inspection-layout-entry")),
     ("inspection-layout-records", st.Page(inspection_layouts.render_records, title="Inspection Layout Records", icon=":material/table_view:", url_path="inspection-layout-records")),
@@ -106,6 +115,15 @@ MODULE_SUBMENUS = {
         ("metlab-entry", "MetLAB Report", ":material/science:"),
         ("dimensional-entry", "Dimensional Report", ":material/straighten:"),
     ),
+    "OSP": (
+        ("osp-home", "OSP Home", ":material/factory:"),
+        ("osp-material-out", "Material Out", ":material/output:"),
+        ("osp-sample-receipt", "Sample Receipt", ":material/experiment:"),
+        ("osp-dimensional", "OSP Dimensional", ":material/straighten:"),
+        ("osp-metlab", "OSP MetLAB", ":material/science:"),
+        ("osp-inward", "OSP Inward", ":material/input:"),
+        ("osp-records", "OSP Records", ":material/table_view:"),
+    ),
     "Inspections": (
         ("inspection-home", "Inspection Home", ":material/biotech:"),
         ("inspection-layout-entry", "Layout Entry", ":material/edit_document:"),
@@ -120,6 +138,7 @@ MODULE_SUBMENUS = {
         ("heat-ledger", "Heat Steel Ledger", ":material/monitoring:"),
         ("rmtc-records", "RMTC Records", ":material/fact_check:"),
         ("inward-records", "Inward Records", ":material/input:"),
+        ("osp-records", "OSP Records", ":material/factory:"),
         ("dimensional-records", "Dimensional Records", ":material/straighten:"),
         ("metlab-records", "MetLAB Records", ":material/science:"),
     ),
@@ -137,6 +156,8 @@ ROUTE_MODULE = {
     "employee-entry": "Masters", "employee-records": "Masters", "user-access": "Masters",
     "rmtc-entry": "RMTC", "rmtc-part": "RMTC", "rmtc-records": "RMTC", "rmtc-approval": "RMTC",
     "inward-entry": "Inward", "inward-records": "Inward",
+    "osp-home": "OSP", "osp-material-out": "OSP", "osp-sample-receipt": "OSP", "osp-inward": "OSP",
+    "osp-dimensional": "OSP", "osp-metlab": "OSP", "osp-records": "OSP",
     "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
     "inspection-layout-records": "Inspections", "dimensional-entry": "Inspections",
     "dimensional-records": "Inspections", "metlab-entry": "Inspections", "metlab-records": "Inspections",
@@ -146,7 +167,7 @@ ROUTE_MODULE = {
 
 PAGE_TITLE_TO_PATH = {
     "Dashboard": "dashboard", "Masters": "masters", "RMTC Entry": "rmtc-entry",
-    "Material Inward": "inward-entry", "Inspections": "inspection-home",
+    "Material Inward": "inward-entry", "OSP Transactions": "osp-home", "Inspections": "inspection-home",
     "Records Centre": "records-center", "Heat Steel Ledger": "heat-ledger",
     "Templates": "templates", "Part Master Entry": "part-entry",
     "Part Master Records": "part-records", "Material Grade Entry": "grade-entry",
@@ -155,6 +176,9 @@ PAGE_TITLE_TO_PATH = {
     "Employee Records": "employee-records", "Users & Access": "user-access",
     "RMTC Part Worksheet": "rmtc-part", "RMTC Records": "rmtc-records",
     "RMTC Approval": "rmtc-approval", "Material Inward Records": "inward-records",
+    "OSP Material Out": "osp-material-out", "OSP Sample Receipt": "osp-sample-receipt",
+    "OSP Material Inward": "osp-inward", "OSP Dimensional": "osp-dimensional",
+    "OSP MetLAB": "osp-metlab", "OSP Records": "osp-records",
     "Inspection Layout Entry": "inspection-layout-entry",
     "Inspection Layout Records": "inspection-layout-records",
     "Dimensional Report": "dimensional-entry", "Dimensional Records": "dimensional-records",
@@ -167,12 +191,13 @@ if render_shell_header(profile, nav.title):
     logout()
 
 with st.container(border=True, key="fsi_top_nav"):
-    cols = st.columns(7, gap="small")
+    cols = st.columns(8, gap="small")
     labels = (
         ("dashboard", "Dashboard", ":material/dashboard:"),
         ("masters", "Masters", ":material/dataset:"),
         ("rmtc-entry", "RMTC", ":material/fact_check:"),
         ("inward-entry", "Inward", ":material/input:"),
+        ("osp-home", "OSP", ":material/factory:"),
         ("inspection-home", "Inspections", ":material/biotech:"),
         ("records-center", "Records", ":material/table_view:"),
         ("templates", "Templates", ":material/download:"),
