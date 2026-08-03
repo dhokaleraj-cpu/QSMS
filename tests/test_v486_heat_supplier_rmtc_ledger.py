@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_v486_version_and_migration():
-    assert (ROOT / "VERSION").read_text().strip() == "4.8.6"
+    assert tuple(map(int, (ROOT / "VERSION").read_text().strip().split("."))) >= (4, 8, 6)
     sql = (ROOT / "supabase/migrations/20260802213000_qsms_heat_supplier_rmtc_ledger_v486.sql").read_text()
     for token in [
         "normalized_supplier_rmtc_number",

@@ -242,6 +242,11 @@ def apply_global_style() -> None:
     .fsi-status-card .foot,.fsi-kpi-foot{font-size:10px;color:#6B7D8D;white-space:normal;line-height:1.2;}
     .fsi-status-accepted{border-left-color:#087443;background:#ECFDF3}.fsi-status-reserve{border-left-color:#EA580C;background:#FFF7ED}.fsi-status-hold{border-left-color:#D97706;background:#FFFBEB}.fsi-status-rejected{border-left-color:#B42318;background:#FEF2F2}.fsi-status-pending{border-left-color:#0B6FA4;background:#EFF6FF}
 
+
+    [class*="st-key-fsi_module_subnav_"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:#F8FBFE!important;border:1px solid #B8C9D8!important;border-radius:9px!important;padding:.42rem .55rem!important;margin:-.18rem 0 .55rem!important;box-shadow:0 1px 4px rgba(11,45,77,.05)!important;overflow:visible!important;}
+    .fsi-module-subnav-title{font-size:9px;font-weight:900;letter-spacing:.08em;color:#607284;margin:0 0 .3rem .08rem;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a{min-height:34px!important;padding:.28rem .4rem!important;font-size:10px!important;font-weight:800!important;background:#FFFFFF!important;border:1px solid #C7D3DE!important;border-radius:7px!important;color:#17324A!important;justify-content:center!important;text-align:center!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a:hover{background:#E8F3FB!important;border-color:#1469A8!important;color:#0B4F7A!important;}
     [class*="st-key-master_card_"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:#fff!important;border:1px solid var(--erp-border)!important;border-left:5px solid var(--card-color,var(--erp-blue))!important;border-radius:10px!important;min-height:164px!important;padding:.75rem!important;margin-bottom:.45rem!important;box-shadow:0 2px 7px rgba(11,45,77,.07)!important;overflow:visible!important;}
     .fsi-master-card-head{display:grid;grid-template-columns:42px minmax(0,1fr);align-items:center;gap:11px;min-height:70px;padding:.15rem 0 .85rem!important;color:var(--erp-text)!important;}
     .fsi-master-card-icon{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:color-mix(in srgb,var(--card-color,var(--erp-blue)) 14%,white);font-size:19px;}
@@ -252,7 +257,7 @@ def apply_global_style() -> None:
     [class*="st-key-master_card_"] div[data-testid="stPageLink"] a,[class*="st-key-master_card_"] div[data-testid="stPageLink"] a *{color:#fff!important;fill:#fff!important;text-shadow:none!important;}
 
     [class*="st-key-dashboard_card_"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:#fff!important;border:1px solid var(--erp-border)!important;border-left:5px solid var(--dash-color,var(--erp-blue))!important;border-radius:10px!important;padding:.65rem!important;min-height:122px!important;box-shadow:0 2px 7px rgba(11,45,77,.07)!important;overflow:visible!important;}
-    .fsi-dashboard-card{padding:.05rem 0 .55rem!important}.fsi-dashboard-count{font-size:10px;font-weight:800;color:#66788A;line-height:1.2}.fsi-dashboard-title{font-size:15px;font-weight:850;color:var(--erp-navy);margin:4px 0;line-height:1.2;white-space:normal;overflow-wrap:anywhere}.fsi-dashboard-text{display:none}
+    .fsi-dashboard-card{padding:.55rem .6rem!important;margin:-.1rem -.1rem .55rem!important;border-radius:8px!important;border:1px solid color-mix(in srgb,var(--dash-color,var(--erp-blue)) 34%,white)!important;background:linear-gradient(135deg,color-mix(in srgb,var(--dash-color,var(--erp-blue)) 16%,white),#fff 76%)!important}.fsi-dashboard-count{font-size:10px;font-weight:800;color:color-mix(in srgb,var(--dash-color,var(--erp-blue)) 78%,#17212B);line-height:1.2}.fsi-dashboard-title{font-size:15px;font-weight:850;color:var(--erp-navy);margin:4px 0;line-height:1.2;white-space:normal;overflow-wrap:anywhere}.fsi-dashboard-text{display:none}
     [class*="st-key-dashboard_card_"] div[data-testid="stPageLink"] a{min-height:34px!important;font-size:11px!important;background:var(--dash-color,#0B6FA4)!important;color:#fff!important;border:1px solid color-mix(in srgb,var(--dash-color,#0B6FA4) 72%,#000)!important;border-radius:7px!important;}
     [class*="st-key-dashboard_card_"] div[data-testid="stPageLink"] a *{color:#fff!important;fill:#fff!important;}
 
@@ -314,6 +319,22 @@ def subpage_navigation(*items: tuple[str, str, str]) -> None:
         for col, (path, label, icon) in zip(cols, valid):
             with col: st.page_link(st.session_state["_qsms_pages"][path], label=label, icon=icon, width="stretch")
 
+
+
+def module_submenu(title: str, *items: tuple[str, str, str], max_columns: int = 6) -> None:
+    """Render a persistent second-level menu for the active top-level module."""
+    valid = [(path, label, icon) for path, label, icon in items if path in st.session_state.get("_qsms_pages", {})]
+    if not valid:
+        return
+    slug = re.sub(r"[^a-z0-9]+", "_", title.casefold()).strip("_") or "module"
+    with st.container(border=True, key=f"fsi_module_subnav_{slug}"):
+        st.markdown(f'<div class="fsi-module-subnav-title">{safe(title)} MENU</div>', unsafe_allow_html=True)
+        for start in range(0, len(valid), max_columns):
+            group = valid[start:start + max_columns]
+            cols = st.columns(len(group), gap="small")
+            for col, (path, label, icon) in zip(cols, group):
+                with col:
+                    st.page_link(st.session_state["_qsms_pages"][path], label=label, icon=icon, width="stretch")
 
 def master_card(*, title: str, description: str, count_text: str, icon: str, color: str, entry_path: str, records_path: str, can_view: bool = True) -> None:
     slug = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")

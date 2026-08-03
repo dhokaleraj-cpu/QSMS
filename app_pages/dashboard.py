@@ -61,10 +61,6 @@ def render() -> None:
     recent_inwards = inward_rows[:30]
 
     counts = {
-        "parts": _count(repo, "parts", {"status": "ACTIVE"}),
-        "customers": _count(repo, "parties", {"status": "ACTIVE"}, {"party_types": ["CUSTOMER"]}),
-        "suppliers": _count(repo, "parties", {"status": "ACTIVE"}, {"party_types": ["SUPPLIER"]}),
-        "mills": _count(repo, "parties", {"status": "ACTIVE"}, {"party_types": ["STEEL_MILL"]}),
         "rmtc_pending": _count(repo, "rmtc_approvals", {"status": "APPROVAL_PENDING"}),
         "rmtc_draft": _count(repo, "rmtc_approvals", {"status": "DRAFT"}),
         "rmtc_accepted": _count(repo, "rmtc_approvals", {"disposition": "ACCEPTED"}),
@@ -87,10 +83,6 @@ def render() -> None:
     hold_pcs = _sum(inward_rows, "on_hold_production_quantity_pcs")
 
     kpi_grid([
-        {"label": "Active Parts", "value": counts["parts"], "foot": "Part Master"},
-        {"label": "Customers", "value": counts["customers"], "foot": "Active"},
-        {"label": "Suppliers", "value": counts["suppliers"], "foot": "Active"},
-        {"label": "Steel Mills", "value": counts["mills"], "foot": "Active"},
         {"label": "RMTC Draft", "value": counts["rmtc_draft"], "foot": "Entry"},
         {"label": "RMTC Pending", "value": counts["rmtc_pending"], "foot": "Validation"},
         {"label": "RMTC Accepted", "value": counts["rmtc_accepted"], "foot": "Inward eligible"},
@@ -107,13 +99,13 @@ def render() -> None:
 
     section_bar("QUICK ACTIONS")
     cards = [
-        ("Masters", f"{counts['parts']} parts", "#1469A8", "masters", "Open Masters"),
+        ("Masters", "Controlled master data", "#0F4C81", "masters", "Open Masters"),
         ("RMTC", f"{counts['rmtc_draft']} drafts", "#7C3AED", "rmtc-records", "Open RMTC"),
-        ("Material Inward", f"{counts['inward']} records", "#0F8B6D", "inward-records", "Open Inward"),
-        ("Inspection Layouts", "Part / process / stage", "#C56B00", "inspection-layout-records", "Open Layouts"),
-        ("Dimensional", f"{counts['dim_pending']} pending", "#0369A1", "dimensional-records", "Open Dimensional"),
-        ("MetLAB", f"{counts['met_pending']} pending", "#087443", "metlab-records", "Open MetLAB"),
-        ("Records Centre", "All module registers", "#7C3AED", "records-center", "Open Records"),
+        ("Material Inward", f"{counts['inward']} records", "#00897B", "inward-records", "Open Inward"),
+        ("Inspection Layouts", "Part / process / stage", "#F59E0B", "inspection-layout-records", "Open Layouts"),
+        ("Dimensional", f"{counts['dim_pending']} pending", "#0284C7", "dimensional-records", "Open Dimensional"),
+        ("MetLAB", f"{counts['met_pending']} pending", "#16A34A", "metlab-records", "Open MetLAB"),
+        ("Records Centre", "All module registers", "#C026D3", "records-center", "Open Records"),
         ("Templates", "Excel downloads", "#475569", "templates", "Open Templates"),
     ]
     for start in range(0, len(cards), 3):

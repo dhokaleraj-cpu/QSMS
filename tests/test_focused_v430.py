@@ -43,7 +43,7 @@ def test_jominy_and_di_formulas_match_workbooks():
 
 def test_rmtc_has_single_combined_jominy_grid_and_multi_part_pages():
     text = (ROOT / "app_pages/rmtc_pages.py").read_text()
-    for token in ["Actual Jominy", "Actual Jominy Status", "Calculated Jominy", "Calculated Jominy Status", "Part Worksheet", "NOT_APPLICABLE", "Attach RMTC Copy"]:
+    for token in ["Actual Jominy", "Actual Jominy Status", "Calculated Jominy", "Calculated Jominy Status", "Part Worksheet", "NOT_APPLICABLE", "RMTC Certificate / Copy"]:
         assert token in text
 
 

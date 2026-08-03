@@ -1,33 +1,18 @@
-# Secrets and local environment
+# Local credentials and environments
 .streamlit/secrets.toml
 .env
-.env.*
-!.env.example
-.deploy_private/
 .venv/
-
-# Python and test cache
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.coverage
-htmlcov/
+.DS_Store
 
-# Runtime data and generated files
-uploads/
+# Local exports and runtime files
 exports/
 logs/
-updates/
 *.log
-*.db
-*.sqlite
-*.sqlite3
-.DS_Store
+updates/processed/
 
 # Supabase CLI local state
 supabase/.temp/
 supabase/.branches/
-
-# Editors
-.vscode/*.local.json
-.idea/

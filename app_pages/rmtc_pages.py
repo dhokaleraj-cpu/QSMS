@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from core.access import current_permissions
+from core.attachments import AttachmentService, AttachmentSlot, new_attachment_uploaders, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.calculations import band_status, calculate_di, calculate_jominy_curve
 from core.permissions import normalized_role
@@ -17,6 +18,12 @@ from core.steel_balance import remaining_planned_steel
 from core.ui import (DISPOSITION_EDITOR_OPTIONS, disposition_cards, disposition_label, normalize_disposition, page_header, section_bar, style_status_dataframe, subpage_navigation, template_download_row, workflow_progress)
 
 STATUS_OPTIONS=['PASS','FAIL','NOT_EVALUATED','NOT_APPLICABLE']
+
+RMTC_ATTACHMENT_SLOTS = (
+    AttachmentSlot('RMTC_COPY', 'Attachment 1 · RMTC Certificate / Copy', 'Optional supplier RMTC certificate or report copy', 'rmtc_approvals', 'rmtc_copy_path'),
+    AttachmentSlot('RMTC_ATTACHMENT_2', 'Attachment 2 · Supporting Document', 'Optional supporting certificate, test report or correspondence'),
+    AttachmentSlot('RMTC_ATTACHMENT_3', 'Attachment 3 · Additional Document', 'Optional additional controlled document'),
+)
 
 
 def _opts(rows:list[dict],label)->dict[str,str]:
@@ -215,7 +222,9 @@ def render_entry()->None:
     prepared_options=['']+list(prepared_map);current_prepared=str(existing.get('prepared_by_employee_id') or '')
     prepared_id=c[3].selectbox('Prepared By',prepared_options,index=prepared_options.index(current_prepared) if current_prepared in prepared_options else 0,format_func=lambda x:prepared_map.get(x,'— Select —'),key=f'rmtc_prepared_{form_token}')
     remarks=st.text_area('RMTC Remarks',value=str(existing.get('remarks') or ''),height=70,key=f'rmtc_remarks_{form_token}')
-    copy=st.file_uploader('Attach RMTC Copy',type=['pdf','png','jpg','jpeg','xlsx','xls'],key=f'rmtc_copy_{form_token}')
+    new_attachments = {} if existing else new_attachment_uploaders(
+        RMTC_ATTACHMENT_SLOTS, key_prefix=f'rmtc_{form_token}', title='OPTIONAL RMTC ATTACHMENTS'
+    )
 
     if st.button('Save RMTC Header & Continue',type='primary',disabled=not writable,width='stretch'):
         try:
@@ -231,7 +240,14 @@ def render_entry()->None:
                 part=next(row for row in parts if str(row['id'])==primary_id)
                 payload={'rmtc_number':rmtc_no.strip(),'entry_date':entry_date.isoformat(),'certificate_reference':cert_ref.strip(),'certificate_date':cert_date.isoformat(),'part_id':primary_id,'supplier_id':supplier_id,'steel_mill_id':steel_id,'material_grade_id':part.get('material_grade_id'),'heat_number':heat.strip(),'heat_code':final_heat_code,'certificate_quantity':qty,'chemistry_results':{},'chemistry_compliance':'NOT_EVALUATED','chemistry_failures':[],'mechanical_results':{},'status':str(existing.get('status') or 'DRAFT'),'selected_source_detail_id':source_id,'rm_section':source.get('section_size'),'forging_route':source.get('forging_route'),'prepared_by_employee_id':prepared_id,'prepared_at':existing.get('prepared_at') or datetime.now().isoformat(),'remarks':remarks.strip() or None}
                 saved=svc.save_header(payload,selected_parts,str(existing['id']) if existing else None)
-                if copy is not None: svc.upload_copy(str(saved['id']),copy)
+                attachment_service = AttachmentService(repo)
+                for slot in RMTC_ATTACHMENT_SLOTS:
+                    selected_file = new_attachments.get(slot.document_type)
+                    if selected_file is not None:
+                        attachment_service.upload(
+                            entity_type='RMTC', entity_id=str(saved['id']), folder='rmtc',
+                            slot=slot, file=selected_file,
+                        )
             st.session_state['edit_rmtc_id']=str(saved['id'])
             st.session_state['rmtc_entry_mode']='edit'
             st.session_state['rmtc_part_choice']=selected_parts[0]
@@ -242,6 +258,12 @@ def render_entry()->None:
         except Exception as exc: st.error(str(exc))
     if existing:
         st.session_state['part_rmtc_id']=str(existing['id'])
+        render_attachment_manager(
+            repo=repo, entity_type='RMTC', entity_id=str(existing['id']), folder='rmtc',
+            slots=RMTC_ATTACHMENT_SLOTS, key_prefix=f'rmtc_entry_{existing.get("id")}',
+            can_add_or_replace=perms['can_edit'], can_delete=perms['can_archive'],
+            title='RMTC ATTACHMENTS',
+        )
         section_bar('RMTC WORKFLOW')
         validator_map=_employee_map(svc,'RMTC_VALIDATE');approver_map=_employee_map(svc,'RMTC_APPROVE')
         validator_options=['']+list(validator_map);approver_options=['']+list(approver_map)
@@ -420,6 +442,12 @@ def render_records()->None:
             help_text='Deletion requires your current password. Linked Material Inward records will block deletion.',
         ):
             st.session_state.pop('edit_rmtc_id',None);st.session_state.pop('part_rmtc_id',None);st.rerun()
+        render_attachment_manager(
+            repo=svc.repo, entity_type='RMTC', entity_id=selected, folder='rmtc',
+            slots=RMTC_ATTACHMENT_SLOTS, key_prefix=f'rmtc_records_{selected}',
+            can_add_or_replace=perms['can_edit'], can_delete=perms['can_archive'],
+            title='SELECTED RMTC ATTACHMENTS',
+        )
     else:
         st.info('No RMTC records match the search.')
 

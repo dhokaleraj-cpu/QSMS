@@ -21,7 +21,7 @@ from app_pages import (
 )
 from core.auth import current_profile, is_logged_in, logout, needs_first_admin_claim, render_first_admin_claim, render_login
 from core.config import get_settings
-from core.ui import app_footer, apply_global_style, render_shell_header
+from core.ui import app_footer, apply_global_style, module_submenu, render_shell_header
 
 settings = get_settings()
 st.set_page_config(
@@ -75,6 +75,93 @@ PAGES = tuple(page for _, page in PAGE_ITEMS)
 PAGE_BY_PATH = dict(PAGE_ITEMS)
 st.session_state["_qsms_pages"] = PAGE_BY_PATH
 
+MODULE_SUBMENUS = {
+    "Dashboard": (
+        ("dashboard", "Quality Dashboard", ":material/dashboard:"),
+        ("records-center", "Records Centre", ":material/table_view:"),
+        ("heat-ledger", "Heat Steel Ledger", ":material/monitoring:"),
+    ),
+    "Masters": (
+        ("masters", "Masters Home", ":material/dataset:"),
+        ("part-entry", "Part Entry", ":material/edit_note:"),
+        ("part-records", "Part Records", ":material/table_view:"),
+        ("grade-entry", "Grade Entry", ":material/science:"),
+        ("grade-records", "Grade Records", ":material/table_view:"),
+        ("reference-entry", "Reference Entry", ":material/edit_note:"),
+        ("reference-records", "Reference Records", ":material/table_view:"),
+        ("employee-entry", "Employee Entry", ":material/person_add:"),
+        ("employee-records", "Employee Records", ":material/groups:"),
+        ("user-access", "Users & Access", ":material/admin_panel_settings:"),
+    ),
+    "RMTC": (
+        ("rmtc-entry", "RMTC Entry", ":material/fact_check:"),
+        ("rmtc-part", "Part Worksheet", ":material/format_list_bulleted:"),
+        ("rmtc-approval", "Validation & Decision", ":material/approval:"),
+        ("rmtc-records", "RMTC Records", ":material/table_view:"),
+        ("heat-ledger", "Heat Steel Ledger", ":material/monitoring:"),
+    ),
+    "Inward": (
+        ("inward-entry", "Material Inward Entry", ":material/input:"),
+        ("inward-records", "Material Inward Records", ":material/table_view:"),
+        ("metlab-entry", "MetLAB Report", ":material/science:"),
+        ("dimensional-entry", "Dimensional Report", ":material/straighten:"),
+    ),
+    "Inspections": (
+        ("inspection-home", "Inspection Home", ":material/biotech:"),
+        ("inspection-layout-entry", "Layout Entry", ":material/edit_document:"),
+        ("inspection-layout-records", "Layout Records", ":material/table_view:"),
+        ("dimensional-entry", "Dimensional Entry", ":material/straighten:"),
+        ("dimensional-records", "Dimensional Records", ":material/table_view:"),
+        ("metlab-entry", "MetLAB Entry", ":material/science:"),
+        ("metlab-records", "MetLAB Records", ":material/table_view:"),
+    ),
+    "Records": (
+        ("records-center", "Records Centre", ":material/table_view:"),
+        ("heat-ledger", "Heat Steel Ledger", ":material/monitoring:"),
+        ("rmtc-records", "RMTC Records", ":material/fact_check:"),
+        ("inward-records", "Inward Records", ":material/input:"),
+        ("dimensional-records", "Dimensional Records", ":material/straighten:"),
+        ("metlab-records", "MetLAB Records", ":material/science:"),
+    ),
+    "Templates": (
+        ("templates", "Download Templates", ":material/download:"),
+        ("masters", "Masters", ":material/dataset:"),
+        ("inspection-home", "Inspections", ":material/biotech:"),
+    ),
+}
+ROUTE_MODULE = {
+    "dashboard": "Dashboard",
+    "masters": "Masters", "part-entry": "Masters", "part-records": "Masters",
+    "grade-entry": "Masters", "grade-records": "Masters",
+    "reference-entry": "Masters", "reference-records": "Masters",
+    "employee-entry": "Masters", "employee-records": "Masters", "user-access": "Masters",
+    "rmtc-entry": "RMTC", "rmtc-part": "RMTC", "rmtc-records": "RMTC", "rmtc-approval": "RMTC",
+    "inward-entry": "Inward", "inward-records": "Inward",
+    "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
+    "inspection-layout-records": "Inspections", "dimensional-entry": "Inspections",
+    "dimensional-records": "Inspections", "metlab-entry": "Inspections", "metlab-records": "Inspections",
+    "records-center": "Records", "heat-ledger": "Records",
+    "templates": "Templates",
+}
+
+PAGE_TITLE_TO_PATH = {
+    "Dashboard": "dashboard", "Masters": "masters", "RMTC Entry": "rmtc-entry",
+    "Material Inward": "inward-entry", "Inspections": "inspection-home",
+    "Records Centre": "records-center", "Heat Steel Ledger": "heat-ledger",
+    "Templates": "templates", "Part Master Entry": "part-entry",
+    "Part Master Records": "part-records", "Material Grade Entry": "grade-entry",
+    "Material Grade Records": "grade-records", "Reference Master Entry": "reference-entry",
+    "Reference Master Records": "reference-records", "Employee Entry": "employee-entry",
+    "Employee Records": "employee-records", "Users & Access": "user-access",
+    "RMTC Part Worksheet": "rmtc-part", "RMTC Records": "rmtc-records",
+    "RMTC Approval": "rmtc-approval", "Material Inward Records": "inward-records",
+    "Inspection Layout Entry": "inspection-layout-entry",
+    "Inspection Layout Records": "inspection-layout-records",
+    "Dimensional Report": "dimensional-entry", "Dimensional Records": "dimensional-records",
+    "MetLAB Report": "metlab-entry", "MetLAB Records": "metlab-records",
+}
+
+
 nav = st.navigation(PAGES, position="hidden")
 if render_shell_header(profile, nav.title):
     logout()
@@ -105,6 +192,10 @@ with st.container(border=True, key="fsi_top_nav"):
                         st.switch_page(page)
                 else:
                     st.page_link(page, label=label, icon=icon, width="stretch")
+
+current_path = PAGE_TITLE_TO_PATH.get(nav.title, "dashboard")
+current_module = ROUTE_MODULE.get(current_path, "Dashboard")
+module_submenu(current_module, *MODULE_SUBMENUS[current_module])
 
 nav.run()
 app_footer()

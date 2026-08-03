@@ -1,19 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
-TARGET="/Users/dhokaleraj/QSMS"
-cd "$TARGET"
-[[ -d .git ]] || { echo "Git repository is not initialized. Run QSMS_GITHUB_STREAMLIT_LIVE_DEPLOY.command first."; exit 1; }
-[[ -x .venv/bin/python ]] || { echo "QSMS virtual environment is missing."; exit 1; }
-source .venv/bin/activate
-python -m compileall -q .
-python scripts/check_online_readiness.py
-pytest -q
-git add .
-if git diff --cached --quiet; then
-  echo "No source changes to push."
-  exit 0
+
+PROJECT="/Users/dhokaleraj/QSMS"
+REMOTE="https://github.com/dhokaleraj-cpu/QSMS.git"
+cd "$PROJECT"
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || git init
+if git remote get-url origin >/dev/null 2>&1; then
+  git remote set-url origin "$REMOTE"
+else
+  git remote add origin "$REMOTE"
 fi
-VERSION="$(tr -d '\r\n' < VERSION 2>/dev/null || echo update)"
-git commit -m "QSMS ${VERSION} production update $(date +%Y-%m-%d_%H-%M)"
-git push origin main
-echo "GitHub push completed. Streamlit Cloud will redeploy from main."
+
+git branch -M main
+git add \
+  .gitignore VERSION requirements.txt streamlit_app.py \
+  app_pages core docs scripts supabase tests
+
+if ! git diff --cached --quiet; then
+  git commit -m "QSMS live release 4.8.7 $(date '+%Y-%m-%d %H:%M:%S')"
+fi
+
+if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+  git pull --rebase origin main
+fi
+
+git push -u origin main
+printf '\nQSMS 4.8.7 pushed to GitHub. Streamlit Cloud will redeploy automatically.\n'

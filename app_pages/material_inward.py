@@ -7,11 +7,18 @@ import pandas as pd
 import streamlit as st
 
 from core.access import current_permissions
+from core.attachments import AttachmentService, AttachmentSlot, new_attachment_uploaders, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.inward_service import InwardService
 from core.ui import disposition_cards, disposition_label, page_header, section_bar, style_status_dataframe, subpage_navigation, template_download_row
 
 DISPOSITIONS = ["PENDING", "ON_HOLD", "ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"]
+
+INWARD_ATTACHMENT_SLOTS = (
+    AttachmentSlot('INWARD_COPY', 'Attachment 1 · GRN / Inward Document', 'Optional GRN, inward note or receipt document', 'inward_lots', 'inward_copy_path'),
+    AttachmentSlot('INWARD_ATTACHMENT_2', 'Attachment 2 · Supplier Invoice', 'Optional supplier invoice or delivery document'),
+    AttachmentSlot('INWARD_ATTACHMENT_3', 'Attachment 3 · Supporting Document', 'Optional additional inward or quality document'),
+)
 
 
 def _employee_map(rows: list[dict]) -> dict[str, str]:
@@ -190,7 +197,9 @@ def render_entry() -> None:
 
     reserve_reason = st.text_input("Hold / Reserve / Rejection Reason", value=str(existing.get("reserve_reason") or ""))
     remarks = st.text_area("Remarks", value=str(existing.get("remarks") or ""), height=70)
-    copy = st.file_uploader("Attach GRN / Inward Document", type=["pdf", "png", "jpg", "jpeg", "xlsx", "xls"], key=f"inward_copy_{existing.get('id', 'new')}")
+    new_attachments = {} if existing else new_attachment_uploaders(
+        INWARD_ATTACHMENT_SLOTS, key_prefix='inward_new', title='OPTIONAL MATERIAL INWARD ATTACHMENTS'
+    )
 
     invalid_quantity = production_qty > available_production_for_entry + 0.001 or required_steel > available_for_entry + 0.001
     if st.button("Save Material Inward", type="primary", disabled=not writable or invalid_quantity, width="stretch"):
@@ -231,8 +240,14 @@ def render_entry() -> None:
             }
             with st.spinner("Saving steel and production allocation…"):
                 saved = service.save(payload, str(existing["id"]) if existing else None)
-                if copy is not None:
-                    service.upload_copy(str(saved["id"]), copy)
+                attachment_service = AttachmentService(service.repo)
+                for slot in INWARD_ATTACHMENT_SLOTS:
+                    selected_file = new_attachments.get(slot.document_type)
+                    if selected_file is not None:
+                        attachment_service.upload(
+                            entity_type='MATERIAL_INWARD', entity_id=str(saved['id']), folder='inward',
+                            slot=slot, file=selected_file,
+                        )
             st.session_state["edit_inward_id"] = str(saved["id"])
             st.session_state["inspection_inward_id"] = str(saved["id"])
             st.success(f"Material Inward {saved.get('inward_number')} saved successfully.")
@@ -242,6 +257,12 @@ def render_entry() -> None:
 
     if existing:
         st.session_state["inspection_inward_id"] = str(existing.get("id"))
+        render_attachment_manager(
+            repo=service.repo, entity_type='MATERIAL_INWARD', entity_id=str(existing.get('id')), folder='inward',
+            slots=INWARD_ATTACHMENT_SLOTS, key_prefix=f'inward_entry_{existing.get("id")}',
+            can_add_or_replace=perms['can_edit'], can_delete=perms['can_archive'],
+            title='MATERIAL INWARD ATTACHMENTS',
+        )
         c1, c2 = st.columns(2, gap="small")
         with c1:
             st.page_link(st.session_state["_qsms_pages"]["metlab-entry"], label="Open MetLAB Report", icon=":material/science:", width="stretch")
@@ -268,6 +289,12 @@ def render_records() -> None:
         with c4:
             if password_delete_panel(repo=service.repo, table="inward_lots", rows=[selected_row], labeler=lambda row: f"{row.get('inward_number')} · {row.get('grn_number')}", key=f"delete_inward_{selected}", can_delete=perms["can_archive"], title="Delete Selected Material Inward", help_text="Current password and Material Inward Delete permission are required."):
                 st.rerun()
+        render_attachment_manager(
+            repo=service.repo, entity_type='MATERIAL_INWARD', entity_id=selected, folder='inward',
+            slots=INWARD_ATTACHMENT_SLOTS, key_prefix=f'inward_records_{selected}',
+            can_add_or_replace=perms['can_edit'], can_delete=perms['can_archive'],
+            title='SELECTED MATERIAL INWARD ATTACHMENTS',
+        )
     else:
         st.info("No Material Inward records match the search.")
 

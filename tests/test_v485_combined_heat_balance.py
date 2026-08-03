@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_v485_version_and_packaged_migration():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.8.5", "4.8.6"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.8.5", "4.8.6", "4.8.7"}
     sql = (ROOT / "supabase/migrations/20260802201500_qsms_combined_heat_balance_v485.sql").read_text()
     for token in [
         "remaining_planned_steel_quantity_kg",
