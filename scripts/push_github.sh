@@ -18,7 +18,7 @@ git add \
   app_pages core docs scripts supabase tests
 
 if ! git diff --cached --quiet; then
-  git commit -m "QSMS live release 4.8.7 $(date '+%Y-%m-%d %H:%M:%S')"
+  git commit -m "QSMS live release 4.9.2 $(date '+%Y-%m-%d %H:%M:%S')"
 fi
 
 if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
@@ -26,4 +26,4 @@ if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
 fi
 
 git push -u origin main
-printf '\nQSMS 4.8.7 pushed to GitHub. Streamlit Cloud will redeploy automatically.\n'
+printf '\nQSMS 4.9.2 pushed to GitHub. Streamlit Cloud will redeploy automatically.\n'

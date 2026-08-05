@@ -5,7 +5,9 @@ from typing import Any, Iterable
 
 import pandas as pd
 import streamlit as st
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
+from core.reporting import report_pdf_bytes
 from core.repository import Repository
 from core.ui import disposition_cards, page_header, section_bar, subpage_navigation
 
@@ -25,8 +27,12 @@ def _frame(rows: Iterable[dict], columns: dict[str, str]) -> pd.DataFrame:
     return pd.DataFrame([{label: row.get(source) for label, source in columns.items()} for row in rows])
 
 
-def _excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
+def _excel_bytes(sheets: dict[str, pd.DataFrame], report_title: str = "QSMS Report") -> bytes:
     buffer = BytesIO()
+    navy = "083B6E"
+    light_blue = "EAF4FB"
+    border_color = "AFC3D4"
+    thin = Side(style="thin", color=border_color)
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         for name, frame in sheets.items():
             safe_name = name[:31] or "Report"
@@ -34,6 +40,37 @@ def _excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
             sheet = writer.sheets[safe_name]
             sheet.freeze_panes = "A2"
             sheet.auto_filter.ref = sheet.dimensions
+            sheet.sheet_view.showGridLines = False
+            sheet.page_setup.orientation = "landscape"
+            sheet.page_setup.fitToWidth = 1
+            sheet.page_setup.fitToHeight = 0
+            sheet.sheet_properties.pageSetUpPr.fitToPage = True
+            sheet.print_title_rows = "1:1"
+            sheet.oddHeader.left.text = "&BFOUR STAR INDUSTRIES"
+            sheet.oddHeader.center.text = f"&B{report_title}"
+            sheet.oddHeader.right.text = "QSMS LIVE REPORT"
+            sheet.oddFooter.left.text = "FOUR STAR INDUSTRIES · CONTROLLED QSMS REPORT"
+            sheet.oddFooter.center.text = "Generated from live Supabase data"
+            sheet.oddFooter.right.text = "Page &P of &N"
+            sheet.oddHeader.left.size = 9
+            sheet.oddHeader.center.size = 11
+            sheet.oddFooter.left.size = 7
+            sheet.oddFooter.center.size = 7
+            sheet.oddFooter.right.size = 7
+            for cell in sheet[1]:
+                cell.fill = PatternFill("solid", fgColor=navy)
+                cell.font = Font(color="FFFFFF", bold=True, size=9)
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            sheet.row_dimensions[1].height = 28
+            for row_index in range(2, sheet.max_row + 1):
+                if row_index % 2 == 0:
+                    for cell in sheet[row_index]:
+                        cell.fill = PatternFill("solid", fgColor=light_blue)
+                for cell in sheet[row_index]:
+                    cell.font = Font(size=8)
+                    cell.alignment = Alignment(vertical="center", wrap_text=True)
+                    cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
             for column in sheet.columns:
                 max_length = max((len(str(cell.value or "")) for cell in column), default=8)
                 sheet.column_dimensions[column[0].column_letter].width = min(max(max_length + 2, 10), 38)
@@ -177,13 +214,28 @@ def render_heat_transactions() -> None:
     section_bar("HEAT TRANSACTION HISTORY", "Chronological genealogy from RMTC planning through Material Inward and OSP movement.")
     st.dataframe(transaction_frame, hide_index=True, width="stretch", height=560)
     suffix = selected_key or "ALL_HEATS"
-    st.download_button(
-        "Download Heat Balance and Transactions",
-        data=_excel_bytes({"Heat Balance": summary_frame, "Transactions": transaction_frame}),
-        file_name=f"QSMS_Heat_Global_Balance_{suffix}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        icon=":material/download:", width="stretch",
-    )
+    export_sections = {"Heat Balance": summary_frame, "Transactions": transaction_frame}
+    c1, c2 = st.columns(2, gap="small")
+    with c1:
+        st.download_button(
+            "Download Excel Report",
+            data=_excel_bytes(export_sections, "HEAT NUMBER GLOBAL BALANCE WITH TRANSACTIONS"),
+            file_name=f"QSMS_Heat_Global_Balance_{suffix}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            icon=":material/download:", width="stretch",
+        )
+    with c2:
+        st.download_button(
+            "Download Print PDF",
+            data=report_pdf_bytes(
+                "HEAT NUMBER GLOBAL BALANCE WITH TRANSACTIONS",
+                export_sections,
+                subtitle=f"Heat filter: {selected}",
+            ),
+            file_name=f"QSMS_Heat_Global_Balance_{suffix}.pdf",
+            mime="application/pdf",
+            icon=":material/picture_as_pdf:", width="stretch",
+        )
 
 
 def render_osp_balance() -> None:
@@ -283,10 +335,25 @@ def render_osp_balance() -> None:
     section_bar("OSP TRANSACTION DETAILS")
     st.dataframe(job_frame, hide_index=True, width="stretch", height=540)
     suffix = (heat_key or "ALL_HEATS") + ("_" + selected_part.replace("/", "-") if selected_part != "All Part Numbers" else "")
-    st.download_button(
-        "Download OSP Inward / Outward and Balance",
-        data=_excel_bytes({"OSP Balance": balance_frame, "OSP Transactions": job_frame}),
-        file_name=f"QSMS_OSP_Heat_Balance_{suffix}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        icon=":material/download:", width="stretch",
-    )
+    export_sections = {"OSP Balance": balance_frame, "OSP Transactions": job_frame}
+    c1, c2 = st.columns(2, gap="small")
+    with c1:
+        st.download_button(
+            "Download Excel Report",
+            data=_excel_bytes(export_sections, "HEAT-WISE OSP INWARD, OUTWARD AND BALANCE"),
+            file_name=f"QSMS_OSP_Heat_Balance_{suffix}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            icon=":material/download:", width="stretch",
+        )
+    with c2:
+        st.download_button(
+            "Download Print PDF",
+            data=report_pdf_bytes(
+                "HEAT-WISE OSP INWARD, OUTWARD AND BALANCE",
+                export_sections,
+                subtitle=f"Heat: {selected_heat} · Part: {selected_part}",
+            ),
+            file_name=f"QSMS_OSP_Heat_Balance_{suffix}.pdf",
+            mime="application/pdf",
+            icon=":material/picture_as_pdf:", width="stretch",
+        )

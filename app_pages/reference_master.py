@@ -15,7 +15,7 @@ from core.ui import page_header, section_bar, subpage_navigation, template_downl
 
 REFERENCE_KEYS = (
     "customers", "suppliers", "steel_mills", "osp_vendors", "approved_sources",
-    "processes", "inspection_stages", "quality_assets",
+    "inspection_stages", "quality_assets",
 )
 
 

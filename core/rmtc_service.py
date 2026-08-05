@@ -43,7 +43,35 @@ class RMTCService:
         return [{**r,'jominy_distance_id':(by_label.get(str(r.get('distance_label'))) or {}).get('id'),'distance_16th':(by_label.get(str(r.get('distance_label'))) or {}).get('distance_16th'),'distance_mm':round(float((by_label.get(str(r.get('distance_label'))) or {}).get('distance_16th') or 0)*25.4/16,2)} for r in reqs]
 
     def requirements(self,part_id):
-        return self.repo.select('part_heat_treatment_details',eq={'part_id':part_id,'status':'ACTIVE'},order_by='sequence_no',limit=200)
+        rows = self.repo.select(
+            'part_metallurgical_requirements',
+            eq={'part_id':part_id,'status':'ACTIVE'},
+            order_by='sequence_no',
+            limit=200,
+        )
+        if rows:
+            prepared = []
+            for row in rows:
+                lower = row.get('minimum_spec')
+                upper = row.get('maximum_spec')
+                requirement = ' '.join(
+                    value for value in (
+                        f"Min {lower}" if lower is not None else '',
+                        f"Max {upper}" if upper is not None else '',
+                    ) if value
+                )
+                prepared.append({
+                    **row,
+                    'parameter_name': row.get('parameter_name'),
+                    'requirement_value': requirement,
+                })
+            return prepared
+        return self.repo.select(
+            'part_heat_treatment_details',
+            eq={'part_id':part_id,'status':'ACTIVE'},
+            order_by='sequence_no',
+            limit=200,
+        )
 
     @staticmethod
     def normalize_heat_number(value: Any) -> str:

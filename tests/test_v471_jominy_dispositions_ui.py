@@ -15,15 +15,17 @@ def test_jominy_mm_is_derived_from_inches_in_ui_and_database():
     assert "trg_sync_jominy_distance" in migration
 
 
-def test_reusable_section_route_and_heat_treatment_lists():
+def test_reusable_section_route_and_simplified_metlab_requirements():
     page = (ROOT / "app_pages" / "part_master.py").read_text()
     for token in [
-        "part.rm_section", "part.forging_route", "part.heat_parameter", "part.heat_requirement",
+        "part.rm_section", "part.forging_route",
         "Manage reusable Section and Forging Route lists",
-        "Manage reusable Heat Treatment Parameter and Requirement lists",
+        "OSP INSPECTION FOR METLAB", "METALLURGICAL REQUIREMENTS",
+        "Minimum Specification", "Maximum Specification",
     ]:
         assert token in page
-    assert page.count("st.column_config.SelectboxColumn") >= 8
+    assert "HEAT TREATMENT DETAILS" not in page
+    assert "OSP PROCESS & INWARD SPECIFICATIONS" not in page
 
 
 def test_complete_disposition_lists_include_on_hold():
@@ -50,6 +52,6 @@ def test_dashboard_keeps_horizontal_bars_and_adds_requested_pies():
 
 def test_menu_and_submenu_text_is_forced_visible():
     ui = (ROOT / "core" / "ui.py").read_text()
-    assert '[class*="st-key-menu_"] div[data-testid="stPageLink"] a *{color:#fff!important' in ui
+    assert '[class*="st-key-menu_active_"] div[data-testid="stPageLink"] a *' in ui and 'color:#fff!important' in ui
     assert '.st-key-fsi_subnav div[data-testid="stPageLink"] a *{color:inherit!important' in ui
     assert '[class*="st-key-master_card_"] div[data-testid="stPageLink"] a *{color:#fff!important' in ui

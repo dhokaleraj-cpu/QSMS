@@ -169,35 +169,28 @@ def apply_global_style() -> None:
     p{font-size:13px!important;line-height:1.35!important;margin:.12rem 0!important;}
 
     .st-key-fsi_shell>div[data-testid="stVerticalBlockBorderWrapper"]{
-      background:var(--erp-surface)!important;border:1px solid var(--erp-border)!important;border-top:4px solid var(--erp-blue)!important;
-      border-radius:10px!important;padding:.6rem .75rem!important;box-shadow:0 2px 8px rgba(11,45,77,.08)!important;overflow:visible!important;
+      background:linear-gradient(110deg,#082F5C 0%,#073B73 44%,#0A66A8 100%)!important;
+      border:1px solid #7FB2D8!important;border-radius:14px!important;padding:.72rem .85rem!important;
+      box-shadow:0 5px 16px rgba(3,35,70,.20)!important;overflow:visible!important;
     }
-    .fsi-logo{width:138px;max-height:42px;object-fit:contain;object-position:left center;}
-    .fsi-breadcrumb{font-size:10px;font-weight:800;letter-spacing:.08em;color:#66788A;}
-    .fsi-app-title{font-size:21px;line-height:1.18;font-weight:850;color:var(--erp-navy);white-space:normal;overflow-wrap:anywhere;}
-    .fsi-app-sub{font-size:11px;color:var(--erp-muted);margin-top:3px;font-weight:650;}
-    .fsi-user{text-align:right;line-height:1.25}.fsi-user-name{font-size:13px;font-weight:850;color:var(--erp-navy)}
-    .fsi-user-meta{font-size:10px;color:var(--erp-muted)}.fsi-live{display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:3px 7px;border-radius:999px;background:#DDF7EA;color:#076A43;border:1px solid #8ED8B8;font-size:9px;font-weight:850}.fsi-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+    .fsi-company-block{display:flex;align-items:center;gap:10px;min-width:0}.fsi-logo-card{display:flex;align-items:center;justify-content:center;background:#fff;border-radius:9px;padding:6px 8px;min-width:70px;height:52px;box-shadow:0 1px 5px rgba(0,0,0,.14)}
+    .fsi-logo{width:68px;max-height:38px;object-fit:contain;object-position:center}.fsi-company-name{font-size:16px;font-weight:900;color:#fff;line-height:1.05;white-space:normal}.fsi-company-sub{font-size:9px;font-weight:750;color:#D6E9FA;margin-top:4px;line-height:1.15;letter-spacing:.02em}
+    .fsi-header-title{text-align:center;font-size:25px;line-height:.93;font-weight:950;color:#fff;letter-spacing:.01em;text-shadow:0 1px 2px rgba(0,0,0,.18)}.fsi-header-page{text-align:center;color:#D7EBFB;font-size:9px;font-weight:750;margin-top:6px;text-transform:uppercase;letter-spacing:.08em}
+    .fsi-user{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.30);border-radius:10px;padding:7px 9px;text-align:right;line-height:1.25}.fsi-user-name{font-size:11px;font-weight:850;color:#fff}.fsi-user-meta{font-size:9px;color:#E8F3FB}.fsi-live{display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:2px 6px;border-radius:999px;background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.25);font-size:8px;font-weight:850}.fsi-dot{width:6px;height:6px;border-radius:50%;background:#73F0B3}
+    .st-key-fsi_shell .stButton>button{background:rgba(255,255,255,.18)!important;border-color:rgba(255,255,255,.45)!important;color:#fff!important;min-height:34px!important}.st-key-fsi_shell .stButton>button *{color:#fff!important}
 
-    .st-key-fsi_top_nav>div[data-testid="stVerticalBlockBorderWrapper"]{background:transparent!important;border:0!important;padding:.25rem 0!important;margin:.35rem 0 .45rem!important;box-shadow:none!important;overflow:visible!important;}
+    .st-key-fsi_top_nav>div[data-testid="stVerticalBlockBorderWrapper"]{background:#fff!important;border:1px solid #C8D6E3!important;border-radius:12px!important;padding:.5rem .65rem .65rem!important;margin:.55rem 0 .45rem!important;box-shadow:0 4px 14px rgba(11,45,77,.10)!important;overflow:visible!important;}
+    .fsi-top-menu-title{font-size:10px;font-weight:900;letter-spacing:.06em;color:#0B3F72;padding:.12rem .1rem .4rem;margin:0 0 .28rem;border-bottom:1px solid #D8E2EA}
     [class*="st-key-menu_"]>div[data-testid="stVerticalBlockBorderWrapper"]{border:0!important;padding:0!important;background:transparent!important;overflow:visible!important;}
-    [class*="st-key-menu_"] div[data-testid="stPageLink"] a{
-      min-height:40px!important;padding:.38rem .55rem!important;justify-content:center!important;text-align:center!important;
-      border-radius:8px!important;border:1px solid transparent!important;color:#fff!important;font-size:12px!important;font-weight:850!important;
-      text-decoration:none!important;box-shadow:0 2px 5px rgba(15,23,42,.14)!important;white-space:normal!important;line-height:1.15!important;
+    [class*="st-key-menu_"] div[data-testid="stPageLink"] a,[class*="st-key-menu_"] .stButton>button{
+      min-height:38px!important;padding:.35rem .45rem!important;justify-content:center!important;text-align:center!important;
+      border-radius:8px!important;border:1px solid transparent!important;background:transparent!important;color:#17212B!important;
+      font-size:11px!important;font-weight:750!important;text-decoration:none!important;box-shadow:none!important;white-space:normal!important;line-height:1.15!important;width:100%!important;
     }
-    .st-key-menu_dashboard div[data-testid="stPageLink"] a{background:#0B2D4D!important;}
-    .st-key-menu_masters div[data-testid="stPageLink"] a{background:#0B6FA4!important;}
-    .st-key-menu_rmtc_entry div[data-testid="stPageLink"] a{background:#4F46E5!important;}
-    .st-key-menu_rmtc_entry .stButton>button{background:#4F46E5!important;border-color:#3730A3!important;color:#fff!important;min-height:40px!important;width:100%!important;}
-    .st-key-menu_rmtc_entry .stButton>button *{color:#fff!important;fill:#fff!important;}
-    .st-key-menu_inward_entry div[data-testid="stPageLink"] a{background:#0F766E!important;}
-    .st-key-menu_inspection_home div[data-testid="stPageLink"] a{background:#B45309!important;}
-    .st-key-menu_records_center div[data-testid="stPageLink"] a{background:#7C3AED!important;}
-    .st-key-menu_templates div[data-testid="stPageLink"] a{background:#475569!important;}
-    [class*="st-key-menu_"] div[data-testid="stPageLink"] a *{color:#fff!important;fill:#fff!important;}
-    [class*="st-key-menu_"] div[data-testid="stPageLink"] a:hover{filter:brightness(1.08)!important;transform:translateY(-1px);}
-    [class*="st-key-menu_"] div[data-testid="stPageLink"] a[aria-current="page"]{outline:3px solid rgba(14,116,144,.22)!important;outline-offset:2px!important;}
+    [class*="st-key-menu_"] div[data-testid="stPageLink"] a *,[class*="st-key-menu_"] .stButton>button *{color:inherit!important;fill:currentColor!important;}
+    [class*="st-key-menu_"] div[data-testid="stPageLink"] a:hover,[class*="st-key-menu_"] .stButton>button:hover{background:#EAF3FB!important;border-color:#B9D0E2!important;color:#0A4C80!important;}
+    [class*="st-key-menu_active_"] div[data-testid="stPageLink"] a,[class*="st-key-menu_active_"] .stButton>button{background:linear-gradient(100deg,#08477D,#0D78C7)!important;border-color:#075087!important;color:#fff!important;box-shadow:0 3px 8px rgba(7,76,128,.22)!important;font-weight:900!important;}
+    [class*="st-key-menu_active_"] div[data-testid="stPageLink"] a *,[class*="st-key-menu_active_"] .stButton>button *{color:#fff!important;fill:#fff!important;}
 
     .st-key-fsi_subnav>div[data-testid="stVerticalBlockBorderWrapper"]{background:var(--erp-surface)!important;border:1px solid var(--erp-border)!important;border-radius:9px!important;padding:.35rem .4rem!important;margin:0 0 .55rem!important;overflow:visible!important;}
     .st-key-fsi_subnav div[data-testid="stPageLink"] a{min-height:34px!important;padding:.3rem .45rem!important;border-radius:7px!important;border:1px solid #0B4F78!important;background:#0B6FA4!important;color:#fff!important;font-size:11px!important;font-weight:800!important;text-decoration:none!important;justify-content:center!important;white-space:normal!important;line-height:1.15!important;}
@@ -242,13 +235,15 @@ def apply_global_style() -> None:
     .fsi-status-card .label,.fsi-kpi-label{font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.025em;color:#607284;white-space:normal;line-height:1.2;}
     .fsi-status-card .value,.fsi-kpi-value{font-size:18px;font-weight:850;color:var(--erp-navy);line-height:1.1;margin:5px 0 2px;}
     .fsi-status-card .foot,.fsi-kpi-foot{font-size:10px;color:#6B7D8D;white-space:normal;line-height:1.2;}
-    .fsi-status-accepted{border-left-color:#087443;background:#ECFDF3}.fsi-status-reserve{border-left-color:#EA580C;background:#FFF7ED}.fsi-status-hold{border-left-color:#D97706;background:#FFFBEB}.fsi-status-rejected{border-left-color:#B42318;background:#FEF2F2}.fsi-status-pending{border-left-color:#0B6FA4;background:#EFF6FF}
+    .fsi-status-accepted{border-left-color:#087443;background:#ECFDF3}.fsi-status-reserve{border-left-color:#EA580C;background:#FFF7ED}.fsi-status-hold{border-left-color:#D97706;background:#FFFBEB}.fsi-status-rejected{border-left-color:#B42318;background:#FEF2F2}.fsi-status-pending{border-left-color:#D97706;background:#FFF7ED}
 
 
-    [class*="st-key-fsi_module_subnav_"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:#F8FBFE!important;border:1px solid #B8C9D8!important;border-radius:9px!important;padding:.42rem .55rem!important;margin:-.18rem 0 .55rem!important;box-shadow:0 1px 4px rgba(11,45,77,.05)!important;overflow:visible!important;}
-    .fsi-module-subnav-title{font-size:9px;font-weight:900;letter-spacing:.08em;color:#607284;margin:0 0 .3rem .08rem;}
-    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a{min-height:34px!important;padding:.28rem .4rem!important;font-size:10px!important;font-weight:800!important;background:#FFFFFF!important;border:1px solid #C7D3DE!important;border-radius:7px!important;color:#17324A!important;justify-content:center!important;text-align:center!important;}
+    [class*="st-key-fsi_module_subnav_"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:#fff!important;border:1px solid #C8D6E3!important;border-radius:10px!important;padding:.38rem .52rem!important;margin:-.08rem 0 .55rem!important;box-shadow:0 2px 8px rgba(11,45,77,.06)!important;overflow:visible!important;}
+    .fsi-module-subnav-title{font-size:9px;font-weight:900;letter-spacing:.08em;color:#0B4F78;margin:0 0 .3rem .08rem;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a{min-height:32px!important;padding:.25rem .35rem!important;font-size:10px!important;font-weight:750!important;background:#F7FAFC!important;border:1px solid #D2DEE8!important;border-radius:7px!important;color:#17324A!important;justify-content:center!important;text-align:center!important;}
     [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a:hover{background:#E8F3FB!important;border-color:#1469A8!important;color:#0B4F7A!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a[aria-current="page"]{background:#0B5E9A!important;border-color:#084773!important;color:#fff!important;font-weight:900!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a[aria-current="page"] *{color:#fff!important;fill:#fff!important;}
     [class*="st-key-master_card_"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:#fff!important;border:1px solid var(--erp-border)!important;border-left:5px solid var(--card-color,var(--erp-blue))!important;border-radius:10px!important;min-height:164px!important;padding:.75rem!important;margin-bottom:.45rem!important;box-shadow:0 2px 7px rgba(11,45,77,.07)!important;overflow:visible!important;}
     .fsi-master-card-head{display:grid;grid-template-columns:42px minmax(0,1fr);align-items:center;gap:11px;min-height:70px;padding:.15rem 0 .85rem!important;color:var(--erp-text)!important;}
     .fsi-master-card-icon{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:color-mix(in srgb,var(--card-color,var(--erp-blue)) 14%,white);font-size:19px;}
@@ -296,16 +291,39 @@ def render_app_launcher(apps: Sequence[PortalApp]) -> None:
 
 
 def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
-    s = get_settings(); now = datetime.now(ZoneInfo(s.timezone)); uri = logo_data_uri(); logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
+    s = get_settings()
+    now = datetime.now(ZoneInfo(s.timezone))
+    uri = logo_data_uri()
+    logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
     with st.container(border=True, key="fsi_shell"):
-        c1, c2, c3, c4 = st.columns([1.1, 2.7, .65, 1.35], vertical_alignment="center")
-        with c1: st.markdown(logo, unsafe_allow_html=True)
-        with c2: st.markdown(f'<div class="fsi-breadcrumb">FSI DIGITAL · QUALITY</div><div class="fsi-app-title">QUALITY SYSTEM MONITORING SYSTEM</div><div class="fsi-app-sub">{safe(active_page)}</div>', unsafe_allow_html=True)
-        with c3: render_app_launcher(app_registry())
+        c1, c2, c3, c4 = st.columns([2.0, 3.3, .55, 1.75], vertical_alignment="center")
+        with c1:
+            st.markdown(
+                f'<div class="fsi-company-block"><div class="fsi-logo-card">{logo}</div>'
+                f'<div><div class="fsi-company-name">FOUR STAR INDUSTRIES</div>'
+                f'<div class="fsi-company-sub">QUALITY SYSTEM MONITORING SYSTEM</div></div></div>',
+                unsafe_allow_html=True,
+            )
+        with c2:
+            st.markdown(
+                '<div class="fsi-header-title">QUALITY SYSTEM<br>MONITORING SYSTEM</div>'
+                f'<div class="fsi-header-page">{safe(active_page)}</div>',
+                unsafe_allow_html=True,
+            )
+        with c3:
+            render_app_launcher(app_registry())
         with c4:
-            d, a = st.columns([2.3, .75], vertical_alignment="center")
-            with d: st.markdown(f'<div class="fsi-user"><div class="fsi-user-name">{safe(profile.get("full_name") or "Quality User")}</div><div class="fsi-user-meta">{safe(role_label(profile))} · {now.strftime("%d-%m-%Y %I:%M %p")}</div><div class="fsi-live"><span class="fsi-dot"></span>{"PREVIEW" if is_preview_session() else "LIVE"}</div></div>', unsafe_allow_html=True)
-            with a: return st.button("Exit", key="fsi_signout", width="stretch")
+            d, a = st.columns([2.55, .7], vertical_alignment="center")
+            with d:
+                st.markdown(
+                    f'<div class="fsi-user"><div class="fsi-user-name">User: {safe(profile.get("full_name") or "Quality User")}</div>'
+                    f'<div class="fsi-user-meta">Role: {safe(role_label(profile))}</div>'
+                    f'<div class="fsi-user-meta">{now.strftime("%d-%m-%Y %I:%M %p")}</div>'
+                    f'<div class="fsi-live"><span class="fsi-dot"></span>{"PREVIEW" if is_preview_session() else "LIVE"}</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with a:
+                return st.button("Exit", key="fsi_signout", width="stretch")
     return False
 
 
@@ -314,12 +332,12 @@ def render_side_navigation(pages: Sequence[Any]) -> None:
 
 
 def subpage_navigation(*items: tuple[str, str, str]) -> None:
-    valid = [(path, label, icon) for path, label, icon in items if path in st.session_state.get("_qsms_pages", {})]
-    if not valid: return
-    with st.container(border=True, key="fsi_subnav"):
-        cols = st.columns(len(valid), gap="small")
-        for col, (path, label, icon) in zip(cols, valid):
-            with col: st.page_link(st.session_state["_qsms_pages"][path], label=label, icon=icon, width="stretch")
+    """Page-level navigation is intentionally suppressed.
+
+    QSMS uses one persistent main menu and one module submenu. Older page-level
+    links remain callable for compatibility but no longer render duplicate menus.
+    """
+    return None
 
 
 
@@ -336,7 +354,7 @@ def module_submenu(title: str, *items: tuple[str, str, str], max_columns: int = 
             cols = st.columns(len(group), gap="small")
             for col, (path, label, icon) in zip(cols, group):
                 with col:
-                    st.page_link(st.session_state["_qsms_pages"][path], label=label, icon=icon, width="stretch")
+                    st.page_link(st.session_state["_qsms_pages"][path], label=label, width="stretch")
 
 def master_card(*, title: str, description: str, count_text: str, icon: str, color: str, entry_path: str, records_path: str, can_view: bool = True) -> None:
     slug = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
@@ -361,14 +379,22 @@ def disposition_cards(items: Sequence[Mapping[str, Any]]) -> None:
         if key in {"ON_HOLD", "HOLD", "HOLD_PENDING_INSPECTION", "APPROVAL_PENDING"}: return "hold"
         if key in {"REJECTED", "FAIL", "LOCKED"}: return "rejected"
         return "pending"
-    cards = "".join(
-        f'<div class="fsi-status-card fsi-status-{css_class(item.get("value"))}">'
-        f'<div class="label">{safe(item.get("label"))}</div>'
-        f'<div class="value">{safe(str(item.get("value") if item.get("value") is not None else "Pending").replace("_", " ").title())}</div>'
-        f'<div class="foot">{safe(item.get("foot") or "")}</div></div>'
-        for item in items
-    )
-    st.markdown(f'<div class="fsi-status-grid">{cards}</div>', unsafe_allow_html=True)
+
+    cards = []
+    for item in items:
+        color = str(item.get("color") or "").strip()
+        background = str(item.get("background") or "").strip()
+        inline = ""
+        if color or background:
+            inline = f' style="border-left-color:{safe(color or "#D97706")};background:{safe(background or "#FFF7ED")}"'
+        value = item.get("value") if item.get("value") is not None else "Pending"
+        cards.append(
+            f'<div class="fsi-status-card fsi-status-{css_class(value)}"{inline}>'
+            f'<div class="label"{f" style=\"color:{safe(color)}\"" if color else ""}>{safe(item.get("label"))}</div>'
+            f'<div class="value">{safe(str(value).replace("_", " ").title())}</div>'
+            f'<div class="foot">{safe(item.get("foot") or "")}</div></div>'
+        )
+    st.markdown(f'<div class="fsi-status-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
 
 
 def dashboard_card(*, title: str, description: str, count_text: str, color: str, page_path: str, button_label: str) -> None:

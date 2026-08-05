@@ -15,6 +15,7 @@ from app_pages import (
     osp_inspections,
     osp_transactions,
     part_master,
+    process_master,
     reference_master,
     records_center,
     reports,
@@ -58,6 +59,8 @@ PAGE_ITEMS = (
 
     ("part-entry", st.Page(part_master.render_entry, title="Part Master Entry", icon=":material/edit_note:", url_path="part-entry")),
     ("part-records", st.Page(part_master.render_records, title="Part Master Records", icon=":material/table_view:", url_path="part-records")),
+    ("process-entry", st.Page(process_master.render_entry, title="Process Master Entry", icon=":material/settings:", url_path="process-entry")),
+    ("process-records", st.Page(process_master.render_records, title="Process Master Records", icon=":material/table_view:", url_path="process-records")),
     ("grade-entry", st.Page(material_grade.render_entry, title="Material Grade Entry", icon=":material/science:", url_path="grade-entry")),
     ("grade-records", st.Page(material_grade.render_records, title="Material Grade Records", icon=":material/table_view:", url_path="grade-records")),
     ("reference-entry", st.Page(reference_master.render_entry, title="Reference Master Entry", icon=":material/edit_note:", url_path="reference-entry")),
@@ -98,6 +101,8 @@ MODULE_SUBMENUS = {
         ("masters", "Masters Home", ":material/dataset:"),
         ("part-entry", "Part Entry", ":material/edit_note:"),
         ("part-records", "Part Records", ":material/table_view:"),
+        ("process-entry", "Process Entry", ":material/settings:"),
+        ("process-records", "Process Records", ":material/table_view:"),
         ("grade-entry", "Grade Entry", ":material/science:"),
         ("grade-records", "Grade Records", ":material/table_view:"),
         ("reference-entry", "Reference Entry", ":material/edit_note:"),
@@ -161,6 +166,7 @@ MODULE_SUBMENUS = {
 ROUTE_MODULE = {
     "dashboard": "Dashboard",
     "masters": "Masters", "part-entry": "Masters", "part-records": "Masters",
+    "process-entry": "Masters", "process-records": "Masters",
     "grade-entry": "Masters", "grade-records": "Masters",
     "reference-entry": "Masters", "reference-records": "Masters",
     "employee-entry": "Masters", "employee-records": "Masters", "user-access": "Masters",
@@ -183,7 +189,8 @@ PAGE_TITLE_TO_PATH = {
     "Reports": "reports-home", "Heat Transaction Report": "heat-transaction-report",
     "OSP Heat Balance Report": "osp-balance-report",
     "Templates": "templates", "Part Master Entry": "part-entry",
-    "Part Master Records": "part-records", "Material Grade Entry": "grade-entry",
+    "Part Master Records": "part-records", "Process Master Entry": "process-entry",
+    "Process Master Records": "process-records", "Material Grade Entry": "grade-entry",
     "Material Grade Records": "grade-records", "Reference Master Entry": "reference-entry",
     "Reference Master Records": "reference-records", "Employee Entry": "employee-entry",
     "Employee Records": "employee-records", "Users & Access": "user-access",
@@ -203,37 +210,41 @@ nav = st.navigation(PAGES, position="hidden")
 if render_shell_header(profile, nav.title):
     logout()
 
+current_path = PAGE_TITLE_TO_PATH.get(nav.title, "dashboard")
+current_module = ROUTE_MODULE.get(current_path, "Dashboard")
+
 with st.container(border=True, key="fsi_top_nav"):
+    st.markdown('<div class="fsi-top-menu-title">MODULES</div>', unsafe_allow_html=True)
     cols = st.columns(9, gap="small")
     labels = (
-        ("dashboard", "Dashboard", ":material/dashboard:"),
-        ("masters", "Masters", ":material/dataset:"),
-        ("rmtc-entry", "RMTC", ":material/fact_check:"),
-        ("inward-entry", "Inward", ":material/input:"),
-        ("osp-home", "OSP", ":material/factory:"),
-        ("inspection-home", "Inspections", ":material/biotech:"),
-        ("records-center", "Records", ":material/table_view:"),
-        ("reports-home", "Reports", ":material/assessment:"),
-        ("templates", "Templates", ":material/download:"),
+        ("dashboard", "Dashboard", "Dashboard"),
+        ("masters", "Masters", "Masters"),
+        ("rmtc-entry", "RMTC", "RMTC"),
+        ("inward-entry", "Inward", "Inward"),
+        ("osp-home", "OSP", "OSP"),
+        ("inspection-home", "Inspections", "Inspections"),
+        ("records-center", "Records", "Records"),
+        ("reports-home", "Reports", "Reports"),
+        ("templates", "Templates", "Templates"),
     )
-    for col, (path, label, icon) in zip(cols, labels):
+    for col, (path, label, module_name) in zip(cols, labels):
         page = PAGE_BY_PATH.get(path)
         if page is None:
             continue
+        slug = path.replace('-', '_')
+        container_key = f"menu_active_{slug}" if module_name == current_module else f"menu_{slug}"
         with col:
-            with st.container(key=f"menu_{path.replace('-', '_')}"):
+            with st.container(key=container_key):
                 if path == "rmtc-entry":
-                    if st.button(label, icon=icon, width="stretch", key="top_menu_new_rmtc"):
+                    if st.button(label, width="stretch", key="top_menu_new_rmtc"):
                         st.session_state["rmtc_entry_mode"] = "new"
                         st.session_state.pop("edit_rmtc_id", None)
                         st.session_state.pop("part_rmtc_id", None)
                         st.session_state.pop("new_rmtc_number", None)
                         st.switch_page(page)
                 else:
-                    st.page_link(page, label=label, icon=icon, width="stretch")
+                    st.page_link(page, label=label, width="stretch")
 
-current_path = PAGE_TITLE_TO_PATH.get(nav.title, "dashboard")
-current_module = ROUTE_MODULE.get(current_path, "Dashboard")
 module_submenu(current_module, *MODULE_SUBMENUS[current_module])
 
 nav.run()

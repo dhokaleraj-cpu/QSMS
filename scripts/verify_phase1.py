@@ -71,6 +71,11 @@ required = [
     "tests/test_v490_osp_transactions.py",
     "core/steel_balance.py",
     "supabase/migrations/20260802161000_qsms_auto_master_codes_dashboard_v482.sql",
+    "app_pages/process_master.py",
+    "core/reporting.py",
+    "supabase/migrations/20260805194500_qsms_simplified_metlab_process_master_print_v492.sql",
+    "tests/test_v492_simplified_metlab_process_master_print.py",
+    "docs/RELEASE_4_9_2.md",
     "templates/RMTC_Entry_Template.xlsx",
     "templates/Material_Inward_Template.xlsx",
     "templates/MetLAB_Report_Layout_Template.xlsx",
@@ -85,7 +90,7 @@ paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
     "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "inspection-home", "records-center", "heat-ledger",
     "reports-home", "heat-transaction-report", "osp-balance-report", "templates",
-    "part-entry", "part-records", "grade-entry", "grade-records",
+    "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
     "user-access", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
     "osp-material-out", "osp-sample-receipt", "osp-inward", "osp-dimensional", "osp-metlab", "osp-records",
@@ -117,6 +122,19 @@ for token, file_name in [
 ]:
     if token not in (ROOT / file_name).read_text():
         errors.append(f"{file_name} missing {token}")
+
+
+part_master_text = (ROOT / "app_pages/part_master.py").read_text()
+for token in ("OSP INSPECTION FOR METLAB", "METALLURGICAL REQUIREMENTS", "Minimum Specification", "Maximum Specification"):
+    if token not in part_master_text:
+        errors.append(f"Part Master missing simplified requirement control: {token}")
+for removed in ("HEAT TREATMENT DETAILS", "OSP PROCESS & INWARD SPECIFICATIONS"):
+    if removed in part_master_text:
+        errors.append(f"Legacy Part Master section is still visible: {removed}")
+if '"processes"' in (ROOT / "app_pages/reference_master.py").read_text().split("REFERENCE_KEYS",1)[1].split(")",1)[0]:
+    errors.append("Process Master must not be duplicated inside Reference Master")
+if "return None" not in (ROOT / "core/ui.py").read_text().split("def subpage_navigation",1)[1].split("def module_submenu",1)[0]:
+    errors.append("Page-level duplicate navigation is not suppressed")
 
 runtime = "\n".join(
     (ROOT / item).read_text().lower()
@@ -157,11 +175,11 @@ if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
 report = {
-    "release": "QSMS 4.9.1 OSP Parameter Groups & Heat/OSP Reports",
+    "release": "QSMS 4.9.2 Simplified MetLAB Requirements & Unified Print Theme",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
-    "part_master_grids": 3,
+    "part_master_grids": 4,
     "material_grade_embedded_chemistry": True,
     "multi_part_rmtc": True,
     "rmtc_draft_to_pending": True,
@@ -219,6 +237,11 @@ report = {
     "generated_osp_layouts": True,
     "heat_transaction_report": True,
     "osp_heat_balance_report": True,
+    "dedicated_process_master": True,
+    "simplified_osp_metlab_grid": True,
+    "final_metallurgical_requirements": True,
+    "single_persistent_navigation": True,
+    "unified_report_print_theme": True,
     "portal_ready": True,
     "errors": errors,
 }

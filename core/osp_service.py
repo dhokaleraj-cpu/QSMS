@@ -151,7 +151,11 @@ class OSPService:
             "receipt_metlab_disposition"
         )
         rows: list[dict] = []
+        requirement_flag = "dimensional_required" if report_type == "DIMENSIONAL" else "metlab_required"
         for row in self.register():
+            # A quality queue must include only inspection types selected in the Part + OSP Process group.
+            if not bool(row.get(requirement_flag)):
+                continue
             ready = bool(row.get("sample_received_date")) if scope == "OSP_SAMPLE" else float(row.get("quantity_received") or 0) > 0
             pending = str(row.get(disposition_key) or "PENDING") not in {"ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"}
             if ready and pending and str(row.get("status")) != "CANCELLED":

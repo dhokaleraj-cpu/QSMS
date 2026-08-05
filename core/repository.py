@@ -22,7 +22,7 @@ TENANT_SCOPED_TABLES = {
     "production_batches", "batch_movements", "osp_jobs", "inspection_reports",
     "inspection_results", "lab_tests", "dispatches", "dispatch_batches",
     "employees", "jominy_distances", "part_raw_material_details", "part_jominy_requirements",
-    "part_heat_treatment_details", "part_process_specifications", "part_process_parameter_specifications", "rmtc_part_approvals", "rmtc_chemistry_results",
+    "part_heat_treatment_details", "part_process_specifications", "part_process_parameter_specifications", "part_metallurgical_requirements", "rmtc_part_approvals", "rmtc_chemistry_results",
     "rmtc_jominy_results", "rmtc_requirement_results", "document_attachments",
     "master_value_catalog", "user_module_permissions", "heat_code_sequences",
     "rmtc_decision_revisions",

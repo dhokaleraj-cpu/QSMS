@@ -1,4 +1,4 @@
-# QSMS 4.9.1
+# QSMS 4.9.2
 
 Live Supabase-first Quality and OSP workflow for Four Star Industries.
 
@@ -13,6 +13,20 @@ Visible workspaces:
 7. Records Centre
 8. Templates
 9. Reports
+
+## Release 4.9.2 — Simplified MetLAB Requirements, Process Master and Unified Print Theme
+
+- Removed the legacy Heat Treatment Details and broad OSP Process & Inward Specifications grids from Part Master.
+- Added a dedicated Process Master for controlled In-house and Outsourced process definitions.
+- Added **OSP Inspection for MetLAB**: select the outsourced Process, then maintain only Parameter, Minimum Specification and Maximum Specification.
+- Added **Metallurgical Requirements**: Part-level final drawing requirements without a Process selection, using the same three-column grid.
+- OSP MetLAB layouts are created from the selected Part + OSP Process requirements only.
+- Final Metallurgical layouts are created from the Part-level Metallurgical Requirements only.
+- OSP inspection queues now skip inspection types that are not required by the Part + Process configuration.
+- Reworked the persistent main menu and module submenu to the approved navy/blue Export Shipment visual style.
+- Suppressed duplicate page-level navigation bars.
+- Added a consistent Four Star Industries header, footer, page number and blue report theme to PDF and Excel report outputs.
+- Existing Heat Treatment and OSP specification data remains preserved in Supabase but is no longer shown in the simplified Part Master interface.
 
 ## Release 4.9.1 — OSP Process Parameter Groups and Heat/OSP Reports
 

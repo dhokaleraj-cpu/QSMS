@@ -26,8 +26,9 @@ def test_part_master_and_layout_have_osp_classification():
     part = (ROOT / "app_pages/part_master.py").read_text()
     layouts = (ROOT / "app_pages/inspection_layouts.py").read_text()
     service = (ROOT / "core/inspection_service.py").read_text()
-    for token in ("PROCESS & INWARD SPECIFICATIONS", "Process Type", "Inward Type", "Process Specification", "part_process_specifications"):
+    for token in ("OSP INSPECTION FOR METLAB", "OSP Process", "part_process_specifications", "Minimum Specification", "Maximum Specification"):
         assert token in part
+    assert "OSP PROCESS & INWARD SPECIFICATIONS" not in part
     assert 'inward_type = c2.selectbox' in layouts
     assert 'eq["inward_type"] = inward_type' in service
 

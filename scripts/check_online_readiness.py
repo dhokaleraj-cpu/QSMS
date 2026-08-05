@@ -51,11 +51,16 @@ required = [
     "supabase/migrations/20260805084500_qsms_osp_parameter_groups_reports_v491.sql",
     "tests/test_v491_osp_parameter_groups_reports.py",
     "docs/RELEASE_4_9_1.md",
+    "app_pages/process_master.py",
+    "core/reporting.py",
+    "supabase/migrations/20260805194500_qsms_simplified_metlab_process_master_print_v492.sql",
+    "tests/test_v492_simplified_metlab_process_master_print.py",
+    "docs/RELEASE_4_9_2.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QSMS 4.9.1 - OSP Parameter Groups and Heat/OSP Reports",
+    "phase": "QSMS 4.9.2 - Simplified MetLAB Requirements, Process Master and Unified Print Theme",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

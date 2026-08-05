@@ -19,12 +19,14 @@ def render() -> None:
     counts = {
         "parts": _count(repo, "parts"), "grades": _count(repo, "material_grades"),
         "employees": _count(repo, "employees"),
-        "references": sum(_count(repo, table) for table in ("parties", "processes", "inspection_stages", "quality_assets")),
+        "processes": _count(repo, "processes"),
+        "references": sum(_count(repo, table) for table in ("parties", "inspection_stages", "quality_assets")),
         "users": _count(repo, "profiles"), "layouts": _count(repo, "inspection_plans"),
     }
     kpi_grid([
         {"label": "Parts", "value": counts["parts"], "foot": "Controlled"},
         {"label": "Material Grades", "value": counts["grades"], "foot": "Chemistry included"},
+        {"label": "Processes", "value": counts["processes"], "foot": "In-house and OSP"},
         {"label": "Employees", "value": counts["employees"], "foot": "Approval authorities"},
         {"label": "Reference Records", "value": counts["references"], "foot": "Reusable values"},
         {"label": "Inspection Layouts", "value": counts["layouts"], "foot": "Part / process / stage"},
@@ -32,6 +34,7 @@ def render() -> None:
     section_bar("MASTER WORKSPACES")
     cards = [
         ("Part Master", counts["parts"], "⚙", "#1469A8", "part-entry", "part-records", "PART_MASTER"),
+        ("Process Master", counts["processes"], "↻", "#0F766E", "process-entry", "process-records", "REFERENCE_MASTERS"),
         ("Material Grade", counts["grades"], "◈", "#7C3AED", "grade-entry", "grade-records", "MATERIAL_GRADE"),
         ("Reference Masters", counts["references"], "▦", "#0369A1", "reference-entry", "reference-records", "REFERENCE_MASTERS"),
         ("Employee Master", counts["employees"], "👥", "#087443", "employee-entry", "employee-records", "EMPLOYEE_MASTER"),
