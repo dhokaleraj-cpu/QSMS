@@ -9,7 +9,7 @@ FINAL_ACCEPTED = {"ACCEPTED", "ACCEPTED_UNDER_RESERVE"}
 
 
 class OSPService:
-    """Live Supabase service for OSP genealogy and two-stage quality release."""
+    """Live Supabase service for OSP genealogy, process groups and quality release."""
 
     def __init__(self) -> None:
         self.repo = Repository()
@@ -28,14 +28,67 @@ class OSPService:
         )
         return [row for row in rows if str(row.get("approval_status") or "APPROVED") == "APPROVED"]
 
-    def specifications(self, part_id: str | None = None) -> list[dict]:
+    def specifications(self, part_id: str | None = None, process_id: str | None = None) -> list[dict]:
         eq: dict[str, Any] = {"inward_type": "OSP_PROCESS", "status": "ACTIVE"}
         if part_id:
             eq["part_id"] = part_id
+        if process_id:
+            eq["process_id"] = process_id
         return self.repo.select("part_process_specifications", eq=eq, order_by="sequence_no", limit=2000)
 
+    def get_specification(self, specification_id: str | None) -> dict | None:
+        return self.repo.get("part_process_specifications", specification_id)
+
+    def parameter_specs(
+        self,
+        process_specification_id: str | None = None,
+        *,
+        part_id: str | None = None,
+        process_id: str | None = None,
+        inspection_type: str | None = None,
+        active_only: bool = False,
+    ) -> list[dict]:
+        eq: dict[str, Any] = {}
+        if process_specification_id:
+            eq["process_specification_id"] = process_specification_id
+        if part_id:
+            eq["part_id"] = part_id
+        if process_id:
+            eq["process_id"] = process_id
+        if inspection_type:
+            eq["inspection_type"] = inspection_type
+        if active_only:
+            eq["status"] = "ACTIVE"
+        return self.repo.select(
+            "part_process_parameter_specifications", eq=eq,
+            order_by="sequence_no", limit=3000,
+        )
+
+    def parameter_options(self, process_id: str, inspection_type: str | None = None) -> list[dict]:
+        eq: dict[str, Any] = {"process_id": process_id}
+        if inspection_type:
+            eq["inspection_type"] = inspection_type
+        return self.repo.select("v_qsms_osp_parameter_options", eq=eq, order_by="parameter_name", limit=2000)
+
+    def generated_layouts(self, process_specification_id: str) -> list[dict]:
+        return self.repo.select(
+            "inspection_plans",
+            eq={"source_process_specification_id": process_specification_id},
+            order_by="layout_type",
+            limit=100,
+        )
+
+    def generate_layouts(self, process_specification_id: str) -> dict:
+        return self.repo.rpc(
+            "qsms_generate_osp_inspection_layouts",
+            {"p_process_specification_id": process_specification_id},
+        ) or {}
+
     def processes(self) -> dict[str, dict]:
-        rows = self.repo.select("processes", eq={"status": "ACTIVE", "process_type": "OUTSOURCED"}, order_by="process_name", limit=2000)
+        rows = self.repo.select(
+            "processes", eq={"status": "ACTIVE", "process_type": "OUTSOURCED"},
+            order_by="process_name", limit=2000,
+        )
         return {str(row["id"]): row for row in rows}
 
     def create_dispatch(self, payload: Mapping[str, Any]) -> dict:
@@ -76,7 +129,11 @@ class OSPService:
         }) or {}
 
     def jobs_for_sample_receipt(self) -> list[dict]:
-        return [row for row in self.register() if float(row.get("quantity_received") or 0) <= 0 and str(row.get("status")) not in {"REJECTED", "CANCELLED"}]
+        return [
+            row for row in self.register()
+            if float(row.get("quantity_received") or 0) <= 0
+            and str(row.get("status")) not in {"REJECTED", "CANCELLED"}
+        ]
 
     def jobs_for_full_receipt(self) -> list[dict]:
         return [

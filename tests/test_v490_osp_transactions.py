@@ -19,7 +19,7 @@ def test_osp_pages_and_navigation_are_registered():
     for route in ("osp-home", "osp-material-out", "osp-sample-receipt", "osp-inward", "osp-dimensional", "osp-metlab", "osp-records"):
         assert route in app
     assert '"OSP": (' in app
-    assert 'st.columns(8' in app
+    assert 'st.columns(9' in app
 
 
 def test_part_master_and_layout_have_osp_classification():

@@ -17,6 +17,7 @@ from app_pages import (
     part_master,
     reference_master,
     records_center,
+    reports,
     rmtc_pages,
     user_access,
     template_center,
@@ -50,6 +51,9 @@ PAGE_ITEMS = (
     ("inspection-home", st.Page(inspection_home.render, title="Inspections", icon=":material/biotech:", url_path="inspection-home")),
     ("records-center", st.Page(records_center.render, title="Records Centre", icon=":material/table_view:", url_path="records-center")),
     ("heat-ledger", st.Page(records_center.render_heat_ledger, title="Heat Steel Ledger", icon=":material/table_view:", url_path="heat-ledger")),
+    ("reports-home", st.Page(reports.render_home, title="Reports", icon=":material/assessment:", url_path="reports-home")),
+    ("heat-transaction-report", st.Page(reports.render_heat_transactions, title="Heat Transaction Report", icon=":material/monitoring:", url_path="heat-transaction-report")),
+    ("osp-balance-report", st.Page(reports.render_osp_balance, title="OSP Heat Balance Report", icon=":material/factory:", url_path="osp-balance-report")),
     ("templates", st.Page(template_center.render, title="Templates", icon=":material/download:", url_path="templates")),
 
     ("part-entry", st.Page(part_master.render_entry, title="Part Master Entry", icon=":material/edit_note:", url_path="part-entry")),
@@ -142,6 +146,12 @@ MODULE_SUBMENUS = {
         ("dimensional-records", "Dimensional Records", ":material/straighten:"),
         ("metlab-records", "MetLAB Records", ":material/science:"),
     ),
+    "Reports": (
+        ("reports-home", "Reports Home", ":material/assessment:"),
+        ("heat-transaction-report", "Heat Global Balance", ":material/monitoring:"),
+        ("osp-balance-report", "OSP Heat Balance", ":material/factory:"),
+        ("heat-ledger", "Heat Steel Ledger", ":material/table_view:"),
+    ),
     "Templates": (
         ("templates", "Download Templates", ":material/download:"),
         ("masters", "Masters", ":material/dataset:"),
@@ -162,6 +172,7 @@ ROUTE_MODULE = {
     "inspection-layout-records": "Inspections", "dimensional-entry": "Inspections",
     "dimensional-records": "Inspections", "metlab-entry": "Inspections", "metlab-records": "Inspections",
     "records-center": "Records", "heat-ledger": "Records",
+    "reports-home": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports",
     "templates": "Templates",
 }
 
@@ -169,6 +180,8 @@ PAGE_TITLE_TO_PATH = {
     "Dashboard": "dashboard", "Masters": "masters", "RMTC Entry": "rmtc-entry",
     "Material Inward": "inward-entry", "OSP Transactions": "osp-home", "Inspections": "inspection-home",
     "Records Centre": "records-center", "Heat Steel Ledger": "heat-ledger",
+    "Reports": "reports-home", "Heat Transaction Report": "heat-transaction-report",
+    "OSP Heat Balance Report": "osp-balance-report",
     "Templates": "templates", "Part Master Entry": "part-entry",
     "Part Master Records": "part-records", "Material Grade Entry": "grade-entry",
     "Material Grade Records": "grade-records", "Reference Master Entry": "reference-entry",
@@ -191,7 +204,7 @@ if render_shell_header(profile, nav.title):
     logout()
 
 with st.container(border=True, key="fsi_top_nav"):
-    cols = st.columns(8, gap="small")
+    cols = st.columns(9, gap="small")
     labels = (
         ("dashboard", "Dashboard", ":material/dashboard:"),
         ("masters", "Masters", ":material/dataset:"),
@@ -200,6 +213,7 @@ with st.container(border=True, key="fsi_top_nav"):
         ("osp-home", "OSP", ":material/factory:"),
         ("inspection-home", "Inspections", ":material/biotech:"),
         ("records-center", "Records", ":material/table_view:"),
+        ("reports-home", "Reports", ":material/assessment:"),
         ("templates", "Templates", ":material/download:"),
     )
     for col, (path, label, icon) in zip(cols, labels):

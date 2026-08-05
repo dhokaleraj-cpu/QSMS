@@ -139,6 +139,66 @@ class InspectionService:
             limit=1000,
         )
 
+    def osp_parameter_characteristics(
+        self,
+        part_id: str,
+        process_id: str,
+        layout_type: str,
+    ) -> tuple[dict | None, list[dict]]:
+        """Return the active Part + OSP Process group and its layout-ready parameters."""
+        groups = self.repo.select(
+            "part_process_specifications",
+            eq={
+                "part_id": part_id,
+                "process_id": process_id,
+                "inward_type": "OSP_PROCESS",
+                "status": "ACTIVE",
+            },
+            order_by="sequence_no",
+            limit=20,
+        )
+        group = groups[0] if groups else None
+        if not group:
+            return None, []
+        rows = self.repo.select(
+            "part_process_parameter_specifications",
+            eq={
+                "process_specification_id": str(group["id"]),
+                "inspection_type": layout_type,
+                "status": "ACTIVE",
+            },
+            order_by="sequence_no",
+            limit=1000,
+        )
+        characteristics = [
+            {
+                "sequence_no": row.get("sequence_no"),
+                "characteristic_no": str(index),
+                "characteristic": row.get("parameter_name"),
+                "specification": row.get("specification_text"),
+                "lower_spec": row.get("minimum_spec"),
+                "upper_spec": row.get("maximum_spec"),
+                "unit": row.get("unit"),
+                "characteristic_type": row.get("characteristic_type") or "VARIABLE",
+                "checking_method": row.get("checking_method"),
+                "checking_aid_text": row.get("checking_method"),
+                "sample_size": row.get("sample_size") or group.get("sample_quantity") or 1,
+                "is_mandatory": bool(row.get("is_mandatory", True)),
+                "allow_na": bool(row.get("allow_na", False)),
+                "report_section": layout_type,
+                "status": row.get("status") or "ACTIVE",
+                "layout_metadata": {
+                    "source": "PART_MASTER_OSP_PROCESS_GROUP",
+                    "process_specification_id": str(group["id"]),
+                    "parameter_specification_id": str(row.get("id") or ""),
+                    "drawing_number": group.get("drawing_number"),
+                    "drawing_revision": group.get("drawing_revision"),
+                },
+            }
+            for index, row in enumerate(rows, start=1)
+        ]
+        return group, characteristics
+
     def save_plan(self, payload: Mapping[str, Any], rows: Sequence[Mapping[str, Any]], plan_id: str | None = None) -> dict:
         plan = self.repo.update("inspection_plans", plan_id, payload) if plan_id else self.repo.insert("inspection_plans", payload)
         pid = str(plan["id"])

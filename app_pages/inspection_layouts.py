@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from core.access import current_permissions
+from core.attachments import AttachmentService
 from core.delete_service import password_delete_panel
 from core.inspection_service import InspectionService
 from core.ui import page_header, section_bar, subpage_navigation, template_download_row
@@ -115,6 +116,38 @@ def render_entry() -> None:
     imported = imported or st.session_state.get("inspection_layout_import")
 
     source_rows = service.plan_characteristics(str((existing or {}).get("id"))) if existing else []
+    osp_group = None
+    if inward_type == "OSP_PROCESS" and process_id:
+        if existing and (existing or {}).get("source_process_specification_id"):
+            osp_group = service.repo.get("part_process_specifications", str((existing or {}).get("source_process_specification_id")))
+        if osp_group is None:
+            osp_group, grouped_rows = service.osp_parameter_characteristics(part_id, process_id, layout_type)
+            if not existing and not imported:
+                source_rows = grouped_rows
+        if osp_group:
+            st.info(
+                f"Part Master OSP group loaded: {osp_group.get('process_specification')} · "
+                f"Drawing {osp_group.get('drawing_number') or 'not numbered'} Rev {osp_group.get('drawing_revision') or '-'}"
+            )
+            drawing_rows = AttachmentService(service.repo).list_active("PART_PROCESS_SPEC", str(osp_group.get("id")))
+            drawing = next((row for row in drawing_rows if str(row.get("document_type")) == "OSP_PROCESS_DRAWING"), None)
+            if drawing:
+                try:
+                    st.download_button(
+                        "Download OSP Process Drawing",
+                        data=AttachmentService(service.repo).download(drawing),
+                        file_name=str(drawing.get("file_name") or "OSP_Process_Drawing"),
+                        mime=str(drawing.get("mime_type") or "application/octet-stream"),
+                        icon=":material/download:", width="stretch",
+                        key=f"layout_process_drawing_{osp_group.get('id')}_{layout_type}",
+                    )
+                except Exception as exc:
+                    st.warning(f"OSP Process drawing is linked but cannot be downloaded: {exc}")
+            if not existing and source_rows:
+                st.success(f"{len(source_rows)} {layout_type.title()} parameter(s) loaded from the selected Part + OSP Process group.")
+        elif not existing:
+            st.warning("No active Part Master OSP Process group and parameters match this Part and Process.")
+
     if imported and not existing:
         source_rows = imported.get("characteristics") or []
         metadata = imported.get("metadata") or {}
@@ -166,7 +199,8 @@ def render_entry() -> None:
                 "layout_name": layout_name.strip(), "report_title": report_title.strip() or None,
                 "format_number": format_no.strip() or None, "format_revision": format_rev.strip() or None,
                 "default_sample_size": int(default_sample),
-                "source_template_name": ((imported or {}).get("metadata") or {}).get("source_template_name") if imported else (existing or {}).get("source_template_name"),
+                "source_template_name": ((imported or {}).get("metadata") or {}).get("source_template_name") if imported else ((existing or {}).get("source_template_name") or ("PART_MASTER_OSP_PROCESS_GROUP" if osp_group else None)),
+                "source_process_specification_id": str(osp_group.get("id")) if osp_group else (existing or {}).get("source_process_specification_id"),
             }
             rows = []
             for _, row in edited.iterrows():

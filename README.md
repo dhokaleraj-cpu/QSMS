@@ -1,6 +1,6 @@
-# QSMS 4.8.6
+# QSMS 4.9.1
 
-Live Supabase-first quality workflow for Four Star Industries.
+Live Supabase-first Quality and OSP workflow for Four Star Industries.
 
 Visible workspaces:
 
@@ -8,10 +8,23 @@ Visible workspaces:
 2. Masters
 3. RMTC
 4. Material Inward
-5. Inspections
-6. Records Centre
-7. Templates
+5. OSP Transactions
+6. Inspections
+7. Records Centre
+8. Templates
+9. Reports
 
+## Release 4.9.1 — OSP Process Parameter Groups and Heat/OSP Reports
+
+- Part Master groups all OSP parameters under the selected Part Number and OSP Process.
+- Every parameter supports minimum, maximum, unit, characteristic type, inspection type and checking method.
+- One optional process drawing can be attached to each Part + OSP Process group.
+- Approved Dimensional and MetLAB layouts are generated directly from the grouped process parameters.
+- Generated layouts retain their source process group and drawing metadata.
+- Added Heat Number Global Balance with full RMTC, Material Inward, OSP Out and OSP Inward transactions.
+- Added Heat/Part-wise OSP outward, inward, quantity at vendor and balance available to send.
+- Reports support Excel download and live Heat/Part filters.
+- Existing QSMS records and attachments remain unchanged.
 
 ## Release 4.8.6 — Supplier RMTC Identity & Heat Steel Ledger
 

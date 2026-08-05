@@ -47,11 +47,15 @@ required = [
     "supabase/migrations/20260803231000_qsms_osp_transactions_v490.sql",
     "tests/test_v490_osp_transactions.py",
     "docs/RELEASE_4_9_0.md",
+    "app_pages/reports.py",
+    "supabase/migrations/20260805084500_qsms_osp_parameter_groups_reports_v491.sql",
+    "tests/test_v491_osp_parameter_groups_reports.py",
+    "docs/RELEASE_4_9_1.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QSMS 4.9.0 - OSP Transactions and Two-Stage Quality Gate",
+    "phase": "QSMS 4.9.1 - OSP Parameter Groups and Heat/OSP Reports",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

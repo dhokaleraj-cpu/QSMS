@@ -33,7 +33,10 @@ required = [
     "app_pages/template_center.py",
     "app_pages/osp_transactions.py",
     "app_pages/osp_inspections.py",
+    "app_pages/reports.py",
     "core/osp_service.py",
+    "supabase/migrations/20260805084500_qsms_osp_parameter_groups_reports_v491.sql",
+    "tests/test_v491_osp_parameter_groups_reports.py",
     "core/inspection_service.py",
     "core/dimensional_import.py",
     "core/calculations.py",
@@ -80,7 +83,8 @@ for item in required:
 app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
-    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "inspection-home", "records-center", "heat-ledger", "templates",
+    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "inspection-home", "records-center", "heat-ledger",
+    "reports-home", "heat-transaction-report", "osp-balance-report", "templates",
     "part-entry", "part-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
     "user-access", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
@@ -153,7 +157,7 @@ if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
 report = {
-    "release": "QSMS 4.9.0 OSP Transactions & Two-Stage Quality Gate",
+    "release": "QSMS 4.9.1 OSP Parameter Groups & Heat/OSP Reports",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -210,6 +214,11 @@ report = {
     "osp_full_inward_gate": True,
     "osp_production_release_gate": True,
     "process_specific_osp_layouts": True,
+    "osp_parameter_groups": True,
+    "osp_process_drawing": True,
+    "generated_osp_layouts": True,
+    "heat_transaction_report": True,
+    "osp_heat_balance_report": True,
     "portal_ready": True,
     "errors": errors,
 }

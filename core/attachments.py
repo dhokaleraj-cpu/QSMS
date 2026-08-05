@@ -16,7 +16,7 @@ from core.ui import section_bar
 
 ALLOWED_ATTACHMENT_TYPES = [
     "pdf", "xlsx", "xls", "docx", "doc", "csv", "txt",
-    "png", "jpg", "jpeg", "zip",
+    "png", "jpg", "jpeg", "dwg", "dxf", "zip",
 ]
 
 
