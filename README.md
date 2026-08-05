@@ -1,4 +1,4 @@
-# QSMS 4.9.2
+# QSMS 4.9.3
 
 Live Supabase-first Quality and OSP workflow for Four Star Industries.
 
@@ -13,6 +13,16 @@ Visible workspaces:
 7. Records Centre
 8. Templates
 9. Reports
+
+## Release 4.9.3 — High-Contrast Export Shipment App Theme
+
+- Corrected the washed-out QSMS shell and menu backgrounds seen on Streamlit Cloud.
+- Added Streamlit 1.60+ compatible keyed-container selectors so the navy-to-blue header always renders.
+- Applied the Export Shipment Monitoring System light-blue application background and Aptos/Segoe UI font stack.
+- Increased contrast for inactive and active module buttons, module submenus, user panel and app launcher.
+- Prevented Streamlit stale-rerun opacity from making menus and header text unreadable.
+- Kept the single main menu and single active-module submenu introduced in v4.9.2.
+- No Supabase table, user, attachment, transaction or existing Part Master data is deleted or reset.
 
 ## Release 4.9.2 — Simplified MetLAB Requirements, Process Master and Unified Print Theme
 

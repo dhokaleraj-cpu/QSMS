@@ -272,6 +272,88 @@ def apply_global_style() -> None:
     .fsi-template-strip{background:#fff;border:1px solid var(--erp-border);border-radius:9px;padding:.5rem .6rem;margin:.15rem 0 .6rem;}
     .fsi-chip{display:inline-block;padding:3px 7px;border-radius:999px;font-size:9px;font-weight:850;}
     .fsi-footer{text-align:center;font-size:9px;color:#75879A;margin-top:.6rem;padding-top:.35rem;border-top:1px solid #D6E0E8;}
+
+    /* QSMS 4.9.3 — high-contrast Export Shipment shell compatibility.
+       Streamlit 1.60+ can insert an extra wrapper between a keyed container and
+       stVerticalBlockBorderWrapper. Descendant selectors keep the blue shell,
+       menu panels and fonts visible on every rerun and browser size. */
+    html,body,.stApp,div[data-testid="stAppViewContainer"],section.main{
+      background:linear-gradient(180deg,#E9F2FA 0%,#F5F9FC 46%,#EDF4FA 100%)!important;
+      color:#14283A!important;-webkit-font-smoothing:antialiased!important;text-rendering:optimizeLegibility!important;
+    }
+    .stApp [data-stale="true"]{opacity:1!important;}
+
+    .st-key-fsi_shell,
+    [class*="st-key-fsi_shell"]{
+      background:linear-gradient(110deg,#073462 0%,#073E78 46%,#0A68AC 100%)!important;
+      border:1px solid #6EA9D5!important;border-radius:14px!important;
+      box-shadow:0 6px 18px rgba(3,35,70,.24)!important;overflow:visible!important;
+    }
+    .st-key-fsi_shell div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_shell"] div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:transparent!important;border:0!important;border-radius:14px!important;
+      padding:.72rem .85rem!important;box-shadow:none!important;overflow:visible!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-company-name,
+    [class*="st-key-fsi_shell"] .fsi-header-title,
+    [class*="st-key-fsi_shell"] .fsi-user-name{color:#FFFFFF!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.20)!important;}
+    [class*="st-key-fsi_shell"] .fsi-company-sub,
+    [class*="st-key-fsi_shell"] .fsi-header-page,
+    [class*="st-key-fsi_shell"] .fsi-user-meta{color:#DCEEFE!important;opacity:1!important;}
+    [class*="st-key-fsi_shell"] .fsi-user{background:rgba(255,255,255,.15)!important;border-color:rgba(255,255,255,.34)!important;}
+    [class*="st-key-fsi_shell"] .stButton>button,
+    [class*="st-key-fsi_shell"] button[data-testid="stBaseButton-secondary"]{
+      background:rgba(255,255,255,.16)!important;border-color:rgba(255,255,255,.48)!important;color:#FFFFFF!important;
+    }
+    [class*="st-key-fsi_shell"] .stButton>button *,
+    [class*="st-key-fsi_shell"] button[data-testid="stBaseButton-secondary"] *{color:#FFFFFF!important;fill:#FFFFFF!important;}
+
+    .st-key-fsi_top_nav,
+    [class*="st-key-fsi_top_nav"]{
+      background:#FFFFFF!important;border:1px solid #BED0DF!important;border-radius:12px!important;
+      box-shadow:0 5px 15px rgba(11,45,77,.12)!important;overflow:visible!important;
+    }
+    .st-key-fsi_top_nav div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_top_nav"] div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:transparent!important;border:0!important;border-radius:12px!important;
+      padding:.5rem .65rem .65rem!important;box-shadow:none!important;overflow:visible!important;
+    }
+    .fsi-top-menu-title{color:#083D70!important;font-family:var(--erp-font)!important;font-weight:900!important;opacity:1!important;}
+    [class*="st-key-menu_"] div[data-testid="stPageLink"] a,
+    [class*="st-key-menu_"] .stButton>button{
+      background:#F3F8FC!important;border-color:#D1E0EB!important;color:#173550!important;
+      font-family:var(--erp-font)!important;font-weight:800!important;opacity:1!important;
+    }
+    [class*="st-key-menu_"] div[data-testid="stPageLink"] a *,
+    [class*="st-key-menu_"] .stButton>button *{color:inherit!important;fill:currentColor!important;opacity:1!important;}
+    [class*="st-key-menu_"] div[data-testid="stPageLink"] a:hover,
+    [class*="st-key-menu_"] .stButton>button:hover{background:#E4F1FA!important;border-color:#8FB8D6!important;color:#083F70!important;}
+    [class*="st-key-menu_active_"] div[data-testid="stPageLink"] a,
+    [class*="st-key-menu_active_"] .stButton>button{
+      background:linear-gradient(100deg,#07508A 0%,#0B75BD 100%)!important;
+      border-color:#064879!important;color:#FFFFFF!important;box-shadow:0 4px 10px rgba(7,76,128,.25)!important;font-weight:900!important;
+    }
+    [class*="st-key-menu_active_"] div[data-testid="stPageLink"] a *,
+    [class*="st-key-menu_active_"] .stButton>button *{color:#FFFFFF!important;fill:#FFFFFF!important;}
+
+    [class*="st-key-fsi_module_subnav_"]{
+      background:#FFFFFF!important;border:1px solid #C5D6E3!important;border-radius:10px!important;
+      box-shadow:0 3px 10px rgba(11,45,77,.08)!important;overflow:visible!important;
+    }
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:transparent!important;border:0!important;border-radius:10px!important;
+      padding:.4rem .52rem!important;box-shadow:none!important;overflow:visible!important;
+    }
+    .fsi-module-subnav-title{color:#0A4778!important;font-weight:900!important;opacity:1!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a{
+      background:#F2F7FB!important;border-color:#C9D9E5!important;color:#173550!important;
+      font-family:var(--erp-font)!important;font-weight:800!important;opacity:1!important;
+    }
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a *{color:inherit!important;fill:currentColor!important;opacity:1!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a[aria-current="page"]{
+      background:linear-gradient(100deg,#07508A,#0B75BD)!important;border-color:#064879!important;color:#FFFFFF!important;
+    }
+
     @media(max-width:1100px){.block-container{padding:.5rem .55rem 1rem!important}.fsi-logo{width:108px}.fsi-app-title{font-size:17px}.fsi-app-sub{display:none}.fsi-status-grid,.fsi-kpi-grid{grid-template-columns:repeat(3,1fr)}[class*="st-key-menu_"] div[data-testid="stPageLink"] a{font-size:11px!important;padding:.32rem .25rem!important;}}
     @media(max-width:760px){.block-container{padding:.4rem .35rem .8rem!important}.fsi-page-title{font-size:18px}.fsi-status-grid,.fsi-kpi-grid{grid-template-columns:repeat(2,1fr)}.fsi-user{display:none}.st-key-fsi_top_nav div[data-testid="stHorizontalBlock"]{flex-wrap:wrap!important;}[class*="st-key-menu_"] div[data-testid="stPageLink"] a{min-height:38px!important;}}
     </style>
