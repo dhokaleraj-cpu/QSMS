@@ -1,4 +1,4 @@
-# QSMS 4.9.3
+# QSMS 4.9.4
 
 Live Supabase-first Quality and OSP workflow for Four Star Industries.
 
@@ -13,6 +13,16 @@ Visible workspaces:
 7. Records Centre
 8. Templates
 9. Reports
+
+## Release 4.9.4 — Workflow Spacing and RMTC Record PDF
+
+- Increased application, title-card, KPI-card and submenu spacing to stop labels and workflow content from overlapping.
+- Rebuilt workflow progress charts as spacious colour-separated cards with current, completed, pending, hold and rejected state symbols.
+- Applied the workflow-card treatment to RMTC and OSP progress visualizations and removed the repeated OSP workflow navigation row.
+- Added a controlled **RMTC Record PDF** from the RMTC Records page.
+- The RMTC PDF includes RMTC header/traceability fields, covered Part Worksheets, Chemical Composition, Jominy Results, DI/Hardenability, Mechanical Properties, Heat Treatment/Other Requirements, validation status and final decision.
+- PDF sections use bordered table grids, repeated Four Star/QSMS header and footer, page numbering and status highlighting.
+- Existing Supabase masters, RMTC records, transactions, attachments and inspection data remain unchanged.
 
 ## Release 4.9.3 — High-Contrast Export Shipment App Theme
 

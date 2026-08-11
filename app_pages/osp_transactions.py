@@ -7,7 +7,7 @@ import streamlit as st
 
 from core.access import current_permissions
 from core.osp_service import OSPService
-from core.ui import kpi_grid, page_header, section_bar, style_status_dataframe, subpage_navigation
+from core.ui import kpi_grid, page_header, section_bar, style_status_dataframe, subpage_navigation, workflow_progress
 
 
 def _label(row: dict) -> str:
@@ -35,17 +35,14 @@ def render_home() -> None:
         {"label": "Rejected", "value": sum(str(r.get("status")) == "REJECTED" for r in rows), "foot": "OSP quality rejected", "color": "#B91C1C", "background": "#FEF2F2"},
     ])
     section_bar("OSP WORKFLOW")
-    cols = st.columns(6, gap="small")
-    links = [
-        ("osp-material-out", "Material Out", ":material/output:"),
-        ("osp-sample-receipt", "Sample Receipt", ":material/experiment:"),
-        ("osp-dimensional", "OSP Dimensional", ":material/straighten:"),
-        ("osp-metlab", "OSP MetLAB", ":material/science:"),
-        ("osp-inward", "OSP Inward", ":material/input:"),
-        ("osp-records", "OSP Records", ":material/table_view:"),
-    ]
-    for col, (path, label, icon) in zip(cols, links):
-        with col: st.page_link(st.session_state["_qsms_pages"][path], label=label, icon=icon, width="stretch")
+    workflow_progress([
+        {"label": "Material Out", "state": "current", "detail": "Dispatch to approved OSP vendor"},
+        {"label": "Sample Receipt", "state": "pending", "detail": "Receive pre-inward sample"},
+        {"label": "OSP Dimensional", "state": "pending", "detail": "Validate dimensional sample"},
+        {"label": "OSP MetLAB", "state": "pending", "detail": "Validate metallurgical sample"},
+        {"label": "OSP Inward", "state": "pending", "detail": "Receive full accepted batch"},
+        {"label": "Production Release", "state": "pending", "detail": "Release after both inspections"},
+    ])
     _render_register(rows, 430)
 
 

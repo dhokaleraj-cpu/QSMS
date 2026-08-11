@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_v487_version_release_and_attachment_migration():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.8.7", "4.8.8", "4.9.0", "4.9.1", "4.9.2", "4.9.3"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.8.7", "4.8.8", "4.9.0", "4.9.1", "4.9.2", "4.9.3", "4.9.4"}
     assert (ROOT / "docs/RELEASE_4_8_7.md").exists()
     sql = (ROOT / "supabase/migrations/20260803090000_qsms_optional_attachments_v487.sql").read_text()
     for token in [

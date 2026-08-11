@@ -14,6 +14,7 @@ from core.delete_service import password_delete_panel
 from core.calculations import band_status, calculate_di, calculate_jominy_curve
 from core.permissions import normalized_role
 from core.rmtc_service import RMTCService
+from core.reporting import rmtc_record_pdf_bytes
 from core.steel_balance import remaining_planned_steel
 from core.ui import (DISPOSITION_EDITOR_OPTIONS, disposition_cards, disposition_label, normalize_disposition, page_header, section_bar, style_status_dataframe, subpage_navigation, template_download_row, workflow_progress)
 
@@ -434,6 +435,16 @@ def render_records()->None:
             if st.button('Heat Steel Ledger',icon=':material/table_view:',width='stretch',key=f'heat_ledger_{selected}'):
                 st.session_state['heat_ledger_filter']=str(selected_row.get('heat_number') or '')
                 st.switch_page(st.session_state['_qsms_pages']['heat-ledger'])
+        try:
+            pdf_payload=svc.report_payload(selected)
+            pdf_bytes=rmtc_record_pdf_bytes(pdf_payload)
+            pdf_name=re.sub(r'[^A-Za-z0-9_.-]+','_',str(selected_row.get('rmtc_number') or 'RMTC_Record')).strip('_')+'.pdf'
+            st.download_button(
+                'Download RMTC Record PDF',data=pdf_bytes,file_name=pdf_name,mime='application/pdf',
+                icon=':material/picture_as_pdf:',width='content',key=f'rmtc_pdf_{selected}',
+            )
+        except Exception as exc:
+            st.warning(f'RMTC PDF could not be prepared: {exc}')
         if password_delete_panel(
             repo=svc.repo,table='rmtc_approvals',rows=[selected_row],
             labeler=lambda r:f"{r.get('rmtc_number')} · {r.get('heat_number')}",

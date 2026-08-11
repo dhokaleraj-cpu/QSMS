@@ -147,6 +147,41 @@ class RMTCService:
     def update_header(self, rmtc_id, payload, part_ids):
         return self.save_header(payload, part_ids, rmtc_id)
 
+
+    def report_payload(self, rmtc_id: str) -> dict:
+        """Return a fully resolved RMTC record bundle for controlled PDF printing."""
+        record = self.get(rmtc_id) or {}
+        if not record:
+            raise ValueError('RMTC record not found.')
+        details = self.details(rmtc_id)
+        part_ids = [str(row.get('part_id')) for row in details['parts'] if row.get('part_id')]
+        part_master = self.repo.select('parts', in_={'id': part_ids}, limit=max(len(part_ids), 1) + 10) if part_ids else []
+        parts = {str(row.get('id')): row for row in part_master}
+        grade_ids = [str(row.get('material_grade_id')) for row in part_master if row.get('material_grade_id')]
+        grade_rows = self.repo.select('material_grades', in_={'id': grade_ids}, limit=max(len(grade_ids), 1) + 10) if grade_ids else []
+        grades = {str(row.get('id')): row for row in grade_rows}
+        party_ids = [str(value) for value in (record.get('supplier_id'), record.get('steel_mill_id')) if value]
+        party_rows = self.repo.select('parties', in_={'id': party_ids}, limit=20) if party_ids else []
+        parties = {str(row.get('id')): row for row in party_rows}
+        employee_ids = [str(value) for value in (
+            record.get('prepared_by_employee_id'), record.get('validated_by_employee_id'),
+            record.get('approved_by_employee_id'), record.get('decision_by_employee_id'),
+        ) if value]
+        employee_rows = self.repo.select('employees', in_={'id': employee_ids}, limit=20) if employee_ids else []
+        employees = {str(row.get('id')): row for row in employee_rows}
+        return {
+            'record': record,
+            'part_approvals': details['parts'],
+            'parts': parts,
+            'material_grades': grades,
+            'chemistry': details['chemistry'],
+            'jominy': details['jominy'],
+            'requirements': details['requirements'],
+            'supplier': parties.get(str(record.get('supplier_id'))) or {},
+            'steel_mill': parties.get(str(record.get('steel_mill_id'))) or {},
+            'employees': employees,
+        }
+
     def decision_revisions(self, rmtc_id):
         return self.repo.select('rmtc_decision_revisions', eq={'rmtc_approval_id': rmtc_id}, order_by='reopened_at', desc=True, limit=100)
 
