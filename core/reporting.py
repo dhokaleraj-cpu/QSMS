@@ -13,7 +13,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from core.config import get_settings
 
@@ -48,48 +48,86 @@ class _PageNumberCanvas(canvas.Canvas):
             super().showPage()
         super().save()
 
-    def _draw_header_footer(self, page_count: int) -> None:
-        width, height = landscape(A4)
-        settings = get_settings()
+    @staticmethod
+    def _split_report_title(title: str) -> tuple[str, str]:
+        title = str(title or '').strip()
+        if ' - ' in title:
+            left, right = title.split(' - ', 1)
+            return left.strip(), right.strip()
+        if len(title) <= 34:
+            return title, ''
+        split_at = title.rfind(' ', 0, 34)
+        if split_at < 18:
+            split_at = 34
+        return title[:split_at].strip(), title[split_at:].strip()
 
-        # Header theme follows the approved Export Shipment screen style.
+    def _draw_header_footer(self, page_count: int) -> None:
+        width, height = self._pagesize
+        settings = get_settings()
+        portrait_page = height >= width
+        edge = 8 * mm if portrait_page else 10 * mm
+        header_height = 20 * mm if portrait_page else 19 * mm
+        header_y = height - (27 * mm if portrait_page else 29 * mm)
+        header_width = width - (2 * edge)
+        right_panel_width = 48 * mm if portrait_page else 63 * mm
+
+        # Header edges intentionally use the same margins as the RMTC report grids.
         self.setFillColor(NAVY)
-        self.roundRect(10 * mm, height - 29 * mm, width - 20 * mm, 19 * mm, 4 * mm, fill=1, stroke=0)
+        self.roundRect(edge, header_y, header_width, header_height, 3.5 * mm, fill=1, stroke=0)
         self.setFillColor(BLUE)
-        self.roundRect(width - 73 * mm, height - 29 * mm, 63 * mm, 19 * mm, 4 * mm, fill=1, stroke=0)
+        self.roundRect(width - edge - right_panel_width, header_y, right_panel_width, header_height, 3.5 * mm, fill=1, stroke=0)
 
         logo = _logo_path()
+        logo_box_w = 22 * mm if portrait_page else 24 * mm
+        logo_box_h = 14 * mm
+        logo_x = edge + 4 * mm
+        logo_y = header_y + 3 * mm
         if logo.exists():
             self.setFillColor(WHITE)
-            self.roundRect(14 * mm, height - 26.5 * mm, 24 * mm, 14 * mm, 2.2 * mm, fill=1, stroke=0)
+            self.roundRect(logo_x, logo_y, logo_box_w, logo_box_h, 2.0 * mm, fill=1, stroke=0)
             try:
-                self.drawImage(str(logo), 16 * mm, height - 24.8 * mm, 20 * mm, 10.5 * mm, preserveAspectRatio=True, mask="auto")
+                self.drawImage(
+                    str(logo), logo_x + 1.5 * mm, logo_y + 1.5 * mm,
+                    logo_box_w - 3 * mm, logo_box_h - 3 * mm,
+                    preserveAspectRatio=True, mask='auto',
+                )
             except Exception:
                 pass
 
+        brand_x = logo_x + logo_box_w + 4 * mm
         self.setFillColor(WHITE)
-        self.setFont("Helvetica-Bold", 10)
-        self.drawString(41 * mm, height - 17.2 * mm, "FOUR STAR INDUSTRIES")
-        self.setFont("Helvetica", 6.8)
-        self.drawString(41 * mm, height - 22.0 * mm, "QUALITY SYSTEM MONITORING SYSTEM")
+        self.setFont('Helvetica-Bold', 8.4 if portrait_page else 10)
+        self.drawString(brand_x, header_y + 12.0 * mm, 'FOUR STAR INDUSTRIES')
+        self.setFont('Helvetica', 5.8 if portrait_page else 6.8)
+        self.drawString(brand_x, header_y + 7.4 * mm, 'QUALITY SYSTEM MONITORING SYSTEM')
 
-        self.setFont("Helvetica-Bold", 13)
-        self.drawCentredString(width / 2, height - 18.0 * mm, self._report_title[:72])
+        title_line_1, title_line_2 = self._split_report_title(self._report_title)
+        center_left = edge + (72 * mm if portrait_page else 78 * mm)
+        center_right = width - edge - right_panel_width - 3 * mm
+        center_x = (center_left + center_right) / 2
+        self.setFont('Helvetica-Bold', 8.4 if portrait_page else 13)
+        self.drawCentredString(center_x, header_y + (12.4 * mm if title_line_2 else 10.5 * mm), title_line_1[:48])
+        if title_line_2:
+            self.setFont('Helvetica-Bold', 7.2 if portrait_page else 9.5)
+            self.drawCentredString(center_x, header_y + 7.4 * mm, title_line_2[:52])
 
-        self.setFont("Helvetica-Bold", 7)
-        self.drawRightString(width - 15 * mm, height - 16.0 * mm, f"Plant: {settings.plant_code}")
-        self.setFont("Helvetica", 6.5)
-        self.drawRightString(width - 15 * mm, height - 20.5 * mm, datetime.now().strftime("Printed: %d-%m-%Y %I:%M %p"))
-        self.drawRightString(width - 15 * mm, height - 24.5 * mm, f"QSMS {settings.version}")
+        self.setFont('Helvetica-Bold', 6.0 if portrait_page else 7)
+        self.drawRightString(width - edge - 4 * mm, header_y + 13.2 * mm, f'Plant: {settings.plant_code}')
+        self.setFont('Helvetica', 5.3 if portrait_page else 6.5)
+        self.drawRightString(width - edge - 4 * mm, header_y + 8.8 * mm, datetime.now().strftime('Printed: %d-%m-%Y %I:%M %p'))
+        self.drawRightString(width - edge - 4 * mm, header_y + 4.8 * mm, f'QSMS {settings.version}')
 
-        # Footer with page count on every page.
+        # Footer line exactly aligns with the report/header edges.
+        footer_y = 9.2 * mm
         self.setStrokeColor(BORDER)
-        self.line(10 * mm, 10.5 * mm, width - 10 * mm, 10.5 * mm)
+        self.setLineWidth(0.45)
+        self.line(edge, footer_y, width - edge, footer_y)
         self.setFillColor(MUTED)
-        self.setFont("Helvetica", 6.5)
-        self.drawString(11 * mm, 6.7 * mm, "FOUR STAR INDUSTRIES · CONTROLLED QSMS REPORT")
-        self.drawCentredString(width / 2, 6.7 * mm, "Generated from the live Supabase quality database")
-        self.drawRightString(width - 11 * mm, 6.7 * mm, f"Page {self._pageNumber} of {page_count}")
+        self.setFont('Helvetica', 5.4 if portrait_page else 6.5)
+        self.drawString(edge + 1 * mm, 5.6 * mm, 'FOUR STAR INDUSTRIES - CONTROLLED QSMS REPORT')
+        if not portrait_page:
+            self.drawCentredString(width / 2, 5.6 * mm, 'Generated from the live Supabase quality database')
+        self.drawRightString(width - edge - 1 * mm, 5.6 * mm, f'Page {self._pageNumber} of {page_count}')
 
 
 def _paragraph(value: object, style: ParagraphStyle) -> Paragraph:
@@ -261,16 +299,22 @@ def _rmtc_grid(
     for row_index, row in enumerate(rows):
         style = header_style if row_index < header_rows else cell_style
         prepared.append([_paragraph(value, style) for value in row])
-    table = Table(prepared, colWidths=widths, repeatRows=header_rows, hAlign="LEFT")
+    table = Table(
+        prepared,
+        colWidths=widths,
+        repeatRows=header_rows,
+        hAlign="LEFT",
+        splitByRow=1,
+    )
     commands = [
         ("BACKGROUND", (0, 0), (-1, header_rows - 1), NAVY),
         ("TEXTCOLOR", (0, 0), (-1, header_rows - 1), WHITE),
-        ("GRID", (0, 0), (-1, -1), 0.45, colors.HexColor("#6E8294")),
+        ("GRID", (0, 0), (-1, -1), 0.42, colors.HexColor("#6E8294")),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3.0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3.0),
-        ("TOPPADDING", (0, 0), (-1, -1), 3.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2.0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2.0),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.0),
         ("ROWBACKGROUNDS", (0, header_rows), (-1, -1), [WHITE, LIGHT_BLUE]),
     ]
     for row_index, row in enumerate(rows[header_rows:], start=header_rows):
@@ -281,8 +325,52 @@ def _rmtc_grid(
     return table
 
 
+def _rmtc_section_bar(title: object, width: float, style: ParagraphStyle, *, light: bool = False) -> Table:
+    table = Table([[_paragraph(title, style)]], colWidths=[width], hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT_BLUE if light else NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, -1), NAVY if light else WHITE),
+        ("BOX", (0, 0), (-1, -1), 0.42, colors.HexColor("#6E8294")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3.0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3.0),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.6 if light else 3.0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.6 if light else 3.0),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    return table
+
+
+def _rmtc_labeled_grid(
+    rows: list[list[object]],
+    widths: list[float],
+    label_style: ParagraphStyle,
+    cell_style: ParagraphStyle,
+    *,
+    label_columns: tuple[int, ...] = (0, 2),
+) -> Table:
+    prepared = []
+    for row in rows:
+        cells = []
+        for index, value in enumerate(row):
+            cells.append(_paragraph(_display_value(value), label_style if index in label_columns else cell_style))
+        prepared.append(cells)
+    table = Table(prepared, colWidths=widths, hAlign="LEFT", splitByRow=1)
+    commands = [
+        ("GRID", (0, 0), (-1, -1), 0.42, colors.HexColor("#8295A6")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2.2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2.2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.2),
+    ]
+    for label_col in label_columns:
+        commands.append(("BACKGROUND", (label_col, 0), (label_col, -1), colors.HexColor("#EDF4FA")))
+    table.setStyle(TableStyle(commands))
+    return table
+
+
 def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
-    """Create a controlled RMTC Record PDF with header, worksheets and validation grids."""
+    """Create a compact controlled RMTC Record PDF in A4 portrait orientation."""
     record = dict(payload.get("record") or {})
     part_approvals = [dict(row) for row in (payload.get("part_approvals") or [])]
     parts = dict(payload.get("parts") or {})
@@ -296,34 +384,36 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
 
     buffer = BytesIO()
     title = f"RMTC RECORD - {record.get('rmtc_number') or 'QUALITY RECORD'}"
+    page_width, page_height = A4
+    edge = 8 * mm
+    content_width = page_width - (2 * edge)
     doc = SimpleDocTemplate(
         buffer,
-        pagesize=landscape(A4),
-        leftMargin=10 * mm,
-        rightMargin=10 * mm,
-        topMargin=34 * mm,
-        bottomMargin=14 * mm,
+        pagesize=A4,
+        leftMargin=edge,
+        rightMargin=edge,
+        topMargin=30 * mm,
+        bottomMargin=12 * mm,
         title=title,
         author="Four Star Industries QSMS",
+        allowSplitting=1,
     )
     styles = getSampleStyleSheet()
-    section_style = ParagraphStyle(
-        "RmtcSection", parent=styles["Heading2"], fontName="Helvetica-Bold",
-        fontSize=9, leading=11, textColor=WHITE, backColor=NAVY,
-        leftIndent=4, rightIndent=4, spaceBefore=4, spaceAfter=5,
-        borderPadding=(4, 5, 4, 5),
+    section_text_style = ParagraphStyle(
+        "RmtcSectionText", parent=styles["Normal"], fontName="Helvetica-Bold",
+        fontSize=7.1, leading=8.3, textColor=WHITE,
     )
-    sub_style = ParagraphStyle(
-        "RmtcSub", parent=styles["Heading3"], fontName="Helvetica-Bold",
-        fontSize=8, leading=10, textColor=NAVY, spaceBefore=4, spaceAfter=4, keepWithNext=1,
+    sub_text_style = ParagraphStyle(
+        "RmtcSubText", parent=styles["Normal"], fontName="Helvetica-Bold",
+        fontSize=6.3, leading=7.4, textColor=NAVY,
     )
     header_style = ParagraphStyle(
         "RmtcHeaderCell", parent=styles["Normal"], fontName="Helvetica-Bold",
-        fontSize=6.2, leading=7.5, textColor=WHITE, alignment=TA_CENTER,
+        fontSize=4.9, leading=5.8, textColor=WHITE, alignment=TA_CENTER,
     )
     cell_style = ParagraphStyle(
         "RmtcCell", parent=styles["Normal"], fontName="Helvetica",
-        fontSize=6.1, leading=7.4, textColor=TEXT, alignment=TA_LEFT,
+        fontSize=5.0, leading=5.9, textColor=TEXT, alignment=TA_LEFT,
     )
     label_style = ParagraphStyle(
         "RmtcLabel", parent=cell_style, fontName="Helvetica-Bold", textColor=NAVY,
@@ -331,56 +421,40 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     center_style = ParagraphStyle(
         "RmtcCenter", parent=cell_style, alignment=TA_CENTER,
     )
+    small_style = ParagraphStyle(
+        "RmtcSmall", parent=cell_style, fontSize=4.6, leading=5.4,
+    )
 
-    width = landscape(A4)[0] - 20 * mm
     story: list[object] = []
 
-    story.append(Paragraph("RMTC HEADER & TRACEABILITY", section_style))
+    # Header / traceability. The 4-column grid is exactly the same width as the page header.
+    story.append(_rmtc_section_bar("RMTC HEADER & TRACEABILITY", content_width, section_text_style))
     header_pairs = [
         ("QSMS RMTC Number", record.get("rmtc_number"), "Entry Date", record.get("entry_date")),
         ("Supplier RMTC Number", record.get("certificate_reference"), "RMTC Date", record.get("certificate_date")),
         ("Supplier", supplier.get("party_name"), "Steel Mill", steel_mill.get("party_name")),
         ("Heat Number", record.get("heat_number"), "Internal Heat Code", record.get("heat_code")),
-        ("Global Heat Steel Quantity (kg)", record.get("certificate_quantity"), "RM Section", record.get("rm_section")),
+        ("Global Heat Steel Qty kg", record.get("certificate_quantity"), "RM Section", record.get("rm_section")),
         ("Forging Route / Root", record.get("forging_route"), "Prepared By", _employee_name(employees.get(str(record.get("prepared_by_employee_id"))))),
         ("Workflow Status", record.get("status"), "Validation Result", record.get("validation_result")),
         ("Final Disposition", record.get("disposition"), "Decision Date", record.get("decision_at")),
     ]
-    hp_data: list[list[Paragraph]] = []
-    for left_label, left_value, right_label, right_value in header_pairs:
-        hp_data.append([
-            _paragraph(left_label, label_style), _paragraph(_display_value(left_value), cell_style),
-            _paragraph(right_label, label_style), _paragraph(_display_value(right_value), cell_style),
-        ])
-    header_table = Table(hp_data, colWidths=[38 * mm, 92 * mm, 38 * mm, width - 168 * mm])
-    header_table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.45, colors.HexColor("#8295A6")),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EDF4FA")),
-        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#EDF4FA")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    story.append(header_table)
+    story.append(_rmtc_labeled_grid(
+        [list(row) for row in header_pairs],
+        [29 * mm, 68 * mm, 29 * mm, 68 * mm],
+        label_style, cell_style,
+    ))
     if str(record.get("remarks") or "").strip():
-        story.append(Spacer(1, 2 * mm))
-        remarks = Table([
-            [_paragraph("RMTC Remarks", label_style), _paragraph(record.get("remarks"), cell_style)]
-        ], colWidths=[38 * mm, width - 38 * mm])
-        remarks.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.45, colors.HexColor("#8295A6")),
-            ("BACKGROUND", (0, 0), (0, 0), colors.HexColor("#EDF4FA")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        story.append(remarks)
+        story.append(_rmtc_labeled_grid(
+            [["RMTC Remarks", record.get("remarks")]],
+            [29 * mm, content_width - 29 * mm], label_style, cell_style,
+            label_columns=(0,),
+        ))
 
-    story.append(Spacer(1, 4 * mm))
-    story.append(Paragraph("COVERED PART WORKSHEET REGISTER", section_style))
+    story.append(Spacer(1, 1.6 * mm))
+    story.append(_rmtc_section_bar("COVERED PART WORKSHEET REGISTER", content_width, section_text_style))
     part_summary = [[
-        "Part Number", "Part Description", "Material Grade", "Planned Qty pcs", "Input Wt kg",
-        "Planned Steel kg", "Worksheet", "Automated Validation", "Final Decision",
+        "Part No.", "Description", "Grade", "Planned Qty", "Input kg", "Steel kg", "Worksheet", "Auto Validation", "Final Decision",
     ]]
     for approval in part_approvals:
         part = parts.get(str(approval.get("part_id"))) or {}
@@ -395,65 +469,54 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         part_summary.append(["-", "No covered part worksheets found", "", "", "", "", "Pending", "NOT_EVALUATED", "PENDING"])
     story.append(_rmtc_grid(
         part_summary,
-        [22*mm, 42*mm, 23*mm, 23*mm, 20*mm, 24*mm, 21*mm, 29*mm, 27*mm],
-        header_style, cell_style, status_columns=(6, 7, 8),
+        [18*mm, 30*mm, 18*mm, 18*mm, 17*mm, 19*mm, 22*mm, 25*mm, 27*mm],
+        header_style, small_style, status_columns=(6, 7, 8),
     ))
 
     mechanical = record.get("mechanical_results") or {}
-    story.append(Spacer(1, 4 * mm))
-    story.append(Paragraph("SUPPLIER RMTC MECHANICAL PROPERTIES", section_style))
+    story.append(Spacer(1, 1.6 * mm))
+    story.append(_rmtc_section_bar("SUPPLIER RMTC MECHANICAL PROPERTIES", content_width, section_text_style))
     mech_rows = [["Property", "Actual / Result", "Source"]]
     if isinstance(mechanical, Mapping) and mechanical:
         for key, value in mechanical.items():
             mech_rows.append([str(key).replace("_", " ").title(), value, "Supplier RMTC"])
     else:
         mech_rows.append(["Mechanical Properties", "No dedicated mechanical property values recorded", "Supplier RMTC"])
-    story.append(_rmtc_grid(mech_rows, [72*mm, 105*mm, width - 177*mm], header_style, cell_style))
+    story.append(_rmtc_grid(mech_rows, [55*mm, 94*mm, 45*mm], header_style, cell_style))
 
+    # Worksheets flow continuously. No forced page break is used, reducing total pages.
     for worksheet_index, approval in enumerate(part_approvals, start=1):
-        story.append(PageBreak())
+        story.append(CondPageBreak(42 * mm))
         part_id = str(approval.get("part_id") or "")
         part = parts.get(part_id) or {}
         grade = grades.get(str(part.get("material_grade_id"))) or {}
         part_title = f"PART WORKSHEET {worksheet_index} - {part.get('part_number') or '-'} - {part.get('part_name') or ''}"
-        story.append(Paragraph(part_title, section_style))
+        story.append(_rmtc_section_bar(part_title, content_width, section_text_style))
 
         identity_rows = [
             ["Part Number", part.get("part_number"), "Part Description", part.get("part_name"), "Material Grade", grade.get("grade_code") or grade.get("grade_name")],
             ["Heat Number", record.get("heat_number"), "Heat Code", record.get("heat_code"), "Worksheet Status", "Completed" if approval.get("worksheet_completed_at") else "Pending"],
             ["Planned Production Qty pcs", approval.get("planned_production_quantity_pcs"), "Input Weight kg", approval.get("input_weight_kg"), "Planned Steel kg", approval.get("planned_steel_quantity_kg")],
         ]
-        identity_prepared = []
-        for row in identity_rows:
-            identity_prepared.append([
-                _paragraph(row[0], label_style), _paragraph(_display_value(row[1]), cell_style),
-                _paragraph(row[2], label_style), _paragraph(_display_value(row[3]), cell_style),
-                _paragraph(row[4], label_style), _paragraph(_display_value(row[5]), cell_style),
-            ])
-        ident = Table(identity_prepared, colWidths=[30*mm, 52*mm, 34*mm, 65*mm, 30*mm, width - 211*mm])
-        ident.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.45, colors.HexColor("#8295A6")),
-            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EDF4FA")),
-            ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#EDF4FA")),
-            ("BACKGROUND", (4, 0), (4, -1), colors.HexColor("#EDF4FA")),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 3.2), ("RIGHTPADDING", (0, 0), (-1, -1), 3.2),
-            ("TOPPADDING", (0, 0), (-1, -1), 3.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
-        ]))
-        story.append(ident)
+        story.append(_rmtc_labeled_grid(
+            identity_rows,
+            [25*mm, 37*mm, 27*mm, 43*mm, 27*mm, 35*mm],
+            label_style, cell_style,
+            label_columns=(0, 2, 4),
+        ))
 
         part_chem = [row for row in chemistry if str(row.get("part_id")) == part_id]
-        story.append(Paragraph("Chemical Composition", sub_style))
+        story.append(_rmtc_section_bar("Chemical Composition", content_width, sub_text_style, light=True))
         chem_rows = [["Element", "Minimum", "Maximum", "Actual", "Unit", "Status"]]
         for row in part_chem:
             chem_rows.append([row.get("element"), row.get("minimum_value"), row.get("maximum_value"), row.get("actual_value"), row.get("unit") or "%", row.get("result")])
         if len(chem_rows) == 1:
             chem_rows.append(["-", "", "", "No chemistry values recorded", "", "NOT_EVALUATED"])
-        story.append(_rmtc_grid(chem_rows, [31*mm, 37*mm, 37*mm, 42*mm, 28*mm, width-175*mm], header_style, cell_style, status_columns=(5,)))
+        story.append(_rmtc_grid(chem_rows, [24*mm, 31*mm, 31*mm, 39*mm, 19*mm, 50*mm], header_style, cell_style, status_columns=(5,)))
 
         part_jominy = [row for row in jominy if str(row.get("part_id")) == part_id]
-        story.append(Paragraph("Jominy Results", sub_style))
-        j_rows = [["Distance", "mm", "Min HRC", "Max HRC", "Actual", "Actual Status", "Calculated", "Calculated Status", "Applicable"]]
+        story.append(_rmtc_section_bar("Jominy Results", content_width, sub_text_style, light=True))
+        j_rows = [["Distance", "mm", "Min HRC", "Max HRC", "Actual", "Actual Status", "Calculated", "Calc. Status", "Applicable"]]
         for row in part_jominy:
             j_rows.append([
                 row.get("distance_label"), row.get("distance_mm"), row.get("minimum_hrc"), row.get("maximum_hrc"),
@@ -462,56 +525,73 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
             ])
         if len(j_rows) == 1:
             j_rows.append(["-", "", "", "", "", "NOT_EVALUATED", "", "NOT_EVALUATED", "No"])
-        story.append(_rmtc_grid(j_rows, [24*mm, 20*mm, 22*mm, 22*mm, 24*mm, 30*mm, 27*mm, 34*mm, width-203*mm], header_style, cell_style, status_columns=(5, 7)))
+        story.append(_rmtc_grid(
+            j_rows,
+            [20*mm, 14*mm, 18*mm, 18*mm, 20*mm, 24*mm, 22*mm, 28*mm, 30*mm],
+            header_style, small_style, status_columns=(5, 7),
+        ))
 
-        story.append(Paragraph("DI / Hardenability", sub_style))
+        story.append(_rmtc_section_bar("DI / Hardenability", content_width, sub_text_style, light=True))
         di_rows = [["Grain Size ASTM E-112", "Actual DI", "Actual DI Status", "Calculated DI", "Calculated DI Status"]]
         di_rows.append([approval.get("grain_size"), approval.get("actual_di"), approval.get("actual_di_status"), approval.get("calculated_di"), approval.get("calculated_di_status")])
-        story.append(_rmtc_grid(di_rows, [48*mm, 45*mm, 55*mm, 45*mm, width-193*mm], header_style, cell_style, status_columns=(2, 4)))
+        story.append(_rmtc_grid(di_rows, [42*mm, 32*mm, 42*mm, 32*mm, 46*mm], header_style, cell_style, status_columns=(2, 4)))
 
         part_req = [row for row in requirements if str(row.get("part_id")) == part_id]
         mechanical_tokens = ("tensile", "yield", "elongation", "reduction", "impact", "proof", "mechanical", "uts")
         mech_req = [row for row in part_req if any(token in str(row.get("requirement_name") or row.get("requirement_code") or "").casefold() for token in mechanical_tokens)]
         other_req = [row for row in part_req if row not in mech_req]
 
-        story.append(Paragraph("Mechanical Properties", sub_style))
+        story.append(_rmtc_section_bar("Mechanical Properties", content_width, sub_text_style, light=True))
         mech_part_rows = [["Property", "Specification", "Actual / Observation", "Unit", "Status", "Remarks"]]
         for row in mech_req:
             mech_part_rows.append([row.get("requirement_name") or row.get("requirement_code"), row.get("requirement_value"), row.get("actual_value"), row.get("unit"), row.get("result"), row.get("remarks")])
         if len(mech_part_rows) == 1:
             mech_part_rows.append(["Mechanical Properties", "As supplier RMTC / Part requirement", "No separate part-level mechanical property row", "", "NOT_EVALUATED", ""])
-        story.append(_rmtc_grid(mech_part_rows, [55*mm, 67*mm, 67*mm, 24*mm, 28*mm, width-241*mm], header_style, cell_style, status_columns=(4,)))
+        story.append(_rmtc_grid(mech_part_rows, [38*mm, 42*mm, 40*mm, 18*mm, 24*mm, 32*mm], header_style, small_style, status_columns=(4,)))
 
-        story.append(Paragraph("Heat Treatment & Other Requirements", sub_style))
+        story.append(_rmtc_section_bar("Heat Treatment & Other Requirements", content_width, sub_text_style, light=True))
         req_rows = [["Requirement", "Specification / Part Master", "RMTC Actual / Observation", "Unit", "Status", "Remarks"]]
         for row in other_req:
             req_rows.append([row.get("requirement_name") or row.get("requirement_code"), row.get("requirement_value"), row.get("actual_value"), row.get("unit"), row.get("result"), row.get("remarks")])
         if len(req_rows) == 1:
             req_rows.append(["-", "No additional requirements recorded", "", "", "NOT_EVALUATED", ""])
-        story.append(_rmtc_grid(req_rows, [56*mm, 68*mm, 69*mm, 22*mm, 28*mm, width-243*mm], header_style, cell_style, status_columns=(4,)))
+        story.append(_rmtc_grid(req_rows, [38*mm, 45*mm, 39*mm, 18*mm, 24*mm, 30*mm], header_style, small_style, status_columns=(4,)))
 
-    story.append(PageBreak())
-    story.append(Paragraph("RMTC VALIDATION STATUS & FINAL DECISION", section_style))
-    validation_rows = [[
-        "Part Number", "Source", "Material Grade", "Raw Material", "Chemistry", "Jominy", "Requirements",
-        "Actual DI", "Calculated DI", "Automated Recommendation", "Final Decision", "Decision / Reserve Reason",
-    ]]
-    for approval in part_approvals:
-        part = parts.get(str(approval.get("part_id"))) or {}
-        validation_rows.append([
-            part.get("part_number"), approval.get("source_status"), approval.get("material_grade_status"), approval.get("raw_material_status"),
-            approval.get("chemistry_status"), approval.get("jominy_status"), approval.get("requirement_status"), approval.get("actual_di_status"),
-            approval.get("calculated_di_status"), approval.get("approval_status"), approval.get("disposition"), approval.get("decision_reason"),
-        ])
-    if len(validation_rows) == 1:
-        validation_rows.append(["-", "NOT_EVALUATED", "NOT_EVALUATED", "NOT_EVALUATED", "NOT_EVALUATED", "NOT_EVALUATED", "NOT_EVALUATED", "NOT_EVALUATED", "NOT_EVALUATED", "NOT_EVALUATED", "PENDING", ""])
-    story.append(_rmtc_grid(
-        validation_rows,
-        [18*mm, 18*mm, 20*mm, 20*mm, 18*mm, 18*mm, 20*mm, 18*mm, 22*mm, 26*mm, 22*mm, width-220*mm],
-        header_style, cell_style, status_columns=tuple(range(1, 11)),
-    ))
+    story.append(CondPageBreak(44 * mm))
+    story.append(_rmtc_section_bar("RMTC VALIDATION STATUS & FINAL DECISION", content_width, section_text_style))
+    if not part_approvals:
+        story.append(_rmtc_grid(
+            [["Validation Check", "Status", "Validation Check", "Status"], ["Record", "NOT_EVALUATED", "Final Decision", "PENDING"]],
+            [42*mm, 55*mm, 42*mm, 55*mm], header_style, cell_style, status_columns=(1, 3),
+        ))
+    else:
+        for approval_index, approval in enumerate(part_approvals, start=1):
+            part = parts.get(str(approval.get("part_id"))) or {}
+            grade = grades.get(str(part.get("material_grade_id"))) or {}
+            if approval_index > 1:
+                story.append(Spacer(1, 1.2 * mm))
+            story.append(_rmtc_section_bar(
+                f"{part.get('part_number') or '-'} - {part.get('part_name') or ''} - {grade.get('grade_code') or grade.get('grade_name') or ''}",
+                content_width, sub_text_style, light=True,
+            ))
+            validation_rows = [["Validation Check", "Status", "Validation Check", "Status"],
+                ["Source", approval.get("source_status"), "Material Grade", approval.get("material_grade_status")],
+                ["Raw Material", approval.get("raw_material_status"), "Chemistry", approval.get("chemistry_status")],
+                ["Jominy", approval.get("jominy_status"), "Requirements", approval.get("requirement_status")],
+                ["Actual DI", approval.get("actual_di_status"), "Calculated DI", approval.get("calculated_di_status")],
+                ["Automated Recommendation", approval.get("approval_status"), "Final Decision", approval.get("disposition")],
+            ]
+            story.append(_rmtc_grid(
+                validation_rows, [42*mm, 55*mm, 42*mm, 55*mm],
+                header_style, cell_style, status_columns=(1, 3),
+            ))
+            reason = approval.get("decision_reason") or record.get("decision_reason") or ""
+            story.append(_rmtc_labeled_grid(
+                [["Decision / Reserve Reason", reason or "-"]],
+                [42*mm, 152*mm], label_style, cell_style, label_columns=(0,),
+            ))
 
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 1.6 * mm))
     sign_rows = [[
         "Prepared By", _employee_name(employees.get(str(record.get("prepared_by_employee_id")))),
         "Validated By", _employee_name(employees.get(str(record.get("validated_by_employee_id")))),
@@ -521,24 +601,11 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         "Validated At", _display_value(record.get("validated_at")),
         "Decision At", _display_value(record.get("decision_at") or record.get("approved_at")),
     ]]
-    sign_prepared = []
-    for row in sign_rows:
-        sign_prepared.append([
-            _paragraph(row[0], label_style), _paragraph(row[1], center_style),
-            _paragraph(row[2], label_style), _paragraph(row[3], center_style),
-            _paragraph(row[4], label_style), _paragraph(row[5], center_style),
-        ])
-    sign_table = Table(sign_prepared, colWidths=[28*mm, 60*mm, 28*mm, 60*mm, 36*mm, width-212*mm])
-    sign_table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.45, colors.HexColor("#8295A6")),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EDF4FA")),
-        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#EDF4FA")),
-        ("BACKGROUND", (4, 0), (4, -1), colors.HexColor("#EDF4FA")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    story.append(sign_table)
+    story.append(_rmtc_labeled_grid(
+        sign_rows,
+        [24*mm, 41*mm, 24*mm, 41*mm, 30*mm, 34*mm],
+        label_style, center_style, label_columns=(0, 2, 4),
+    ))
 
     doc.build(
         story,

@@ -1,4 +1,4 @@
-# QSMS 4.9.4
+# QSMS 4.9.5
 
 Live Supabase-first Quality and OSP workflow for Four Star Industries.
 
@@ -13,6 +13,16 @@ Visible workspaces:
 7. Records Centre
 8. Templates
 9. Reports
+
+
+## Release 4.9.5 — Compact A4 Portrait RMTC Print Layout
+
+- RMTC Record PDF is now fixed to **A4 portrait**.
+- Report header, section bars, data tables and footer share the same left/right edge for a controlled aligned print layout.
+- Every RMTC section remains in bordered table-grid form, including Chemistry, Jominy, DI/Hardenability, Mechanical Properties, Heat Treatment/Other Requirements and Validation.
+- Worksheet and validation sections flow continuously without forced page breaks so the report uses the minimum practical number of pages.
+- Header/footer rendering now adapts to both portrait RMTC reports and existing landscape operational reports.
+- Existing Supabase masters, RMTC records, OSP/inspection transactions, users, permissions and attachments are unchanged.
 
 ## Release 4.9.4 — Workflow Spacing and RMTC Record PDF
 
