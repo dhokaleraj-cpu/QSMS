@@ -365,6 +365,21 @@ def apply_global_style() -> None:
 
     @media(max-width:1100px){.block-container{padding:.5rem .55rem 1rem!important}.fsi-logo{width:108px}.fsi-app-title{font-size:17px}.fsi-app-sub{display:none}.fsi-status-grid,.fsi-kpi-grid{grid-template-columns:repeat(3,1fr)}[class*="st-key-menu_"] div[data-testid="stPageLink"] a{font-size:11px!important;padding:.32rem .25rem!important;}}
     @media(max-width:760px){.block-container{padding:.4rem .35rem .8rem!important}.fsi-page-title{font-size:18px}.fsi-status-grid,.fsi-kpi-grid{grid-template-columns:repeat(2,1fr)}.fsi-user{display:none}.st-key-fsi_top_nav div[data-testid="stHorizontalBlock"]{flex-wrap:wrap!important;}[class*="st-key-menu_"] div[data-testid="stPageLink"] a{min-height:38px!important;}}
+
+    /* QCMS 4.9.7 — NPD / APQP real-time process cards */
+    .npd-process-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:.35rem 0 .95rem;align-items:stretch;}
+    .npd-process-card{min-height:132px;border:1px solid #CBD9E5;border-left:6px solid #7890A4;border-radius:11px;padding:12px 13px;background:#F8FBFD;box-shadow:0 2px 7px rgba(11,45,77,.08);overflow:visible;}
+    .npd-process-card .npd-op{font-size:10px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;color:#60788C;}
+    .npd-process-card .npd-process-name{font-size:14px;font-weight:900;color:#0B3558;line-height:1.25;margin:5px 0 8px;white-space:normal;overflow-wrap:anywhere;}
+    .npd-process-card .npd-process-status{font-size:11px;font-weight:900;text-transform:uppercase;margin-bottom:5px;}
+    .npd-process-card .npd-process-date{font-size:10px;line-height:1.35;color:#5B7082;white-space:normal;overflow-wrap:anywhere;}
+    .npd-completed{border-left-color:#15803D;background:#F0FDF4}.npd-completed .npd-process-status{color:#15803D}
+    .npd-completed_late{border-left-color:#6B7280;background:#F8FAFC}.npd-completed_late .npd-process-status{color:#4B5563}
+    .npd-in_progress{border-left-color:#2563EB;background:#EFF6FF;box-shadow:0 0 0 1px #93C5FD,0 3px 9px rgba(37,99,235,.12)}.npd-in_progress .npd-process-status{color:#1D4ED8}
+    .npd-pending{border-left-color:#D97706;background:#FFF7ED}.npd-pending .npd-process-status{color:#B45309}
+    .npd-overdue{border-left-color:#B91C1C;background:#FEF2F2;box-shadow:0 0 0 1px #FCA5A5,0 3px 9px rgba(185,28,28,.11)}.npd-overdue .npd-process-status{color:#B91C1C}
+    .npd-hold{border-left-color:#7C3AED;background:#F5F3FF}.npd-hold .npd-process-status{color:#6D28D9}
+    .npd-not_planned{border-left-color:#64748B;background:#F8FAFC}.npd-not_planned .npd-process-status{color:#475569}
     </style>
     """, unsafe_allow_html=True)
 

@@ -10,6 +10,7 @@ from app_pages import (
     inspection_layouts,
     master_home,
     material_grade,
+    npd_apqp,
     material_inward,
     metlab_report,
     osp_inspections,
@@ -49,6 +50,9 @@ PAGE_ITEMS = (
     ("rmtc-entry", st.Page(rmtc_pages.render_entry, title="RMTC Entry", icon=":material/fact_check:", url_path="rmtc-entry")),
     ("inward-entry", st.Page(material_inward.render_entry, title="Material Inward", icon=":material/input:", url_path="inward-entry")),
     ("osp-home", st.Page(osp_transactions.render_home, title="OSP Transactions", icon=":material/factory:", url_path="osp-home")),
+    ("npd-process-flow", st.Page(npd_apqp.render_process_flow, title="Process Flow Designer", icon=":material/account_tree:", url_path="npd-process-flow")),
+    ("npd-status", st.Page(npd_apqp.render_npd_status, title="NPD Status", icon=":material/timeline:", url_path="npd-status")),
+    ("apqp", st.Page(npd_apqp.render_apqp, title="APQP", icon=":material/assignment_turned_in:", url_path="apqp")),
     ("inspection-home", st.Page(inspection_home.render, title="Inspections", icon=":material/biotech:", url_path="inspection-home")),
     ("records-center", st.Page(records_center.render, title="Records Centre", icon=":material/table_view:", url_path="records-center")),
     ("heat-ledger", st.Page(records_center.render_heat_ledger, title="Heat Steel Ledger", icon=":material/table_view:", url_path="heat-ledger")),
@@ -133,6 +137,11 @@ MODULE_SUBMENUS = {
         ("osp-inward", "OSP Inward", ":material/input:"),
         ("osp-records", "OSP Records", ":material/table_view:"),
     ),
+    "NPD & APQP": (
+        ("npd-process-flow", "Process Flow Designer", ":material/account_tree:"),
+        ("npd-status", "NPD Status", ":material/timeline:"),
+        ("apqp", "APQP", ":material/assignment_turned_in:"),
+    ),
     "Inspections": (
         ("inspection-home", "Inspection Home", ":material/biotech:"),
         ("inspection-layout-entry", "Layout Entry", ":material/edit_document:"),
@@ -174,6 +183,7 @@ ROUTE_MODULE = {
     "inward-entry": "Inward", "inward-records": "Inward",
     "osp-home": "OSP", "osp-material-out": "OSP", "osp-sample-receipt": "OSP", "osp-inward": "OSP",
     "osp-dimensional": "OSP", "osp-metlab": "OSP", "osp-records": "OSP",
+    "npd-process-flow": "NPD & APQP", "npd-status": "NPD & APQP", "apqp": "NPD & APQP",
     "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
     "inspection-layout-records": "Inspections", "dimensional-entry": "Inspections",
     "dimensional-records": "Inspections", "metlab-entry": "Inspections", "metlab-records": "Inspections",
@@ -199,6 +209,7 @@ PAGE_TITLE_TO_PATH = {
     "OSP Material Out": "osp-material-out", "OSP Sample Receipt": "osp-sample-receipt",
     "OSP Material Inward": "osp-inward", "OSP Dimensional": "osp-dimensional",
     "OSP MetLAB": "osp-metlab", "OSP Records": "osp-records",
+    "Process Flow Designer": "npd-process-flow", "NPD Status": "npd-status", "APQP": "apqp",
     "Inspection Layout Entry": "inspection-layout-entry",
     "Inspection Layout Records": "inspection-layout-records",
     "Dimensional Report": "dimensional-entry", "Dimensional Records": "dimensional-records",
@@ -215,13 +226,14 @@ current_module = ROUTE_MODULE.get(current_path, "Dashboard")
 
 with st.container(border=True, key="fsi_top_nav"):
     st.markdown('<div class="fsi-top-menu-title">MODULES</div>', unsafe_allow_html=True)
-    cols = st.columns(9, gap="small")
+    cols = st.columns(10, gap="small")
     labels = (
         ("dashboard", "Dashboard", "Dashboard"),
         ("masters", "Masters", "Masters"),
         ("rmtc-entry", "RMTC", "RMTC"),
         ("inward-entry", "Inward", "Inward"),
         ("osp-home", "OSP", "OSP"),
+        ("npd-status", "NPD / APQP", "NPD & APQP"),
         ("inspection-home", "Inspections", "Inspections"),
         ("records-center", "Records", "Records"),
         ("reports-home", "Reports", "Reports"),

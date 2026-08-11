@@ -1,4 +1,4 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.9.6
+# QUALITY CONTROL MONITORING SYSTEM 4.9.7
 
 Live Supabase-first Quality Control, RMTC, OSP and inspection workflow for Four Star Industries.
 
@@ -15,6 +15,17 @@ Visible workspaces:
 9. Reports
 
 
+
+
+## Release 4.9.7 — NPD / APQP Process Flow & Real-Time Order Status
+
+- New top-level **NPD / APQP** module.
+- Part-wise **Process Flow Designer** using Process Master and operational sequence numbers (0, 10, 20, ...).
+- **NPD Status** order entry with Customer, Part, Order Qty, Start Date and Delivery Date.
+- Order-specific process cards with target dates and real-time Pending / In Progress / Completed / Hold / Overdue status.
+- Process status editor for target date, completed date, responsible person and remarks.
+- **APQP** project header, standard APQP gates and completion dashboard.
+- Additive Supabase migration; existing QCMS data remains intact.
 
 ## Release 4.9.6 — Global Heat Balance, QCMS Branding and Controlled PDF Reports
 

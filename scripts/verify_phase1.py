@@ -33,6 +33,7 @@ required = [
     "app_pages/template_center.py",
     "app_pages/osp_transactions.py",
     "app_pages/osp_inspections.py",
+    "app_pages/npd_apqp.py",
     "app_pages/reports.py",
     "core/osp_service.py",
     "supabase/migrations/20260805084500_qsms_osp_parameter_groups_reports_v491.sql",
@@ -83,6 +84,9 @@ required = [
     "supabase/migrations/20260811090000_qcms_rmtc_microstructure_print_reports_v496.sql",
     "tests/test_v496_qcms_global_heat_print_reports.py",
     "docs/RELEASE_4_9_6.md",
+    "supabase/migrations/20260811103000_qcms_npd_apqp_process_flow_v497.sql",
+    "tests/test_v497_npd_apqp_process_tracking.py",
+    "docs/RELEASE_4_9_7.md",
 ]
 for item in required:
     if not (ROOT / item).exists():
@@ -91,7 +95,7 @@ for item in required:
 app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
-    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "inspection-home", "records-center", "heat-ledger",
+    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "npd-process-flow", "npd-status", "apqp", "inspection-home", "records-center", "heat-ledger",
     "reports-home", "heat-transaction-report", "osp-balance-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
@@ -178,7 +182,7 @@ if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
 report = {
-    "release": "QCMS 4.9.6 Global Heat Balance & Controlled PDF Reports",
+    "release": "QCMS 4.9.7 NPD / APQP Process Flow & Real-Time Order Status",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -246,6 +250,10 @@ report = {
     "single_persistent_navigation": True,
     "unified_report_print_theme": True,
     "portal_ready": True,
+    "npd_apqp_module": True,
+    "part_process_flow_designer": True,
+    "npd_order_realtime_status": True,
+    "apqp_gate_tracking": True,
     "errors": errors,
 }
 print(json.dumps(report, indent=2))
