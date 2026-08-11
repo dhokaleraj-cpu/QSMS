@@ -10,6 +10,7 @@ from core.access import current_permissions
 from core.attachments import AttachmentService
 from core.delete_service import password_delete_panel
 from core.inspection_service import InspectionService
+from core.reporting import controlled_record_pdf_bytes
 from core.ui import page_header, section_bar, subpage_navigation, template_download_row
 
 
@@ -244,9 +245,29 @@ def render_records() -> None:
         selected = st.selectbox("Select Layout Record", list(labels), format_func=lambda value: labels[value])
         selected_row = next(row for row in filtered if str(row["id"]) == selected)
         st.session_state["edit_inspection_layout_id"] = selected
-        c1, c2 = st.columns(2, gap="small")
-        with c1: st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Open Selected Layout", icon=":material/edit:", width="stretch")
+        c1, c2, c3 = st.columns(3, gap="small")
+        with c1:
+            st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Open Selected Layout", icon=":material/edit:", width="stretch")
         with c2:
+            characteristics = service.plan_characteristics(selected)
+            pdf = controlled_record_pdf_bytes(
+                "INSPECTION LAYOUT RECORD",
+                {
+                    "Plan Number": selected_row.get("plan_number"), "Revision": selected_row.get("revision"), "Layout Type": selected_row.get("layout_type"),
+                    "Layout Name": selected_row.get("layout_name"), "Part Number": (parts.get(str(selected_row.get("part_id"))) or {}).get("part_number"),
+                    "Process": (processes.get(str(selected_row.get("process_id"))) or {}).get("process_name"), "Stage": (stages.get(str(selected_row.get("inspection_stage_id"))) or {}).get("stage_name"),
+                    "Default Samples": selected_row.get("default_sample_size"), "Format": selected_row.get("format_number"), "Status": selected_row.get("status"),
+                },
+                {"Inspection Characteristics": [{
+                    "Seq": row.get("sequence_no"), "Characteristic No.": row.get("characteristic_no"), "Parameter": row.get("characteristic"),
+                    "Specification": row.get("specification"), "Minimum": row.get("lower_spec"), "Maximum": row.get("upper_spec"),
+                    "Unit": row.get("unit"), "Type": row.get("characteristic_type"), "Checking Method": row.get("checking_method"),
+                    "Sample Size": row.get("sample_size"), "Frequency": row.get("frequency"),
+                } for row in characteristics]},
+                record_number=f"{selected_row.get('plan_number')}-REV-{selected_row.get('revision')}",
+            )
+            st.download_button("Download Layout PDF", pdf, file_name=f"Inspection_Layout_{selected_row.get('plan_number')}_Rev_{selected_row.get('revision')}.pdf", mime="application/pdf", width="stretch")
+        with c3:
             if password_delete_panel(repo=service.repo, table="inspection_plans", rows=[selected_row], labeler=lambda row: f"{row.get('plan_number')} Rev {row.get('revision')}", key=f"delete_layout_{selected}", can_delete=perms["can_archive"], title="Delete Selected Layout", help_text="Current password and Layout Delete permission are required. Characteristics are removed with the layout."):
                 st.rerun()
     else:

@@ -180,6 +180,57 @@ class MasterService:
                 payload[key] = value
         return payload
 
+
+    @staticmethod
+    def _normalized_key_value(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, (list, tuple, set)):
+            return "|".join(sorted(str(item).strip().casefold() for item in value))
+        return re.sub(r"\s+", " ", str(value).strip()).casefold()
+
+    def assert_no_duplicate(
+        self,
+        definition: MasterDef,
+        payload: Mapping[str, Any],
+        *,
+        record_id: str | None = None,
+        extra_unique_fields: Sequence[str] = (),
+    ) -> None:
+        """Reject duplicate master records case-insensitively on create and edit.
+
+        Natural keys are compared as one controlled key. Extra fields are
+        independently unique for masters such as Process and Inspection Stage,
+        where both Code and Name must remain unique.
+        """
+        rows = self.list_records(definition, status="All")
+        current_id = str(record_id or "")
+        current = next((row for row in rows if str(row.get("id") or "") == current_id), None)
+        natural_fields = tuple(definition.natural_key)
+        expected_key = tuple(self._normalized_key_value(payload.get(field)) for field in natural_fields)
+        current_key = tuple(self._normalized_key_value((current or {}).get(field)) for field in natural_fields)
+        # Existing legacy duplicates remain editable when the controlled key itself is unchanged.
+        if natural_fields and any(expected_key) and (not current or expected_key != current_key):
+            for row in rows:
+                if str(row.get("id") or "") == current_id:
+                    continue
+                row_key = tuple(self._normalized_key_value(row.get(field)) for field in natural_fields)
+                if row_key == expected_key:
+                    labels = ", ".join(field.replace("_", " ").title() for field in natural_fields)
+                    raise ValueError(f"Duplicate {definition.label} is not allowed. The controlled key ({labels}) already exists.")
+        for field in extra_unique_fields:
+            expected = self._normalized_key_value(payload.get(field))
+            if not expected:
+                continue
+            current_value = self._normalized_key_value((current or {}).get(field))
+            if current and expected == current_value:
+                continue
+            for row in rows:
+                if str(row.get("id") or "") == current_id:
+                    continue
+                if self._normalized_key_value(row.get(field)) == expected:
+                    raise ValueError(f"Duplicate {field.replace('_', ' ').title()} is not allowed in {definition.label}.")
+
     def save(self, definition: MasterDef, raw: Mapping[str, Any], *, record_id: str | None = None) -> tuple[dict, str]:
         existing = self.get_record(definition, record_id)
         payload = self.normalize_payload(definition, raw, existing=existing)
@@ -188,12 +239,19 @@ class MasterService:
         errors = self.validate_payload(definition, payload)
         if errors:
             raise ValueError("\n".join(errors))
+        extra_unique_fields: tuple[str, ...] = ()
+        if definition.key == "processes":
+            extra_unique_fields = ("process_name",)
+        elif definition.key == "inspection_stages":
+            extra_unique_fields = ("stage_name",)
+        self.assert_no_duplicate(
+            definition,
+            payload,
+            record_id=str(existing["id"]) if existing else record_id,
+            extra_unique_fields=extra_unique_fields,
+        )
         if existing:
             return self.repo.update(definition.table, str(existing["id"]), payload), "updated"
-        natural_key = {key: payload.get(key) for key in definition.natural_key}
-        duplicate = self.repo.find_one(definition.table, eq=natural_key)
-        if duplicate:
-            raise ValueError(f"A {definition.label} record already exists for the controlled key.")
         return self.repo.insert(definition.table, payload), "created"
 
     def deactivate(self, definition: MasterDef, record_id: str) -> dict:

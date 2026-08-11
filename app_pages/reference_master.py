@@ -11,6 +11,7 @@ from core.catalog import LearnedValueCatalog
 from core.delete_service import password_delete_panel
 from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
+from core.reporting import controlled_record_pdf_bytes
 from core.ui import page_header, section_bar, subpage_navigation, template_download_row
 
 REFERENCE_KEYS = (
@@ -128,10 +129,18 @@ def render_records() -> None:
         selected = st.selectbox("Select reference record", list(labels), format_func=lambda x: labels[x])
         selected_row = next(row for row in rows if str(row["id"]) == selected)
         st.session_state["edit_reference_id"] = selected; st.session_state["edit_reference_key"] = key
-        c1, c2 = st.columns(2, gap="small")
+        c1, c2, c3 = st.columns(3, gap="small")
         with c1:
             st.page_link(st.session_state["_qsms_pages"]["reference-entry"], label="Open Selected Record", icon=":material/edit:", width="stretch")
         with c2:
+            printable = {field.label: selected_row.get(field.name) for field in definition.fields if field.name not in {"created_by", "updated_by"}}
+            pdf = controlled_record_pdf_bytes(
+                f"{definition.label.upper()} RECORD",
+                printable,
+                record_number=_row_label(definition, selected_row),
+            )
+            st.download_button("Download Selected PDF", pdf, file_name=f"{definition.key}_{_row_label(definition, selected_row).replace(' · ','_')}.pdf", mime="application/pdf", width="stretch")
+        with c3:
             if password_delete_panel(
                 repo=service.repo,
                 table=definition.table,

@@ -10,6 +10,7 @@ from core.catalog import LearnedValueCatalog
 from core.database import get_session_client
 from core.delete_service import password_delete_panel
 from core.employee_service import AUTHORITIES, EmployeeService
+from core.reporting import controlled_record_pdf_bytes
 from core.ui import page_header, section_bar, subpage_navigation, template_download_row
 
 
@@ -97,10 +98,17 @@ def render_records()->None:
         labels=_labels(filtered); selected=st.selectbox('Select Employee record',list(labels),format_func=lambda x:labels[x])
         st.session_state['edit_employee_id']=selected
         selected_row=next(row for row in filtered if str(row.get('id'))==selected)
-        c1,c2=st.columns(2,gap='small')
+        c1,c2,c3=st.columns(3,gap='small')
         with c1:
             st.page_link(st.session_state['_qsms_pages']['employee-entry'],label='Open Selected Employee',icon=':material/edit:',width='stretch')
         with c2:
+            pdf=controlled_record_pdf_bytes(
+                'EMPLOYEE MASTER RECORD',
+                {'Employee Code':selected_row.get('employee_code'),'Employee':f"{selected_row.get('first_name') or ''} {selected_row.get('last_name') or ''}".strip(),'Email':selected_row.get('email'),'Department':selected_row.get('department'),'Designation':selected_row.get('designation'),'Plant':selected_row.get('plant'),'Mobile':selected_row.get('mobile_number'),'Reports To':manager.get(str(selected_row.get('reports_to_employee_id')),''),'Experience Start Date':selected_row.get('experience_start_date'),'Experience Years':svc.years(selected_row.get('experience_start_date')),'Approval Authorities':', '.join(selected_row.get('approval_authorities') or []),'Status':selected_row.get('status'),'Remarks':selected_row.get('remarks')},
+                record_number=str(selected_row.get('employee_code') or ''),
+            )
+            st.download_button('Download Employee PDF',pdf,file_name=f"Employee_{selected_row.get('employee_code')}.pdf",mime='application/pdf',width='stretch')
+        with c3:
             if password_delete_panel(repo=svc.repo,table='employees',rows=[selected_row],labeler=lambda r:f"{r.get('employee_code')} · {r.get('first_name')} {r.get('last_name')}",key=f"delete_employee_{selected}",can_delete=perms['can_archive'],title='Delete Selected Employee',help_text='Permanent deletion requires your current password. Employees linked to users or approvals may need to be set Inactive instead.'):
                 st.rerun()
     else:

@@ -21,6 +21,14 @@ class EmployeeService:
         payload=dict(payload)
         for k in ('first_name','last_name','email','department','designation','plant','employee_code'):
             if not str(payload.get(k) or '').strip(): raise ValueError(f"{k.replace('_',' ').title()} is mandatory.")
+        rows=self.list(False)
+        for field in ('employee_code','email'):
+            value=' '.join(str(payload.get(field) or '').split()).casefold()
+            if not value: continue
+            for row in rows:
+                if record_id and str(row.get('id'))==str(record_id): continue
+                if ' '.join(str(row.get(field) or '').split()).casefold()==value:
+                    raise ValueError(f"Duplicate {field.replace('_',' ').title()} is not allowed.")
         if record_id: return self.repo.update('employees',record_id,payload)
         return self.repo.insert('employees',payload)
     @staticmethod

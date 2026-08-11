@@ -58,7 +58,7 @@ def _payload():
 
 
 def test_release_version_and_notes():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.9.5", "4.9.6", "4.9.7"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.9.5", "4.9.6", "4.9.7", "4.9.8"}
     assert (ROOT / "docs" / "RELEASE_4_9_5.md").exists()
 
 

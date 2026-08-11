@@ -14,6 +14,7 @@ from core.database import get_session_client
 from core.delete_service import password_delete_panel
 from core.osp_service import OSPService
 from core.repository import Repository
+from core.reporting import controlled_record_pdf_bytes
 from core.ui import page_header, section_bar, subpage_navigation, template_download_row
 
 DRAWING_TYPES = (
@@ -423,6 +424,11 @@ def render_entry() -> None:
             if not all([part_number.strip(), part_name.strip(), customer_id, grade_id]):
                 raise ValueError("Part Number, Description, Customer and Material Grade are mandatory.")
             payload = {"part_number": part_number.strip(), "part_name": part_name.strip(), "customer_id": customer_id, "material_grade_id": grade_id, "finished_weight_kg": finish_weight, "drawing_number": drawing_number.strip() or None, "drawing_revision": drawing_revision.strip() or None, "status": status, "remarks": remarks.strip() or None}
+            for row in repo.select("parts", limit=5000):
+                if existing and str(row.get("id")) == str(existing.get("id")):
+                    continue
+                if str(row.get("part_number") or "").strip().casefold() == part_number.strip().casefold():
+                    raise ValueError("Duplicate Part Number is not allowed.")
             saved = repo.update("parts", str(existing["id"]), payload) if existing else repo.insert("parts", payload)
             catalog.remember_many("part.drawing_revision", [drawing_revision])
             st.session_state["edit_part_id"] = str(saved["id"]); st.success("Part Master saved."); st.rerun()
@@ -540,10 +546,33 @@ def render_records() -> None:
         selected = st.selectbox("Select Part Master record", list(labels), format_func=lambda x: labels[x])
         st.session_state["edit_part_id"] = selected
         selected_row = next(p for p in rows if str(p.get("id")) == selected)
-        c1, c2 = st.columns(2, gap="small")
+        c1, c2, c3 = st.columns(3, gap="small")
         with c1:
             st.page_link(st.session_state["_qsms_pages"]["part-entry"], label="Open Selected Part Master", icon=":material/edit:", width="stretch")
         with c2:
+            raw_rows = repo.select("part_raw_material_details", eq={"part_id": selected}, order_by="sequence_no", limit=300)
+            jominy_rows = repo.select("part_jominy_requirements", eq={"part_id": selected}, order_by="sequence_no", limit=300)
+            process_rows = repo.select("part_process_parameter_specifications", eq={"part_id": selected}, order_by="sequence_no", limit=500)
+            metallurgy_rows = repo.select("part_metallurgical_requirements", eq={"part_id": selected}, order_by="sequence_no", limit=500)
+            pdf = controlled_record_pdf_bytes(
+                "PART MASTER RECORD",
+                {
+                    "Part Number": selected_row.get("part_number"), "Part Description": selected_row.get("part_name"),
+                    "Customer": (customers.get(str(selected_row.get("customer_id"))) or {}).get("party_name"),
+                    "Material Grade": (grades.get(str(selected_row.get("material_grade_id"))) or {}).get("grade_code"),
+                    "Finish Weight kg": selected_row.get("finished_weight_kg"), "Drawing Number": selected_row.get("drawing_number"),
+                    "Drawing Revision": selected_row.get("drawing_revision"), "Status": selected_row.get("status"), "Remarks": selected_row.get("remarks"),
+                },
+                {
+                    "Raw Material Details": raw_rows,
+                    "Jominy Requirements": jominy_rows,
+                    "OSP / Process Inspection Requirements": process_rows,
+                    "Metallurgical Requirements": metallurgy_rows,
+                },
+                record_number=str(selected_row.get("part_number") or ""),
+            )
+            st.download_button("Download Part Master PDF", pdf, file_name=f"Part_Master_{selected_row.get('part_number')}.pdf", mime="application/pdf", width="stretch")
+        with c3:
             if password_delete_panel(
                 repo=repo,
                 table="parts",

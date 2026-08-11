@@ -87,6 +87,12 @@ required = [
     "supabase/migrations/20260811103000_qcms_npd_apqp_process_flow_v497.sql",
     "tests/test_v497_npd_apqp_process_tracking.py",
     "docs/RELEASE_4_9_7.md",
+    "supabase/migrations/20260811114500_qcms_duplicate_qc_tools_npd_points_v498.sql",
+    "tests/test_v498_duplicate_print_qc_tools.py",
+    "docs/RELEASE_4_9_8.md",
+    "app_pages/qc_calculation_tools.py",
+    "core/hardness_conversion.py",
+    "data/astm_e140_table1.json",
 ]
 for item in required:
     if not (ROOT / item).exists():
@@ -95,7 +101,7 @@ for item in required:
 app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
-    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "npd-process-flow", "npd-status", "apqp", "inspection-home", "records-center", "heat-ledger",
+    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "inspection-home", "records-center", "heat-ledger",
     "reports-home", "heat-transaction-report", "osp-balance-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
@@ -182,7 +188,7 @@ if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
 report = {
-    "release": "QCMS 4.9.7 NPD / APQP Process Flow & Real-Time Order Status",
+    "release": "QCMS 4.9.8 Duplicate Control, Record PDFs, NPD Checkpoints & QC Calculation Tools",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -254,6 +260,12 @@ report = {
     "part_process_flow_designer": True,
     "npd_order_realtime_status": True,
     "apqp_gate_tracking": True,
+    "normalized_duplicate_control": True,
+    "record_pdf_everywhere": True,
+    "npd_process_checkpoints": True,
+    "employee_linked_responsibility": True,
+    "qc_calculation_tools": True,
+    "astm_e140_table1_conversion": True,
     "errors": errors,
 }
 print(json.dumps(report, indent=2))

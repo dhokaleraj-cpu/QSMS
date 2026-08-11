@@ -988,3 +988,147 @@ def material_inward_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     story.append(Spacer(1,1.5*mm)); story.append(_rmtc_labeled_grid([["Prepared By",_employee_name(employees.get(str(record.get("prepared_by_employee_id")))),"Validated By",_employee_name(employees.get(str(record.get("validated_by_employee_id"))))]], [32*mm,65*mm,32*mm,65*mm],sty["label"],sty["center"],label_columns=(0,2)))
     doc.build(story,canvasmaker=lambda *args,**kwargs:_PageNumberCanvas(*args,report_title=title,**kwargs))
     return buffer.getvalue()
+
+
+def controlled_record_pdf_bytes(
+    title: str,
+    header_fields: Mapping[str, object],
+    sections: Mapping[str, object] | None = None,
+    *,
+    record_number: str = "",
+    subtitle: str = "",
+) -> bytes:
+    """Create a compact A4 portrait controlled-record PDF with the common QCMS header/footer.
+
+    `sections` may contain pandas DataFrames, lists of dictionaries, dictionaries,
+    or scalar values. It is intentionally reusable so every record-centric module
+    can offer the same print-layout behavior without duplicating PDF code.
+    """
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=8 * mm,
+        rightMargin=8 * mm,
+        topMargin=32 * mm,
+        bottomMargin=14 * mm,
+        title=title,
+        author="Four Star Industries - Quality Control Monitoring System",
+    )
+    styles = _controlled_styles()
+    content_width = A4[0] - 16 * mm
+    story: list[object] = []
+    if subtitle:
+        sub = ParagraphStyle(
+            "ControlledRecordSubtitle",
+            parent=styles["cell"],
+            fontSize=6.2,
+            leading=7.4,
+            textColor=MUTED,
+            alignment=TA_CENTER,
+            spaceAfter=2 * mm,
+        )
+        story.append(_paragraph(subtitle, sub))
+
+    header_items = [(str(key), _display_value(value)) for key, value in header_fields.items()]
+    if header_items:
+        story.append(_rmtc_section_bar("RECORD DETAILS", content_width, styles["section"]))
+        rows: list[list[object]] = []
+        for index in range(0, len(header_items), 2):
+            left = header_items[index]
+            right = header_items[index + 1] if index + 1 < len(header_items) else ("", "")
+            rows.append([left[0], left[1], right[0], right[1]])
+        story.append(_rmtc_labeled_grid(
+            rows,
+            [33 * mm, 61 * mm, 33 * mm, content_width - 127 * mm],
+            styles["label"],
+            styles["cell"],
+        ))
+
+    for section_name, raw in (sections or {}).items():
+        story.append(Spacer(1, 2.4 * mm))
+        story.append(_rmtc_section_bar(section_name, content_width, styles["section"]))
+        if isinstance(raw, pd.DataFrame):
+            frame = raw.copy()
+        elif isinstance(raw, Mapping):
+            frame = pd.DataFrame([{"Field": key, "Value": value} for key, value in raw.items()])
+        elif isinstance(raw, list):
+            if raw and isinstance(raw[0], Mapping):
+                frame = pd.DataFrame(raw)
+            else:
+                frame = pd.DataFrame({"Value": raw})
+        elif raw is None:
+            frame = pd.DataFrame()
+        else:
+            frame = pd.DataFrame([{"Information": raw}])
+        if frame.empty:
+            frame = pd.DataFrame([{"Information": "No records available."}])
+        frame = frame.fillna("")
+        columns = [str(column) for column in frame.columns]
+        table_rows: list[list[object]] = [columns]
+        table_rows.extend([list(row) for row in frame.itertuples(index=False, name=None)])
+        widths = [content_width / max(1, len(columns))] * max(1, len(columns))
+        status_columns = tuple(index for index, name in enumerate(columns) if "status" in name.casefold() or "result" in name.casefold())
+        story.append(_rmtc_grid(table_rows, widths, styles["header"], styles["cell"], status_columns=status_columns))
+
+    doc.build(
+        story,
+        canvasmaker=lambda *args, **kwargs: _PageNumberCanvas(
+            *args,
+            report_title=title,
+            record_number=record_number,
+            report_label=subtitle,
+            **kwargs,
+        ),
+    )
+    return buffer.getvalue()
+
+
+def qc_calculation_pdf_bytes(payload: Mapping[str, object]) -> bytes:
+    record = dict(payload.get("record") or {})
+    employee = dict(payload.get("employee") or {})
+    part = dict(payload.get("part") or {})
+    grade = dict(payload.get("grade") or {})
+    input_payload = dict(record.get("input_payload") or {})
+    result_payload = dict(record.get("result_payload") or {})
+    header = {
+        "Calculation No.": record.get("calculation_number"),
+        "Calculation Type": str(record.get("calculation_type") or "").replace("_", " ").title(),
+        "Calculation Date": record.get("calculation_date"),
+        "Performed By": _employee_name(employee),
+        "Part Number": part.get("part_number"),
+        "Material Grade": grade.get("grade_code"),
+        "Heat Number": record.get("heat_number"),
+        "Standard / Basis": record.get("standard_reference"),
+        "Status": record.get("status"),
+        "Remarks": record.get("remarks"),
+    }
+    sections: dict[str, object] = {
+        "Calculation Inputs": input_payload,
+    }
+    calc_type = str(record.get("calculation_type") or "")
+    if calc_type == "JOMINY":
+        curve = result_payload.get("curve") or {}
+        sections["Calculated Jominy Curve"] = pd.DataFrame([
+            {"Distance (1/16 in.)": key, "Calculated HRC": value}
+            for key, value in sorted(((int(k), v) for k, v in dict(curve).items()), key=lambda item: item[0])
+        ])
+    elif calc_type == "DI_VALUE":
+        factors = result_payload.get("factors") or {}
+        sections["DI Factor Details"] = pd.DataFrame([{"Factor": key, "Value": value} for key, value in dict(factors).items()])
+        sections["Calculated Result"] = {"Calculated DI": result_payload.get("value"), "Error": result_payload.get("error") or ""}
+    elif calc_type == "HARDNESS_CONVERSION":
+        sections["Hardness Conversion Result"] = {
+            "Primary Value": f"{record.get('primary_value')} {record.get('primary_unit') or ''}".strip(),
+            "Converted Value": f"{record.get('result_value')} {record.get('conversion_unit') or ''}".strip(),
+            "Method": result_payload.get("method"),
+            "Warning": result_payload.get("warning"),
+            "Interpolation Bracket": result_payload.get("bracket"),
+        }
+    return controlled_record_pdf_bytes(
+        "QC CALCULATION RECORD",
+        header,
+        sections,
+        record_number=str(record.get("calculation_number") or ""),
+        subtitle="Stored quality calculation result",
+    )

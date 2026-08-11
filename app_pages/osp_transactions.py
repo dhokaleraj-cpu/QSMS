@@ -8,7 +8,7 @@ import streamlit as st
 from core.access import current_permissions
 from core.osp_service import OSPService
 from core.inspection_service import InspectionService
-from core.reporting import dimensional_record_pdf_bytes, metlab_record_pdf_bytes
+from core.reporting import controlled_record_pdf_bytes, dimensional_record_pdf_bytes, metlab_record_pdf_bytes
 from core.ui import kpi_grid, page_header, section_bar, style_status_dataframe, subpage_navigation, workflow_progress
 
 
@@ -165,6 +165,21 @@ def render_records() -> None:
         metlab_rows = inspection.repo.select("lab_tests", eq={"osp_job_id": selected, "test_type": "METLAB"}, order_by="updated_at", desc=True, limit=20)
         dimensional_rows = inspection.repo.select("inspection_reports", eq={"osp_job_id": selected, "report_type": "DIMENSIONAL"}, order_by="updated_at", desc=True, limit=20)
         section_bar("OSP CONTROLLED PDF REPORTS")
+        transaction_pdf = controlled_record_pdf_bytes(
+            "OSP TRANSACTION RECORD",
+            {
+                "OSP Job": selected_row.get("osp_job_number"), "Heat Number": selected_row.get("heat_number"),
+                "Part Number": selected_row.get("part_number"), "OSP Vendor": selected_row.get("vendor_name"),
+                "Process": selected_row.get("process_name"), "Material Out Date": selected_row.get("dispatch_date"),
+                "Out Qty pcs": selected_row.get("quantity_dispatched"), "Expected Return": selected_row.get("expected_return_date"),
+                "Vendor Batch": selected_row.get("vendor_batch_number"), "Sample Gate": selected_row.get("sample_gate_status"),
+                "OSP Inward": selected_row.get("receipt_number"), "Inward Qty pcs": selected_row.get("quantity_received"),
+                "Receipt Decision": selected_row.get("receipt_quality_disposition"), "Production Qty Available": selected_row.get("production_available_quantity"),
+                "Status": selected_row.get("status"),
+            },
+            record_number=str(selected_row.get("osp_job_number") or ""),
+        )
+        st.download_button("OSP Transaction PDF", transaction_pdf, file_name=f"{selected_row.get('osp_job_number')}_OSP_Transaction.pdf", mime="application/pdf", key=f"osp_txn_pdf_{selected}", width="stretch")
         if not metlab_rows and not dimensional_rows:
             st.info("No completed OSP MetLAB or Dimensional report is linked to the selected OSP record yet.")
         else:

@@ -7,6 +7,7 @@ from core.access import current_permissions
 from core.delete_service import password_delete_panel
 from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
+from core.reporting import controlled_record_pdf_bytes
 from core.ui import page_header, section_bar
 
 
@@ -76,6 +77,12 @@ def render_entry() -> None:
                 "status": status,
                 "remarks": remarks.strip() or None,
             }
+            service.assert_no_duplicate(
+                definition,
+                payload,
+                record_id=str(existing["id"]) if existing else None,
+                extra_unique_fields=("process_name",),
+            )
             if existing:
                 service.repo.update("processes", str(existing["id"]), payload)
             else:
@@ -114,23 +121,34 @@ def render_records() -> None:
         selected = st.selectbox("Select Process", list(labels), format_func=lambda value: labels[value])
         selected_row = next(row for row in rows if str(row.get("id")) == selected)
         st.session_state["edit_process_id"] = selected
-        st.page_link(
-            st.session_state["_qsms_pages"]["process-entry"],
-            label="Open Selected Process",
-            icon=":material/edit:",
-            width="stretch",
-        )
-        if password_delete_panel(
-            repo=service.repo,
-            table="processes",
-            rows=[selected_row],
-            labeler=_label,
-            key=f"delete_process_record_{selected}",
-            can_delete=perms["can_archive"],
-            title="Delete Selected Process",
-            help_text="Permanent deletion requires the current QCMS password. Linked Process records cannot be deleted.",
-        ):
-            st.rerun()
+        c1, c2, c3 = st.columns(3, gap="small")
+        with c1:
+            st.page_link(
+                st.session_state["_qsms_pages"]["process-entry"],
+                label="Open Selected Process",
+                icon=":material/edit:",
+                width="stretch",
+            )
+        with c2:
+            pdf = controlled_record_pdf_bytes(
+                "PROCESS MASTER RECORD",
+                {"Process Code": selected_row.get("process_code"), "Process Name": selected_row.get("process_name"), "Process Type": selected_row.get("process_type"), "Special Process": selected_row.get("special_process"), "CQI Standard": selected_row.get("cqi_standard"), "Status": selected_row.get("status"), "Remarks": selected_row.get("remarks")},
+                record_number=str(selected_row.get("process_code") or ""),
+            )
+            st.download_button("Download Process PDF", pdf, file_name=f"Process_{selected_row.get('process_code')}.pdf", mime="application/pdf", width="stretch")
+        with c3:
+            delete_clicked = password_delete_panel(
+                repo=service.repo,
+                table="processes",
+                rows=[selected_row],
+                labeler=_label,
+                key=f"delete_process_record_{selected}",
+                can_delete=perms["can_archive"],
+                title="Delete Selected Process",
+                help_text="Permanent deletion requires the current QCMS password. Linked Process records cannot be deleted.",
+            )
+            if delete_clicked:
+                st.rerun()
     else:
         st.info("No Process Master records match the selected filters.")
 

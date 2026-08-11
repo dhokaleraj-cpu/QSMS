@@ -9,6 +9,7 @@ from core.access import current_permissions
 from core.catalog import LearnedValueCatalog
 from core.delete_service import password_delete_panel
 from core.repository import Repository
+from core.reporting import controlled_record_pdf_bytes
 from core.ui import page_header, section_bar, subpage_navigation, template_download_row
 
 DEFAULT_ELEMENTS = ["C", "Si", "Mn", "P", "S", "Cr", "Mo", "Ni"]
@@ -54,6 +55,12 @@ def render_entry() -> None:
         try:
             if not grade_code.strip(): raise ValueError("Material Grade is mandatory.")
             payload = {"grade_code": grade_code.strip(), "material_number": material_number.strip() or None, "standard": standard.strip() or None, "revision": revision.strip() or "00", "effective_date": effective.isoformat() if effective else None, "status": status, "remarks": remarks.strip() or None}
+            expected_key = (grade_code.strip().casefold(), (revision.strip() or "00").casefold())
+            for row in repo.select("material_grades", limit=5000):
+                if existing and str(row.get("id")) == str(existing.get("id")):
+                    continue
+                if (str(row.get("grade_code") or "").strip().casefold(), str(row.get("revision") or "00").strip().casefold()) == expected_key:
+                    raise ValueError("Duplicate Material Grade + Revision is not allowed.")
             saved = repo.update("material_grades", str(existing["id"]), payload) if existing else repo.insert("material_grades", payload)
             catalog.remember_many("material.standard", [standard]); catalog.remember_many("material.grade", [grade_code])
             st.session_state["edit_grade_id"] = str(saved["id"]); st.success("Material Grade saved."); st.rerun()
@@ -119,11 +126,19 @@ def render_records() -> None:
         selected = st.selectbox("Select Material Grade record", list(labels), format_func=lambda x: labels[x])
         composition = repo.select("material_grade_elements", eq={"material_grade_id": selected}, order_by="element", limit=300)
         st.session_state["edit_grade_id"] = selected
-        c1, c2 = st.columns(2, gap="small")
+        selected_row = next(g for g in rows if str(g.get("id")) == selected)
+        c1, c2, c3 = st.columns(3, gap="small")
         with c1:
             st.page_link(st.session_state["_qsms_pages"]["grade-entry"], label="Open Selected Material Grade", icon=":material/edit:", width="stretch")
         with c2:
-            selected_row = next(g for g in rows if str(g.get("id")) == selected)
+            pdf = controlled_record_pdf_bytes(
+                "MATERIAL GRADE RECORD",
+                {"Material Grade": selected_row.get("grade_code"), "Material Number": selected_row.get("material_number"), "Standard / Specification": selected_row.get("standard"), "Revision": selected_row.get("revision"), "Effective Date": selected_row.get("effective_date"), "Status": selected_row.get("status"), "Remarks": selected_row.get("remarks")},
+                {"Chemical Composition": [{"Element": row.get("element"), "Minimum": row.get("minimum"), "Maximum": row.get("maximum"), "Unit": row.get("unit"), "Test Method": row.get("test_method")} for row in composition]},
+                record_number=f"{selected_row.get('grade_code')}-REV-{selected_row.get('revision')}",
+            )
+            st.download_button("Download Grade PDF", pdf, file_name=f"Material_Grade_{selected_row.get('grade_code')}_Rev_{selected_row.get('revision')}.pdf", mime="application/pdf", width="stretch")
+        with c3:
             if password_delete_panel(
                 repo=repo,
                 table="material_grades",
