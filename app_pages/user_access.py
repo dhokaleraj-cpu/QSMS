@@ -7,7 +7,7 @@ from core.access import MODULES
 from core.database import get_session_client
 from core.permissions import is_admin
 from core.repository import Repository
-from core.ui import page_header, section_bar, subpage_navigation
+from core.ui import page_header, save_success_popup, section_bar, subpage_navigation
 
 ROLES=['ADMIN','QUALITY_MANAGER','METLAB_APPROVER','QUALITY_ENGINEER','PRODUCTION','SQA','MASTER_DATA','AUDITOR','VIEWER']
 
@@ -38,7 +38,7 @@ def render()->None:
         if submit:
             try:
                 result=_invoke({'action':'create_user','email':email,'password':password,'full_name':full,'role':role,'status':status,'employee_id':employee or None})
-                st.success(result.get('message','User created.'))
+                save_success_popup(result.get('message','User created successfully.'))
             except Exception as exc:st.error(str(exc))
     with access_tab:
         try:
@@ -51,7 +51,7 @@ def render()->None:
         current=next(u for u in users if str(u.get('id'))==uid)
         c=st.columns(3,gap='small');role=c[0].selectbox('Role',ROLES,index=ROLES.index(current.get('role','VIEWER')));status=c[1].selectbox('Access Status',['ACTIVE','INACTIVE','LOCKED'],index=['ACTIVE','INACTIVE','LOCKED'].index(current.get('status','ACTIVE')));employee=c[2].selectbox('Employee',['']+list(emp),format_func=lambda x:emp.get(x,'— Not linked —'))
         if st.button('Update User Role / Status',type='primary',width='stretch'):
-            try:_invoke({'action':'update_user','user_id':uid,'role':role,'status':status,'employee_id':employee or None});st.success('User access updated.');st.rerun()
+            try:_invoke({'action':'update_user','user_id':uid,'role':role,'status':status,'employee_id':employee or None});save_success_popup('User access updated successfully.', queue_for_rerun=True);st.rerun()
             except Exception as exc:st.error(str(exc))
 
         section_bar('MODULE PERMISSIONS','Selected users can receive edit rights without being an Administrator.')
@@ -66,11 +66,11 @@ def render()->None:
                 for _,row in edited.iterrows():
                     data={'profile_id':uid,'module_key':row['Module Key'],'can_view':bool(row['View']),'can_create':bool(row['Create']),'can_edit':bool(row['Edit']),'can_archive':bool(row['Delete']),'can_approve':bool(row['Approve'])}
                     repo.upsert_by('user_module_permissions',data,natural_key={'profile_id':uid,'module_key':row['Module Key']})
-                st.success('Module permissions saved.');st.rerun()
+                save_success_popup('Module permissions saved successfully.', queue_for_rerun=True);st.rerun()
             except Exception as exc:st.error(str(exc))
         temp=st.text_input('New Temporary Password',type='password')
         if st.button('Reset Selected User Password',width='stretch'):
-            try:_invoke({'action':'reset_password','user_id':uid,'password':temp});st.success('Temporary password updated.')
+            try:_invoke({'action':'reset_password','user_id':uid,'password':temp});save_success_popup('Temporary password updated successfully.')
             except Exception as exc:st.error(str(exc))
     with password_tab:
         p1=st.text_input('New Password',type='password');p2=st.text_input('Confirm New Password',type='password')
@@ -78,5 +78,5 @@ def render()->None:
             if len(p1)<10:st.error('Use at least 10 characters.')
             elif p1!=p2:st.error('Passwords do not match.')
             else:
-                try:get_session_client().auth.update_user({'password':p1});st.success('Password changed successfully.')
+                try:get_session_client().auth.update_user({'password':p1});save_success_popup('Password changed successfully.')
                 except Exception as exc:st.error(str(exc))

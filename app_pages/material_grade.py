@@ -10,7 +10,7 @@ from core.catalog import LearnedValueCatalog
 from core.delete_service import password_delete_panel
 from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
-from core.ui import page_header, section_bar, subpage_navigation, template_download_row
+from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 DEFAULT_ELEMENTS = ["C", "Si", "Mn", "P", "S", "Cr", "Mo", "Ni"]
 
@@ -34,12 +34,22 @@ def render_entry() -> None:
     selected = st.selectbox("Material Grade record", options, index=index, format_func=lambda x: "＋ New Material Grade" if x == "__new__" else labels[x])
     existing = next((g for g in grades if str(g["id"]) == selected), {})
     writable = perms["can_edit"] if existing else perms["can_create"]
+    material_number_key = "_qcms_new_material_number"
+    if not existing and not st.session_state.get(material_number_key):
+        try:
+            generated = repo.rpc("qcms_next_material_number", {})
+            if isinstance(generated, dict):
+                generated = generated.get("code") or generated.get("qcms_next_material_number")
+            st.session_state[material_number_key] = str(generated or "").strip()
+        except Exception as exc:
+            st.warning(f"Automatic Material Number could not be generated: {exc}")
+            st.session_state[material_number_key] = ""
 
-    section_bar("MATERIAL GRADE DETAILS", "Grade name, material number, specification and revision.")
+    section_bar("MATERIAL GRADE DETAILS", "Grade name, auto Material Number, specification and revision.")
     with st.form("material_grade_header"):
         c = st.columns(4, gap="small")
         grade_code = c[0].text_input("Material Grade", value=str(existing.get("grade_code") or ""))
-        material_number = c[1].text_input("Material Number", value=str(existing.get("material_number") or ""))
+        material_number = c[1].text_input("Material Number", value=str(existing.get("material_number") or st.session_state.get(material_number_key) or ""), help="Generated automatically for new Material Grades and editable before save.")
         standard = c[2].text_input("Standard / Specification", value=str(existing.get("standard") or ""))
         revision = c[3].text_input("Revision", value=str(existing.get("revision") or "00"))
         c = st.columns(3, gap="small")
@@ -54,7 +64,8 @@ def render_entry() -> None:
     if save:
         try:
             if not grade_code.strip(): raise ValueError("Material Grade is mandatory.")
-            payload = {"grade_code": grade_code.strip(), "material_number": material_number.strip() or None, "standard": standard.strip() or None, "revision": revision.strip() or "00", "effective_date": effective.isoformat() if effective else None, "status": status, "remarks": remarks.strip() or None}
+            if not material_number.strip(): raise ValueError("Material Number is mandatory and is normally generated automatically.")
+            payload = {"grade_code": grade_code.strip(), "material_number": material_number.strip(), "standard": standard.strip() or None, "revision": revision.strip() or "00", "effective_date": effective.isoformat() if effective else None, "status": status, "remarks": remarks.strip() or None}
             expected_key = (grade_code.strip().casefold(), (revision.strip() or "00").casefold())
             for row in repo.select("material_grades", limit=5000):
                 if existing and str(row.get("id")) == str(existing.get("id")):
@@ -63,7 +74,8 @@ def render_entry() -> None:
                     raise ValueError("Duplicate Material Grade + Revision is not allowed.")
             saved = repo.update("material_grades", str(existing["id"]), payload) if existing else repo.insert("material_grades", payload)
             catalog.remember_many("material.standard", [standard]); catalog.remember_many("material.grade", [grade_code])
-            st.session_state["edit_grade_id"] = str(saved["id"]); st.success("Material Grade saved."); st.rerun()
+            st.session_state.pop(material_number_key, None)
+            st.session_state["edit_grade_id"] = str(saved["id"]); save_success_popup(f"Material Grade {saved.get('grade_code')} saved successfully.", queue_for_rerun=True); st.rerun()
         except Exception as exc:
             st.error(str(exc))
 
@@ -102,7 +114,7 @@ def render_entry() -> None:
                 payload = {"material_grade_id": grade_id, "element": element, "minimum": low, "maximum": high, "unit": str(row.get("Unit") or "%").strip() or "%", "test_method": str(row.get("Test Method") or "").strip() or None}
                 repo.upsert_by("material_grade_elements", payload, natural_key={"material_grade_id": grade_id, "element": element})
                 catalog.remember_many("material.element", [element]); catalog.remember_many("material.test_method", [row.get("Test Method")])
-            st.success("Chemical Composition saved inside the Material Grade Master."); st.rerun()
+            save_success_popup("Chemical Composition saved inside the Material Grade Master.", queue_for_rerun=True); st.rerun()
         except Exception as exc:
             st.error(str(exc))
 

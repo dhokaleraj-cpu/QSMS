@@ -6,10 +6,11 @@ import pandas as pd
 import streamlit as st
 
 from core.access import current_permissions
+from core.delete_service import password_delete_panel
 from core.osp_service import OSPService
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes, dimensional_record_pdf_bytes, metlab_record_pdf_bytes
-from core.ui import kpi_grid, page_header, section_bar, style_status_dataframe, subpage_navigation, workflow_progress
+from core.ui import kpi_grid, page_header, save_success_popup, section_bar, style_status_dataframe, subpage_navigation, workflow_progress
 
 
 def _label(row: dict) -> str:
@@ -84,7 +85,7 @@ def render_material_out() -> None:
         try:
             process_id = str(selected_spec.get("process_id"))
             saved = service.create_dispatch({"inward_lot_id": inward_id, "vendor_id": vendor_id, "process_id": process_id, "process_specification_id": spec_id, "dispatch_date": dispatch_date.isoformat(), "dispatch_challan": challan, "quantity_dispatched": quantity, "expected_return_date": expected_date.isoformat(), "sample_quantity": sample_qty, "remarks": remarks})
-            st.success(f"OSP Material Out {saved.get('osp_job_number')} created.")
+            save_success_popup(f"OSP Material Out {saved.get('osp_job_number')} saved successfully.", queue_for_rerun=True)
             st.rerun()
         except Exception as exc: st.error(str(exc))
 
@@ -105,7 +106,7 @@ def render_sample_receipt() -> None:
     if submitted:
         try:
             service.record_sample({"osp_job_id": job["id"], "sample_received_date": received_date.isoformat(), "sample_reference": reference, "vendor_batch_number": vendor_batch, "sample_quantity": sample_qty})
-            st.success("OSP sample recorded. Complete both OSP Dimensional and MetLAB inspections."); st.rerun()
+            save_success_popup("OSP sample receipt saved successfully. Complete both OSP Dimensional and MetLAB inspections.", queue_for_rerun=True); st.rerun()
         except Exception as exc: st.error(str(exc))
     if job.get("sample_received_date"):
         st.session_state["osp_inspection_job_id"] = str(job["id"]); st.session_state["osp_inspection_scope"] = "OSP_SAMPLE"
@@ -136,7 +137,7 @@ def render_inward() -> None:
     if submitted:
         try:
             saved = service.receive_batch({"osp_job_id": job["id"], "receipt_date": receipt_date.isoformat(), "receipt_challan": receipt_challan, "vendor_invoice_number": vendor_invoice, "vendor_invoice_date": vendor_invoice_date.isoformat(), "tc_number": tc_number, "tc_date": tc_date.isoformat(), "vendor_batch_number": vendor_batch, "quantity_received": quantity, "remarks": remarks})
-            st.success(f"OSP Inward {saved.get('receipt_number')} created. Post-receipt inspections are now pending."); st.rerun()
+            save_success_popup(f"OSP Inward {saved.get('receipt_number')} saved successfully. Post-receipt inspections are now pending.", queue_for_rerun=True); st.rerun()
         except Exception as exc: st.error(str(exc))
 
 
@@ -155,7 +156,7 @@ def _render_register(rows: list[dict], height: int = 560) -> None:
 def render_records() -> None:
     subpage_navigation(("osp-home", "OSP Home", ":material/arrow_back:"), ("osp-material-out", "Material Out", ":material/output:"), ("osp-inward", "OSP Inward", ":material/input:"))
     page_header("OSP Transaction Records", context="Heat · Part · Vendor Batch")
-    service = OSPService(); rows = service.register(); search = st.text_input("Search OSP Job, Heat, Part, Vendor, Process or Vendor Batch")
+    service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS"); rows = service.register(); search = st.text_input("Search OSP Job, Heat, Part, Vendor, Process or Vendor Batch")
     filtered = [r for r in rows if not search or search.casefold() in " ".join(str(r.get(k) or "") for k in ("osp_job_number","receipt_number","heat_number","part_number","vendor_name","process_name","vendor_batch_number","vendor_invoice_number","tc_number")).casefold()]
     if filtered:
         labels = {str(r["id"]): _label(r) for r in filtered}
@@ -198,4 +199,28 @@ def render_records() -> None:
                         st.download_button(f"Dimensional PDF · {report.get('report_number')}", pdf, file_name=f"{report.get('report_number') or selected_row.get('osp_job_number')}_Dimensional.pdf", mime="application/pdf", key=f"osp_dim_pdf_{report['id']}", width="stretch")
                     except Exception as exc:
                         st.error(f"Dimensional PDF could not be generated: {exc}")
+        section_bar("DELETE OSP RECORD")
+        if metlab_rows or dimensional_rows:
+            st.caption("Delete linked OSP MetLAB / Dimensional inspection records first; then delete the parent OSP transaction.")
+        linked_rows = [*metlab_rows, *dimensional_rows]
+        if linked_rows:
+            report_labels = lambda row: f"{row.get('report_number')} · {row.get('test_type') or row.get('report_type')}"
+            # MetLAB and Dimensional use different physical tables, so expose a separate password panel for each.
+            if metlab_rows and password_delete_panel(
+                repo=inspection.repo, table="lab_tests", rows=metlab_rows, labeler=report_labels,
+                key=f"osp_metlab_delete_{selected}", can_delete=perms["can_archive"], title="Delete linked OSP MetLAB report",
+            ):
+                st.rerun()
+            if dimensional_rows and password_delete_panel(
+                repo=inspection.repo, table="inspection_reports", rows=dimensional_rows, labeler=report_labels,
+                key=f"osp_dim_delete_{selected}", can_delete=perms["can_archive"], title="Delete linked OSP Dimensional report",
+            ):
+                st.rerun()
+        if not metlab_rows and not dimensional_rows:
+            if password_delete_panel(
+                repo=inspection.repo, table="osp_jobs", rows=[selected_row], labeler=lambda row: _label(row),
+                key=f"osp_job_delete_{selected}", can_delete=perms["can_archive"], title="Delete OSP transaction",
+                help_text="Deletes the selected OSP transaction. Current QCMS password is required. Linked inspection records must be deleted first.",
+            ):
+                st.rerun()
     _render_register(filtered)

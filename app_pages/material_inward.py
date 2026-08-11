@@ -11,7 +11,7 @@ from core.attachments import AttachmentService, AttachmentSlot, new_attachment_u
 from core.delete_service import password_delete_panel
 from core.inward_service import InwardService
 from core.reporting import material_inward_record_pdf_bytes
-from core.ui import disposition_cards, disposition_label, page_header, section_bar, style_status_dataframe, subpage_navigation, template_download_row
+from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, style_status_dataframe, subpage_navigation, template_download_row
 
 DISPOSITIONS = ["PENDING", "ON_HOLD", "ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"]
 
@@ -251,7 +251,7 @@ def render_entry() -> None:
                         )
             st.session_state["edit_inward_id"] = str(saved["id"])
             st.session_state["inspection_inward_id"] = str(saved["id"])
-            st.success(f"Material Inward {saved.get('inward_number')} saved successfully.")
+            save_success_popup(f"Material Inward {saved.get('inward_number')} saved successfully.", queue_for_rerun=True)
             st.rerun()
         except Exception as exc:
             st.error(str(exc))

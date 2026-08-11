@@ -7,6 +7,7 @@ import streamlit as st
 from core.auth import verify_current_password
 from core.config import is_preview_session
 from core.repository import Repository
+from core.ui import delete_success_popup
 
 
 def secure_delete(repo: Repository, table: str, record_id: str, password: str) -> None:
@@ -62,6 +63,6 @@ def password_delete_panel(
             width="stretch",
         ):
             secure_delete(repo, table, selected, password)
-            st.success("Selected row deleted successfully.")
+            delete_success_popup("Selected row deleted successfully.", queue_for_rerun=True)
             return True
     return False

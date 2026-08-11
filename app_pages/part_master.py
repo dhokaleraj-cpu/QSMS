@@ -15,7 +15,7 @@ from core.delete_service import password_delete_panel
 from core.osp_service import OSPService
 from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
-from core.ui import page_header, section_bar, subpage_navigation, template_download_row
+from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 DRAWING_TYPES = (
     ("FINISH_DRAWING", "Finish Drawing"),
@@ -81,7 +81,7 @@ def _catalog_add_control(catalog: LearnedValueCatalog, field_key: str, label: st
             st.warning(f"Enter {label.lower()} first.")
         else:
             catalog.remember(field_key, text)
-            st.success(f"{text} added to the reusable list.")
+            save_success_popup(f"{text} added to the reusable list.", queue_for_rerun=True)
             st.rerun()
 
 
@@ -249,7 +249,7 @@ def _render_osp_metlab_requirements(
                     repo.insert("part_process_parameter_specifications", payload)
                 catalog.remember("part.osp_metlab_parameter", parameter)
                 saved_count += 1
-            st.success(f"{saved_count} OSP MetLAB requirement(s) saved for {process.get('process_name')}.")
+            save_success_popup(f"{saved_count} OSP MetLAB requirement(s) saved for {process.get('process_name')}.")
             st.rerun()
         except Exception as exc:
             st.error(str(exc))
@@ -277,8 +277,8 @@ def _render_osp_metlab_requirements(
         ):
             try:
                 result = OSPService().generate_layouts(str(group["id"]))
-                st.success(
-                    f"OSP MetLAB layout generated with {int(result.get('characteristics') or 0)} parameter(s)."
+                save_success_popup(
+                    f"OSP MetLAB layout generated with {int(result.get('characteristics') or 0)} parameter(s).", queue_for_rerun=True
                 )
                 st.rerun()
             except Exception as exc:
@@ -368,7 +368,7 @@ def _render_metallurgical_requirements(
                     repo.insert("part_metallurgical_requirements", payload)
                 catalog.remember("part.metallurgical_parameter", parameter)
                 saved_count += 1
-            st.success(f"{saved_count} Metallurgical Requirement(s) saved.")
+            save_success_popup(f"{saved_count} Metallurgical Requirement(s) saved successfully.")
             st.rerun()
         except Exception as exc:
             st.error(str(exc))
@@ -383,8 +383,8 @@ def _render_metallurgical_requirements(
     ):
         try:
             result = repo.rpc("qsms_generate_final_metallurgical_layout", {"p_part_id": part_id}) or {}
-            st.success(
-                f"Final Metallurgical layout {result.get('plan_number') or ''} Rev {result.get('revision') or ''} generated with {int(result.get('characteristics') or 0)} parameter(s)."
+            save_success_popup(
+                f"Final Metallurgical layout {result.get('plan_number') or ''} Rev {result.get('revision') or ''} generated with {int(result.get('characteristics') or 0)} parameter(s).", queue_for_rerun=True
             )
             st.rerun()
         except Exception as exc:
@@ -431,7 +431,7 @@ def render_entry() -> None:
                     raise ValueError("Duplicate Part Number is not allowed.")
             saved = repo.update("parts", str(existing["id"]), payload) if existing else repo.insert("parts", payload)
             catalog.remember_many("part.drawing_revision", [drawing_revision])
-            st.session_state["edit_part_id"] = str(saved["id"]); st.success("Part Master saved."); st.rerun()
+            st.session_state["edit_part_id"] = str(saved["id"]); save_success_popup("Part Master saved successfully.", queue_for_rerun=True); st.rerun()
         except Exception as exc:
             st.error(str(exc))
 
@@ -450,7 +450,7 @@ def render_entry() -> None:
             st.caption("Current: " + str((amap.get(dtype) or {}).get("file_name") or "Not attached"))
             if st.button(f"Upload {label}", key=f"up_{dtype}", disabled=not writable or file is None, width="stretch"):
                 try:
-                    _upload(repo, part_id, dtype, file); st.success(f"{label} uploaded."); st.rerun()
+                    _upload(repo, part_id, dtype, file); save_success_popup(f"{label} uploaded successfully.", queue_for_rerun=True); st.rerun()
                 except Exception as exc:
                     st.error(str(exc))
 
@@ -497,7 +497,7 @@ def render_entry() -> None:
                 if input_weight is None or float(input_weight) <= 0:
                     raise ValueError(f"Input Weight kg/part is required for {name}.")
                 return {"supplier_id": sid, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
-            _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id",), mapper); st.success("Raw Material Details saved."); st.rerun()
+            _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id",), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
         except Exception as exc:
             st.error(str(exc))
     section_bar("JOMINY REQUIREMENT", "Controlled 1/16 inch to millimetre conversion and HRC requirement band.")
@@ -519,7 +519,7 @@ def render_entry() -> None:
                 low = None if pd.isna(row.get("Minimum HRC")) else row.get("Minimum HRC"); high = None if pd.isna(row.get("Maximum HRC")) else row.get("Maximum HRC")
                 if low is not None and high is not None and float(low) > float(high): raise ValueError(f"Jominy {label}: minimum exceeds maximum.")
                 return {"jominy_distance_id": distance.get("id"), "distance_label": label, "minimum_hrc": low, "maximum_hrc": high, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
-            _save_rows(repo, "part_jominy_requirements", part_id, jedit, ("jominy_distance_id",), mapper); st.success("Jominy Requirements saved."); st.rerun()
+            _save_rows(repo, "part_jominy_requirements", part_id, jedit, ("jominy_distance_id",), mapper); save_success_popup("Jominy Requirements saved successfully.", queue_for_rerun=True); st.rerun()
         except Exception as exc:
             st.error(str(exc))
     _render_osp_metlab_requirements(repo, catalog, part_id, writable, perms["can_archive"])

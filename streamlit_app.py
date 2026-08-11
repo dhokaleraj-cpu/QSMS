@@ -27,7 +27,7 @@ from app_pages import (
 )
 from core.auth import current_profile, is_logged_in, logout, needs_first_admin_claim, render_first_admin_claim, render_login
 from core.config import get_settings
-from core.ui import app_footer, apply_global_style, module_submenu, render_shell_header
+from core.ui import app_footer, apply_global_style, module_submenu, render_pending_popups, render_shell_header
 
 settings = get_settings()
 st.set_page_config(
@@ -97,6 +97,7 @@ PAGE_ITEMS = (
 PAGES = tuple(page for _, page in PAGE_ITEMS)
 PAGE_BY_PATH = dict(PAGE_ITEMS)
 st.session_state["_qsms_pages"] = PAGE_BY_PATH
+render_pending_popups()
 
 MODULE_SUBMENUS = {
     "Dashboard": (

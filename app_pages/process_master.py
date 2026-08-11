@@ -8,7 +8,7 @@ from core.delete_service import password_delete_panel
 from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
 from core.reporting import controlled_record_pdf_bytes
-from core.ui import page_header, section_bar
+from core.ui import page_header, save_success_popup, section_bar
 
 
 def _label(row: dict) -> str:
@@ -88,7 +88,7 @@ def render_entry() -> None:
             else:
                 service.repo.insert("processes", payload)
             st.session_state.pop(auto_key, None)
-            st.success("Process Master saved.")
+            save_success_popup("Process Master saved successfully.")
             st.rerun()
         except Exception as exc:
             st.error(str(exc))

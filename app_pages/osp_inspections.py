@@ -7,9 +7,10 @@ import pandas as pd
 import streamlit as st
 
 from core.access import current_permissions
+from core.delete_service import password_delete_panel
 from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
 from core.osp_service import OSPService
-from core.ui import disposition_cards, disposition_label, page_header, section_bar, style_status_dataframe, subpage_navigation
+from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, style_status_dataframe, subpage_navigation
 
 
 def _employee_map(service: InspectionService) -> dict[str, str]:
@@ -182,7 +183,7 @@ def _render(report_type: str) -> None:
                     "test_date": inspection_date.isoformat(), "sample_reference": f"{job.get('osp_job_number')} / {job.get('vendor_batch_number')}",
                     "specification_reference": job.get("process_specification")}
                 saved = inspection.save_metlab(payload, {"rows": result_rows, "chemistry_rows": [], "jominy_rows": [], "requirement_rows": []}, report_id or None)
-            st.success(f"OSP {report_type.title()} Report {saved.get('report_number')} saved."); st.rerun()
+            save_success_popup(f"OSP {report_type.title()} Report {saved.get('report_number')} saved successfully.", queue_for_rerun=True); st.rerun()
         except Exception as exc: st.error(str(exc))
 
     if existing:
@@ -194,8 +195,18 @@ def _render(report_type: str) -> None:
             try:
                 if is_dimensional: inspection.finalize_dimensional(report_id, disposition, reason, validator, approver)
                 else: inspection.finalize_metlab(report_id, disposition, reason, validator, approver)
-                st.success("OSP inspection decision finalized and the OSP quality gate was refreshed."); st.rerun()
+                save_success_popup("OSP inspection decision finalized and the OSP quality gate was refreshed.", queue_for_rerun=True); st.rerun()
             except Exception as exc: st.error(str(exc))
+
+        delete_table = "inspection_reports" if is_dimensional else "lab_tests"
+        if password_delete_panel(
+            repo=inspection.repo, table=delete_table, rows=[existing],
+            labeler=lambda row: f"{row.get('report_number')} · {_scope_label(scope)}",
+            key=f"osp_inspection_delete_{report_type}_{report_id}", can_delete=perms["can_archive"],
+            title=f"Delete OSP {report_type.title()} report",
+            help_text="Permanently deletes this OSP inspection record after verifying your current QCMS password.",
+        ):
+            st.rerun()
 
 
 def render_dimensional() -> None:

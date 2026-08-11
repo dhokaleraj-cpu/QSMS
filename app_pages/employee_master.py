@@ -11,7 +11,7 @@ from core.database import get_session_client
 from core.delete_service import password_delete_panel
 from core.employee_service import AUTHORITIES, EmployeeService
 from core.reporting import controlled_record_pdf_bytes
-from core.ui import page_header, section_bar, subpage_navigation, template_download_row
+from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 
 def _labels(rows:list[dict])->dict[str,str]:
@@ -72,14 +72,14 @@ def render_entry()->None:
             payload={'employee_code':final_code,'first_name':first.strip(),'last_name':last.strip(),'email':email.strip().lower(),'department':str(department).strip(),'designation':str(designation).strip(),'plant':str(plant).strip(),'mobile_number':mobile.strip() or None,'approval_authorities':authorities,'reports_to_employee_id':reports or None,'experience_start_date':exp_start.isoformat(),'status':status,'remarks':remarks.strip() or None,'source_system':'QSMS'}
             saved=svc.save(payload,None if selected=='__new__' else selected)
             catalog.remember_many('employee.department',[department]);catalog.remember_many('employee.designation',[designation]);catalog.remember_many('employee.plant',[plant])
-            st.session_state['edit_employee_id']=str(saved['id']);st.success(f"Employee saved with code {saved.get('employee_code')}.");st.rerun()
+            st.session_state['edit_employee_id']=str(saved['id']);save_success_popup(f"Employee saved with code {saved.get('employee_code')}.", queue_for_rerun=True);st.rerun()
         except Exception as exc:st.error(str(exc))
     if existing and photo is not None and writable:
         if st.button('Upload Employee Photo',type='primary',width='stretch'):
             try:
                 client=get_session_client(); ext=photo.name.rsplit('.',1)[-1].lower(); path=f"{repo.tenant_id}/employees/{existing['id']}/photo_{existing['id']}.{ext}"
                 client.storage.from_('quality-documents').upload(path,photo.getvalue(),{'content-type':photo.type,'upsert':'true'})
-                repo.update('employees',str(existing['id']),{'photo_storage_path':path});st.success('Photo uploaded.');st.rerun()
+                repo.update('employees',str(existing['id']),{'photo_storage_path':path});save_success_popup('Employee photo uploaded successfully.', queue_for_rerun=True);st.rerun()
             except Exception as exc:st.error(str(exc))
 
 

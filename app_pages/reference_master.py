@@ -12,7 +12,7 @@ from core.delete_service import password_delete_panel
 from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
 from core.reporting import controlled_record_pdf_bytes
-from core.ui import page_header, section_bar, subpage_navigation, template_download_row
+from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 REFERENCE_KEYS = (
     "customers", "suppliers", "steel_mills", "osp_vendors", "approved_sources",
@@ -96,14 +96,14 @@ def render_entry() -> None:
             for field in definition.fields:
                 if field.kind in {"text", "textarea"}: catalog.remember(f"{definition.key}.{field.name}", raw.get(field.name))
             st.session_state.pop(code_session_key, None)
-            st.success(f"{definition.label} {result}."); st.rerun()
+            save_success_popup(f"{definition.label} {result} successfully.", queue_for_rerun=True); st.rerun()
         except Exception as exc:
             st.error(str(exc))
     if record and definition.status_field:
         c1, c2 = st.columns(2, gap="small")
         with c1:
             if st.button("Deactivate selected record", disabled=not perms["can_archive"], width="stretch"):
-                try: service.deactivate(definition, str(record["id"])); st.success("Record deactivated."); st.rerun()
+                try: service.deactivate(definition, str(record["id"])); save_success_popup("Record deactivated successfully.", queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
         with c2:
             if password_delete_panel(repo=service.repo, table=definition.table, rows=[record], labeler=lambda r: _row_label(definition, r), key=f"delete_ref_entry_{key}_{record.get('id')}", can_delete=perms["can_archive"], title="Delete selected record", help_text="Permanent deletion requires your current password. Linked records may prevent deletion; use Deactivate in that case."):

@@ -11,7 +11,7 @@ from core.access import current_permissions
 from core.delete_service import password_delete_panel
 from core.inspection_service import FINAL_DISPOSITIONS, RESULT_OPTIONS, InspectionService
 from core.reporting import metlab_record_pdf_bytes
-from core.ui import disposition_cards, disposition_label, page_header, section_bar, style_status_dataframe, subpage_navigation, template_download_row
+from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, style_status_dataframe, subpage_navigation, template_download_row
 
 
 def _maps(service: InspectionService):
@@ -270,7 +270,7 @@ def render_entry() -> None:
                     if image is not None:
                         service.upload_attachment("METLAB_REPORT", str(saved["id"]), f"MICROSTRUCTURE_{slot}", image, "lab_tests", f"microstructure_image_{slot}_path")
             st.session_state["edit_metlab_id"] = str(saved["id"])
-            st.success(f"Raw Material MetLAB Report {final_number} saved.")
+            save_success_popup(f"Raw Material MetLAB Report {final_number} saved successfully.", queue_for_rerun=True)
             st.rerun()
         except Exception as exc:
             st.error(str(exc))
@@ -283,7 +283,7 @@ def render_entry() -> None:
         if c3.button("Finalize MetLAB Decision", disabled=not perms["can_approve"] or disposition == "PENDING" or not validator or not approver or str(existing.get("status")) == "FINAL", width="stretch"):
             try:
                 service.finalize_metlab(str(existing["id"]), disposition, reason, validator, approver)
-                st.success("MetLAB decision finalized.")
+                save_success_popup("MetLAB decision finalized successfully.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
                 st.error(str(exc))

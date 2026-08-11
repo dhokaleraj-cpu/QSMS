@@ -559,6 +559,41 @@ def trace_timeline(events):
     return None
 
 
+
+def save_success_popup(message: str, *, queue_for_rerun: bool = False) -> None:
+    """Show a visible save confirmation popup and success banner.
+
+    When the caller reruns or switches page immediately, queue the popup so the
+    user still sees confirmation after the new render.
+    """
+    text = str(message or "Record saved successfully.").strip()
+    if queue_for_rerun:
+        st.session_state["_qcms_pending_save_popup"] = text
+        return
+    st.toast(text, icon="✅")
+    st.success(text)
+
+
+def delete_success_popup(message: str = "Selected record deleted successfully.", *, queue_for_rerun: bool = False) -> None:
+    text = str(message or "Selected record deleted successfully.").strip()
+    if queue_for_rerun:
+        st.session_state["_qcms_pending_delete_popup"] = text
+        return
+    st.toast(text, icon="🗑️")
+    st.success(text)
+
+
+def render_pending_popups() -> None:
+    """Render queued save/delete confirmations after Streamlit reruns."""
+    save_message = st.session_state.pop("_qcms_pending_save_popup", None)
+    delete_message = st.session_state.pop("_qcms_pending_delete_popup", None)
+    if save_message:
+        st.toast(str(save_message), icon="✅")
+        st.success(str(save_message))
+    if delete_message:
+        st.toast(str(delete_message), icon="🗑️")
+        st.success(str(delete_message))
+
 def app_footer() -> None:
     s = get_settings()
     st.markdown(

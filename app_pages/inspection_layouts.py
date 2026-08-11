@@ -11,7 +11,7 @@ from core.attachments import AttachmentService
 from core.delete_service import password_delete_panel
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes
-from core.ui import page_header, section_bar, subpage_navigation, template_download_row
+from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 
 def _maps(service: InspectionService):
@@ -219,7 +219,7 @@ def render_entry() -> None:
             saved = service.save_plan(payload, rows, str(existing["id"]) if existing else None)
             st.session_state["edit_inspection_layout_id"] = str(saved["id"])
             st.session_state.pop("inspection_layout_import", None)
-            st.success("Inspection layout saved.")
+            save_success_popup("Inspection layout saved successfully.")
             st.rerun()
         except Exception as exc:
             st.error(str(exc))

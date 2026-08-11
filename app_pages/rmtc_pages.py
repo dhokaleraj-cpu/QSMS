@@ -16,7 +16,7 @@ from core.permissions import normalized_role
 from core.rmtc_service import RMTCService
 from core.reporting import rmtc_record_pdf_bytes
 from core.steel_balance import remaining_planned_steel
-from core.ui import (DISPOSITION_EDITOR_OPTIONS, disposition_cards, disposition_label, normalize_disposition, page_header, section_bar, style_status_dataframe, subpage_navigation, template_download_row, workflow_progress)
+from core.ui import (DISPOSITION_EDITOR_OPTIONS, disposition_cards, disposition_label, normalize_disposition, page_header, save_success_popup, section_bar, style_status_dataframe, subpage_navigation, template_download_row, workflow_progress)
 
 STATUS_OPTIONS=['PASS','FAIL','NOT_EVALUATED','NOT_APPLICABLE']
 
@@ -351,7 +351,7 @@ def render_entry()->None:
                 try:
                     repo.update('rmtc_approvals',str(existing['id']),{'validated_by_employee_id':validator,'approved_by_employee_id':approver})
                     repo.rpc('qsms_submit_rmtc',{'p_rmtc_id':str(existing['id'])})
-                    st.success('RMTC moved to Approval Pending.');st.rerun()
+                    save_success_popup('RMTC moved to Approval Pending.', queue_for_rerun=True);st.rerun()
                 except Exception as exc:st.error(str(exc))
         else:
             w4.page_link(st.session_state['_qsms_pages']['rmtc-approval'],label='Open Approval',icon=':material/approval:',width='stretch')
@@ -364,7 +364,7 @@ def render_part()->None:
     subpage_navigation(('rmtc-records','RMTC Records',':material/table_view:'),('rmtc-approval','Validation & Approval',':material/approval:'))
     page_header('RMTC Entry · Part Worksheet','Chemical composition, Actual/Calculated Jominy, DI and properties for one covered part.','Step 2')
     flash=st.session_state.pop('rmtc_flash_success',None)
-    if flash: st.success(flash)
+    if flash: save_success_popup(flash)
     svc=RMTCService();repo=svc.repo;perms=current_permissions('RMTC_ENTRY')
     rid=_valid_uuid(st.session_state.get('part_rmtc_id') or st.session_state.get('edit_rmtc_id'))
     if not rid:
@@ -594,7 +594,7 @@ def render_approval()->None:
         if st.button('Admin · Reopen Decision for Change',type='primary',disabled=not reopen_reason.strip(),width='stretch'):
             try:
                 repo.rpc('qsms_admin_reopen_rmtc',{'p_rmtc_id':rid,'p_reason':reopen_reason.strip()})
-                st.success('RMTC reopened to Approval Pending. The administrator may now change and save the decisions.');st.rerun()
+                save_success_popup('RMTC reopened to Approval Pending. The administrator may now change and save the decisions.', queue_for_rerun=True);st.rerun()
             except Exception as exc: st.error(str(exc))
         if revisions:
             st.dataframe(pd.DataFrame([{
@@ -633,7 +633,7 @@ def render_approval()->None:
         try:
             repo.update('rmtc_approvals',rid,{'validated_by_employee_id':validated,'approved_by_employee_id':approved})
             repo.rpc('qsms_submit_rmtc',{'p_rmtc_id':rid})
-            st.success('RMTC submitted and moved to Approval Pending.');st.rerun()
+            save_success_popup('RMTC submitted and moved to Approval Pending.', queue_for_rerun=True);st.rerun()
         except Exception as exc:st.error(str(exc))
 
     validate_disabled=record.get('status')!='APPROVAL_PENDING' or not validated or finalized
@@ -641,7 +641,7 @@ def render_approval()->None:
         try:
             repo.update('rmtc_approvals',rid,{'validated_by_employee_id':validated,'approved_by_employee_id':approved or None})
             repo.rpc('qsms_validate_rmtc',{'p_rmtc_id':rid})
-            st.success('RMTC validation completed. Select the final decision for every Part Number.');st.rerun()
+            save_success_popup('RMTC validation completed. Select the final decision for every Part Number.', queue_for_rerun=True);st.rerun()
         except Exception as exc:st.error(str(exc))
 
     all_decided=all(normalize_disposition(row.get('Final Decision')) in ('PENDING','ON_HOLD','ACCEPTED','ACCEPTED_UNDER_RESERVE','REJECTED') for _,row in decision_grid.iterrows())
@@ -662,7 +662,7 @@ def render_approval()->None:
                     raise ValueError(f"Manual acceptance reason is mandatory for {str(row.get('Part Number'))}.")
                 decisions.append({'part_id':str(row.get('_part_id')),'disposition':disposition,'reason':reason or None})
             result=repo.rpc('qsms_decide_rmtc',{'p_rmtc_id':rid,'p_decisions':decisions,'p_approved_by_employee_id':approved})
-            st.success(f"RMTC decision saved as {str((result or {}).get('disposition') or '').replace('_',' ').title()}.");st.rerun()
+            save_success_popup(f"RMTC decision saved as {str((result or {}).get('disposition') or '').replace('_',' ').title()}.", queue_for_rerun=True);st.rerun()
         except Exception as exc:st.error(str(exc))
 
     if finalized:

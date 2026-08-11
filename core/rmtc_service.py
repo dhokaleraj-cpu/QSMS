@@ -38,10 +38,31 @@ class RMTCService:
         return self.repo.select('material_grade_elements',eq={'material_grade_id':material_grade_id},order_by='element',limit=200)
 
     def jominy_template(self,part_id):
+        """Return Part Jominy requirements with a reliable 1/16-inch -> mm conversion.
+
+        New records carry ``jominy_distance_id``. Older trial/master rows sometimes
+        contained only the distance label (and a few labels included a leading J),
+        so we resolve by ID first and then by a normalized label/fraction fallback.
+        """
         reqs=self.repo.select('part_jominy_requirements',eq={'part_id':part_id,'status':'ACTIVE'},order_by='sequence_no',limit=100)
         distances=self.repo.select('jominy_distances',eq={'status':'ACTIVE'},order_by='distance_16th',limit=100)
-        by_label={str(d.get('distance_label')):d for d in distances}
-        return [{**r,'jominy_distance_id':(by_label.get(str(r.get('distance_label'))) or {}).get('id'),'distance_16th':(by_label.get(str(r.get('distance_label'))) or {}).get('distance_16th'),'distance_mm':round(float((by_label.get(str(r.get('distance_label'))) or {}).get('distance_16th') or 0)*25.4/16,2)} for r in reqs]
+        by_id={str(d.get('id')):d for d in distances if d.get('id')}
+        def norm(value):
+            text=str(value or '').strip().upper().replace('INCH','').replace('IN.','').replace('IN','').replace('″','"')
+            text=text.replace(' ', '').replace('J','',1) if text.startswith('J') else text.replace(' ', '')
+            return text.rstrip('"')
+        by_label={norm(d.get('distance_label')):d for d in distances}
+        prepared=[]
+        for requirement in reqs:
+            distance=by_id.get(str(requirement.get('jominy_distance_id') or '')) or by_label.get(norm(requirement.get('distance_label')))
+            sixteenth=int((distance or {}).get('distance_16th') or 0)
+            if not sixteenth:
+                import re
+                match=re.search(r'(\d+)\s*/\s*16', str(requirement.get('distance_label') or ''), re.I)
+                sixteenth=int(match.group(1)) if match else 0
+                distance=next((row for row in distances if int(row.get('distance_16th') or 0)==sixteenth), distance)
+            prepared.append({**requirement,'jominy_distance_id':(distance or {}).get('id') or requirement.get('jominy_distance_id'),'distance_16th':sixteenth,'distance_mm':round(float(sixteenth)*25.4/16,2) if sixteenth else None})
+        return prepared
 
     def requirements(self,part_id):
         rows = self.repo.select(

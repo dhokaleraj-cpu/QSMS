@@ -7,11 +7,12 @@ import pandas as pd
 import streamlit as st
 
 from core.access import current_permissions
+from core.delete_service import password_delete_panel
 from core.calculations import calculate_di, calculate_jominy_curve
 from core.hardness_conversion import SCALE_LABELS, convert_hardness
 from core.reporting import qc_calculation_pdf_bytes
 from core.repository import Repository
-from core.ui import page_header, section_bar
+from core.ui import page_header, save_success_popup, section_bar
 
 
 def _employee_rows(repo: Repository) -> list[dict]:
@@ -71,7 +72,7 @@ def _save_record(repo: Repository, perms: dict[str, bool], *, calculation_type: 
         "status": "ACTIVE",
     }
     saved = repo.insert("qc_calculation_records", payload)
-    st.success(f"Calculation saved as {saved.get('calculation_number')}.")
+    save_success_popup(f"Calculation saved as {saved.get('calculation_number')}.")
     return saved
 
 
@@ -171,7 +172,19 @@ def _render_records(repo: Repository | None = None) -> None:
     parts = {str(row["id"]): row for row in repo.select("parts", limit=4000)}
     grades = {str(row["id"]): row for row in repo.select("material_grades", limit=3000)}
     pdf = qc_calculation_pdf_bytes({"record": record, "employee": employees.get(str(record.get("performed_by_employee_id"))) or {}, "part": parts.get(str(record.get("part_id"))) or {}, "grade": grades.get(str(record.get("material_grade_id"))) or {}})
-    st.download_button("Download Selected Calculation PDF", pdf, file_name=f"{record.get('calculation_number')}.pdf", mime="application/pdf", width="stretch")
+    perms = current_permissions("QC_CALCULATION_TOOLS")
+    c_pdf, c_delete = st.columns(2, gap="small")
+    with c_pdf:
+        st.download_button("Download Selected Calculation PDF", pdf, file_name=f"{record.get('calculation_number')}.pdf", mime="application/pdf", width="stretch")
+    with c_delete:
+        if password_delete_panel(
+            repo=repo, table="qc_calculation_records", rows=[record],
+            labeler=lambda row: f"{row.get('calculation_number')} · {row.get('calculation_type')}",
+            key=f"delete_qc_calculation_{selected_id}", can_delete=perms["can_archive"],
+            title="Delete Selected Calculation Record",
+            help_text="Permanent deletion requires your current QCMS password.",
+        ):
+            st.rerun()
     display = pd.DataFrame([{
         "Calculation No.": row.get("calculation_number"), "Date": row.get("calculation_date"), "Type": row.get("calculation_type"),
         "Heat Number": row.get("heat_number"), "Primary": f"{row.get('primary_value') or ''} {row.get('primary_unit') or ''}".strip(),

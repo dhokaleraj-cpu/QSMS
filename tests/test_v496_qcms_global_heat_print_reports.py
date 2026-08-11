@@ -22,7 +22,7 @@ def _jpg() -> bytes:
 
 
 def test_release_branding_and_footer_contract():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.9.6", "4.9.7", "4.9.8"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.9.6", "4.9.7", "4.9.8", "4.9.9"}
     assert (ROOT / "docs" / "RELEASE_4_9_6.md").exists()
     ui = (ROOT / "core" / "ui.py").read_text()
     reporting = (ROOT / "core" / "reporting.py").read_text()

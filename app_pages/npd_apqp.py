@@ -8,9 +8,10 @@ import pandas as pd
 import streamlit as st
 
 from core.access import current_permissions
+from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes
 from core.repository import Repository
-from core.ui import kpi_grid, page_header, section_bar, status_chip
+from core.ui import kpi_grid, page_header, save_success_popup, section_bar, status_chip
 
 
 ORDER_STATUSES = ["OPEN", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"]
@@ -248,7 +249,7 @@ def render_process_flow() -> None:
             for old_step in old_steps:
                 if str(old_step["id"]) not in retained_ids:
                     repo.delete("npd_process_flow_steps", str(old_step["id"]))
-            st.success("Part Process Flow saved in operational sequence.")
+            save_success_popup("Part Process Flow saved in operational sequence.", queue_for_rerun=True)
             st.rerun()
         except Exception as exc:
             st.error(str(exc))
@@ -318,7 +319,7 @@ def render_process_flow() -> None:
                             created = repo.insert("npd_process_flow_points", payload); retained.add(str(created["id"]))
                     for record_id in existing_ids - retained:
                         repo.delete("npd_process_flow_points", record_id)
-                    st.success(f"Checkpoints saved for OP {step.get('operation_no')}.")
+                    save_success_popup(f"Checkpoints saved for OP {step.get('operation_no')}.", queue_for_rerun=True)
                     st.rerun()
                 except Exception as exc:
                     st.error(str(exc))
@@ -341,8 +342,18 @@ def render_process_flow() -> None:
             {"Operational Sequence": step_rows, "Process Checkpoints / Bullet Points": point_rows},
             record_number=f"{part.get('part_number')}-REV-{flow.get('revision')}",
         )
-        st.download_button("Download Process Flow PDF", pdf, file_name=f"Process_Flow_{part.get('part_number')}_Rev_{flow.get('revision')}.pdf", mime="application/pdf", width="stretch")
-
+        c_pdf, c_del = st.columns([2, 1], gap="small")
+        with c_pdf:
+            st.download_button("Download Process Flow PDF", pdf, file_name=f"Process_Flow_{part.get('part_number')}_Rev_{flow.get('revision')}.pdf", mime="application/pdf", width="stretch")
+        with c_del:
+            if password_delete_panel(
+                repo=repo, table="npd_process_flows", rows=[flow],
+                labeler=lambda row: f"{part.get('part_number')} · Rev {row.get('revision')}",
+                key=f"npd_flow_delete_{flow.get('id')}", can_delete=perms["can_archive"],
+                title="Delete Process Flow",
+                help_text="Deletes the selected Process Flow revision and its linked process/checkpoint rows. Current QCMS password is required.",
+            ):
+                st.rerun()
 
 
 def _suggested_target_dates(start: date, delivery: date, count: int) -> list[date]:
@@ -447,7 +458,7 @@ def render_npd_status() -> None:
                                 "target_date": suggested[index].isoformat(), "status": "PENDING", "completed_date": None,
                                 "remarks": point.get("remarks"),
                             })
-                st.success("NPD Order saved and process/checkpoint status cards created from the Part Process Flow.")
+                save_success_popup("NPD Order saved and process/checkpoint status cards created from the Part Process Flow.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
                 st.error(str(exc))
@@ -539,7 +550,7 @@ def render_npd_status() -> None:
                     })
                 refreshed = repo.select("npd_order_steps", eq={"npd_order_id": order_id}, order_by="operation_no", limit=500)
                 _sync_order_overall_status(repo, order, refreshed)
-                st.success("Process target dates and real-time status updated.")
+                save_success_popup("Process target dates and real-time status updated.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
                 st.error(str(exc))
@@ -592,7 +603,7 @@ def render_npd_status() -> None:
                                 "responsible_employee_id": resp_id, "responsible_snapshot": resp_snapshot,
                                 "remarks": str(row.get("Remarks") or "").strip() or None,
                             })
-                        st.success(f"Checkpoint status updated for OP {step.get('operation_no')}.")
+                        save_success_popup(f"Checkpoint status updated for OP {step.get('operation_no')}.", queue_for_rerun=True)
                         st.rerun()
                     except Exception as exc:
                         st.error(str(exc))
@@ -617,8 +628,18 @@ def render_npd_status() -> None:
             {"Process Status": process_pdf_rows, "Process Checkpoints / Bullet Points": point_pdf_rows},
             record_number=str(order.get("order_number") or ""),
         )
-        st.download_button("Download NPD Order Status PDF", pdf, file_name=f"NPD_Order_Status_{order.get('order_number')}.pdf", mime="application/pdf", width="stretch")
-
+        c_pdf, c_del = st.columns([2, 1], gap="small")
+        with c_pdf:
+            st.download_button("Download NPD Order Status PDF", pdf, file_name=f"NPD_Order_Status_{order.get('order_number')}.pdf", mime="application/pdf", width="stretch")
+        with c_del:
+            if password_delete_panel(
+                repo=repo, table="npd_orders", rows=[order],
+                labeler=lambda row: f"{row.get('order_number')} · {part.get('part_number')}",
+                key=f"npd_order_delete_{order.get('id')}", can_delete=perms["can_archive"],
+                title="Delete NPD Order",
+                help_text="Deletes this NPD Order and its process/checkpoint status history. Current QCMS password is required.",
+            ):
+                st.rerun()
 
 
 def _default_apqp_tasks() -> list[tuple[int, str, str]]:
@@ -677,7 +698,7 @@ def render_apqp() -> None:
             coordinator_snapshot = employee_labels.get(str(coordinator_employee_id)) if coordinator_employee_id else (coordinator_option.removeprefix("Legacy · ").strip() if coordinator_option.startswith("Legacy · ") else None)
             payload = {"project_code": project_code.strip(), "part_id": part_id, "customer_id": customer_id, "submission_level": submission_level, "reason": reason.strip() or None, "target_submission_date": target_date.isoformat(), "coordinator_employee_id": coordinator_employee_id, "coordinator": coordinator_snapshot, "status": status, "remarks": remarks.strip() or None}
             saved = repo.update("ppap_projects", str(existing["id"]), payload) if existing else repo.insert("ppap_projects", {**payload, "completion_percent": 0})
-            st.success("APQP Project saved.")
+            save_success_popup("APQP Project saved successfully.", queue_for_rerun=True)
             st.session_state["apqp_selected_project"] = str(saved["id"])
             st.rerun()
         except Exception as exc:
@@ -692,7 +713,7 @@ def render_apqp() -> None:
     if not tasks and st.button("Load Standard APQP Gates", width="stretch", disabled=not perms["can_create"]):
         for sequence_no, phase, activity in _default_apqp_tasks():
             repo.insert("ppap_documents", {"ppap_project_id": project_id, "sequence_no": sequence_no, "apqp_phase": phase, "document_type": activity, "status": "NOT_STARTED"})
-        st.success("Standard APQP gates loaded.")
+        save_success_popup("Standard APQP gates loaded successfully.", queue_for_rerun=True)
         st.rerun()
     if tasks:
         completed = sum(str(row.get("status") or "") in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"} for row in tasks)
@@ -753,7 +774,7 @@ def render_apqp() -> None:
                 closed = sum(str(row.get("status") or "") in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"} for row in refreshed)
                 percent = round(closed * 100 / len(refreshed)) if refreshed else 0
                 repo.update("ppap_projects", project_id, {"completion_percent": percent})
-                st.success("APQP gates updated.")
+                save_success_popup("APQP gates updated successfully.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
                 st.error(str(exc))
@@ -772,4 +793,15 @@ def render_apqp() -> None:
         {"APQP Gates / Deliverables": pdf_tasks},
         record_number=str(project.get("project_code") or ""),
     )
-    st.download_button("Download APQP Project PDF", pdf, file_name=f"APQP_{project.get('project_code')}.pdf", mime="application/pdf", width="stretch")
+    c_pdf, c_del = st.columns([2, 1], gap="small")
+    with c_pdf:
+        st.download_button("Download APQP Project PDF", pdf, file_name=f"APQP_{project.get('project_code')}.pdf", mime="application/pdf", width="stretch")
+    with c_del:
+        if password_delete_panel(
+            repo=repo, table="ppap_projects", rows=[project],
+            labeler=lambda row: f"{row.get('project_code')} · {part_row.get('part_number')}",
+            key=f"apqp_project_delete_{project.get('id')}", can_delete=perms["can_archive"],
+            title="Delete APQP Project",
+            help_text="Deletes the selected APQP project and its linked APQP gates/documents. Current QCMS password is required.",
+        ):
+            st.rerun()
