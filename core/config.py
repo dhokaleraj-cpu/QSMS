@@ -62,7 +62,7 @@ def get_settings() -> Settings:
         version = "4.0.0-phase1"
 
     return Settings(
-        app_name=_secret("QSMS_APP_NAME", "Quality System Monitoring System"),
+        app_name=_secret("QSMS_APP_NAME", "Quality Control Monitoring System"),
         company_name=_secret("QSMS_COMPANY_NAME", "Four Star Industries Pvt. Ltd."),
         plant_code=_secret("QSMS_PLANT_CODE", "D9"),
         environment=_secret("QSMS_ENVIRONMENT", "Phase 1 - Masters and Traceability"),

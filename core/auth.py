@@ -13,7 +13,7 @@ from core.ui import render_public_brand
 PREVIEW_PROFILE = {
     "id": "phase1-preview-user",
     "tenant_id": "00000000-0000-0000-0000-000000000001",
-    "full_name": "Quality System Preview",
+    "full_name": "Quality Control Preview",
     "email": "preview@fsi.local",
     "role": "QUALITY_MANAGER",
     "status": "ACTIVE",
@@ -54,7 +54,7 @@ def _fetch_profile(client: Any, user_id: str) -> dict[str, Any]:
         if response.data:
             return dict(response.data[0])
         time.sleep(0.2)
-    raise RuntimeError("The authenticated account has no QSMS profile. Ask the QSMS administrator to verify user provisioning.")
+    raise RuntimeError("The authenticated account has no QCMS profile. Ask the QCMS administrator to verify user provisioning.")
 
 
 def login(email: str, password: str) -> dict[str, Any]:
@@ -67,7 +67,7 @@ def login(email: str, password: str) -> dict[str, Any]:
     profile = _fetch_profile(client, str(response.user.id))
     if str(profile.get("status") or "ACTIVE").upper() != "ACTIVE":
         client.auth.sign_out()
-        raise PermissionError("This QSMS account is not active.")
+        raise PermissionError("This QCMS account is not active.")
     st.session_state["supabase_client"] = client
     st.session_state["profile"] = profile
     st.session_state.pop("_qsms_preview", None)
@@ -150,7 +150,7 @@ def verify_current_password(password: str) -> None:
     profile = current_profile() or {}
     email = str(profile.get("email") or "").strip()
     if not email or not password:
-        raise ValueError("Enter your current QSMS password.")
+        raise ValueError("Enter your current QCMS password.")
     verifier = new_client()
     try:
         response = verifier.auth.sign_in_with_password({"email": email, "password": password})
@@ -163,7 +163,7 @@ def verify_current_password(password: str) -> None:
             verifier.auth.sign_out({"scope": "local"})
         except Exception:
             # Never fall back to the default global scope because that would
-            # terminate the user's other active QSMS sessions.
+            # terminate the user's other active QCMS sessions.
             pass
 
 def request_password_reset(email: str) -> None:

@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_and_release_files():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.9.2", "4.9.3", "4.9.4", "4.9.5"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.9.2", "4.9.3", "4.9.4", "4.9.5", "4.9.6"}
     assert (ROOT / "docs/RELEASE_4_9_2.md").exists()
     assert (ROOT / "supabase/migrations/20260805194500_qsms_simplified_metlab_process_master_print_v492.sql").exists()
 
@@ -65,7 +65,7 @@ def test_report_print_header_footer_and_excel_theme():
     reporting = (ROOT / "core/reporting.py").read_text()
     reports = (ROOT / "app_pages/reports.py").read_text()
     requirements = (ROOT / "requirements.txt").read_text()
-    for token in ("FOUR STAR INDUSTRIES", "QUALITY SYSTEM MONITORING SYSTEM", "Page {self._pageNumber} of {page_count}", "CONTROLLED QSMS REPORT"):
+    for token in ("FOUR STAR INDUSTRIES", "QUALITY CONTROL MONITORING SYSTEM", "Page {self._pageNumber} of {page_count}"):
         assert token in reporting
     assert "report_pdf_bytes" in reports
     assert "oddHeader" in reports and "oddFooter" in reports

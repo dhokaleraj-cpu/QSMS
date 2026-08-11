@@ -80,6 +80,9 @@ required = [
     "templates/Material_Inward_Template.xlsx",
     "templates/MetLAB_Report_Layout_Template.xlsx",
     "core/delete_service.py",
+    "supabase/migrations/20260811090000_qcms_rmtc_microstructure_print_reports_v496.sql",
+    "tests/test_v496_qcms_global_heat_print_reports.py",
+    "docs/RELEASE_4_9_6.md",
 ]
 for item in required:
     if not (ROOT / item).exists():
@@ -175,7 +178,7 @@ if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
 report = {
-    "release": "QSMS 4.9.2 Simplified MetLAB Requirements & Unified Print Theme",
+    "release": "QCMS 4.9.6 Global Heat Balance & Controlled PDF Reports",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),

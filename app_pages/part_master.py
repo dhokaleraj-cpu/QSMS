@@ -159,7 +159,7 @@ def _render_osp_metlab_requirements(
         key=f"delete_osp_metlab_{part_id}_{selected_process_id}",
         can_delete=can_delete,
         title="Delete OSP MetLAB Parameter",
-        help_text="Permanent deletion requires the current QSMS password.",
+        help_text="Permanent deletion requires the current QCMS password.",
     ):
         st.rerun()
 
@@ -306,7 +306,7 @@ def _render_metallurgical_requirements(
         key=f"delete_metallurgical_{part_id}",
         can_delete=can_delete,
         title="Delete Metallurgical Requirement",
-        help_text="Permanent deletion requires the current QSMS password.",
+        help_text="Permanent deletion requires the current QCMS password.",
     ):
         st.rerun()
 

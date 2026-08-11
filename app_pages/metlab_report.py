@@ -10,6 +10,7 @@ import streamlit as st
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
 from core.inspection_service import FINAL_DISPOSITIONS, RESULT_OPTIONS, InspectionService
+from core.reporting import metlab_record_pdf_bytes
 from core.ui import disposition_cards, disposition_label, page_header, section_bar, style_status_dataframe, subpage_navigation, template_download_row
 
 
@@ -297,9 +298,15 @@ def render_records() -> None:
     if filtered:
         labels = {str(row["id"]): f"{row.get('report_number')} · Heat {row.get('heat_number')} · {row.get('layout_name_snapshot') or 'Layout'} · {disposition_label(row.get('disposition'))}" for row in filtered}
         selected = st.selectbox("Select MetLAB Report", list(labels), format_func=lambda value: labels[value]); selected_row = next(row for row in filtered if str(row["id"]) == selected); st.session_state["edit_metlab_id"] = selected
-        c1, c2 = st.columns(2, gap="small")
+        c1, c2, c3 = st.columns(3, gap="small")
         with c1: st.page_link(st.session_state["_qsms_pages"]["metlab-entry"], label="Open Selected Report", icon=":material/edit:", width="stretch")
         with c2:
+            try:
+                pdf_bytes = metlab_record_pdf_bytes(service.metlab_report_payload(selected))
+                st.download_button("Download MetLAB Report PDF", data=pdf_bytes, file_name=f"{selected_row.get('report_number') or 'MetLAB_Report'}.pdf", mime="application/pdf", key=f"metlab_pdf_{selected}", width="stretch")
+            except Exception as exc:
+                st.error(f"PDF could not be generated: {exc}")
+        with c3:
             if password_delete_panel(repo=service.repo, table="lab_tests", rows=[selected_row], labeler=lambda row: row.get("report_number"), key=f"delete_metlab_{selected}", can_delete=perms["can_archive"], title="Delete Selected MetLAB Report"):
                 st.rerun()
     section_bar("METLAB REGISTER")

@@ -10,6 +10,7 @@ from core.access import current_permissions
 from core.attachments import AttachmentService, AttachmentSlot, new_attachment_uploaders, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.inward_service import InwardService
+from core.reporting import material_inward_record_pdf_bytes
 from core.ui import disposition_cards, disposition_label, page_header, section_bar, style_status_dataframe, subpage_navigation, template_download_row
 
 DISPOSITIONS = ["PENDING", "ON_HOLD", "ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"]
@@ -282,11 +283,17 @@ def render_records() -> None:
         selected = st.selectbox("Select Material Inward record", list(labels), format_func=lambda value: labels[value])
         st.session_state["edit_inward_id"] = selected; st.session_state["inspection_inward_id"] = selected
         selected_row = next(row for row in filtered if str(row.get("id")) == selected)
-        c1, c2, c3, c4 = st.columns(4, gap="small")
+        c1, c2, c3, c4, c5 = st.columns(5, gap="small")
         with c1: st.page_link(st.session_state["_qsms_pages"]["inward-entry"], label="Open Inward", icon=":material/edit:", width="stretch")
         with c2: st.page_link(st.session_state["_qsms_pages"]["metlab-entry"], label="MetLAB", icon=":material/science:", width="stretch")
         with c3: st.page_link(st.session_state["_qsms_pages"]["dimensional-entry"], label="Dimensional", icon=":material/straighten:", width="stretch")
         with c4:
+            try:
+                pdf_bytes = material_inward_record_pdf_bytes(service.report_payload(selected))
+                st.download_button("Download Inward PDF", data=pdf_bytes, file_name=f"{selected_row.get('inward_number') or 'Material_Inward'}.pdf", mime="application/pdf", key=f"inward_pdf_{selected}", width="stretch")
+            except Exception as exc:
+                st.error(f"PDF could not be generated: {exc}")
+        with c5:
             if password_delete_panel(repo=service.repo, table="inward_lots", rows=[selected_row], labeler=lambda row: f"{row.get('inward_number')} · {row.get('grn_number')}", key=f"delete_inward_{selected}", can_delete=perms["can_archive"], title="Delete Selected Material Inward", help_text="Current password and Material Inward Delete permission are required."):
                 st.rerun()
         render_attachment_manager(

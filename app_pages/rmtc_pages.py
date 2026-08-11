@@ -26,6 +26,15 @@ RMTC_ATTACHMENT_SLOTS = (
     AttachmentSlot('RMTC_ATTACHMENT_3', 'Attachment 3 · Additional Document', 'Optional additional controlled document'),
 )
 
+RMTC_MICROSTRUCTURE_SLOTS = tuple(
+    AttachmentSlot(
+        f'RMTC_MICROSTRUCTURE_{slot}',
+        f'Microstructure Photo {slot}',
+        'Controlled RMTC microstructure photograph (PNG/JPG/JPEG)',
+    )
+    for slot in range(1, 4)
+)
+
 
 def _opts(rows:list[dict],label)->dict[str,str]:
     return {str(r['id']):label(r) for r in rows}
@@ -118,6 +127,50 @@ def _start_new_rmtc_for_heat(heat_number: str = "") -> None:
         st.session_state.pop(key, None)
 
 
+def _render_rmtc_microstructure_inputs(existing: dict, repo: Repository, form_token: str) -> dict[str, Any]:
+    """Render exactly three controlled RMTC microstructure photo slots.
+
+    Photographs are stored in the existing document attachment register, so this
+    feature is backward-compatible with the live database and does not depend on
+    additional RMTC header columns.
+    """
+    section_bar('MICROSTRUCTURE PHOTOGRAPHS')
+    st.caption('Upload up to three microstructure photographs. Existing RMTC records can add, replace or delete photographs from the attachment controls after saving.')
+    attachment_service = AttachmentService(repo)
+    existing_attachments: dict[str, dict] = {}
+    if existing and existing.get('id'):
+        try:
+            existing_attachments = {
+                str(row.get('document_type')): row
+                for row in attachment_service.list_active('RMTC', str(existing['id']))
+                if str(row.get('document_type') or '').startswith('RMTC_MICROSTRUCTURE_')
+            }
+        except Exception:
+            existing_attachments = {}
+
+    uploads: dict[str, Any] = {}
+    cols = st.columns(3, gap='small')
+    for slot, col in enumerate(cols, start=1):
+        document_type = f'RMTC_MICROSTRUCTURE_{slot}'
+        with col:
+            attachment = existing_attachments.get(document_type)
+            if attachment:
+                try:
+                    image_bytes = attachment_service.download(attachment)
+                    if image_bytes:
+                        st.image(image_bytes, caption=f'Microstructure Photo {slot}', width=260)
+                except Exception as exc:
+                    st.caption(f'Photo {slot} preview unavailable: {exc}')
+            elif existing:
+                st.caption(f'Microstructure Photo {slot}: no image uploaded')
+            if not existing:
+                uploads[document_type] = st.file_uploader(
+                    f'Upload Microstructure Photo {slot}',
+                    type=['png', 'jpg', 'jpeg'],
+                    key=f'rmtc_micro_photo_{slot}_{form_token}',
+                )
+    return uploads
+
 def render_entry()->None:
     subpage_navigation(('masters','Back to Masters',':material/arrow_back:'),('rmtc-records','RMTC Records',':material/table_view:'))
     page_header('RMTC Entry · Header','Create or edit the certificate header, heat, source, covered parts and RMTC attachment.','Step 1')
@@ -139,6 +192,11 @@ def render_entry()->None:
     heat_search=heat_search.strip()
     heat_summary=svc.heat_summary(heat_search) if heat_search else {}
     heat_usage=svc.heat_usage(heat_search) if heat_search else []
+    if heat_search:
+        section_bar(
+            'GLOBAL HEAT QUANTITY BALANCE & RECORD LIST',
+            'One Heat Number shares one global steel quantity. The balance and every linked RMTC/Part allocation are shown below.',
+        )
     if heat_summary:
         k1,k2,k3,k4=st.columns(4,gap='small')
         k1.metric('Global Heat Steel',f"{float(heat_summary.get('global_steel_quantity_kg') or 0):,.3f} kg")
@@ -196,7 +254,7 @@ def render_entry()->None:
 
     c=st.columns(4,gap='small')
     suggested=st.session_state.setdefault('new_rmtc_number',f"RMTC-D9-{datetime.now().strftime('%Y%m%d%H%M%S')}")
-    rmtc_no=c[0].text_input('QSMS RMTC Number',value=str(existing.get('rmtc_number') or suggested),key=f'rmtc_no_{form_token}')
+    rmtc_no=c[0].text_input('QCMS RMTC Number',value=str(existing.get('rmtc_number') or suggested),key=f'rmtc_no_{form_token}')
     entry_date=c[1].date_input('Entry Date',value=date.fromisoformat(str(existing.get('entry_date'))[:10]) if existing.get('entry_date') else date.today(),format='DD-MM-YYYY',key=f'rmtc_entry_date_{form_token}')
     cert_ref=c[2].text_input('Supplier RMTC Number',value=str(existing.get('certificate_reference') or ''),key=f'rmtc_cert_ref_{form_token}')
     cert_date=c[3].date_input('RMTC Date',value=date.fromisoformat(str(existing.get('certificate_date'))[:10]) if existing.get('certificate_date') else date.today(),format='DD-MM-YYYY',key=f'rmtc_cert_date_{form_token}')
@@ -223,6 +281,7 @@ def render_entry()->None:
     prepared_options=['']+list(prepared_map);current_prepared=str(existing.get('prepared_by_employee_id') or '')
     prepared_id=c[3].selectbox('Prepared By',prepared_options,index=prepared_options.index(current_prepared) if current_prepared in prepared_options else 0,format_func=lambda x:prepared_map.get(x,'— Select —'),key=f'rmtc_prepared_{form_token}')
     remarks=st.text_area('RMTC Remarks',value=str(existing.get('remarks') or ''),height=70,key=f'rmtc_remarks_{form_token}')
+    microstructure_uploads = _render_rmtc_microstructure_inputs(existing, repo, form_token)
     new_attachments = {} if existing else new_attachment_uploaders(
         RMTC_ATTACHMENT_SLOTS, key_prefix=f'rmtc_{form_token}', title='OPTIONAL RMTC ATTACHMENTS'
     )
@@ -249,6 +308,13 @@ def render_entry()->None:
                             entity_type='RMTC', entity_id=str(saved['id']), folder='rmtc',
                             slot=slot, file=selected_file,
                         )
+                for slot in RMTC_MICROSTRUCTURE_SLOTS:
+                    selected_file = microstructure_uploads.get(slot.document_type)
+                    if selected_file is not None:
+                        attachment_service.upload(
+                            entity_type='RMTC', entity_id=str(saved['id']), folder='rmtc-microstructure',
+                            slot=slot, file=selected_file,
+                        )
             st.session_state['edit_rmtc_id']=str(saved['id'])
             st.session_state['rmtc_entry_mode']='edit'
             st.session_state['rmtc_part_choice']=selected_parts[0]
@@ -264,6 +330,12 @@ def render_entry()->None:
             slots=RMTC_ATTACHMENT_SLOTS, key_prefix=f'rmtc_entry_{existing.get("id")}',
             can_add_or_replace=perms['can_edit'], can_delete=perms['can_archive'],
             title='RMTC ATTACHMENTS',
+        )
+        render_attachment_manager(
+            repo=repo, entity_type='RMTC', entity_id=str(existing['id']), folder='rmtc-microstructure',
+            slots=RMTC_MICROSTRUCTURE_SLOTS, key_prefix=f'rmtc_microstructure_{existing.get("id")}',
+            can_add_or_replace=perms['can_edit'], can_delete=perms['can_archive'],
+            title='RMTC MICROSTRUCTURE PHOTO FILES',
         )
         section_bar('RMTC WORKFLOW')
         validator_map=_employee_map(svc,'RMTC_VALIDATE');approver_map=_employee_map(svc,'RMTC_APPROVE')
@@ -463,7 +535,7 @@ def render_records()->None:
         st.info('No RMTC records match the search.')
 
     section_bar('RMTC REGISTER','The selected record and actions are placed above this full-width table.')
-    df=pd.DataFrame([{'QSMS RMTC':r.get('rmtc_number'),'Supplier RMTC':r.get('certificate_reference'),'RMTC Date':r.get('certificate_date'),'Primary Part':(parts.get(str(r.get('part_id'))) or {}).get('part_number'),'Supplier':(suppliers.get(str(r.get('supplier_id'))) or {}).get('party_name'),'Steel Mill':(mills.get(str(r.get('steel_mill_id'))) or {}).get('party_name'),'Heat Number':r.get('heat_number'),'Internal Heat Code':r.get('heat_code'),'Steel Quantity kg':r.get('certificate_quantity'),'Validation':r.get('validation_result'),'Workflow':r.get('status'),'Disposition':r.get('disposition'),'Decision Date':r.get('decision_at')} for r in filtered])
+    df=pd.DataFrame([{'QCMS RMTC':r.get('rmtc_number'),'Supplier RMTC':r.get('certificate_reference'),'RMTC Date':r.get('certificate_date'),'Primary Part':(parts.get(str(r.get('part_id'))) or {}).get('part_number'),'Supplier':(suppliers.get(str(r.get('supplier_id'))) or {}).get('party_name'),'Steel Mill':(mills.get(str(r.get('steel_mill_id'))) or {}).get('party_name'),'Heat Number':r.get('heat_number'),'Internal Heat Code':r.get('heat_code'),'Steel Quantity kg':r.get('certificate_quantity'),'Validation':r.get('validation_result'),'Workflow':r.get('status'),'Disposition':r.get('disposition'),'Decision Date':r.get('decision_at')} for r in filtered])
     st.dataframe(style_status_dataframe(df),hide_index=True,width='stretch',height=600)
 
 

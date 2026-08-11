@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Mapping
 
 import pandas as pd
+from PIL import Image as PILImage
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4, landscape
@@ -13,7 +14,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
-from reportlab.platypus import CondPageBreak, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, Image as RLImage
 
 from core.config import get_settings
 
@@ -31,10 +32,21 @@ def _logo_path() -> Path:
 
 
 class _PageNumberCanvas(canvas.Canvas):
-    def __init__(self, *args, report_title: str, **kwargs):
+    def __init__(
+        self,
+        *args,
+        report_title: str,
+        heat_number: str = "",
+        record_number: str = "",
+        report_label: str = "",
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self._saved_page_states = []
         self._report_title = report_title
+        self._heat_number = str(heat_number or "").strip()
+        self._record_number = str(record_number or "").strip()
+        self._report_label = str(report_label or "").strip()
 
     def showPage(self):
         self._saved_page_states.append(dict(self.__dict__))
@@ -71,7 +83,7 @@ class _PageNumberCanvas(canvas.Canvas):
         header_width = width - (2 * edge)
         right_panel_width = 48 * mm if portrait_page else 63 * mm
 
-        # Header edges intentionally use the same margins as the RMTC report grids.
+        # Header, report grids and footer use the same left/right printable edges.
         self.setFillColor(NAVY)
         self.roundRect(edge, header_y, header_width, header_height, 3.5 * mm, fill=1, stroke=0)
         self.setFillColor(BLUE)
@@ -98,37 +110,46 @@ class _PageNumberCanvas(canvas.Canvas):
         self.setFillColor(WHITE)
         self.setFont('Helvetica-Bold', 8.4 if portrait_page else 10)
         self.drawString(brand_x, header_y + 12.0 * mm, 'FOUR STAR INDUSTRIES')
-        self.setFont('Helvetica', 5.8 if portrait_page else 6.8)
-        self.drawString(brand_x, header_y + 7.4 * mm, 'QUALITY SYSTEM MONITORING SYSTEM')
+        self.setFont('Helvetica', 5.7 if portrait_page else 6.8)
+        self.drawString(brand_x, header_y + 7.4 * mm, 'QUALITY CONTROL MONITORING SYSTEM')
 
-        title_line_1, title_line_2 = self._split_report_title(self._report_title)
         center_left = edge + (72 * mm if portrait_page else 78 * mm)
         center_right = width - edge - right_panel_width - 3 * mm
         center_x = (center_left + center_right) / 2
-        self.setFont('Helvetica-Bold', 8.4 if portrait_page else 13)
-        self.drawCentredString(center_x, header_y + (12.4 * mm if title_line_2 else 10.5 * mm), title_line_1[:48])
-        if title_line_2:
-            self.setFont('Helvetica-Bold', 7.2 if portrait_page else 9.5)
-            self.drawCentredString(center_x, header_y + 7.4 * mm, title_line_2[:52])
+        if self._heat_number:
+            # Heat Number is intentionally 50% larger than the RMTC/record number.
+            self.setFont('Helvetica-Bold', 10.5 if portrait_page else 13.5)
+            self.drawCentredString(center_x, header_y + 12.0 * mm, f'HEAT NUMBER: {self._heat_number}'[:42])
+            self.setFont('Helvetica-Bold', 7.0 if portrait_page else 9.0)
+            secondary = f'RMTC NUMBER: {self._record_number}' if self._record_number else self._report_title
+            self.drawCentredString(center_x, header_y + 7.1 * mm, secondary[:55])
+            if self._report_label:
+                self.setFont('Helvetica', 5.0 if portrait_page else 6.3)
+                self.drawCentredString(center_x, header_y + 3.6 * mm, self._report_label[:55])
+        else:
+            title_line_1, title_line_2 = self._split_report_title(self._report_title)
+            self.setFont('Helvetica-Bold', 8.4 if portrait_page else 13)
+            self.drawCentredString(center_x, header_y + (12.4 * mm if title_line_2 else 10.5 * mm), title_line_1[:48])
+            if title_line_2:
+                self.setFont('Helvetica-Bold', 7.2 if portrait_page else 9.5)
+                self.drawCentredString(center_x, header_y + 7.4 * mm, title_line_2[:52])
 
         self.setFont('Helvetica-Bold', 6.0 if portrait_page else 7)
         self.drawRightString(width - edge - 4 * mm, header_y + 13.2 * mm, f'Plant: {settings.plant_code}')
         self.setFont('Helvetica', 5.3 if portrait_page else 6.5)
         self.drawRightString(width - edge - 4 * mm, header_y + 8.8 * mm, datetime.now().strftime('Printed: %d-%m-%Y %I:%M %p'))
-        self.drawRightString(width - edge - 4 * mm, header_y + 4.8 * mm, f'QSMS {settings.version}')
+        self.drawRightString(width - edge - 4 * mm, header_y + 4.8 * mm, f'App Version: {settings.version}')
 
-        # Footer line exactly aligns with the report/header edges.
+        # Footer is printed on every PDF page and aligned to the same report edges.
         footer_y = 9.2 * mm
         self.setStrokeColor(BORDER)
         self.setLineWidth(0.45)
         self.line(edge, footer_y, width - edge, footer_y)
         self.setFillColor(MUTED)
-        self.setFont('Helvetica', 5.4 if portrait_page else 6.5)
-        self.drawString(edge + 1 * mm, 5.6 * mm, 'FOUR STAR INDUSTRIES - CONTROLLED QSMS REPORT')
-        if not portrait_page:
-            self.drawCentredString(width / 2, 5.6 * mm, 'Generated from the live Supabase quality database')
-        self.drawRightString(width - edge - 1 * mm, 5.6 * mm, f'Page {self._pageNumber} of {page_count}')
-
+        self.setFont('Helvetica', 5.1 if portrait_page else 6.2)
+        footer_text = 'Developed by Rajesh Dhokale | dhokaleraj@icloud.com | Copyrights to jrdhokale'
+        self.drawString(edge + 1 * mm, 5.6 * mm, footer_text)
+        self.drawRightString(width - edge - 1 * mm, 5.6 * mm, f'Version {settings.version} | Page {self._pageNumber} of {page_count}')
 
 def _paragraph(value: object, style: ParagraphStyle) -> Paragraph:
     text = "" if value is None else str(value)
@@ -151,7 +172,7 @@ def report_pdf_bytes(
         topMargin=34 * mm,
         bottomMargin=14 * mm,
         title=title,
-        author="Four Star Industries QSMS",
+        author="Four Star Industries - Quality Control Monitoring System",
     )
     styles = getSampleStyleSheet()
     section_style = ParagraphStyle(
@@ -369,6 +390,56 @@ def _rmtc_labeled_grid(
     return table
 
 
+def _fit_image_flowable(image_bytes: bytes, max_width: float, max_height: float) -> RLImage | None:
+    if not image_bytes:
+        return None
+    try:
+        with PILImage.open(BytesIO(image_bytes)) as image:
+            width_px, height_px = image.size
+        if width_px <= 0 or height_px <= 0:
+            return None
+        scale = min(max_width / float(width_px), max_height / float(height_px))
+        return RLImage(BytesIO(image_bytes), width=width_px * scale, height=height_px * scale)
+    except Exception:
+        return None
+
+
+def _microstructure_photo_table(items: list[Mapping[str, object]], content_width: float, caption_style: ParagraphStyle) -> Table:
+    column_width = content_width / 3.0
+    cells = []
+    for slot in range(1, 4):
+        item = next((dict(row) for row in items if int(row.get('slot') or 0) == slot), {})
+        image = _fit_image_flowable(bytes(item.get('bytes') or b''), column_width - 5 * mm, 40 * mm)
+        caption = _paragraph(item.get('caption') or f'Microstructure Photo {slot}', caption_style)
+        if image is None:
+            placeholder = Table(
+                [[_paragraph('No photograph uploaded', caption_style)]],
+                colWidths=[column_width - 6 * mm], rowHeights=[36 * mm],
+            )
+            placeholder.setStyle(TableStyle([
+                ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F7FAFC')),
+            ]))
+            body = [placeholder, Spacer(1, 1 * mm), caption]
+        else:
+            body = [image, Spacer(1, 1 * mm), caption]
+        cells.append(body)
+    table = Table([cells], colWidths=[column_width] * 3, hAlign='LEFT')
+    table.setStyle(TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.55, BORDER),
+        ('INNERGRID', (0, 0), (-1, -1), 0.35, BORDER),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 2.5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 2.5),
+        ('TOPPADDING', (0, 0), (-1, -1), 3.0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3.0),
+    ]))
+    return table
+
+
 def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     """Create a compact controlled RMTC Record PDF in A4 portrait orientation."""
     record = dict(payload.get("record") or {})
@@ -381,6 +452,9 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     supplier = dict(payload.get("supplier") or {})
     steel_mill = dict(payload.get("steel_mill") or {})
     employees = dict(payload.get("employees") or {})
+    heat_summary = dict(payload.get("heat_summary") or {})
+    heat_usage = [dict(row) for row in (payload.get("heat_usage") or [])]
+    microstructure_images = [dict(row) for row in (payload.get("microstructure_images") or [])]
 
     buffer = BytesIO()
     title = f"RMTC RECORD - {record.get('rmtc_number') or 'QUALITY RECORD'}"
@@ -395,7 +469,7 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         topMargin=30 * mm,
         bottomMargin=12 * mm,
         title=title,
-        author="Four Star Industries QSMS",
+        author="Four Star Industries - Quality Control Monitoring System",
         allowSplitting=1,
     )
     styles = getSampleStyleSheet()
@@ -430,7 +504,7 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     # Header / traceability. The 4-column grid is exactly the same width as the page header.
     story.append(_rmtc_section_bar("RMTC HEADER & TRACEABILITY", content_width, section_text_style))
     header_pairs = [
-        ("QSMS RMTC Number", record.get("rmtc_number"), "Entry Date", record.get("entry_date")),
+        ("QCMS RMTC Number", record.get("rmtc_number"), "Entry Date", record.get("entry_date")),
         ("Supplier RMTC Number", record.get("certificate_reference"), "RMTC Date", record.get("certificate_date")),
         ("Supplier", supplier.get("party_name"), "Steel Mill", steel_mill.get("party_name")),
         ("Heat Number", record.get("heat_number"), "Internal Heat Code", record.get("heat_code")),
@@ -450,6 +524,36 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
             [29 * mm, content_width - 29 * mm], label_style, cell_style,
             label_columns=(0,),
         ))
+
+    story.append(Spacer(1, 1.6 * mm))
+    story.append(_rmtc_section_bar("GLOBAL HEAT QUANTITY BALANCE & RECORD LIST", content_width, section_text_style))
+    heat_balance_rows = [
+        ["Global Heat Qty kg", heat_summary.get("global_steel_quantity_kg") or record.get("certificate_quantity"),
+         "Committed kg", heat_summary.get("committed_steel_quantity_kg"),
+         "Unallocated Balance kg", heat_summary.get("available_unallocated_steel_quantity_kg") or heat_summary.get("available_steel_quantity_kg")],
+        ["Inward Steel Used kg", heat_summary.get("inward_steel_quantity_kg"),
+         "Remaining Planned kg", heat_summary.get("remaining_planned_steel_quantity_kg"),
+         "Active RMTC Records", heat_summary.get("active_rmtc_count")],
+    ]
+    story.append(_rmtc_labeled_grid(
+        heat_balance_rows,
+        [31*mm, 33*mm, 31*mm, 33*mm, 34*mm, 32*mm],
+        label_style, cell_style, label_columns=(0, 2, 4),
+    ))
+    heat_record_rows = [["RMTC No.", "Supplier RMTC", "Supplier", "Part", "Planned kg", "Inward kg", "Balance Plan kg", "Decision"]]
+    for row in heat_usage:
+        heat_record_rows.append([
+            row.get("rmtc_number"), row.get("supplier_rmtc_number"), row.get("supplier_name"), row.get("part_number"),
+            row.get("planned_steel_quantity_kg"), row.get("inward_steel_quantity_kg"), row.get("remaining_planned_steel_quantity_kg"),
+            row.get("part_disposition") or row.get("rmtc_disposition") or row.get("rmtc_status"),
+        ])
+    if len(heat_record_rows) == 1:
+        heat_record_rows.append([record.get("rmtc_number"), record.get("certificate_reference"), supplier.get("party_name"), "-", "-", "-", "-", record.get("disposition") or record.get("status")])
+    story.append(_rmtc_grid(
+        heat_record_rows,
+        [24*mm, 27*mm, 34*mm, 21*mm, 21*mm, 21*mm, 25*mm, 21*mm],
+        header_style, small_style, status_columns=(7,),
+    ))
 
     story.append(Spacer(1, 1.6 * mm))
     story.append(_rmtc_section_bar("COVERED PART WORKSHEET REGISTER", content_width, section_text_style))
@@ -557,6 +661,10 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
             req_rows.append(["-", "No additional requirements recorded", "", "", "NOT_EVALUATED", ""])
         story.append(_rmtc_grid(req_rows, [38*mm, 45*mm, 39*mm, 18*mm, 24*mm, 30*mm], header_style, small_style, status_columns=(4,)))
 
+    story.append(CondPageBreak(55 * mm))
+    story.append(_rmtc_section_bar("RMTC MICROSTRUCTURE PHOTOGRAPHS", content_width, section_text_style))
+    story.append(_microstructure_photo_table(microstructure_images, content_width, center_style))
+
     story.append(CondPageBreak(44 * mm))
     story.append(_rmtc_section_bar("RMTC VALIDATION STATUS & FINAL DECISION", content_width, section_text_style))
     if not part_approvals:
@@ -609,6 +717,274 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
 
     doc.build(
         story,
-        canvasmaker=lambda *args, **kwargs: _PageNumberCanvas(*args, report_title=title, **kwargs),
+        canvasmaker=lambda *args, **kwargs: _PageNumberCanvas(
+            *args, report_title=title,
+            heat_number=str(record.get("heat_number") or ""),
+            record_number=str(record.get("rmtc_number") or ""),
+            report_label="RMTC RECORD",
+            **kwargs,
+        ),
     )
+    return buffer.getvalue()
+
+
+def _photo_grid_table(
+    items: list[Mapping[str, object]],
+    content_width: float,
+    caption_style: ParagraphStyle,
+    *,
+    columns: int = 2,
+    max_height: float = 46 * mm,
+) -> Table:
+    columns = max(1, int(columns))
+    col_width = content_width / columns
+    normalized = [dict(item) for item in items] or []
+    cells: list[list[object]] = []
+    for index, item in enumerate(normalized, start=1):
+        image = _fit_image_flowable(bytes(item.get("bytes") or b""), col_width - 6 * mm, max_height)
+        caption = _paragraph(item.get("caption") or f"Microstructure Photo {index}", caption_style)
+        if image is None:
+            placeholder = Table(
+                [[_paragraph("No photograph uploaded", caption_style)]],
+                colWidths=[col_width - 8 * mm], rowHeights=[max_height - 5 * mm],
+            )
+            placeholder.setStyle(TableStyle([
+                ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F7FAFC")),
+            ]))
+            cell = [placeholder, Spacer(1, 1 * mm), caption]
+        else:
+            cell = [image, Spacer(1, 1 * mm), caption]
+        if (index - 1) % columns == 0:
+            cells.append([])
+        cells[-1].append(cell)
+    if not cells:
+        cells = [[[_paragraph("No microstructure photographs recorded", caption_style)]]]
+        columns = 1
+        col_width = content_width
+    while len(cells[-1]) < columns:
+        cells[-1].append("")
+    table = Table(cells, colWidths=[col_width] * columns, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.55, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.35, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    return table
+
+
+def _controlled_styles() -> dict[str, ParagraphStyle]:
+    styles = getSampleStyleSheet()
+    cell = ParagraphStyle("QcCell", parent=styles["Normal"], fontName="Helvetica", fontSize=5.4, leading=6.4, textColor=TEXT)
+    return {
+        "section": ParagraphStyle("QcSection", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=7.2, leading=8.4, textColor=WHITE),
+        "sub": ParagraphStyle("QcSub", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=6.5, leading=7.6, textColor=NAVY),
+        "header": ParagraphStyle("QcHeader", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=5.2, leading=6.1, textColor=WHITE, alignment=TA_CENTER),
+        "cell": cell,
+        "small": ParagraphStyle("QcSmall", parent=cell, fontSize=4.8, leading=5.6),
+        "label": ParagraphStyle("QcLabel", parent=cell, fontName="Helvetica-Bold", textColor=NAVY),
+        "center": ParagraphStyle("QcCenter", parent=cell, alignment=TA_CENTER),
+    }
+
+
+def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
+    """Controlled A4 portrait MetLAB report for Material Inward and OSP modules."""
+    record = dict(payload.get("record") or {})
+    part = dict(payload.get("part") or {})
+    inward = dict(payload.get("inward") or {})
+    supplier = dict(payload.get("supplier") or {})
+    steel_mill = dict(payload.get("steel_mill") or {})
+    grade = dict(payload.get("material_grade") or {})
+    process = dict(payload.get("process") or {})
+    stage = dict(payload.get("stage") or {})
+    osp_job = dict(payload.get("osp_job") or {})
+    employees = dict(payload.get("employees") or {})
+    results = dict(payload.get("results") or {})
+    microstructure_images = [dict(row) for row in (payload.get("microstructure_images") or [])]
+
+    scope = str(record.get("inspection_scope") or "MATERIAL_INWARD")
+    is_osp = scope.startswith("OSP_") or bool(record.get("osp_job_id"))
+    title = "OSP METALLURGICAL TEST REPORT" if is_osp else "RAW MATERIAL METALLURGICAL TEST REPORT"
+    buffer = BytesIO()
+    page_width, _ = A4
+    edge = 8 * mm
+    content_width = page_width - 2 * edge
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4, leftMargin=edge, rightMargin=edge, topMargin=30 * mm, bottomMargin=12 * mm,
+        title=title, author="Four Star Industries - Quality Control Monitoring System", allowSplitting=1,
+    )
+    sty = _controlled_styles()
+    story: list[object] = []
+
+    story.append(_rmtc_section_bar(title, content_width, sty["section"]))
+    vendor_or_supplier = osp_job.get("vendor_name") if is_osp else supplier.get("party_name")
+    supply_condition = osp_job.get("process_name") or process.get("process_name") or record.get("layout_name_snapshot")
+    qty = osp_job.get("sample_quantity") if scope == "OSP_SAMPLE" else (osp_job.get("quantity_received") if is_osp else record.get("production_quantity_pcs"))
+    meta = [
+        ["Report No.", record.get("report_number"), "Date", record.get("test_date")],
+        ["Part Name", part.get("part_name"), "Part No.", part.get("part_number")],
+        ["Supplier / OSP Vendor", vendor_or_supplier, "Material Used", grade.get("grade_code") or grade.get("grade_name")],
+        ["Supply / Process Condition", supply_condition, "Inspection Stage", stage.get("stage_name") or scope.replace("_", " ").title()],
+        ["Heat Number", record.get("heat_number") or inward.get("heat_number") or osp_job.get("heat_number"), "Heat Code", record.get("heat_code") or inward.get("heat_code")],
+        ["Sample / Inward Reference", record.get("sample_reference") or inward.get("inward_number") or osp_job.get("sample_reference"), "Quantity", qty],
+        ["Specification Reference", record.get("specification_reference"), "Vendor Batch / Steel Mill", osp_job.get("vendor_batch_number") or steel_mill.get("party_name")],
+    ]
+    story.append(_rmtc_labeled_grid(meta, [32*mm, 65*mm, 32*mm, 65*mm], sty["label"], sty["cell"], label_columns=(0, 2)))
+
+    section_rows = [dict(row) for row in (results.get("rows") or [])]
+    requirement_rows = [dict(row) for row in (results.get("requirement_rows") or [])]
+    test_rows = [["Sr.", "Parameter", "Specification", "Observations", "Unit", "Result"]]
+    sequence = 1
+    for row in section_rows:
+        spec = row.get("specification")
+        if not spec:
+            lo, hi = row.get("lower_spec"), row.get("upper_spec")
+            if lo is not None or hi is not None:
+                spec = f"{'' if lo is None else lo} - {'' if hi is None else hi}".strip(" -")
+        test_rows.append([row.get("sequence_no") or sequence, row.get("parameter"), spec, row.get("actual_value"), row.get("unit"), row.get("result")])
+        sequence += 1
+    for row in requirement_rows:
+        test_rows.append([sequence, row.get("requirement_name"), row.get("requirement_value"), row.get("actual_value"), row.get("unit"), row.get("result")])
+        sequence += 1
+    if len(test_rows) == 1:
+        test_rows.append([1, "Metallurgical requirements", "As approved inspection layout", "No result rows recorded", "", "NOT_EVALUATED"])
+    story.append(Spacer(1, 1.4 * mm))
+    story.append(_rmtc_section_bar("METALLURGICAL TEST RESULTS", content_width, sty["section"]))
+    story.append(_rmtc_grid(test_rows, [12*mm, 54*mm, 50*mm, 46*mm, 14*mm, 18*mm], sty["header"], sty["small"], status_columns=(5,)))
+
+    chemistry_rows = [dict(row) for row in (results.get("chemistry_rows") or [])]
+    if chemistry_rows:
+        story.append(_rmtc_section_bar("Chemical Composition Verification", content_width, sty["sub"], light=True))
+        rows = [["Element", "Minimum", "Maximum", "RMTC Actual", "MetLAB Actual", "Unit", "Result"]]
+        for row in chemistry_rows:
+            rows.append([row.get("element"), row.get("minimum_value"), row.get("maximum_value"), row.get("rmtc_actual_value"), row.get("actual_value"), row.get("unit"), row.get("result")])
+        story.append(_rmtc_grid(rows, [22*mm, 26*mm, 26*mm, 32*mm, 32*mm, 18*mm, 38*mm], sty["header"], sty["small"], status_columns=(6,)))
+
+    jominy_rows = [dict(row) for row in (results.get("jominy_rows") or [])]
+    if jominy_rows:
+        story.append(_rmtc_section_bar("HARDNESS / JOMINY TRAVERSE", content_width, sty["sub"], light=True))
+        rows = [["Distance", "mm", "Min HRC", "Max HRC", "RMTC HRC", "MetLAB HRC", "Result", "Remark"]]
+        for row in jominy_rows:
+            rows.append([row.get("distance_label"), row.get("distance_mm"), row.get("minimum_hrc"), row.get("maximum_hrc"), row.get("rmtc_actual_hrc"), row.get("actual_value"), row.get("result"), row.get("remarks")])
+        story.append(_rmtc_grid(rows, [20*mm, 17*mm, 22*mm, 22*mm, 25*mm, 28*mm, 22*mm, 38*mm], sty["header"], sty["small"], status_columns=(6,)))
+
+    story.append(CondPageBreak(70 * mm))
+    story.append(_rmtc_section_bar("MICROSTRUCTURE PHOTOGRAPHS", content_width, sty["section"]))
+    story.append(_photo_grid_table(microstructure_images, content_width, sty["center"], columns=2, max_height=46*mm))
+
+    prepared = _employee_name(employees.get(str(record.get("prepared_by_employee_id"))))
+    validated = _employee_name(employees.get(str(record.get("validated_by_employee_id"))))
+    approved = _employee_name(employees.get(str(record.get("approved_by_employee_id"))))
+    overall = record.get("disposition") or record.get("overall_result") or "NOT_EVALUATED"
+    conclusion = record.get("disposition_reason") or record.get("remarks") or f"Overall result: {overall}"
+    story.append(Spacer(1, 1.5 * mm))
+    story.append(_rmtc_labeled_grid([["Conclusion", conclusion], ["Overall Decision", overall]], [32*mm, 162*mm], sty["label"], sty["cell"], label_columns=(0,)))
+    story.append(_rmtc_labeled_grid([
+        ["Prepared By", prepared, "Validated By", validated, "Verified & Approved By", approved],
+        ["Prepared / Test Date", record.get("test_date"), "Validated At", record.get("validated_at"), "Decision At", record.get("decision_at")],
+    ], [25*mm, 37*mm, 25*mm, 37*mm, 34*mm, 36*mm], sty["label"], sty["center"], label_columns=(0, 2, 4)))
+
+    doc.build(story, canvasmaker=lambda *args, **kwargs: _PageNumberCanvas(*args, report_title=title, **kwargs))
+    return buffer.getvalue()
+
+
+def dimensional_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
+    """A4 portrait Final / Dimensional Inspection report using the controlled report layout."""
+    record = dict(payload.get("record") or {})
+    part = dict(payload.get("part") or {})
+    inward = dict(payload.get("inward") or {})
+    supplier = dict(payload.get("supplier") or {})
+    process = dict(payload.get("process") or {})
+    stage = dict(payload.get("stage") or {})
+    osp_job = dict(payload.get("osp_job") or {})
+    employees = dict(payload.get("employees") or {})
+    results = [dict(row) for row in (payload.get("results") or [])]
+    scope = str(record.get("inspection_scope") or "MATERIAL_INWARD")
+    is_osp = scope.startswith("OSP_") or bool(record.get("osp_job_id"))
+    title = "OSP DIMENSIONAL INSPECTION REPORT" if is_osp else "FINAL INSPECTION / DIMENSIONAL REPORT"
+    buffer = BytesIO(); page_width, _ = A4; edge = 8*mm; content_width = page_width - 2*edge
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=edge, rightMargin=edge, topMargin=30*mm, bottomMargin=12*mm, title=title, author="Four Star Industries - Quality Control Monitoring System", allowSplitting=1)
+    sty = _controlled_styles(); story: list[object] = []
+    story.append(_rmtc_section_bar(title, content_width, sty["section"]))
+    meta = [
+        ["Report No.", record.get("report_number"), "Date", record.get("inspection_date")],
+        ["Part Name", part.get("part_name"), "Part No.", part.get("part_number")],
+        ["Supplier / OSP Vendor", osp_job.get("vendor_name") or supplier.get("party_name"), "Heat Number", record.get("heat_number") or inward.get("heat_number") or osp_job.get("heat_number")],
+        ["Process", osp_job.get("process_name") or process.get("process_name"), "Inspection Stage", stage.get("stage_name") or record.get("layout_type_name")],
+        ["Drawing", record.get("drawing_number") or part.get("drawing_number"), "Revision", record.get("drawing_revision") or part.get("drawing_revision")],
+        ["Layout", record.get("layout_name_snapshot"), "Lot / Production Qty", record.get("production_quantity_pcs") or record.get("lot_quantity")],
+        ["Sample Size", record.get("sample_size"), "Vendor Batch / Heat Code", osp_job.get("vendor_batch_number") or record.get("heat_code")],
+    ]
+    story.append(_rmtc_labeled_grid(meta, [32*mm,65*mm,32*mm,65*mm], sty["label"], sty["cell"], label_columns=(0,2)))
+    story.append(Spacer(1,1.5*mm)); story.append(_rmtc_section_bar("INSPECTION RESULTS", content_width, sty["section"]))
+    rows = [["Sr.", "Parameter / Characteristic", "Specification", "Observations", "Method / Aid", "Result"]]
+    for index, row in enumerate(results, start=1):
+        observations = row.get("observations") or []
+        if isinstance(observations, list): observations = ", ".join(str(v) for v in observations if v not in (None, ""))
+        specification = row.get("specification")
+        if not specification and (row.get("lower_spec") is not None or row.get("upper_spec") is not None):
+            specification = f"{row.get('lower_spec') if row.get('lower_spec') is not None else ''} - {row.get('upper_spec') if row.get('upper_spec') is not None else ''} {row.get('unit') or ''}".strip()
+        rows.append([row.get("sequence_no") or row.get("characteristic_no") or index, row.get("characteristic"), specification, observations or row.get("attribute_result"), row.get("checking_aid"), row.get("result")])
+    if len(rows)==1: rows.append([1,"Inspection characteristic","As approved layout","No results recorded","","NOT_EVALUATED"])
+    story.append(_rmtc_grid(rows, [12*mm,54*mm,48*mm,42*mm,22*mm,16*mm], sty["header"], sty["small"], status_columns=(5,)))
+    overall = record.get("disposition") or record.get("overall_result") or "NOT_EVALUATED"
+    story.append(Spacer(1,1.5*mm)); story.append(_rmtc_labeled_grid([["Conclusion / Remarks", record.get("disposition_reason") or record.get("remarks") or f"Overall result: {overall}"],["Overall Decision", overall]], [36*mm,158*mm], sty["label"], sty["cell"], label_columns=(0,)))
+    story.append(_rmtc_labeled_grid([["Prepared By",_employee_name(employees.get(str(record.get("prepared_by_employee_id")))),"Validated By",_employee_name(employees.get(str(record.get("validated_by_employee_id")))),"Approved By",_employee_name(employees.get(str(record.get("approved_by_employee_id"))))]], [25*mm,39*mm,25*mm,39*mm,25*mm,41*mm], sty["label"], sty["center"], label_columns=(0,2,4)))
+    doc.build(story, canvasmaker=lambda *args, **kwargs: _PageNumberCanvas(*args, report_title=title, **kwargs))
+    return buffer.getvalue()
+
+
+def material_inward_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
+    """Controlled A4 portrait Material Inward quality record."""
+    record = dict(payload.get("record") or {})
+    register = dict(payload.get("register") or {})
+    part = dict(payload.get("part") or {})
+    supplier = dict(payload.get("supplier") or {})
+    rmtc = dict(payload.get("rmtc") or {})
+    employees = dict(payload.get("employees") or {})
+    metlab = dict(payload.get("metlab") or {})
+    dimensional = dict(payload.get("dimensional") or {})
+    title = "MATERIAL INWARD INSPECTION RECORD"
+    buffer=BytesIO(); page_width,_=A4; edge=8*mm; content_width=page_width-2*edge
+    doc=SimpleDocTemplate(buffer,pagesize=A4,leftMargin=edge,rightMargin=edge,topMargin=30*mm,bottomMargin=12*mm,title=title,author="Four Star Industries - Quality Control Monitoring System",allowSplitting=1)
+    sty=_controlled_styles(); story:list[object]=[]
+    story.append(_rmtc_section_bar(title,content_width,sty["section"]))
+    meta=[
+        ["Inward No.",record.get("inward_number"),"Date",record.get("inward_date")],
+        ["GRN Number",record.get("grn_number"),"Supplier Invoice",record.get("invoice_number")],
+        ["Part Name",part.get("part_name") or register.get("part_name"),"Part No.",part.get("part_number") or register.get("part_number")],
+        ["Supplier",supplier.get("party_name") or register.get("supplier_name"),"Heat Number",record.get("heat_number")],
+        ["Heat Code",record.get("heat_code"),"RMTC Number",rmtc.get("rmtc_number") or register.get("rmtc_number")],
+        ["Supplier RMTC",rmtc.get("certificate_reference") or register.get("supplier_rmtc_number"),"Input Weight kg/part",record.get("input_weight_kg")],
+    ]
+    story.append(_rmtc_labeled_grid(meta,[32*mm,65*mm,32*mm,65*mm],sty["label"],sty["cell"],label_columns=(0,2)))
+    story.append(Spacer(1,1.5*mm)); story.append(_rmtc_section_bar("QUANTITY & STEEL ALLOCATION",content_width,sty["section"]))
+    qty_rows=[
+        ["Quantity", "Production pcs", "Steel kg", "Disposition / Status"],
+        ["Total",record.get("production_quantity_pcs"),record.get("required_steel_quantity_kg") or record.get("steel_quantity_kg"),record.get("receipt_disposition")],
+        ["Accepted",record.get("accepted_production_quantity_pcs"),record.get("accepted_steel_quantity_kg"),"ACCEPTED"],
+        ["Rejected",record.get("rejected_production_quantity_pcs"),record.get("rejected_steel_quantity_kg"),"REJECTED"],
+        ["On Hold",record.get("hold_production_quantity_pcs"),record.get("hold_steel_quantity_kg"),"ON_HOLD"],
+    ]
+    story.append(_rmtc_grid(qty_rows,[44*mm,45*mm,45*mm,60*mm],sty["header"],sty["cell"],status_columns=(3,)))
+    story.append(_rmtc_section_bar("QUALITY GATE & LINKED INSPECTIONS",content_width,sty["section"]))
+    quality_rows=[
+        ["Quality Gate","Status","Linked Report","Report / Decision"],
+        ["RMTC Validation",rmtc.get("disposition") or register.get("rmtc_disposition"),rmtc.get("rmtc_number"),rmtc.get("validation_result")],
+        ["MetLAB",record.get("metallurgical_status"),metlab.get("report_number") or "-",metlab.get("disposition") or metlab.get("overall_result")],
+        ["Dimensional / Final Inspection",record.get("dimensional_status"),dimensional.get("report_number") or "-",dimensional.get("disposition") or dimensional.get("overall_result")],
+        ["Final Quality Decision",record.get("quality_disposition"),"Material Inward",record.get("status")],
+    ]
+    story.append(_rmtc_grid(quality_rows,[50*mm,42*mm,47*mm,55*mm],sty["header"],sty["cell"],status_columns=(1,3)))
+    if record.get("reserve_reason") or record.get("remarks"):
+        story.append(_rmtc_labeled_grid([["Hold / Reserve / Rejection Reason",record.get("reserve_reason") or "-"],["Remarks",record.get("remarks") or "-"]],[48*mm,146*mm],sty["label"],sty["cell"],label_columns=(0,)))
+    story.append(Spacer(1,1.5*mm)); story.append(_rmtc_labeled_grid([["Prepared By",_employee_name(employees.get(str(record.get("prepared_by_employee_id")))),"Validated By",_employee_name(employees.get(str(record.get("validated_by_employee_id"))))]], [32*mm,65*mm,32*mm,65*mm],sty["label"],sty["center"],label_columns=(0,2)))
+    doc.build(story,canvasmaker=lambda *args,**kwargs:_PageNumberCanvas(*args,report_title=title,**kwargs))
     return buffer.getvalue()

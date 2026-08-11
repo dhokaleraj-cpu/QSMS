@@ -1,4 +1,4 @@
--- Quality System Monitoring System (QSMS)
+-- Quality Control Monitoring System (QSMS)
 -- Initial Supabase / PostgreSQL schema
 -- Apply in a new Supabase project using the SQL Editor or Supabase CLI.
 -- Review all roles, policies, retention rules and calculation methods before production release.

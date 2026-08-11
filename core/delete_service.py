@@ -28,7 +28,7 @@ def password_delete_panel(
     key: str,
     can_delete: bool,
     title: str = "Delete selected row",
-    help_text: str = "Deletion is permanent and requires your current QSMS password.",
+    help_text: str = "Deletion is permanent and requires your current QCMS password.",
 ) -> bool:
     """Render a controlled delete panel and return True after deletion."""
     if not rows:
@@ -44,7 +44,7 @@ def password_delete_panel(
             disabled=not can_delete,
         )
         password = st.text_input(
-            "Current QSMS password",
+            "Current QCMS password",
             type="password",
             key=f"{key}_password",
             disabled=not can_delete,

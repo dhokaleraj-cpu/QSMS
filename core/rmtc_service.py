@@ -9,6 +9,7 @@ from typing import Any
 import streamlit as st
 
 from core.calculations import band_status, calculate_di, calculate_jominy_curve
+from core.attachments import AttachmentService
 from core.database import get_session_client
 from core.repository import Repository
 
@@ -169,6 +170,32 @@ class RMTCService:
         ) if value]
         employee_rows = self.repo.select('employees', in_={'id': employee_ids}, limit=20) if employee_ids else []
         employees = {str(row.get('id')): row for row in employee_rows}
+        heat_summary = self.heat_summary(str(record.get('heat_number') or ''))
+        heat_usage = self.heat_usage(str(record.get('heat_number') or ''))
+        microstructure_images = []
+        try:
+            attachment_service = AttachmentService(self.repo)
+            attachments = attachment_service.list_active('RMTC', rmtc_id)
+            by_type = {str(row.get('document_type') or ''): row for row in attachments}
+            for slot in range(1, 4):
+                attachment = by_type.get(f'RMTC_MICROSTRUCTURE_{slot}')
+                image_bytes = b''
+                if attachment:
+                    try:
+                        image_bytes = attachment_service.download(attachment)
+                    except Exception:
+                        image_bytes = b''
+                microstructure_images.append({
+                    'slot': slot,
+                    'caption': record.get(f'microstructure_caption_{slot}') or f'Microstructure Photo {slot}',
+                    'bytes': image_bytes,
+                    'file_name': (attachment or {}).get('file_name'),
+                })
+        except Exception:
+            microstructure_images = [
+                {'slot': slot, 'caption': record.get(f'microstructure_caption_{slot}') or f'Microstructure Photo {slot}', 'bytes': b'', 'file_name': None}
+                for slot in range(1, 4)
+            ]
         return {
             'record': record,
             'part_approvals': details['parts'],
@@ -180,6 +207,9 @@ class RMTCService:
             'supplier': parties.get(str(record.get('supplier_id'))) or {},
             'steel_mill': parties.get(str(record.get('steel_mill_id'))) or {},
             'employees': employees,
+            'heat_summary': heat_summary,
+            'heat_usage': heat_usage,
+            'microstructure_images': microstructure_images,
         }
 
     def decision_revisions(self, rmtc_id):

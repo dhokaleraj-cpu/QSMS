@@ -1,7 +1,7 @@
 {
   "contract_version": "1.2",
   "app_id": "qsms",
-  "display_name": "Quality System Monitoring System",
+  "display_name": "Quality Control Monitoring System",
   "category": "Manufacturing Quality",
   "technology": {
     "language": "Python",

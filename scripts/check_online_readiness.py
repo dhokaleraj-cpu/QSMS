@@ -56,11 +56,14 @@ required = [
     "supabase/migrations/20260805194500_qsms_simplified_metlab_process_master_print_v492.sql",
     "tests/test_v492_simplified_metlab_process_master_print.py",
     "docs/RELEASE_4_9_2.md",
+    "supabase/migrations/20260811090000_qcms_rmtc_microstructure_print_reports_v496.sql",
+    "tests/test_v496_qcms_global_heat_print_reports.py",
+    "docs/RELEASE_4_9_6.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QSMS 4.9.2 - Simplified MetLAB Requirements, Process Master and Unified Print Theme",
+    "phase": "QCMS 4.9.6 - Global Heat Balance, Branding and Controlled PDF Reports",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

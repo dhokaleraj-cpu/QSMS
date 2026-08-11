@@ -8,6 +8,7 @@ import streamlit as st
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
 from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
+from core.reporting import dimensional_record_pdf_bytes
 from core.ui import disposition_cards, disposition_label, page_header, section_bar, style_status_dataframe, subpage_navigation, template_download_row
 
 
@@ -221,9 +222,15 @@ def render_records() -> None:
         labels = {str(row["id"]): f"{row.get('report_number')} · Heat {row.get('heat_number')} · {row.get('layout_name_snapshot') or 'Layout'} · {disposition_label(row.get('disposition'))}" for row in filtered}
         selected = st.selectbox("Select Dimensional Report", list(labels), format_func=lambda value: labels[value])
         selected_row = next(row for row in filtered if str(row["id"]) == selected); st.session_state["edit_dimensional_id"] = selected
-        c1, c2 = st.columns(2, gap="small")
+        c1, c2, c3 = st.columns(3, gap="small")
         with c1: st.page_link(st.session_state["_qsms_pages"]["dimensional-entry"], label="Open Selected Report", icon=":material/edit:", width="stretch")
         with c2:
+            try:
+                pdf_bytes = dimensional_record_pdf_bytes(service.dimensional_report_payload(selected))
+                st.download_button("Download Final / Dimensional PDF", data=pdf_bytes, file_name=f"{selected_row.get('report_number') or 'Dimensional_Report'}.pdf", mime="application/pdf", key=f"dimensional_pdf_{selected}", width="stretch")
+            except Exception as exc:
+                st.error(f"PDF could not be generated: {exc}")
+        with c3:
             if password_delete_panel(repo=service.repo, table="inspection_reports", rows=[selected_row], labeler=lambda row: row.get("report_number"), key=f"delete_dimensional_{selected}", can_delete=perms["can_archive"], title="Delete Selected Dimensional Report"):
                 st.rerun()
     section_bar("DIMENSIONAL REGISTER")

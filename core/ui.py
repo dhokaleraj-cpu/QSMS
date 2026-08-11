@@ -280,7 +280,7 @@ def apply_global_style() -> None:
 
     .fsi-template-strip{background:#fff;border:1px solid var(--erp-border);border-radius:9px;padding:.5rem .6rem;margin:.15rem 0 .6rem;}
     .fsi-chip{display:inline-block;padding:3px 7px;border-radius:999px;font-size:9px;font-weight:850;}
-    .fsi-footer{text-align:center;font-size:9px;color:#75879A;margin-top:.6rem;padding-top:.35rem;border-top:1px solid #D6E0E8;}
+    .fsi-footer{text-align:center;font-size:10px;color:#50677B;margin-top:.8rem;padding:.5rem .25rem;border-top:1px solid #C6D8E5;font-family:var(--erp-font)!important;font-weight:600}.fsi-footer a{color:#0B6FAE!important;text-decoration:none!important;font-weight:700}
 
     /* QSMS 4.9.3 — high-contrast Export Shipment shell compatibility.
        Streamlit 1.60+ can insert an extra wrapper between a keyed container and
@@ -371,7 +371,7 @@ def apply_global_style() -> None:
 
 def render_public_brand() -> None:
     s = get_settings(); uri = logo_data_uri(); logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
-    st.markdown(f'<div style="text-align:center;padding:.5rem">{logo}<div class="fsi-app-title">QUALITY SYSTEM MONITORING SYSTEM</div><div class="fsi-user-meta">{safe(s.company_name)} · Plant {safe(s.plant_code)}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align:center;padding:.5rem">{logo}<div class="fsi-app-title">QUALITY CONTROL MONITORING SYSTEM</div><div class="fsi-user-meta">{safe(s.company_name)} · Plant {safe(s.plant_code)}</div></div>', unsafe_allow_html=True)
 
 
 def render_app_launcher(apps: Sequence[PortalApp]) -> None:
@@ -392,12 +392,12 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
             st.markdown(
                 f'<div class="fsi-company-block"><div class="fsi-logo-card">{logo}</div>'
                 f'<div><div class="fsi-company-name">FOUR STAR INDUSTRIES</div>'
-                f'<div class="fsi-company-sub">QUALITY SYSTEM MONITORING SYSTEM</div></div></div>',
+                f'<div class="fsi-company-sub">QUALITY CONTROL MONITORING SYSTEM</div></div></div>',
                 unsafe_allow_html=True,
             )
         with c2:
             st.markdown(
-                '<div class="fsi-header-title">QUALITY SYSTEM<br>MONITORING SYSTEM</div>'
+                '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
                 f'<div class="fsi-header-page">{safe(active_page)}</div>',
                 unsafe_allow_html=True,
             )
@@ -545,4 +545,10 @@ def trace_timeline(events):
 
 
 def app_footer() -> None:
-    s = get_settings(); st.markdown(f'<div class="fsi-footer">{safe(s.company_name)} · QSMS {safe(s.version)} · Supabase</div>', unsafe_allow_html=True)
+    s = get_settings()
+    st.markdown(
+        f'<div class="fsi-footer">Developed by Rajesh Dhokale &nbsp;|&nbsp; '
+        f'<a href="mailto:dhokaleraj@icloud.com">dhokaleraj@icloud.com</a> &nbsp;|&nbsp; '
+        f'Copyrights to jrdhokale &nbsp;|&nbsp; App Version {safe(s.version)}</div>',
+        unsafe_allow_html=True,
+    )

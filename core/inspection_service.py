@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 import pandas as pd
 
 from core.database import get_session_client
+from core.attachments import AttachmentService
 from core.dimensional_import import parse_dimensional_workbook_bytes
 from core.inspection_queue import build_inspection_queue, pending_rows
 from core.repository import Repository
@@ -331,6 +332,74 @@ class InspectionService:
         else:
             full_payload["results"] = {"rows": [dict(row) for row in results], "chemistry_rows": [], "jominy_rows": [], "requirement_rows": []}
         return self.repo.update("lab_tests", report_id, full_payload) if report_id else self.repo.insert("lab_tests", full_payload)
+
+    def _report_employees(self, record: Mapping[str, Any]) -> dict[str, dict]:
+        ids = [str(value) for value in (
+            record.get("prepared_by_employee_id"), record.get("validated_by_employee_id"), record.get("approved_by_employee_id")
+        ) if value]
+        rows = self.repo.select("employees", in_={"id": ids}, limit=20) if ids else []
+        return {str(row.get("id")): row for row in rows}
+
+    def _report_microstructure_images(self, entity_type: str, entity_id: str, record: Mapping[str, Any], slots: int = 4) -> list[dict]:
+        images: list[dict] = []
+        try:
+            service = AttachmentService(self.repo)
+            attachments = service.list_active(entity_type, entity_id)
+            by_type = {str(row.get("document_type") or ""): row for row in attachments}
+            for slot in range(1, slots + 1):
+                attachment = by_type.get(f"MICROSTRUCTURE_{slot}")
+                data = b""
+                if attachment:
+                    try:
+                        data = service.download(attachment)
+                    except Exception:
+                        data = b""
+                images.append({
+                    "slot": slot,
+                    "caption": record.get(f"microstructure_caption_{slot}") or f"Microstructure Photo {slot}",
+                    "bytes": data,
+                    "file_name": (attachment or {}).get("file_name"),
+                })
+        except Exception:
+            images = [{"slot": slot, "caption": record.get(f"microstructure_caption_{slot}") or f"Microstructure Photo {slot}", "bytes": b""} for slot in range(1, slots + 1)]
+        return images
+
+    def metlab_report_payload(self, report_id: str) -> dict:
+        record = self.get_metlab(report_id) or {}
+        if not record:
+            raise ValueError("MetLAB report not found.")
+        part = self.repo.get("parts", str(record.get("part_id") or "")) or {}
+        inward = self.repo.get("inward_lots", str(record.get("inward_lot_id") or "")) or {}
+        supplier = self.repo.get("parties", str(record.get("supplier_id") or inward.get("supplier_id") or "")) or {}
+        steel_mill = self.repo.get("parties", str(record.get("steel_mill_id") or "")) or {}
+        grade = self.repo.get("material_grades", str(record.get("material_grade_id") or part.get("material_grade_id") or "")) or {}
+        process = self.repo.get("processes", str(record.get("process_id") or "")) or {}
+        stage = self.repo.get("inspection_stages", str(record.get("inspection_stage_id") or "")) or {}
+        osp_rows = self.repo.select("v_qsms_osp_register", eq={"id": str(record.get("osp_job_id"))}, limit=1) if record.get("osp_job_id") else []
+        osp_job = osp_rows[0] if osp_rows else {}
+        return {
+            "record": record, "part": part, "inward": inward, "supplier": supplier, "steel_mill": steel_mill,
+            "material_grade": grade, "process": process, "stage": stage, "osp_job": osp_job,
+            "employees": self._report_employees(record),
+            "results": dict(record.get("results") or {}),
+            "microstructure_images": self._report_microstructure_images("METLAB_REPORT", report_id, record, 4),
+        }
+
+    def dimensional_report_payload(self, report_id: str) -> dict:
+        record = self.get_dimensional(report_id) or {}
+        if not record:
+            raise ValueError("Dimensional report not found.")
+        part = self.repo.get("parts", str(record.get("part_id") or "")) or {}
+        inward = self.repo.get("inward_lots", str(record.get("inward_lot_id") or "")) or {}
+        supplier = self.repo.get("parties", str(record.get("supplier_id") or inward.get("supplier_id") or "")) or {}
+        process = self.repo.get("processes", str(record.get("process_id") or "")) or {}
+        stage = self.repo.get("inspection_stages", str(record.get("inspection_stage_id") or "")) or {}
+        osp_rows = self.repo.select("v_qsms_osp_register", eq={"id": str(record.get("osp_job_id"))}, limit=1) if record.get("osp_job_id") else []
+        osp_job = osp_rows[0] if osp_rows else {}
+        return {
+            "record": record, "part": part, "inward": inward, "supplier": supplier, "process": process, "stage": stage,
+            "osp_job": osp_job, "employees": self._report_employees(record), "results": self.dimensional_results(report_id),
+        }
 
     def finalize_dimensional(self, report_id: str, disposition: str, reason: str, validator: str, approver: str) -> dict:
         return self.repo.rpc("qsms_finalize_dimensional_report", {

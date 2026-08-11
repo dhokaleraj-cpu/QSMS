@@ -94,7 +94,7 @@ def render_entry() -> None:
         key=f"delete_process_{existing.get('id')}",
         can_delete=perms["can_archive"],
         title="Delete Process Master",
-        help_text="Permanent deletion requires the current QSMS password. Linked Process records cannot be deleted; deactivate them instead.",
+        help_text="Permanent deletion requires the current QCMS password. Linked Process records cannot be deleted; deactivate them instead.",
     ):
         st.rerun()
 
@@ -128,7 +128,7 @@ def render_records() -> None:
             key=f"delete_process_record_{selected}",
             can_delete=perms["can_archive"],
             title="Delete Selected Process",
-            help_text="Permanent deletion requires the current QSMS password. Linked Process records cannot be deleted.",
+            help_text="Permanent deletion requires the current QCMS password. Linked Process records cannot be deleted.",
         ):
             st.rerun()
     else:

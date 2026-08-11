@@ -7,6 +7,8 @@ import streamlit as st
 
 from core.access import current_permissions
 from core.osp_service import OSPService
+from core.inspection_service import InspectionService
+from core.reporting import dimensional_record_pdf_bytes, metlab_record_pdf_bytes
 from core.ui import kpi_grid, page_header, section_bar, style_status_dataframe, subpage_navigation, workflow_progress
 
 
@@ -155,4 +157,30 @@ def render_records() -> None:
     page_header("OSP Transaction Records", context="Heat · Part · Vendor Batch")
     service = OSPService(); rows = service.register(); search = st.text_input("Search OSP Job, Heat, Part, Vendor, Process or Vendor Batch")
     filtered = [r for r in rows if not search or search.casefold() in " ".join(str(r.get(k) or "") for k in ("osp_job_number","receipt_number","heat_number","part_number","vendor_name","process_name","vendor_batch_number","vendor_invoice_number","tc_number")).casefold()]
+    if filtered:
+        labels = {str(r["id"]): _label(r) for r in filtered}
+        selected = st.selectbox("Select OSP record for controlled reports", list(labels), format_func=lambda value: labels[value], key="osp_record_print_selection")
+        selected_row = next(r for r in filtered if str(r["id"]) == selected)
+        inspection = InspectionService()
+        metlab_rows = inspection.repo.select("lab_tests", eq={"osp_job_id": selected, "test_type": "METLAB"}, order_by="updated_at", desc=True, limit=20)
+        dimensional_rows = inspection.repo.select("inspection_reports", eq={"osp_job_id": selected, "report_type": "DIMENSIONAL"}, order_by="updated_at", desc=True, limit=20)
+        section_bar("OSP CONTROLLED PDF REPORTS")
+        if not metlab_rows and not dimensional_rows:
+            st.info("No completed OSP MetLAB or Dimensional report is linked to the selected OSP record yet.")
+        else:
+            cols = st.columns(2, gap="small")
+            with cols[0]:
+                for report in metlab_rows:
+                    try:
+                        pdf = metlab_record_pdf_bytes(inspection.metlab_report_payload(str(report["id"])))
+                        st.download_button(f"MetLAB PDF · {report.get('report_number')}", pdf, file_name=f"{report.get('report_number') or selected_row.get('osp_job_number')}_MetLAB.pdf", mime="application/pdf", key=f"osp_metlab_pdf_{report['id']}", width="stretch")
+                    except Exception as exc:
+                        st.error(f"MetLAB PDF could not be generated: {exc}")
+            with cols[1]:
+                for report in dimensional_rows:
+                    try:
+                        pdf = dimensional_record_pdf_bytes(inspection.dimensional_report_payload(str(report["id"])))
+                        st.download_button(f"Dimensional PDF · {report.get('report_number')}", pdf, file_name=f"{report.get('report_number') or selected_row.get('osp_job_number')}_Dimensional.pdf", mime="application/pdf", key=f"osp_dim_pdf_{report['id']}", width="stretch")
+                    except Exception as exc:
+                        st.error(f"Dimensional PDF could not be generated: {exc}")
     _render_register(filtered)

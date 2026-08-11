@@ -3,7 +3,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 
 def test_v483_version_and_migration():
-    assert (ROOT/'VERSION').read_text().strip() in {'4.8.3','4.8.4','4.8.5','4.8.6','4.8.7','4.8.8','4.9.0','4.9.1','4.9.2','4.9.3','4.9.4','4.9.5'}
+    assert (ROOT/'VERSION').read_text().strip() in {'4.8.3','4.8.4','4.8.5','4.8.6','4.8.7','4.8.8','4.9.0','4.9.1','4.9.2','4.9.3','4.9.4','4.9.5','4.9.6'}
     sql=(ROOT/'supabase/migrations/20260802172000_qsms_heat_search_global_steel_v483.sql').read_text()
     for token in ['qsms_normalize_heat_number','v_qsms_heat_summary','v_qsms_heat_rmtc_usage','trg_global_heat_inward_limit','Global planned steel']:
         assert token in sql

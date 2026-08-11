@@ -27,7 +27,7 @@ def app_registry() -> Sequence[PortalApp]:
         ),
         PortalApp(
             "qsms",
-            "Quality System Monitoring",
+            "Quality Control Monitoring",
             "Automotive quality masters and genealogy",
             settings.qsms_url,
             current=True,

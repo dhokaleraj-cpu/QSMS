@@ -29,7 +29,7 @@ from core.ui import app_footer, apply_global_style, module_submenu, render_shell
 
 settings = get_settings()
 st.set_page_config(
-    page_title=f"QSMS · {settings.company_name}", page_icon="✅", layout="wide",
+    page_title=f"{settings.app_name} · {settings.company_name}", page_icon="✅", layout="wide",
     initial_sidebar_state="collapsed", menu_items=None,
 )
 apply_global_style()

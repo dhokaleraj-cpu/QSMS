@@ -1,6 +1,6 @@
-# QSMS 4.9.5
+# QUALITY CONTROL MONITORING SYSTEM 4.9.6
 
-Live Supabase-first Quality and OSP workflow for Four Star Industries.
+Live Supabase-first Quality Control, RMTC, OSP and inspection workflow for Four Star Industries.
 
 Visible workspaces:
 
@@ -14,6 +14,17 @@ Visible workspaces:
 8. Templates
 9. Reports
 
+
+
+## Release 4.9.6 — Global Heat Balance, QCMS Branding and Controlled PDF Reports
+
+- Visible application identity changed to **QUALITY CONTROL MONITORING SYSTEM**.
+- Added a common application and print footer with developer attribution, email, copyright owner and app version.
+- RMTC print header shows Heat Number before RMTC Number, with Heat Number 50% larger.
+- Added Global Heat Quantity Balance & Record List to RMTC Entry and RMTC PDF.
+- Added three RMTC microstructure photograph slots and included the photographs in the RMTC Record PDF.
+- Added A4 portrait PDFs for MetLAB, OSP MetLAB / Dimensional, Final Inspection and Material Inward records.
+- Existing Supabase data remains preserved.
 
 ## Release 4.9.5 — Compact A4 Portrait RMTC Print Layout
 

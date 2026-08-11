@@ -30,9 +30,9 @@ def render()->None:
     emp={str(e['id']):f"{e.get('employee_code')} · {e.get('first_name')} {e.get('last_name')}" for e in employees}
     create_tab,access_tab,password_tab=st.tabs(['Create User','Users & Module Permissions','My Password'])
     with create_tab:
-        section_bar('CREATE USER','Supabase Auth user, QSMS role and Employee link.')
+        section_bar('CREATE USER','Supabase Auth user, QCMS role and Employee link.')
         with st.form('create_user_v430'):
-            c=st.columns(3,gap='small'); full=c[0].text_input('Full Name'); email=c[1].text_input('Company Email'); role=c[2].selectbox('QSMS Role',ROLES)
+            c=st.columns(3,gap='small'); full=c[0].text_input('Full Name'); email=c[1].text_input('Company Email'); role=c[2].selectbox('QCMS Role',ROLES)
             c=st.columns(3,gap='small'); employee=c[0].selectbox('Employee Link',['']+list(emp),format_func=lambda x:emp.get(x,'— Not linked —'));status=c[1].selectbox('Access Status',['ACTIVE','INACTIVE','LOCKED']);password=c[2].text_input('Temporary Password',type='password')
             submit=st.form_submit_button('Create User',type='primary',width='stretch')
         if submit:

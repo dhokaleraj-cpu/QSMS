@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This release corrects the washed-out header and menu appearance visible in the live Quality System Monitoring System and aligns the application shell with the approved Export Shipment Monitoring System reference.
+This release corrects the washed-out header and menu appearance visible in the live Quality Control Monitoring System and aligns the application shell with the approved Export Shipment Monitoring System reference.
 
 ## Visual corrections
 

@@ -105,7 +105,7 @@ def render_heat_ledger(*, embedded: bool = False) -> None:
     frame = pd.DataFrame([{
         "Heat Number": row.get("heat_number"),
         "Global Heat Qty kg": row.get("global_steel_quantity_kg"),
-        "QSMS RMTC": row.get("rmtc_number"),
+        "QCMS RMTC": row.get("rmtc_number"),
         "Supplier RMTC Number": row.get("supplier_rmtc_number"),
         "Supplier": row.get("supplier_name"),
         "Part Number": row.get("part_number"),
@@ -134,7 +134,7 @@ def render_heat_ledger(*, embedded: bool = False) -> None:
         st.download_button(
             "Download Heat Steel Ledger",
             data=_excel_bytes(frame, "Heat Steel Ledger"),
-            file_name=f"QSMS_Heat_Steel_Ledger_{file_suffix}.xlsx",
+            file_name=f"QCMS_Heat_Steel_Ledger_{file_suffix}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             icon=":material/download:",
             width="stretch",

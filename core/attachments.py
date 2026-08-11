@@ -30,7 +30,7 @@ class AttachmentSlot:
 
 
 class AttachmentService:
-    """Private Supabase Storage operations for controlled QSMS attachments."""
+    """Private Supabase Storage operations for controlled QCMS attachments."""
 
     bucket = "quality-documents"
 
@@ -77,7 +77,7 @@ class AttachmentService:
         password: str = "",
     ) -> dict:
         if not entity_id:
-            raise ValueError("Save the QSMS record before uploading an attachment.")
+            raise ValueError("Save the QCMS record before uploading an attachment.")
         if existing:
             verify_current_password(password)
 
@@ -204,7 +204,7 @@ def render_attachment_manager(
         return
     section_bar(title)
     st.caption(
-        "Download attachments at any time. Adding an empty slot is permitted; replacing or deleting an existing file requires your current QSMS password."
+        "Download attachments at any time. Adding an empty slot is permitted; replacing or deleting an existing file requires your current QCMS password."
     )
     service = AttachmentService(repo)
     attachments = service.list_active(entity_type, entity_id)
@@ -242,7 +242,7 @@ def render_attachment_manager(
                             disabled=not can_add_or_replace,
                         )
                         replace_password = st.text_input(
-                            "Current QSMS password for replacement",
+                            "Current QCMS password for replacement",
                             type="password",
                             key=f"{key_prefix}_replace_password_{index}_{existing.get('id')}",
                             disabled=not can_add_or_replace,
@@ -270,7 +270,7 @@ def render_attachment_manager(
 
                         st.divider()
                         delete_password = st.text_input(
-                            "Current QSMS password for deletion",
+                            "Current QCMS password for deletion",
                             type="password",
                             key=f"{key_prefix}_delete_password_{index}_{existing.get('id')}",
                             disabled=not can_delete,

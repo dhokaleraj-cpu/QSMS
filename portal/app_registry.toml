@@ -1,6 +1,6 @@
 [application]
 id = "qsms"
-name = "Quality System Monitoring System"
+name = "Quality Control Monitoring System"
 short_name = "Quality"
 description = "Automotive quality master data and end-to-end material genealogy"
 owner_department = "Quality"

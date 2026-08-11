@@ -8,6 +8,7 @@ import streamlit as st
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from core.reporting import report_pdf_bytes
+from core.config import get_settings
 from core.repository import Repository
 from core.ui import disposition_cards, page_header, section_bar, subpage_navigation
 
@@ -27,8 +28,9 @@ def _frame(rows: Iterable[dict], columns: dict[str, str]) -> pd.DataFrame:
     return pd.DataFrame([{label: row.get(source) for label, source in columns.items()} for row in rows])
 
 
-def _excel_bytes(sheets: dict[str, pd.DataFrame], report_title: str = "QSMS Report") -> bytes:
+def _excel_bytes(sheets: dict[str, pd.DataFrame], report_title: str = "QUALITY CONTROL MONITORING SYSTEM REPORT") -> bytes:
     buffer = BytesIO()
+    settings = get_settings()
     navy = "083B6E"
     light_blue = "EAF4FB"
     border_color = "AFC3D4"
@@ -48,9 +50,9 @@ def _excel_bytes(sheets: dict[str, pd.DataFrame], report_title: str = "QSMS Repo
             sheet.print_title_rows = "1:1"
             sheet.oddHeader.left.text = "&BFOUR STAR INDUSTRIES"
             sheet.oddHeader.center.text = f"&B{report_title}"
-            sheet.oddHeader.right.text = "QSMS LIVE REPORT"
-            sheet.oddFooter.left.text = "FOUR STAR INDUSTRIES · CONTROLLED QSMS REPORT"
-            sheet.oddFooter.center.text = "Generated from live Supabase data"
+            sheet.oddHeader.right.text = "QUALITY CONTROL MONITORING SYSTEM"
+            sheet.oddFooter.left.text = "Developed by Rajesh Dhokale | dhokaleraj@icloud.com | Copyrights to jrdhokale"
+            sheet.oddFooter.center.text = f"App Version {settings.version}"
             sheet.oddFooter.right.text = "Page &P of &N"
             sheet.oddHeader.left.size = 9
             sheet.oddHeader.center.size = 11
@@ -220,7 +222,7 @@ def render_heat_transactions() -> None:
         st.download_button(
             "Download Excel Report",
             data=_excel_bytes(export_sections, "HEAT NUMBER GLOBAL BALANCE WITH TRANSACTIONS"),
-            file_name=f"QSMS_Heat_Global_Balance_{suffix}.xlsx",
+            file_name=f"QCMS_Heat_Global_Balance_{suffix}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             icon=":material/download:", width="stretch",
         )
@@ -232,7 +234,7 @@ def render_heat_transactions() -> None:
                 export_sections,
                 subtitle=f"Heat filter: {selected}",
             ),
-            file_name=f"QSMS_Heat_Global_Balance_{suffix}.pdf",
+            file_name=f"QCMS_Heat_Global_Balance_{suffix}.pdf",
             mime="application/pdf",
             icon=":material/picture_as_pdf:", width="stretch",
         )
@@ -341,7 +343,7 @@ def render_osp_balance() -> None:
         st.download_button(
             "Download Excel Report",
             data=_excel_bytes(export_sections, "HEAT-WISE OSP INWARD, OUTWARD AND BALANCE"),
-            file_name=f"QSMS_OSP_Heat_Balance_{suffix}.xlsx",
+            file_name=f"QCMS_OSP_Heat_Balance_{suffix}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             icon=":material/download:", width="stretch",
         )
@@ -353,7 +355,7 @@ def render_osp_balance() -> None:
                 export_sections,
                 subtitle=f"Heat: {selected_heat} · Part: {selected_part}",
             ),
-            file_name=f"QSMS_OSP_Heat_Balance_{suffix}.pdf",
+            file_name=f"QCMS_OSP_Heat_Balance_{suffix}.pdf",
             mime="application/pdf",
             icon=":material/picture_as_pdf:", width="stretch",
         )

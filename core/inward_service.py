@@ -27,6 +27,25 @@ class InwardService:
     def get(self, record_id: str) -> dict | None:
         return self.repo.get("inward_lots", record_id)
 
+    def report_payload(self, record_id: str) -> dict:
+        record = self.get(record_id) or {}
+        if not record:
+            raise ValueError("Material Inward record not found.")
+        register_rows = self.repo.select("v_qsms_inward_register", eq={"id": record_id}, limit=1)
+        register = register_rows[0] if register_rows else {}
+        part = self.repo.get("parts", str(record.get("part_id") or "")) or {}
+        supplier = self.repo.get("parties", str(record.get("supplier_id") or "")) or {}
+        rmtc = self.repo.get("rmtc_approvals", str(record.get("rmtc_approval_id") or "")) or {}
+        employee_ids = [str(value) for value in (record.get("prepared_by_employee_id"), record.get("validated_by_employee_id")) if value]
+        employee_rows = self.repo.select("employees", in_={"id": employee_ids}, limit=20) if employee_ids else []
+        employees = {str(row.get("id")): row for row in employee_rows}
+        metlab = self.repo.select("lab_tests", eq={"inward_lot_id": record_id, "test_type": "METLAB"}, order_by="updated_at", desc=True, limit=1)
+        dimensional = self.repo.select("inspection_reports", eq={"inward_lot_id": record_id, "report_type": "DIMENSIONAL"}, order_by="updated_at", desc=True, limit=1)
+        return {
+            "record": record, "register": register, "part": part, "supplier": supplier, "rmtc": rmtc, "employees": employees,
+            "metlab": metlab[0] if metlab else {}, "dimensional": dimensional[0] if dimensional else {},
+        }
+
     def next_number(self) -> str:
         return str(self.repo.rpc("qsms_next_document_number", {"p_sequence_code": "INWARD"}) or "")
 

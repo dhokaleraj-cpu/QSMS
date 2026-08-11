@@ -16,7 +16,7 @@ The Company Portal and the current company applications use the same delivery pa
 |---|---|---:|---|
 | portal | FSI Company Portal | 8500 | Common identity, launcher, app access and announcements |
 | export-shipment | Export Shipment Monitoring | 8501 | Shipment, delivery, payment and coverage data |
-| qsms | Quality System Monitoring | 8510 | Quality masters, genealogy and evidence |
+| qsms | Quality Control Monitoring | 8510 | Quality masters, genealogy and evidence |
 | hrms | HRMS | 8520 | Employee and HR workflows |
 
 ## Phase 1 integration
