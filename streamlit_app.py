@@ -4,6 +4,7 @@ import streamlit as st
 
 from app_pages import (
     dashboard,
+    complaints,
     dimensional_report,
     employee_master,
     inspection_home,
@@ -40,7 +41,7 @@ st.set_page_config(
 apply_global_style()
 
 if not is_logged_in():
-    render_login(); app_footer(); st.stop()
+    render_login(); st.stop()
 profile = current_profile() or {}
 
 # Keep an explicit route-to-Page registry. Streamlit may expose the default
@@ -57,6 +58,11 @@ PAGE_ITEMS = (
     ("apqp", st.Page(npd_apqp.render_apqp, title="APQP", icon=":material/assignment_turned_in:", url_path="apqp")),
     ("qc-tools", st.Page(qc_calculation_tools.render_tools, title="QC Calculation Tools", icon=":material/calculate:", url_path="qc-tools")),
     ("qc-calculation-records", st.Page(qc_calculation_tools.render_records, title="QC Calculation Records", icon=":material/receipt_long:", url_path="qc-calculation-records")),
+    ("complaints-home", st.Page(complaints.render_home, title="Complaint Management", icon=":material/support_agent:", url_path="complaints-home")),
+    ("customer-complaint", st.Page(complaints.render_customer_entry, title="Customer Complaint", icon=":material/record_voice_over:", url_path="customer-complaint")),
+    ("supplier-complaint", st.Page(complaints.render_supplier_entry, title="Supplier Complaint", icon=":material/feedback:", url_path="supplier-complaint")),
+    ("complaint-analysis", st.Page(complaints.render_analysis, title="Complaint Analysis & CAPA", icon=":material/troubleshoot:", url_path="complaint-analysis")),
+    ("complaint-records", st.Page(complaints.render_records, title="Complaint Records", icon=":material/fact_check:", url_path="complaint-records")),
     ("inspection-home", st.Page(inspection_home.render, title="Inspections", icon=":material/biotech:", url_path="inspection-home")),
     ("records-center", st.Page(records_center.render, title="Records Centre", icon=":material/table_view:", url_path="records-center")),
     ("heat-ledger", st.Page(records_center.render_heat_ledger, title="Heat Steel Ledger", icon=":material/table_view:", url_path="heat-ledger")),
@@ -158,6 +164,13 @@ MODULE_SUBMENUS = {
         ("qc-tools", "Calculation Tools", ":material/calculate:"),
         ("qc-calculation-records", "Calculation Records", ":material/receipt_long:"),
     ),
+    "Complaints": (
+        ("complaints-home", "Complaint Dashboard", ":material/support_agent:"),
+        ("customer-complaint", "Customer Complaint", ":material/record_voice_over:"),
+        ("supplier-complaint", "Supplier Complaint", ":material/feedback:"),
+        ("complaint-analysis", "Analysis & CAPA", ":material/troubleshoot:"),
+        ("complaint-records", "Complaint Records", ":material/fact_check:"),
+    ),
     "Inspections": (
         ("inspection-home", "Inspection Home", ":material/biotech:"),
         ("inspection-layout-entry", "Layout Entry", ":material/edit_document:"),
@@ -175,6 +188,7 @@ MODULE_SUBMENUS = {
         ("osp-records", "OSP Records", ":material/factory:"),
         ("dimensional-records", "Dimensional Records", ":material/straighten:"),
         ("metlab-records", "MetLAB Records", ":material/science:"),
+        ("complaint-records", "Complaint Records", ":material/fact_check:"),
     ),
     "Reports": (
         ("reports-home", "Reports Home", ":material/assessment:"),
@@ -201,6 +215,7 @@ ROUTE_MODULE = {
     "osp-dimensional": "OSP", "osp-metlab": "OSP", "osp-records": "OSP",
     "npd-process-flow": "NPD & APQP", "npd-status": "NPD & APQP", "apqp": "NPD & APQP",
     "qc-tools": "QC Calculation Tools", "qc-calculation-records": "QC Calculation Tools",
+    "complaints-home": "Complaints", "customer-complaint": "Complaints", "supplier-complaint": "Complaints", "complaint-analysis": "Complaints", "complaint-records": "Complaints",
     "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
     "inspection-layout-records": "Inspections", "dimensional-entry": "Inspections",
     "dimensional-records": "Inspections", "metlab-entry": "Inspections", "metlab-records": "Inspections",
@@ -228,6 +243,7 @@ PAGE_TITLE_TO_PATH = {
     "OSP MetLAB": "osp-metlab", "OSP Records": "osp-records",
     "Process Flow Designer": "npd-process-flow", "NPD Status": "npd-status", "APQP": "apqp",
     "QC Calculation Tools": "qc-tools", "QC Calculation Records": "qc-calculation-records",
+    "Complaint Management": "complaints-home", "Customer Complaint": "customer-complaint", "Supplier Complaint": "supplier-complaint", "Complaint Analysis & CAPA": "complaint-analysis", "Complaint Records": "complaint-records",
     "Inspection Layout Entry": "inspection-layout-entry",
     "Inspection Layout Records": "inspection-layout-records",
     "Dimensional Report": "dimensional-entry", "Dimensional Records": "dimensional-records",
@@ -244,7 +260,7 @@ current_module = ROUTE_MODULE.get(current_path, "Dashboard")
 
 with st.container(border=True, key="fsi_top_nav"):
     st.markdown('<div class="fsi-top-menu-title">MODULES</div>', unsafe_allow_html=True)
-    cols = st.columns(11, gap="small")
+    cols = st.columns(12, gap="small")
     labels = (
         ("dashboard", "Dashboard", "Dashboard"),
         ("masters", "Masters", "Masters"),
@@ -253,6 +269,7 @@ with st.container(border=True, key="fsi_top_nav"):
         ("osp-home", "OSP", "OSP"),
         ("npd-status", "NPD / APQP", "NPD & APQP"),
         ("qc-tools", "QC Tools", "QC Calculation Tools"),
+        ("complaints-home", "Complaints", "Complaints"),
         ("inspection-home", "Inspections", "Inspections"),
         ("records-center", "Records", "Records"),
         ("reports-home", "Reports", "Reports"),

@@ -27,7 +27,7 @@ TENANT_SCOPED_TABLES = {
     "master_value_catalog", "user_module_permissions", "heat_code_sequences",
     "rmtc_decision_revisions",
     "npd_process_flows", "npd_process_flow_steps", "npd_process_flow_points", "npd_orders", "npd_order_steps", "npd_order_step_points",
-    "qc_calculation_records", "customer_standards", "part_standard_links",
+    "qc_calculation_records", "customer_standards", "part_standard_links", "quality_complaints", "quality_complaint_followups", "quality_complaint_actions",
     "ppap_projects", "ppap_documents", "pfd_headers", "pfd_steps", "pfmea_headers", "pfmea_items",
     "control_plan_headers", "control_plan_items", "spc_plans", "spc_studies", "spc_readings",
     "msa_plans", "msa_studies", "msa_readings", "capacity_studies", "balloon_characteristics",

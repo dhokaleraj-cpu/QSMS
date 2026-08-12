@@ -20,6 +20,7 @@ MODULES = (
     ("METLAB_REPORT", "MetLAB Report"),
     ("NPD_APQP", "NPD & APQP"),
     ("QC_CALCULATION_TOOLS", "QC Calculation Tools"),
+    ("COMPLAINT_MANAGEMENT", "Complaint Management"),
     ("USER_ACCESS", "Users & Access"),
 )
 
@@ -39,7 +40,8 @@ def module_permissions(profile: Mapping[str, Any] | None, module_key: str, repo:
         inward_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "SQA", "PRODUCTION"}
         npd_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "MASTER_DATA", "SQA", "PRODUCTION"}
         qc_tools_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "METLAB_APPROVER", "SQA"}
-        write_allowed = qc_tools_write if module_key == "QC_CALCULATION_TOOLS" else (npd_write if module_key == "NPD_APQP" else (inward_write if module_key in {"MATERIAL_INWARD", "OSP_TRANSACTIONS", "DIMENSIONAL_REPORT"} else default_write))
+        complaint_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "SQA", "PRODUCTION"}
+        write_allowed = complaint_write if module_key == "COMPLAINT_MANAGEMENT" else (qc_tools_write if module_key == "QC_CALCULATION_TOOLS" else (npd_write if module_key == "NPD_APQP" else (inward_write if module_key in {"MATERIAL_INWARD", "OSP_TRANSACTIONS", "DIMENSIONAL_REPORT"} else default_write)))
         return {
             "can_view": True,
             "can_create": write_allowed,

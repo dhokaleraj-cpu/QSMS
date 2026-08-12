@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_4103():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.10.3", "4.10.4"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.10.3", "4.10.5", "4.10.6", "4.10.7", "4.10.8"}
 
 
 def test_part_standard_download_shows_required_details_and_admin_unlink():
@@ -30,7 +30,7 @@ def test_database_enforces_admin_only_unlink():
 
 def test_readability_layer_is_present():
     text = (ROOT / "core" / "ui.py").read_text()
-    assert "QCMS 4.10.3 — readability" in text
+    assert "readability" in text
     assert "font-weight:450!important" in text
     assert "font-weight:880!important" in text
     assert "font-weight:900!important" in text

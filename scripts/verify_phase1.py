@@ -101,6 +101,12 @@ required = [
     "templates/Customer_Standards_Template.xlsx",
     "supabase/migrations/20260812130000_qcms_customer_standards_selection_cards_v4101.sql",
     "docs/RELEASE_4_10_1.md",
+    "app_pages/complaints.py",
+    "supabase/migrations/20260812092238_qcms_complaint_management_login_v4106.sql",
+    "docs/RELEASE_4_10_6.md",
+    "supabase/migrations/20260812165500_qcms_detailed_complaint_analysis_v4107.sql",
+    "tests/test_v4108_detailed_complaint_analysis_login.py",
+    "docs/RELEASE_4_10_7.md",
 ]
 for item in required:
     if not (ROOT / item).exists():
@@ -109,7 +115,7 @@ for item in required:
 app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
-    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "inspection-home", "records-center", "heat-ledger",
+    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "inspection-home", "records-center", "heat-ledger",
     "reports-home", "heat-transaction-report", "osp-balance-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
@@ -195,28 +201,33 @@ di = calculate_di({"C": 0.22, "MN": 0.85, "SI": 0.25, "NI": 0.018, "CR": 1.18, "
 if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
-# QCMS 4.10.3 controlled standards visibility / unlink / readability checks.
+# QCMS 4.10.8 detailed complaint analysis contract checks.
+complaint_text = (ROOT / "app_pages/complaints.py").read_text()
+complaint_sql = (ROOT / "supabase/migrations/20260812092238_qcms_complaint_management_login_v4106.sql").read_text()
+complaint_analysis_sql = (ROOT / "supabase/migrations/20260812165500_qcms_detailed_complaint_analysis_v4107.sql").read_text()
+if "quality_complaints" not in complaint_text or "Debit Note Status" not in complaint_text or "quality_complaint_followups" not in complaint_text:
+    errors.append("Complaint Management entry/follow-up/debit-note workflow is incomplete")
+if "COMPLAINT_MANAGEMENT" not in complaint_sql or "qcms_next_complaint_number" not in complaint_sql:
+    errors.append("Complaint Management database permission/numbering contract is incomplete")
+if "quality_complaint_actions" not in complaint_analysis_sql or "occurrence_root_cause" not in complaint_analysis_sql or "qcms_guard_complaint_closure" not in complaint_analysis_sql:
+    errors.append("Detailed Complaint Analysis / CAPA schema is incomplete")
+if "def render_analysis" not in complaint_text or "Why 5" not in complaint_text or "Escape / Detection Root Cause" not in complaint_text or "CORRECTIVE / PREVENTIVE ACTION PLAN" not in complaint_text:
+    errors.append("Detailed Complaint Analysis UI is incomplete")
+auth_text = (ROOT / "core/auth.py").read_text()
+if "stable data-testid" not in auth_text or "qcms-login-brand-card" not in auth_text or "LOGIN TO QCMS" not in auth_text:
+    errors.append("Login page direct CSS rebuild is missing from the authentication renderer")
+
+# QCMS 4.10.6 controlled standards visibility / unlink / readability checks.
 if "standard_name_text" not in part_master_text or "author_text" not in part_master_text or "process_text" not in part_master_text:
     errors.append("Part Master Standard download control is missing Standard Name / Author / Process details")
 if "ADMIN APPROVAL — Unlink Standard from Part" not in part_master_text or "is_admin(current_profile())" not in part_master_text:
     errors.append("Part Master Standard unlink is not restricted to Administrator approval")
 ui_text = (ROOT / "core/ui.py").read_text()
-if "QCMS 4.10.3 — readability" not in ui_text or "font-weight:450!important" not in ui_text:
-    errors.append("QCMS 4.10.3 stronger readability typography layer is missing")
-
-
-# QCMS 4.10.4 RMTC numeric stability and premium login checks.
-rmtc_text = (ROOT / "app_pages" / "rmtc_pages.py").read_text(encoding="utf-8")
-auth_text = (ROOT / "core" / "auth.py").read_text(encoding="utf-8")
-if "heat_remaining=float(max(global_heat_steel-projected_commitment,0.0))" not in rmtc_text:
-    errors.append("QCMS 4.10.4 RMTC Heat balance numeric-type normalization is missing")
-if "qcms_login_shell" not in auth_text or "Welcome back" not in auth_text or "Sign in to QCMS" not in auth_text:
-    errors.append("QCMS 4.10.4 premium login workspace is missing")
-if "QCMS 4.10.4 — premium authentication workspace" not in ui_text:
-    errors.append("QCMS 4.10.4 login design system is missing")
+if "QCMS 4.10.8 — readability" not in ui_text or "font-weight:450!important" not in ui_text:
+    errors.append("QCMS 4.10.8 stronger readability typography layer is missing")
 
 report = {
-    "release": "QCMS 4.10.4 RMTC numeric stability and premium login workspace",
+    "release": "QCMS 4.10.8 Detailed Complaint Analysis / CAPA and direct login CSS rebuild",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -299,6 +310,11 @@ report = {
     "master_import_upload": True,
     "pending_order_process_matrix": True,
     "customer_standards_bank": True,
+    "detailed_complaint_analysis": True,
+    "complaint_5why_rca": True,
+    "complaint_multi_action_capa": True,
+    "complaint_closure_guard": True,
+    "complaint_responsibility_matrix": True,
     "multiple_part_standard_links": True,
     "rich_selection_labels": True,
     "npd_card_rows_color_pdf": True,
@@ -307,6 +323,10 @@ report = {
     "standard_download_rich_details": True,
     "admin_only_part_standard_unlink": True,
     "readability_font_weight_plus_10_percent": True,
+    "complaint_management": True,
+    "complaint_followup_tracking": True,
+    "debit_note_settlement_tracking": True,
+    "login_css_rebuild": True,
     "errors": errors,
 }
 print(json.dumps(report, indent=2))

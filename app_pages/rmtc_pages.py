@@ -418,14 +418,14 @@ def render_part()->None:
     heat_inward_steel=float(heat_summary.get('inward_steel_quantity_kg') or 0)
     section_bar('PRODUCTION PLAN','Committed Heat steel equals inward steel already used plus the still-unconsumed portion of every active part plan.')
     pcols=st.columns(4,gap='small')
-    planned_production_qty=pcols[0].number_input('Part Production Quantity (pcs)',min_value=0.0,value=planned_existing,step=1.0,key=f'planned_pcs_{rid}_{part_id}')
-    pcols[1].number_input('Input Weight (kg/part)',min_value=0.0,value=input_weight,step=0.001,format='%.3f',disabled=True,key=f'plan_weight_{rid}_{part_id}')
-    planned_steel=round(float(planned_production_qty)*input_weight,3)
-    pcols[2].number_input('Planned Steel Quantity (kg)',min_value=0.0,value=planned_steel,step=0.001,format='%.3f',disabled=True,key=f'planned_steel_{rid}_{part_id}')
-    projected_current_remaining=remaining_planned_steel(planned_steel,current_part_inward_steel)
-    projected_commitment=round(max(current_heat_commitment-current_existing_remaining,0.0)+projected_current_remaining,3)
-    heat_remaining=float(max(global_heat_steel-projected_commitment,0.0))
-    pcols[3].number_input('Heat Steel Balance after Plan (kg)',min_value=0.0,value=heat_remaining,step=0.001,format='%.3f',disabled=True,key=f'plan_balance_{rid}_{part_id}')
+    planned_production_qty=float(pcols[0].number_input('Part Production Quantity (pcs)', min_value=float(0.0), value=float(planned_existing or 0.0), step=float(1.0), key=f'planned_pcs_{rid}_{part_id}'))
+    pcols[1].number_input('Input Weight (kg/part)', min_value=float(0.0), value=float(input_weight or 0.0), step=float(0.001), format='%.3f', disabled=True, key=f'plan_weight_{rid}_{part_id}')
+    planned_steel=round(float(planned_production_qty)*float(input_weight or 0.0),3)
+    pcols[2].number_input('Planned Steel Quantity (kg)', min_value=float(0.0), value=float(planned_steel or 0.0), step=float(0.001), format='%.3f', disabled=True, key=f'planned_steel_{rid}_{part_id}')
+    projected_current_remaining=float(remaining_planned_steel(planned_steel,current_part_inward_steel) or 0.0)
+    projected_commitment=round(float(max(float(current_heat_commitment or 0.0)-float(current_existing_remaining or 0.0),0.0))+projected_current_remaining,3)
+    heat_remaining=float(max(float(global_heat_steel or 0.0)-float(projected_commitment or 0.0),0.0))
+    pcols[3].number_input('Heat Steel Balance after Plan (kg)', min_value=float(0.0), value=float(heat_remaining or 0.0), step=float(0.001), format='%.3f', disabled=True, key=f'plan_balance_{rid}_{part_id}')
     st.caption(
         f"Projected committed Heat steel: {projected_commitment:,.3f} kg = Inward {heat_inward_steel:,.3f} kg + "
         f"Remaining active plans {max(projected_commitment-heat_inward_steel,0.0):,.3f} kg."

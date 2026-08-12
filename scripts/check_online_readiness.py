@@ -73,11 +73,17 @@ required = [
     "supabase/migrations/20260812184500_qcms_admin_standard_unlink_readability_v4103.sql",
     "tests/test_v4103_standard_visibility_admin_unlink_fonts.py",
     "docs/RELEASE_4_10_3.md",
+    "app_pages/complaints.py",
+    "supabase/migrations/20260812092238_qcms_complaint_management_login_v4106.sql",
+    "docs/RELEASE_4_10_6.md",
+    "supabase/migrations/20260812165500_qcms_detailed_complaint_analysis_v4107.sql",
+    "tests/test_v4108_detailed_complaint_analysis_login.py",
+    "docs/RELEASE_4_10_7.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.10.4 - RMTC numeric stability and premium login workspace",
+    "phase": "QCMS 4.10.8 - Detailed Complaint Analysis / CAPA and direct login CSS rebuild",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),
