@@ -385,6 +385,77 @@ def _sync_order_overall_status(repo: Repository, order: dict, steps: list[dict])
         repo.update("npd_orders", str(order["id"]), {"status": status})
 
 
+def _render_pending_order_matrix(repo: Repository, orders: list[dict], part_by_id: dict[str, dict], customer_by_id: dict[str, dict]) -> None:
+    """Show every pending Part / Order on one compact row with its process sequence beside it."""
+    pending = [row for row in orders if str(row.get("status") or "OPEN").upper() not in {"COMPLETED", "CANCELLED"}]
+    section_bar("ORDER PROCESS STATUS · ALL PENDING PARTS", "Each pending Part Number is one row. Process cells show the operation, real-time status and target date so all development orders can be reviewed together.")
+    if not pending:
+        st.success("No pending NPD orders are open.")
+        return
+    today = date.today()
+    step_sets: list[tuple[dict, list[dict]]] = []
+    max_steps = 0
+    for order in pending:
+        steps = repo.select("npd_order_steps", eq={"npd_order_id": str(order.get("id"))}, order_by="operation_no", limit=500)
+        step_sets.append((order, steps))
+        max_steps = max(max_steps, len(steps))
+    symbols = {
+        "completed": "✅", "completed_late": "✅", "in_progress": "🔵", "pending": "🟠",
+        "overdue": "🔴", "hold": "🟣", "not_planned": "⚪",
+    }
+    rows: list[dict[str, Any]] = []
+    for order, steps in step_sets:
+        part = part_by_id.get(str(order.get("part_id"))) or {}
+        customer = customer_by_id.get(str(order.get("customer_id"))) or {}
+        done = sum(str(step.get("status") or "").upper() == "COMPLETED" for step in steps)
+        row: dict[str, Any] = {
+            "Part Number": part.get("part_number"),
+            "Order": order.get("order_number"),
+            "Customer": customer.get("party_name"),
+            "Delivery": _parse_date(order.get("delivery_date")).strftime("%d-%m-%Y"),
+            "Progress": f"{done}/{len(steps)}",
+        }
+        for index in range(max_steps):
+            if index >= len(steps):
+                row[f"Process {index + 1}"] = "—"
+                continue
+            step = steps[index]
+            state, _detail = _step_realtime_state(step, today)
+            target = _parse_date(step.get("target_date")).strftime("%d-%m-%Y") if step.get("target_date") else "No target"
+            process_name = str(step.get("process_name") or "").strip()
+            row[f"Process {index + 1}"] = (
+                f"{symbols.get(state, '⚪')} OP {int(step.get('operation_no') or 0)} · {process_name}\n"
+                f"{str(step.get('status') or 'PENDING').replace('_', ' ').title()} · Target {target}"
+            )
+        rows.append(row)
+    frame = pd.DataFrame(rows)
+    column_config = {
+        "Part Number": st.column_config.TextColumn(width="medium"),
+        "Order": st.column_config.TextColumn(width="medium"),
+        "Customer": st.column_config.TextColumn(width="medium"),
+        "Delivery": st.column_config.TextColumn(width="small"),
+        "Progress": st.column_config.TextColumn(width="small"),
+    }
+    for index in range(max_steps):
+        column_config[f"Process {index + 1}"] = st.column_config.TextColumn(width="large")
+    st.dataframe(
+        frame, hide_index=True, width="stretch",
+        height=min(640, max(160, 78 + len(frame) * 62)),
+        column_config=column_config,
+    )
+    st.download_button(
+        "Print / Download Pending Order Process Status PDF",
+        data=controlled_record_pdf_bytes(
+            "NPD Order Process Status - Pending",
+            {"Pending Parts / Orders": len(frame), "Printed Date": date.today().strftime("%d-%m-%Y")},
+            {"Order Process Status": frame},
+        ),
+        file_name="QCMS_NPD_Pending_Order_Process_Status.pdf", mime="application/pdf",
+        icon=":material/picture_as_pdf:", width="stretch", key="npd_pending_process_matrix_pdf",
+    )
+    st.caption("Legend: ✅ Completed · 🔵 In Progress · 🟠 Pending · 🔴 Overdue · 🟣 On Hold")
+
+
 def render_npd_status() -> None:
     page_header("NPD Status")
     repo = Repository(); perms = current_permissions("NPD_APQP")
@@ -463,6 +534,16 @@ def render_npd_status() -> None:
             except Exception as exc:
                 st.error(str(exc))
 
+        if existing:
+            if password_delete_panel(
+                repo=repo, table="npd_orders", rows=[existing],
+                labeler=lambda row: f"{row.get('order_number')} · {(part_by_id.get(str(row.get('part_id'))) or {}).get('part_number')}",
+                key=f"npd_order_entry_delete_{existing.get('id')}", can_delete=perms["can_archive"],
+                title="Delete Selected NPD Order",
+                help_text="Permanently deletes the selected order entry and its process/checkpoint history after verifying your current QCMS password.",
+            ):
+                st.rerun()
+
         if orders:
             section_bar("ORDER REGISTER")
             frame = pd.DataFrame([{
@@ -476,6 +557,8 @@ def render_npd_status() -> None:
         if not orders:
             st.info("Create an NPD Order to open the real-time Process Status view.")
             return
+        _render_pending_order_matrix(repo, orders, part_by_id, customer_by_id)
+        section_bar("SELECTED ORDER DETAIL", "Open one order below to update target dates, process status, responsible employees and checkpoint remarks.")
         order_labels = {str(row["id"]): _order_label(row, part_by_id, customer_by_id) for row in orders}
         order_id = st.selectbox("Open Order Status", list(order_labels), format_func=lambda value: order_labels[value], key="npd_status_order")
         order = next(row for row in orders if str(row["id"]) == order_id)

@@ -8,7 +8,7 @@ from core.delete_service import password_delete_panel
 from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
 from core.reporting import controlled_record_pdf_bytes
-from core.ui import page_header, save_success_popup, section_bar
+from core.ui import page_header, save_success_popup, section_bar, template_download_row
 
 
 def _label(row: dict) -> str:
@@ -17,6 +17,7 @@ def _label(row: dict) -> str:
 
 def render_entry() -> None:
     page_header("Process Master · Entry")
+    template_download_row([("Reference_Masters_Template.xlsx", "Download Process Master Template")], key_prefix="process_master", import_master_key="processes")
     service = MasterService()
     definition = MASTER_BY_KEY["processes"]
     perms = current_permissions("REFERENCE_MASTERS")

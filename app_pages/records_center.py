@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from core.repository import Repository
+from core.reporting import controlled_record_pdf_bytes
 from core.ui import disposition_cards, page_header, section_bar, style_status_dataframe, subpage_navigation
 
 
@@ -21,11 +22,17 @@ def _map(rows: list[dict], key: str, value: str) -> dict[str, str]:
     return {str(row.get(key)): str(row.get(value) or "") for row in rows}
 
 
-def _table(frame: pd.DataFrame, *, height: int = 560) -> None:
+def _table(frame: pd.DataFrame, *, height: int = 560, pdf_title: str = "QCMS Record Register", pdf_key: str = "register") -> None:
     if frame.empty:
         st.info("No records are available for this register.")
         return
     st.dataframe(style_status_dataframe(frame), hide_index=True, width="stretch", height=height)
+    # PDF print is intentionally available to every user who can view the register.
+    pdf_bytes = controlled_record_pdf_bytes(pdf_title, {"Record Count": len(frame)}, {pdf_title: frame})
+    st.download_button(
+        "Print / Download PDF", data=pdf_bytes, file_name=f"{pdf_key}.pdf",
+        mime="application/pdf", icon=":material/picture_as_pdf:", width="stretch", key=f"records_pdf_{pdf_key}",
+    )
 
 
 
@@ -128,7 +135,7 @@ def render_heat_ledger(*, embedded: bool = False) -> None:
     } for row in filtered])
 
     section_bar("HEAT NUMBER STEEL LEDGER", "One row per RMTC Part Number with global Heat quantity, plan, inward and balance validation.")
-    _table(frame, height=620)
+    _table(frame, height=620, pdf_title="Heat Steel Ledger", pdf_key=f"QCMS_Heat_Steel_Ledger_{selected_key or 'ALL_HEATS'}")
     if not frame.empty:
         file_suffix = selected_key or "ALL_HEATS"
         st.download_button(
@@ -181,7 +188,7 @@ def render() -> None:
             "Workflow": r.get("status"),
             "Final Decision": r.get("disposition"),
             "Created": r.get("created_at"),
-        } for r in rows]))
+        } for r in rows]), pdf_title="RMTC Register", pdf_key="QCMS_RMTC_Register")
         st.page_link(st.session_state["_qsms_pages"]["rmtc-records"], label="Open RMTC Records and Actions", icon=":material/open_in_new:", width="stretch")
 
     with tabs[1]:
@@ -207,7 +214,7 @@ def render() -> None:
             "Dimensional": r.get("dimensional_status"),
             "Quality Decision": r.get("quality_disposition"),
             "Status": r.get("status"),
-        } for r in rows]))
+        } for r in rows]), pdf_title="Material Inward Register", pdf_key="QCMS_Material_Inward_Register")
         st.page_link(st.session_state["_qsms_pages"]["inward-records"], label="Open Material Inward Records and Actions", icon=":material/open_in_new:", width="stretch")
 
 
@@ -228,7 +235,7 @@ def render() -> None:
             "Sample Gate": r.get("sample_gate_status"), "OSP Inward": r.get("receipt_number"),
             "Inward Qty pcs": r.get("quantity_received"), "Receipt Decision": r.get("receipt_quality_disposition"),
             "Production Available pcs": r.get("production_available_quantity"), "Status": r.get("status"),
-        } for r in rows]))
+        } for r in rows]), pdf_title="OSP Transaction Register", pdf_key="QCMS_OSP_Transaction_Register")
         st.page_link(st.session_state["_qsms_pages"]["osp-records"], label="Open OSP Records and Actions", icon=":material/open_in_new:", width="stretch")
 
     with tabs[3]:
@@ -244,7 +251,7 @@ def render() -> None:
             "Disposition": r.get("disposition"),
             "Workflow": r.get("status"),
             "Reason": r.get("disposition_reason"),
-        } for r in rows]))
+        } for r in rows]), pdf_title="Dimensional Inspection Register", pdf_key="QCMS_Dimensional_Inspection_Register")
         st.page_link(st.session_state["_qsms_pages"]["dimensional-records"], label="Open Dimensional Records and Actions", icon=":material/open_in_new:", width="stretch")
 
     with tabs[4]:
@@ -260,7 +267,7 @@ def render() -> None:
             "Disposition": r.get("disposition"),
             "Workflow": r.get("status"),
             "Reason": r.get("disposition_reason"),
-        } for r in rows]))
+        } for r in rows]), pdf_title="MetLAB Register", pdf_key="QCMS_MetLAB_Register")
         st.page_link(st.session_state["_qsms_pages"]["metlab-records"], label="Open MetLAB Records and Actions", icon=":material/open_in_new:", width="stretch")
 
     with tabs[5]:
@@ -274,7 +281,7 @@ def render() -> None:
             "Part Number": part_map.get(str(r.get("part_id"))),
             "Status": r.get("status"),
             "Effective Date": r.get("effective_date"),
-        } for r in rows]))
+        } for r in rows]), pdf_title="Inspection Layout Register", pdf_key="QCMS_Inspection_Layout_Register")
         st.page_link(st.session_state["_qsms_pages"]["inspection-layout-records"], label="Open Inspection Layout Records and Actions", icon=":material/open_in_new:", width="stretch")
 
     with tabs[6]:
@@ -290,7 +297,7 @@ def render() -> None:
             {"Module": "Reference Master", "Code / Number": r.get("party_code"), "Name": r.get("party_name"), "Status": r.get("status")} for r in reference_rows
         ] + [
             {"Module": "Employee Master", "Code / Number": r.get("employee_code"), "Name": f"{r.get('first_name') or ''} {r.get('last_name') or ''}".strip(), "Status": r.get("status")} for r in employee_rows
-        ]), height=620)
+        ]), height=620, pdf_title="Master Record Status", pdf_key="QCMS_Master_Record_Status")
         c1, c2, c3, c4 = st.columns(4, gap="small")
         with c1: st.page_link(st.session_state["_qsms_pages"]["part-records"], label="Part Records", width="stretch")
         with c2: st.page_link(st.session_state["_qsms_pages"]["grade-records"], label="Grade Records", width="stretch")

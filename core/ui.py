@@ -126,7 +126,7 @@ def safe(value: Any) -> str:
 TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 
 
-def template_download_row(items: Sequence[tuple[str, str]], *, key_prefix: str) -> None:
+def template_download_row(items: Sequence[tuple[str, str]], *, key_prefix: str, import_master_key: str | None = "") -> None:
     """Render local Excel templates as compact download buttons."""
     available = [(name, label, TEMPLATE_DIR / name) for name, label in items if (TEMPLATE_DIR / name).exists()]
     if not available:
@@ -140,6 +140,23 @@ def template_download_row(items: Sequence[tuple[str, str]], *, key_prefix: str) 
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key=f"template_{key_prefix}_{index}", width="stretch",
                 )
+                import_defaults = {
+                    "Part_Master_Template.xlsx": "parts",
+                    "Material_Grade_Template.xlsx": "material_grades",
+                    "Reference_Masters_Template.xlsx": "customers",
+                    "Employee_Master_Template.xlsx": "employees",
+                    "Inspection_Layout_Template.xlsx": "inspection_plans",
+                    "MetLAB_Report_Layout_Template.xlsx": "test_plans",
+                }
+                master_key = import_master_key if import_master_key not in ("", None) else (import_defaults.get(name) if import_master_key == "" else None)
+                import_page = (st.session_state.get("_qsms_pages") or {}).get("master-import")
+                if master_key and import_page is not None:
+                    if st.button(
+                        "Import / Upload Master File", icon=":material/upload_file:", width="stretch",
+                        key=f"template_import_{key_prefix}_{index}",
+                    ):
+                        st.session_state["master_import_selected_key"] = master_key
+                        st.switch_page(import_page)
 
 
 def template_catalog() -> Sequence[tuple[str, str, str]]:
@@ -419,7 +436,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c3:
             render_app_launcher(app_registry())
         with c4:
-            d, a = st.columns([2.55, .7], vertical_alignment="center")
+            d, account, a = st.columns([2.25, .55, .55], vertical_alignment="center")
             with d:
                 st.markdown(
                     f'<div class="fsi-user"><div class="fsi-user-name">User: {safe(profile.get("full_name") or "Quality User")}</div>'
@@ -428,6 +445,10 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
                     f'<div class="fsi-live"><span class="fsi-dot"></span>{"PREVIEW" if is_preview_session() else "LIVE"}</div></div>',
                     unsafe_allow_html=True,
                 )
+            with account:
+                account_page = (st.session_state.get("_qsms_pages") or {}).get("my-account")
+                if account_page is not None:
+                    st.page_link(account_page, label="Account", icon=":material/manage_accounts:", width="stretch")
             with a:
                 return st.button("Exit", key="fsi_signout", width="stretch")
     return False

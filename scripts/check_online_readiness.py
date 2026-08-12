@@ -59,11 +59,16 @@ required = [
     "supabase/migrations/20260811090000_qcms_rmtc_microstructure_print_reports_v496.sql",
     "tests/test_v496_qcms_global_heat_print_reports.py",
     "docs/RELEASE_4_9_6.md",
+    "app_pages/master_import.py",
+    "app_pages/my_account.py",
+    "supabase/migrations/20260812113000_qcms_universal_delete_account_import_print_v4100.sql",
+    "tests/test_v4100_universal_delete_account_import_npd_photos.py",
+    "docs/RELEASE_4_10_0.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.9.9 - Controlled Delete, Save Popups, Trial Cleanup & Jominy MM Reliability",
+    "phase": "QCMS 4.10.0 - Universal Delete, Account Password, Master Import, NPD Matrix & MetLAB Photos",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

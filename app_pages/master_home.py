@@ -40,6 +40,7 @@ def render() -> None:
         ("Employee Master", counts["employees"], "👥", "#087443", "employee-entry", "employee-records", "EMPLOYEE_MASTER"),
         ("Inspection Layouts", counts["layouts"], "▤", "#C56B00", "inspection-layout-entry", "inspection-layout-records", "INSPECTION_LAYOUTS"),
         ("Users & Access", counts["users"], "🔐", "#B42318", "user-access", "user-access", "USER_ACCESS"),
+        ("Master Import", 0, "⇧", "#0E7490", "master-import", "master-import", "REFERENCE_MASTERS"),
     ]
     for row_start in range(0, len(cards), 3):
         cols = st.columns(3, gap="small")

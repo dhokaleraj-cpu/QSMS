@@ -65,9 +65,14 @@ def render_entry() -> None:
         ("reference-records", "Reference Master Records", ":material/table_view:"),
     )
     page_header("Reference Masters · Entry", "Create and edit controlled reference data without separate micro-masters.", "New / edit")
-    template_download_row([("Reference_Masters_Template.xlsx", "Download Reference Masters Template")], key_prefix="reference_master")
+    template_download_row([("Reference_Masters_Template.xlsx", "Download Reference Masters Template")], key_prefix="reference_master", import_master_key=None)
     perms = current_permissions("REFERENCE_MASTERS"); service = MasterService(); catalog = LearnedValueCatalog(service.repo)
-    key = _master_selector(); definition = service.definition(key); rows = service.list_records(definition, status="All")
+    key = _master_selector()
+    import_page = (st.session_state.get("_qsms_pages") or {}).get("master-import")
+    if import_page is not None and st.button(f"Import / Upload {MASTER_BY_KEY[key].label}", icon=":material/upload_file:", width="stretch", key=f"reference_import_{key}"):
+        st.session_state["master_import_selected_key"] = key
+        st.switch_page(import_page)
+    definition = service.definition(key); rows = service.list_records(definition, status="All")
     labels = {str(row["id"]): _row_label(definition, row) for row in rows}
     requested = str(st.session_state.pop("edit_reference_id", "") or ""); requested_key = str(st.session_state.pop("edit_reference_key", "") or "")
     options = ["__new__"] + list(labels); index = options.index(requested) if requested_key == key and requested in options else 0

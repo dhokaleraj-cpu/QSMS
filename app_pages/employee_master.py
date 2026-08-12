@@ -81,6 +81,15 @@ def render_entry()->None:
                 client.storage.from_('quality-documents').upload(path,photo.getvalue(),{'content-type':photo.type,'upsert':'true'})
                 repo.update('employees',str(existing['id']),{'photo_storage_path':path});save_success_popup('Employee photo uploaded successfully.', queue_for_rerun=True);st.rerun()
             except Exception as exc:st.error(str(exc))
+    if existing:
+        if password_delete_panel(
+            repo=svc.repo, table='employees', rows=[existing],
+            labeler=lambda r:f"{r.get('employee_code')} · {r.get('first_name')} {r.get('last_name')}",
+            key=f"delete_employee_entry_{existing.get('id')}", can_delete=perms['can_archive'],
+            title='Delete This Employee Record',
+            help_text='Permanent deletion requires your current QCMS password. Linked users/approvals will block deletion.',
+        ):
+            st.session_state.pop('edit_employee_id',None); st.rerun()
 
 
 def render_records()->None:

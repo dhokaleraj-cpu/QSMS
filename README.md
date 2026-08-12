@@ -1,4 +1,4 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.9.7
+# QUALITY CONTROL MONITORING SYSTEM 4.10.0
 
 Live Supabase-first Quality Control, RMTC, OSP and inspection workflow for Four Star Industries.
 
@@ -11,10 +11,23 @@ Visible workspaces:
 5. OSP Transactions
 6. Inspections
 7. Records Centre
-8. Templates
-9. Reports
+8. NPD / APQP
+9. QC Calculation Tools
+10. Templates
+11. Reports
 
 
+
+
+## Release 4.10.0 — Universal Delete, My Account, Master Import & One-Screen NPD Status
+
+- Password-confirmed delete controls across user-facing masters, transactions, inspections, NPD/APQP and QC calculation records, subject to module Delete permission.
+- New **My Account** page for every signed-in user to change their own login password after verifying the current password.
+- Removed the legacy First Administrator field/tab from the login page.
+- Added one-screen **Order Process Status** matrix: each pending Part Number / Order is one row with process operations, real-time status and target dates beside it.
+- Added Excel/CSV **Master Import** for every controlled master definition, with update-not-duplicate behavior.
+- Standard and OSP MetLAB support four microstructure photographs with individual titles; RMTC supports three photograph titles.
+- Records Centre and pending NPD process status provide controlled PDF printing to every user with View access.
 
 
 ## Release 4.9.7 — NPD / APQP Process Flow & Real-Time Order Status

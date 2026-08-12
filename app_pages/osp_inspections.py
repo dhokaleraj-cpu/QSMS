@@ -125,6 +125,25 @@ def _render(report_type: str) -> None:
     existing_layout_rows = []
     if not is_dimensional and existing:
         existing_layout_rows = list(((existing.get("results") or {}).get("rows") or []))
+    micro_files: list[Any] = []
+    micro_titles: list[str] = []
+    if not is_dimensional:
+        section_bar("MICROSTRUCTURE PHOTOGRAPHS", "Add up to four photographs and a title for each OSP MetLAB photograph.")
+        micro_cols = st.columns(4, gap="small")
+        for slot, column in enumerate(micro_cols, start=1):
+            with column:
+                if (existing or {}).get(f"microstructure_image_{slot}_path"):
+                    st.caption(f"Photo {slot} already uploaded · upload another file to replace it")
+                micro_files.append(st.file_uploader(
+                    f"Microstructure Photo {slot}", type=["png", "jpg", "jpeg"],
+                    key=f"osp_metlab_micro_{scope}_{job_id}_{slot}",
+                ))
+                micro_titles.append(st.text_input(
+                    f"Photo {slot} Title",
+                    value=str((existing or {}).get(f"microstructure_caption_{slot}") or ""),
+                    key=f"osp_metlab_micro_title_{scope}_{job_id}_{slot}",
+                ))
+
     frame = pd.DataFrame(_source_rows(inspection, plan_id, existing_detail or existing_layout_rows))
     section_bar("PROCESS-SPECIFIC INSPECTION PARAMETERS")
     edited = st.data_editor(
@@ -181,8 +200,15 @@ def _render(report_type: str) -> None:
             else:
                 payload = {**common, "test_type": "METLAB", "layout_plan_id": plan_id, "inspection_stage_id": plan.get("inspection_stage_id"),
                     "test_date": inspection_date.isoformat(), "sample_reference": f"{job.get('osp_job_number')} / {job.get('vendor_batch_number')}",
-                    "specification_reference": job.get("process_specification")}
+                    "specification_reference": job.get("process_specification"),
+                    **{f"microstructure_caption_{slot}": (micro_titles[slot - 1].strip() or None) for slot in range(1, 5)}}
                 saved = inspection.save_metlab(payload, {"rows": result_rows, "chemistry_rows": [], "jominy_rows": [], "requirement_rows": []}, report_id or None)
+                for slot, image in enumerate(micro_files, start=1):
+                    if image is not None:
+                        inspection.upload_attachment(
+                            "METLAB_REPORT", str(saved["id"]), f"MICROSTRUCTURE_{slot}", image,
+                            "lab_tests", f"microstructure_image_{slot}_path",
+                        )
             save_success_popup(f"OSP {report_type.title()} Report {saved.get('report_number')} saved successfully.", queue_for_rerun=True); st.rerun()
         except Exception as exc: st.error(str(exc))
 

@@ -127,15 +127,10 @@ def _start_new_rmtc_for_heat(heat_number: str = "") -> None:
         st.session_state.pop(key, None)
 
 
-def _render_rmtc_microstructure_inputs(existing: dict, repo: Repository, form_token: str) -> dict[str, Any]:
-    """Render exactly three controlled RMTC microstructure photo slots.
-
-    Photographs are stored in the existing document attachment register, so this
-    feature is backward-compatible with the live database and does not depend on
-    additional RMTC header columns.
-    """
-    section_bar('MICROSTRUCTURE PHOTOGRAPHS')
-    st.caption('Upload up to three microstructure photographs. Existing RMTC records can add, replace or delete photographs from the attachment controls after saving.')
+def _render_rmtc_microstructure_inputs(existing: dict, repo: Repository, form_token: str) -> tuple[dict[str, Any], dict[int, str]]:
+    """Render three controlled RMTC microstructure photo slots with user-defined titles."""
+    section_bar('MICROSTRUCTURE PHOTOGRAPHS', 'Add up to three photographs and a descriptive title for each photograph.')
+    st.caption('For an existing RMTC, the photograph file can be replaced/deleted below after saving; photograph titles are editable here.')
     attachment_service = AttachmentService(repo)
     existing_attachments: dict[str, dict] = {}
     if existing and existing.get('id'):
@@ -149,27 +144,33 @@ def _render_rmtc_microstructure_inputs(existing: dict, repo: Repository, form_to
             existing_attachments = {}
 
     uploads: dict[str, Any] = {}
+    titles: dict[int, str] = {}
     cols = st.columns(3, gap='small')
     for slot, col in enumerate(cols, start=1):
         document_type = f'RMTC_MICROSTRUCTURE_{slot}'
         with col:
+            title_default = str(existing.get(f'microstructure_caption_{slot}') or f'Microstructure Photo {slot}') if existing else f'Microstructure Photo {slot}'
             attachment = existing_attachments.get(document_type)
             if attachment:
                 try:
                     image_bytes = attachment_service.download(attachment)
                     if image_bytes:
-                        st.image(image_bytes, caption=f'Microstructure Photo {slot}', width=260)
+                        st.image(image_bytes, caption=title_default, width=260)
                 except Exception as exc:
                     st.caption(f'Photo {slot} preview unavailable: {exc}')
             elif existing:
-                st.caption(f'Microstructure Photo {slot}: no image uploaded')
+                st.caption(f'Photo {slot}: no image uploaded')
+            titles[slot] = st.text_input(
+                f'Photo {slot} Title', value=title_default,
+                key=f'rmtc_micro_title_{slot}_{form_token}',
+            ).strip()
             if not existing:
                 uploads[document_type] = st.file_uploader(
                     f'Upload Microstructure Photo {slot}',
                     type=['png', 'jpg', 'jpeg'],
                     key=f'rmtc_micro_photo_{slot}_{form_token}',
                 )
-    return uploads
+    return uploads, titles
 
 def render_entry()->None:
     subpage_navigation(('masters','Back to Masters',':material/arrow_back:'),('rmtc-records','RMTC Records',':material/table_view:'))
@@ -281,7 +282,7 @@ def render_entry()->None:
     prepared_options=['']+list(prepared_map);current_prepared=str(existing.get('prepared_by_employee_id') or '')
     prepared_id=c[3].selectbox('Prepared By',prepared_options,index=prepared_options.index(current_prepared) if current_prepared in prepared_options else 0,format_func=lambda x:prepared_map.get(x,'— Select —'),key=f'rmtc_prepared_{form_token}')
     remarks=st.text_area('RMTC Remarks',value=str(existing.get('remarks') or ''),height=70,key=f'rmtc_remarks_{form_token}')
-    microstructure_uploads = _render_rmtc_microstructure_inputs(existing, repo, form_token)
+    microstructure_uploads, microstructure_titles = _render_rmtc_microstructure_inputs(existing, repo, form_token)
     new_attachments = {} if existing else new_attachment_uploaders(
         RMTC_ATTACHMENT_SLOTS, key_prefix=f'rmtc_{form_token}', title='OPTIONAL RMTC ATTACHMENTS'
     )
@@ -298,8 +299,13 @@ def render_entry()->None:
                 final_heat_code=heat_code.strip() or svc.next_heat_code(steel_id)
                 supplier_id=str(source.get('supplier_id') or '')
                 part=next(row for row in parts if str(row['id'])==primary_id)
-                payload={'rmtc_number':rmtc_no.strip(),'entry_date':entry_date.isoformat(),'certificate_reference':cert_ref.strip(),'certificate_date':cert_date.isoformat(),'part_id':primary_id,'supplier_id':supplier_id,'steel_mill_id':steel_id,'material_grade_id':part.get('material_grade_id'),'heat_number':heat.strip(),'heat_code':final_heat_code,'certificate_quantity':qty,'chemistry_results':{},'chemistry_compliance':'NOT_EVALUATED','chemistry_failures':[],'mechanical_results':{},'status':str(existing.get('status') or 'DRAFT'),'selected_source_detail_id':source_id,'rm_section':source.get('section_size'),'forging_route':source.get('forging_route'),'prepared_by_employee_id':prepared_id,'prepared_at':existing.get('prepared_at') or datetime.now().isoformat(),'remarks':remarks.strip() or None}
+                payload={'rmtc_number':rmtc_no.strip(),'entry_date':entry_date.isoformat(),'certificate_reference':cert_ref.strip(),'certificate_date':cert_date.isoformat(),'part_id':primary_id,'supplier_id':supplier_id,'steel_mill_id':steel_id,'material_grade_id':part.get('material_grade_id'),'heat_number':heat.strip(),'heat_code':final_heat_code,'certificate_quantity':qty,'chemistry_results':{},'chemistry_compliance':'NOT_EVALUATED','chemistry_failures':[],'mechanical_results':{},'status':str(existing.get('status') or 'DRAFT'),'selected_source_detail_id':source_id,'rm_section':source.get('section_size'),'forging_route':source.get('forging_route'),'prepared_by_employee_id':prepared_id,'prepared_at':existing.get('prepared_at') or datetime.now().isoformat(),'remarks':remarks.strip() or None,**{f'microstructure_caption_{slot}': (microstructure_titles.get(slot) or None) for slot in range(1,4)}}
                 saved=svc.save_header(payload,selected_parts,str(existing['id']) if existing else None)
+                # The legacy atomic RMTC header RPC predates photo titles, so persist the title columns explicitly.
+                repo.update('rmtc_approvals', str(saved['id']), {
+                    f'microstructure_caption_{slot}': (microstructure_titles.get(slot) or None)
+                    for slot in range(1, 4)
+                })
                 attachment_service = AttachmentService(repo)
                 for slot in RMTC_ATTACHMENT_SLOTS:
                     selected_file = new_attachments.get(slot.document_type)
@@ -358,6 +364,14 @@ def render_entry()->None:
         n1,n2=st.columns(2,gap='small')
         with n1:st.page_link(st.session_state['_qsms_pages']['rmtc-part'],label='Part Worksheets',icon=':material/format_list_bulleted:',width='stretch')
         with n2:st.page_link(st.session_state['_qsms_pages']['rmtc-approval'],label='Validation & Decision',icon=':material/approval:',width='stretch')
+        if password_delete_panel(
+            repo=repo, table='rmtc_approvals', rows=[existing],
+            labeler=lambda row: f"{row.get('rmtc_number')} · Heat {row.get('heat_number')}",
+            key=f"delete_rmtc_entry_{existing.get('id')}", can_delete=perms['can_archive'],
+            title='Delete This RMTC Entry',
+            help_text='Permanent deletion requires your current QCMS password and RMTC Delete permission. Linked Material Inward records will prevent deletion.',
+        ):
+            _start_new_rmtc_for_heat(''); st.rerun()
 
 
 def render_part()->None:

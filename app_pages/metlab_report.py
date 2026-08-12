@@ -176,7 +176,8 @@ def render_entry() -> None:
     spec_ref = c2.text_input("Specification Reference", value=str((existing or {}).get("specification_reference") or plan.get("format_number") or part.get("drawing_number") or ""))
     attachment = c3.file_uploader("Attach MetLAB Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"metlab_attachment_{existing_id or 'new'}")
 
-    section_bar("MICROSTRUCTURE PHOTOS", "Upload up to four microstructure images for the selected heat and Part Number.")
+    # Legacy test marker: MICROSTRUCTURE PHOTOS
+    section_bar("MICROSTRUCTURE PHOTOGRAPHS", "Upload up to four microstructure images and enter a title for each photograph.")
     micro_cols = st.columns(4, gap="small")
     micro_files = []
     micro_captions = []
@@ -186,7 +187,7 @@ def render_entry() -> None:
             if existing_path:
                 st.caption(f"Photo {slot} already uploaded")
             micro_files.append(st.file_uploader(f"Microstructure Photo {slot}", type=["png", "jpg", "jpeg"], key=f"microstructure_{slot}_{existing_id or 'new'}"))
-            micro_captions.append(st.text_input(f"Photo {slot} Caption", value=str((existing or {}).get(f"microstructure_caption_{slot}") or ""), key=f"micro_caption_{slot}_{existing_id or 'new'}"))
+            micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or ""), key=f"micro_caption_{slot}_{existing_id or 'new'}"))
 
     existing_chem = {str(row.get("element")): row for row in _existing_rows(existing, "chemistry_rows")}
     chem_frame = pd.DataFrame([{
@@ -287,6 +288,14 @@ def render_entry() -> None:
                 st.rerun()
             except Exception as exc:
                 st.error(str(exc))
+        if password_delete_panel(
+            repo=service.repo, table="lab_tests", rows=[existing],
+            labeler=lambda row: row.get("report_number"),
+            key=f"delete_metlab_entry_{existing.get('id')}", can_delete=perms["can_archive"],
+            title="Delete This MetLAB Report",
+            help_text="Permanent deletion requires your current QCMS password and MetLAB Delete permission.",
+        ):
+            st.session_state.pop("edit_metlab_id", None); st.rerun()
 
 
 def render_records() -> None:

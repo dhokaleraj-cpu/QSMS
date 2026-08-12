@@ -269,6 +269,14 @@ def render_entry() -> None:
             st.page_link(st.session_state["_qsms_pages"]["metlab-entry"], label="Open MetLAB Report", icon=":material/science:", width="stretch")
         with c2:
             st.page_link(st.session_state["_qsms_pages"]["dimensional-entry"], label="Open Dimensional Report", icon=":material/straighten:", width="stretch")
+        if password_delete_panel(
+            repo=service.repo, table="inward_lots", rows=[existing],
+            labeler=lambda row: f"{row.get('inward_number')} · {row.get('grn_number')}",
+            key=f"delete_inward_entry_{existing.get('id')}", can_delete=perms["can_archive"],
+            title="Delete This Material Inward Entry",
+            help_text="Permanent deletion requires your current QCMS password. Linked inspections/OSP/production records will block deletion.",
+        ):
+            st.session_state.pop("edit_inward_id", None); st.rerun()
 
 
 def render_records() -> None:

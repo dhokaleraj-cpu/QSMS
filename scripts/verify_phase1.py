@@ -91,6 +91,9 @@ required = [
     "tests/test_v498_duplicate_print_qc_tools.py",
     "docs/RELEASE_4_9_8.md",
     "app_pages/qc_calculation_tools.py",
+    "app_pages/master_import.py",
+    "app_pages/my_account.py",
+    "supabase/migrations/20260812113000_qcms_universal_delete_account_import_print_v4100.sql",
     "core/hardness_conversion.py",
     "data/astm_e140_table1.json",
 ]
@@ -105,7 +108,7 @@ expected_paths = {
     "reports-home", "heat-transaction-report", "osp-balance-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
-    "user-access", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
+    "user-access", "master-import", "my-account", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
     "osp-material-out", "osp-sample-receipt", "osp-inward", "osp-dimensional", "osp-metlab", "osp-records",
     "inspection-layout-entry", "inspection-layout-records", "dimensional-entry",
     "dimensional-records", "metlab-entry", "metlab-records",
@@ -188,7 +191,7 @@ if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
 report = {
-    "release": "QCMS 4.9.9 Controlled Delete, Save Popups, Trial Cleanup & Jominy MM Reliability",
+    "release": "QCMS 4.10.0 Universal Delete, Account Password, Master Import, NPD Matrix & MetLAB Photos",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -266,6 +269,12 @@ report = {
     "employee_linked_responsibility": True,
     "qc_calculation_tools": True,
     "astm_e140_table1_conversion": True,
+    "self_service_password_change": True,
+    "first_admin_removed_from_login": True,
+    "master_import_upload": True,
+    "pending_order_process_matrix": True,
+    "metlab_photo_titles": True,
+    "pdf_available_to_viewers": True,
     "errors": errors,
 }
 print(json.dumps(report, indent=2))

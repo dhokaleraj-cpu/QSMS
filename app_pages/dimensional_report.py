@@ -210,6 +210,14 @@ def render_entry() -> None:
                 st.rerun()
             except Exception as exc:
                 st.error(str(exc))
+        if password_delete_panel(
+            repo=service.repo, table="inspection_reports", rows=[existing],
+            labeler=lambda row: row.get("report_number"),
+            key=f"delete_dimensional_entry_{existing.get('id')}", can_delete=perms["can_archive"],
+            title="Delete This Dimensional Report",
+            help_text="Permanent deletion requires your current QCMS password and Dimensional Delete permission.",
+        ):
+            st.session_state.pop("edit_dimensional_id", None); st.rerun()
 
 
 def render_records() -> None:

@@ -208,61 +208,33 @@ def render_login() -> None:
     _, center, _ = st.columns([1, 1.12, 1])
     with center:
         with st.container(border=True, key="fsi_login_card"):
-            sign_in_tab, first_admin_tab = st.tabs(["Sign in", "First administrator"])
-            with sign_in_tab:
-                st.markdown('<div class="fsi-login-card-title">Sign in to Quality</div>', unsafe_allow_html=True)
-                st.markdown('<div class="fsi-login-help">Your registered company email is the username.</div>', unsafe_allow_html=True)
-                with st.form("phase1_login_form"):
-                    email = st.text_input("Email address", placeholder="name@company.com")
-                    password = st.text_input("Password", type="password", placeholder="Enter password")
-                    submitted = st.form_submit_button("Sign in", type="primary", width="stretch")
-                if submitted:
+            st.markdown('<div class="fsi-login-card-title">Sign in to Quality</div>', unsafe_allow_html=True)
+            st.markdown('<div class="fsi-login-help">Your registered company email is the username.</div>', unsafe_allow_html=True)
+            with st.form("phase1_login_form"):
+                email = st.text_input("Email address", placeholder="name@company.com")
+                password = st.text_input("Password", type="password", placeholder="Enter password")
+                submitted = st.form_submit_button("Sign in", type="primary", width="stretch")
+            if submitted:
+                try:
+                    login(email, password)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(_friendly_error(exc, "Sign-in"))
+
+            with st.expander("Forgot password"):
+                reset_email = st.text_input("Registered email", key="reset_email", placeholder="name@company.com")
+                if st.button("Send recovery email", key="send_recovery", width="stretch"):
                     try:
-                        login(email, password)
-                        st.rerun()
+                        request_password_reset(reset_email)
+                        st.success("Recovery instructions were requested. Check the registered inbox.")
                     except Exception as exc:
-                        st.error(_friendly_error(exc, "Sign-in"))
+                        st.error(_friendly_error(exc, "Password recovery"))
 
-                with st.expander("Forgot password"):
-                    reset_email = st.text_input("Registered email", key="reset_email", placeholder="name@company.com")
-                    if st.button("Send recovery email", key="send_recovery", width="stretch"):
-                        try:
-                            request_password_reset(reset_email)
-                            st.success("Recovery instructions were requested. Check the registered inbox.")
-                        except Exception as exc:
-                            st.error(_friendly_error(exc, "Password recovery"))
-
-                if settings.allow_preview:
-                    st.divider()
-                    if st.button("Open controlled Phase 1 preview", width="stretch"):
-                        start_preview()
-                    st.caption("Preview mode is session-only and never writes to Supabase.")
-
-            with first_admin_tab:
-                available = settings.supabase_ready and bootstrap_available()
-                if not settings.supabase_ready:
-                    st.warning("Configure Supabase secrets before creating the administrator.")
-                elif not available:
-                    st.info("The first administrator is already configured, or the online database setup is incomplete.")
-                else:
-                    st.markdown('<div class="fsi-login-card-title">Create the first administrator</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="fsi-login-help">This controlled registration is available only while no active administrator exists.</div>', unsafe_allow_html=True)
-                    with st.form("first_admin_registration"):
-                        full_name = st.text_input("Full name", placeholder="Rajesh Dhokale")
-                        admin_email = st.text_input("Company email", placeholder="name@company.com")
-                        admin_password = st.text_input("Create password", type="password")
-                        setup_code = st.text_input("One-time setup code", type="password")
-                        create = st.form_submit_button("Create administrator", type="primary", width="stretch")
-                    if create:
-                        try:
-                            result = register_first_administrator(full_name, admin_email, admin_password, setup_code)
-                            if result.get("confirmation_required"):
-                                st.success(result["message"])
-                            else:
-                                st.success("Administrator created successfully.")
-                                st.rerun()
-                        except Exception as exc:
-                            st.error(_friendly_error(exc, "Administrator registration"))
+            if settings.allow_preview:
+                st.divider()
+                if st.button("Open controlled Phase 1 preview", width="stretch"):
+                    start_preview()
+                st.caption("Preview mode is session-only and never writes to Supabase.")
 
 
 def render_first_admin_claim() -> None:
