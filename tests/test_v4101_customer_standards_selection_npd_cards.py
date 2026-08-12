@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_4101_contract():
-    assert (ROOT / "VERSION").read_text().strip() == "4.10.1"
+    assert (ROOT / "VERSION").read_text().strip() in {"4.10.1", "4.10.2"}
     assert (ROOT / "docs/RELEASE_4_10_1.md").exists()
     assert (ROOT / "templates/Customer_Standards_Template.xlsx").exists()
 

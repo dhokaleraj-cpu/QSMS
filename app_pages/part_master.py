@@ -15,7 +15,7 @@ from core.delete_service import password_delete_panel
 from core.osp_service import OSPService
 from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
-from core.selection_labels import customer_standard_label, material_grade_label, party_label, process_label
+from core.selection_labels import customer_standard_label, material_grade_label, part_label, party_label, process_label
 from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 DRAWING_TYPES = (

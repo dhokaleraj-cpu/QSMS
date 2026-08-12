@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from core.access import current_permissions
-from core.attachments import AttachmentService, AttachmentSlot, render_attachment_manager
+from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, AttachmentSlot, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
@@ -135,6 +135,15 @@ def render_entry() -> None:
         current_status = str(existing.get("status") or "ACTIVE")
         status = c[3].selectbox("Status", statuses, index=statuses.index(current_status) if current_status in statuses else 0)
         remarks = st.text_area("Remarks", value=str(existing.get("remarks") or ""), height=80)
+        new_standard_attachment = None
+        if not existing:
+            st.markdown("**Controlled Standard / Specification Attachment**")
+            new_standard_attachment = st.file_uploader(
+                "Upload Standard / Specification File",
+                type=ALLOWED_ATTACHMENT_TYPES,
+                key="new_customer_standard_attachment",
+                help="Optional at initial save. The file will be stored against the new Standard record and can later be downloaded, replaced or password-deleted.",
+            )
         save = st.form_submit_button("Save Customer Standard / Specification", type="primary", disabled=not writable, width="stretch")
 
     if save:
@@ -153,15 +162,27 @@ def render_entry() -> None:
                 "remarks": remarks.strip() or None,
             }
             saved, action = service.save(definition, raw, record_id=str(existing["id"]) if existing else None)
+            saved_id = str(saved["id"])
+            if not existing and new_standard_attachment is not None:
+                AttachmentService(repo).upload(
+                    entity_type="CUSTOMER_STANDARD",
+                    entity_id=saved_id,
+                    folder="customer_standards",
+                    slot=STANDARD_SLOT,
+                    file=new_standard_attachment,
+                )
             st.session_state.pop(auto_key, None)
-            st.session_state["edit_customer_standard_id"] = str(saved["id"])
-            save_success_popup(f"Customer Standard / Specification {action} successfully.", queue_for_rerun=True)
+            st.session_state["edit_customer_standard_id"] = saved_id
+            message = f"Customer Standard / Specification {action} successfully."
+            if not existing and new_standard_attachment is not None:
+                message += " Attachment uploaded successfully."
+            save_success_popup(message, queue_for_rerun=True)
             st.rerun()
         except Exception as exc:
             st.error(str(exc))
 
     if not existing:
-        st.info("Save the Standard / Specification header first. The controlled attachment and Part linkage then become available.")
+        st.info("You may attach the controlled Standard file during the first save above. After saving, the Attachment Manager below supports download, replacement and password-protected deletion.")
         return
 
     standard_id = str(existing["id"])

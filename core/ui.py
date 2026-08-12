@@ -400,7 +400,7 @@ def apply_global_style() -> None:
     .npd-hold{border-left-color:#7C3AED;background:#F5F3FF}.npd-hold .npd-process-status{color:#6D28D9}
     .npd-not_planned{border-left-color:#64748B;background:#F8FAFC}.npd-not_planned .npd-process-status{color:#475569}
 
-    /* QCMS 4.10.1 — all-parts NPD horizontal card rows */
+    /* QCMS 4.10.2 — all-parts NPD horizontal card rows */
     .npd-order-status-row{display:flex;gap:10px;align-items:stretch;margin:.45rem 0 .75rem;padding:8px;background:#FFFFFF;border:1px solid #C7D8E5;border-radius:12px;box-shadow:0 2px 8px rgba(11,45,77,.08);overflow-x:auto;}
     .npd-order-summary-card{flex:0 0 238px;min-width:238px;background:linear-gradient(145deg,#0B416F,#0B75B7);color:#FFFFFF;border-radius:9px;padding:12px 13px;box-shadow:0 2px 6px rgba(8,59,110,.18);}
     .npd-order-part{font-size:17px;font-weight:950;line-height:1.15;}.npd-order-name{font-size:11px;font-weight:800;opacity:.95;margin:4px 0 9px;line-height:1.25;}

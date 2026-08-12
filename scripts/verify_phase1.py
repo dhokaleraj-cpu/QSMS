@@ -196,7 +196,7 @@ if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
 report = {
-    "release": "QCMS 4.10.1 Customer Standards Bank, Rich Selection & NPD Card Status",
+    "release": "QCMS 4.10.2 Part Master hotfix and Standards attachment workflow",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
