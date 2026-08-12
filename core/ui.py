@@ -410,7 +410,7 @@ def apply_global_style() -> None:
     .npd-row-process-card .npd-op{font-size:9px;font-weight:900;letter-spacing:.04em;color:#617789;text-transform:uppercase}.npd-row-process-card .npd-process-name{font-size:12px;font-weight:900;color:#0B3558;margin:4px 0 7px;line-height:1.2}.npd-row-process-card .npd-process-status{font-size:10px;font-weight:900;margin-bottom:5px;text-transform:uppercase}.npd-row-process-card .npd-process-date{font-size:8.8px;line-height:1.3;color:#607284}
     .npd-empty-process{padding:30px 16px;color:#607284;font-weight:800;}
 
-    /* QCMS 4.10.8 — readability: approximately 10% stronger visual font weight */
+    /* QCMS 4.10.9 — readability: approximately 10% stronger visual font weight */
     html,body,.stApp,div[data-testid="stAppViewContainer"],section.main{font-weight:450!important;}
     p,[data-testid="stMarkdownContainer"],div[data-testid="stCaptionContainer"] p,[data-testid="stAlert"] p{font-weight:500!important;}
     label[data-testid="stWidgetLabel"] p{font-weight:880!important;}
@@ -488,7 +488,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4108-RCA-DEPLOY-GUARD</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4109-LOGIN-IMPORT-GUARD</div>',
                 unsafe_allow_html=True,
             )
         with c3:

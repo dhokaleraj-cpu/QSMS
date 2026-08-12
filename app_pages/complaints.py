@@ -504,7 +504,7 @@ def render_analysis() -> None:
         "Structured problem definition, containment, 5-Why/root-cause analysis, corrective actions, responsibility and effectiveness closure.",
         "Complaints",
     )
-    st.caption("QCMS 4.10.8 · Detailed RCA/CAPA workflow · Build 4108-RCA-DEPLOY-GUARD")
+    st.caption("QCMS 4.10.9 · Detailed RCA/CAPA workflow · Build 4109-LOGIN-IMPORT-GUARD")
     repo = Repository(); perms = current_permissions("COMPLAINT_MANAGEMENT")
     complaints = repo.select("quality_complaints", order_by="complaint_date", desc=True, limit=10000)
     if not complaints:

@@ -7,7 +7,7 @@ import streamlit as st
 
 from core.config import get_settings, is_preview_session
 from core.database import get_session_client, new_client
-from core.ui import render_public_brand
+from core.ui import logo_data_uri, render_public_brand, safe
 
 
 PREVIEW_PROFILE = {
@@ -282,7 +282,7 @@ def render_login() -> None:
           <div class="qcms-login-logo-wrap">{logo}</div>
           <div class="qcms-login-brand-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>
           <div class="qcms-login-brand-sub">Four Star Industries &middot; Controlled Quality Records &middot; Inspection &middot; NPD/APQP &middot; Complaint &amp; CAPA Management</div>
-          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4108-RCA-DEPLOY-GUARD</span></div>
+          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4109-LOGIN-IMPORT-GUARD</span></div>
         </div>''',
         unsafe_allow_html=True,
     )
@@ -315,7 +315,7 @@ def render_login() -> None:
         st.markdown('<div class="qcms-login-preview-note">Preview is read-only and never writes to Supabase.</div>', unsafe_allow_html=True)
 
     st.markdown(
-        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4108-RCA-DEPLOY-GUARD</span></div>''',
+        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4109-LOGIN-IMPORT-GUARD</span></div>''',
         unsafe_allow_html=True,
     )
 

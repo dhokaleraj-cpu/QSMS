@@ -1,0 +1,20 @@
+from pathlib import Path
+
+
+def test_login_helpers_are_imported():
+    auth = Path("core/auth.py").read_text()
+    assert "from core.ui import logo_data_uri, render_public_brand, safe" in auth
+    assert "uri = logo_data_uri()" in auth
+    assert "safe(settings.version)" in auth
+
+
+def test_login_build_fingerprint():
+    auth = Path("core/auth.py").read_text()
+    ui = Path("core/ui.py").read_text()
+    assert "4109-LOGIN-IMPORT-GUARD" in auth
+    assert "4109-LOGIN-IMPORT-GUARD" in ui
+
+
+def test_release_version():
+    assert Path("VERSION").read_text().strip() == "4.10.9"
+

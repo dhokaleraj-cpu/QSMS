@@ -201,7 +201,7 @@ di = calculate_di({"C": 0.22, "MN": 0.85, "SI": 0.25, "NI": 0.018, "CR": 1.18, "
 if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
-# QCMS 4.10.8 detailed complaint analysis contract checks.
+# QCMS 4.10.9 detailed complaint analysis contract checks.
 complaint_text = (ROOT / "app_pages/complaints.py").read_text()
 complaint_sql = (ROOT / "supabase/migrations/20260812092238_qcms_complaint_management_login_v4106.sql").read_text()
 complaint_analysis_sql = (ROOT / "supabase/migrations/20260812165500_qcms_detailed_complaint_analysis_v4107.sql").read_text()
@@ -223,11 +223,11 @@ if "standard_name_text" not in part_master_text or "author_text" not in part_mas
 if "ADMIN APPROVAL — Unlink Standard from Part" not in part_master_text or "is_admin(current_profile())" not in part_master_text:
     errors.append("Part Master Standard unlink is not restricted to Administrator approval")
 ui_text = (ROOT / "core/ui.py").read_text()
-if "QCMS 4.10.8 — readability" not in ui_text or "font-weight:450!important" not in ui_text:
-    errors.append("QCMS 4.10.8 stronger readability typography layer is missing")
+if "QCMS 4.10.9 — readability" not in ui_text or "font-weight:450!important" not in ui_text:
+    errors.append("QCMS 4.10.9 stronger readability typography layer is missing")
 
 report = {
-    "release": "QCMS 4.10.8 Detailed Complaint Analysis / CAPA and direct login CSS rebuild",
+    "release": "QCMS 4.10.9 Detailed Complaint Analysis / CAPA and direct login CSS rebuild",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
