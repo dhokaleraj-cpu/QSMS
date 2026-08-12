@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version_and_migration():
-    assert (ROOT / "VERSION").read_text().strip() == "4.10.0"
+    assert (ROOT / "VERSION").read_text().strip() in {"4.10.0", "4.10.1"}
     migration = ROOT / "supabase/migrations/20260812113000_qcms_universal_delete_account_import_print_v4100.sql"
     text = migration.read_text()
     assert "rmtc_jominy_results" in text
@@ -34,7 +34,8 @@ def test_master_import_upload_is_available_from_master_templates():
 def test_pending_order_status_is_one_screen_matrix_with_pdf():
     page = (ROOT / "app_pages/npd_apqp.py").read_text()
     assert "ORDER PROCESS STATUS · ALL PENDING PARTS" in page
-    assert 'row[f"Process {index + 1}"]' in page
+    assert "npd-order-status-row" in page
+    assert "npd_pending_status_pdf_bytes" in page
     assert "Print / Download Pending Order Process Status PDF" in page
 
 

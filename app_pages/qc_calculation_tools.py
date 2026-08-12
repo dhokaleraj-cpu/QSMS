@@ -11,6 +11,7 @@ from core.delete_service import password_delete_panel
 from core.calculations import calculate_di, calculate_jominy_curve
 from core.hardness_conversion import SCALE_LABELS, convert_hardness
 from core.reporting import qc_calculation_pdf_bytes
+from core.selection_labels import employee_label, part_label
 from core.repository import Repository
 from core.ui import page_header, save_success_popup, section_bar
 
@@ -20,10 +21,7 @@ def _employee_rows(repo: Repository) -> list[dict]:
 
 
 def _employee_labels(rows: list[dict]) -> dict[str, str]:
-    return {
-        str(row["id"]): f"{row.get('employee_code') or ''} · {row.get('first_name') or ''} {row.get('last_name') or ''} · {row.get('designation') or ''}".strip(" ·")
-        for row in rows
-    }
+    return {str(row["id"]): employee_label(row) for row in rows}
 
 
 def _part_rows(repo: Repository) -> list[dict]:
@@ -38,7 +36,7 @@ def _calc_number(kind: str) -> str:
 def _context(repo: Repository, key_prefix: str) -> tuple[str | None, str | None, str | None, str]:
     parts = _part_rows(repo)
     employees = _employee_rows(repo)
-    part_labels = {"": "— Not linked to a Part —", **{str(row["id"]): f"{row.get('part_number')} · {row.get('part_name')}" for row in parts}}
+    part_labels = {"": "— Not linked to a Part —", **{str(row["id"]): part_label(row) for row in parts}}
     employee_labels = _employee_labels(employees)
     c1, c2, c3 = st.columns(3, gap="small")
     part_id = c1.selectbox("Part Number (optional)", list(part_labels), format_func=lambda value: part_labels[value], key=f"{key_prefix}_part")

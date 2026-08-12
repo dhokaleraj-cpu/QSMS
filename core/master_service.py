@@ -8,6 +8,10 @@ from typing import Any, Mapping, Sequence
 
 from core.master_definitions import MASTER_BY_KEY, MasterDef, FieldDef
 from core.repository import Repository
+from core.selection_labels import (
+    customer_standard_label, inspection_plan_label, inspection_stage_label,
+    material_grade_label, part_label, party_label, process_label, quality_asset_label,
+)
 
 
 @dataclass(frozen=True)
@@ -31,6 +35,7 @@ class MasterService:
         "processes": "PROC",
         "inspection_stages": "STG",
         "quality_assets": "AST",
+        "customer_standards": "STD",
     }
 
     def next_master_code(self, definition: MasterDef) -> str:
@@ -90,19 +95,21 @@ class MasterService:
         options: list[LookupOption] = [LookupOption(None, "— Not selected —")] if include_none else []
         for row in rows:
             if lookup in {"customers", "suppliers", "steel_mills", "osp_vendors"}:
-                label = f"{row.get('party_code', '')} · {row.get('party_name', '')}"
+                label = party_label(row)
             elif lookup == "material_grades":
-                label = f"{row.get('grade_code', '')} · {row.get('standard', '') or 'No standard'}"
+                label = material_grade_label(row)
             elif lookup == "parts":
-                label = f"{row.get('part_number', '')} · {row.get('part_name', '')}"
+                label = part_label(row)
             elif lookup == "processes":
-                label = f"{row.get('process_code', '')} · {row.get('process_name', '')}"
+                label = process_label(row)
             elif lookup == "inspection_stages":
-                label = f"{row.get('sequence_no', '')} · {row.get('stage_name', '')}"
+                label = inspection_stage_label(row)
             elif lookup == "quality_assets":
-                label = f"{row.get('asset_code', '')} · {row.get('asset_name', '')}"
+                label = quality_asset_label(row)
             elif lookup == "inspection_plans":
-                label = f"{row.get('plan_number', '')} Rev {row.get('revision', '')}"
+                label = inspection_plan_label(row)
+            elif lookup == "customer_standards":
+                label = customer_standard_label(row)
             else:
                 label = str(row.get("id"))
             options.append(LookupOption(str(row.get("id")), label.strip(" ·")))
@@ -111,7 +118,7 @@ class MasterService:
 
     def lookup_label_maps(self) -> dict[str, dict[str, str]]:
         maps: dict[str, dict[str, str]] = {}
-        for lookup in ("customers", "suppliers", "steel_mills", "osp_vendors", "material_grades", "parts", "processes", "inspection_stages", "quality_assets", "inspection_plans"):
+        for lookup in ("customers", "suppliers", "steel_mills", "osp_vendors", "material_grades", "parts", "processes", "inspection_stages", "quality_assets", "inspection_plans", "customer_standards"):
             maps[lookup] = {str(option.value): option.label for option in self.lookup_options(lookup) if option.value}
         return maps
 

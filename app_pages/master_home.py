@@ -22,6 +22,7 @@ def render() -> None:
         "processes": _count(repo, "processes"),
         "references": sum(_count(repo, table) for table in ("parties", "inspection_stages", "quality_assets")),
         "users": _count(repo, "profiles"), "layouts": _count(repo, "inspection_plans"),
+        "standards": _count(repo, "customer_standards"),
     }
     kpi_grid([
         {"label": "Parts", "value": counts["parts"], "foot": "Controlled"},
@@ -30,6 +31,7 @@ def render() -> None:
         {"label": "Employees", "value": counts["employees"], "foot": "Approval authorities"},
         {"label": "Reference Records", "value": counts["references"], "foot": "Reusable values"},
         {"label": "Inspection Layouts", "value": counts["layouts"], "foot": "Part / process / stage"},
+        {"label": "Customer Standards", "value": counts["standards"], "foot": "Process linked"},
     ])
     section_bar("MASTER WORKSPACES")
     cards = [
@@ -39,6 +41,7 @@ def render() -> None:
         ("Reference Masters", counts["references"], "▦", "#0369A1", "reference-entry", "reference-records", "REFERENCE_MASTERS"),
         ("Employee Master", counts["employees"], "👥", "#087443", "employee-entry", "employee-records", "EMPLOYEE_MASTER"),
         ("Inspection Layouts", counts["layouts"], "▤", "#C56B00", "inspection-layout-entry", "inspection-layout-records", "INSPECTION_LAYOUTS"),
+        ("Customer Standards", counts["standards"], "📚", "#5B21B6", "standards-entry", "standards-records", "REFERENCE_MASTERS"),
         ("Users & Access", counts["users"], "🔐", "#B42318", "user-access", "user-access", "USER_ACCESS"),
         ("Master Import", 0, "⇧", "#0E7490", "master-import", "master-import", "REFERENCE_MASTERS"),
     ]

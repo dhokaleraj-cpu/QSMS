@@ -10,13 +10,14 @@ from core.catalog import LearnedValueCatalog
 from core.delete_service import password_delete_panel
 from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
+from core.selection_labels import material_grade_label
 from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 DEFAULT_ELEMENTS = ["C", "Si", "Mn", "P", "S", "Cr", "Mo", "Ni"]
 
 
 def _grade_labels(rows: list[dict]) -> dict[str, str]:
-    return {str(r["id"]): f"{r.get('grade_code')} · {r.get('material_number') or r.get('standard') or '-'}" for r in rows}
+    return {str(r["id"]): material_grade_label(r) for r in rows}
 
 
 def render_entry() -> None:

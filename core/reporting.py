@@ -1084,6 +1084,119 @@ def controlled_record_pdf_bytes(
     return buffer.getvalue()
 
 
+
+def npd_pending_status_pdf_bytes(rows: list[Mapping[str, object]]) -> bytes:
+    """A4 landscape NPD all-parts status PDF using the same process-state color scheme as the screen cards."""
+    buffer = BytesIO()
+    page = landscape(A4)
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=page,
+        leftMargin=8 * mm,
+        rightMargin=8 * mm,
+        topMargin=32 * mm,
+        bottomMargin=14 * mm,
+        title="NPD Order Process Status - Pending",
+        author="Four Star Industries - Quality Control Monitoring System",
+    )
+    styles = getSampleStyleSheet()
+    summary_title = ParagraphStyle("NPDPartTitle", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9.5, leading=11, textColor=WHITE)
+    summary_name = ParagraphStyle("NPDPartName", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=6.4, leading=7.6, textColor=WHITE)
+    summary_meta = ParagraphStyle("NPDPartMeta", parent=styles["Normal"], fontName="Helvetica", fontSize=5.5, leading=6.8, textColor=WHITE)
+    op_style = ParagraphStyle("NPDOp", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=5.3, leading=6.2, textColor=colors.HexColor("#60788C"))
+    name_style = ParagraphStyle("NPDName", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=6.2, leading=7.2, textColor=NAVY)
+    status_style = ParagraphStyle("NPDStatus", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=5.5, leading=6.5)
+    detail_style = ParagraphStyle("NPDDetail", parent=styles["Normal"], fontName="Helvetica", fontSize=4.8, leading=5.8, textColor=MUTED)
+    legend_style = ParagraphStyle("NPDLegend", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=5.4, leading=6.5, textColor=TEXT)
+    section_style = ParagraphStyle("NPDSection", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8, leading=9.5, textColor=WHITE)
+
+    palette = {
+        "completed": (colors.HexColor("#F0FDF4"), colors.HexColor("#15803D"), "✓ Completed"),
+        "completed_late": (colors.HexColor("#F8FAFC"), colors.HexColor("#6B7280"), "✓ Completed Late"),
+        "in_progress": (colors.HexColor("#EFF6FF"), colors.HexColor("#2563EB"), "● In Process"),
+        "pending": (colors.HexColor("#FFF7ED"), colors.HexColor("#D97706"), "○ Pending"),
+        "overdue": (colors.HexColor("#FEF2F2"), colors.HexColor("#B91C1C"), "! Overdue"),
+        "hold": (colors.HexColor("#F5F3FF"), colors.HexColor("#7C3AED"), "Ⅱ On Hold"),
+        "not_planned": (colors.HexColor("#F8FAFC"), colors.HexColor("#64748B"), "○ Not Planned"),
+    }
+    content_width = page[0] - 16 * mm
+    story: list[object] = []
+    title_bar = Table([[Paragraph("ORDER PROCESS STATUS · ALL PENDING PARTS", section_style)]], colWidths=[content_width], rowHeights=[9 * mm])
+    title_bar.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), NAVY), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 4 * mm)]))
+    story.append(title_bar)
+    story.append(Spacer(1, 2 * mm))
+    story.append(Paragraph("Color legend:  ✓ Completed   ·   ● In Process   ·   ○ Pending   ·   ! Overdue   ·   Ⅱ On Hold", legend_style))
+    story.append(Spacer(1, 2.2 * mm))
+
+    def summary_card(row: Mapping[str, object]) -> Table:
+        data = [[Paragraph(str(row.get("part_number") or "-"), summary_title)],
+                [Paragraph(str(row.get("part_name") or ""), summary_name)],
+                [Paragraph(f"<b>Order:</b> {_display_value(row.get('order_number'))}", summary_meta)],
+                [Paragraph(f"<b>Customer:</b> {_display_value(row.get('customer'))}", summary_meta)],
+                [Paragraph(f"<b>Delivery:</b> {_display_value(row.get('delivery_date'))}", summary_meta)],
+                [Paragraph(f"<b>Progress:</b> {_display_value(row.get('progress'))}", summary_meta)]]
+        t = Table(data, colWidths=[51 * mm], rowHeights=[7*mm, 9*mm, 5.4*mm, 6.3*mm, 5.4*mm, 5.4*mm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#0B5F98")),
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#08446F")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3 * mm), ("RIGHTPADDING", (0, 0), (-1, -1), 2 * mm),
+            ("TOPPADDING", (0, 0), (-1, -1), 1.2 * mm), ("BOTTOMPADDING", (0, 0), (-1, -1), 1 * mm),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        return t
+
+    def process_card(step: Mapping[str, object]) -> Table:
+        state = str(step.get("state") or "not_planned")
+        bg, accent, default_status = palette.get(state, palette["not_planned"])
+        status = str(step.get("status") or default_status)
+        stat = ParagraphStyle(f"NPDStatus_{state}", parent=status_style, textColor=accent)
+        data = [
+            [Paragraph(f"OP {_display_value(step.get('operation_no'))}", op_style)],
+            [Paragraph(_display_value(step.get("process_name")), name_style)],
+            [Paragraph(status, stat)],
+            [Paragraph(f"Target {_display_value(step.get('target_date'))}", detail_style)],
+            [Paragraph(_display_value(step.get("detail")), detail_style)],
+        ]
+        t = Table(data, colWidths=[51 * mm], rowHeights=[5*mm, 11*mm, 6*mm, 5.5*mm, 9*mm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), bg),
+            ("BOX", (0, 0), (-1, -1), 0.65, accent),
+            ("LINEBEFORE", (0, 0), (0, -1), 2.2, accent),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2.2 * mm), ("RIGHTPADDING", (0, 0), (-1, -1), 1.7 * mm),
+            ("TOPPADDING", (0, 0), (-1, -1), 1 * mm), ("BOTTOMPADDING", (0, 0), (-1, -1), 0.7 * mm),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        return t
+
+    for index, row in enumerate(rows, start=1):
+        steps = list(row.get("steps") or [])
+        # Four process cards per line on A4 landscape beside the Part summary card.
+        step_rows: list[list[object]] = []
+        for start in range(0, len(steps), 4):
+            chunk = steps[start:start + 4]
+            cards = [process_card(step) for step in chunk]
+            while len(cards) < 4:
+                cards.append(Spacer(51 * mm, 1))
+            step_rows.append(cards)
+        if not step_rows:
+            step_rows = [[Paragraph("No process sequence is available.", detail_style), "", "", ""]]
+        process_table = Table(step_rows, colWidths=[52.5 * mm] * 4, hAlign="LEFT")
+        process_table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0.8 * mm), ("RIGHTPADDING", (0, 0), (-1, -1), 0.8 * mm), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.4 * mm)]))
+        row_table = Table([[summary_card(row), process_table]], colWidths=[53 * mm, content_width - 53 * mm])
+        row_table.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+            ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+            ("LEFTPADDING", (0, 0), (-1, -1), 1.2 * mm), ("RIGHTPADDING", (0, 0), (-1, -1), 1.2 * mm),
+            ("TOPPADDING", (0, 0), (-1, -1), 1.2 * mm), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2 * mm),
+        ]))
+        story.append(row_table)
+        if index != len(rows):
+            story.append(Spacer(1, 2.2 * mm))
+
+    doc.build(story, canvasmaker=lambda *args, **kwargs: _PageNumberCanvas(*args, report_title="NPD ORDER PROCESS STATUS", report_label="Pending Part / Process Status", **kwargs))
+    return buffer.getvalue()
+
 def qc_calculation_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     record = dict(payload.get("record") or {})
     employee = dict(payload.get("employee") or {})

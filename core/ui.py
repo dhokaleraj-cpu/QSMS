@@ -144,6 +144,7 @@ def template_download_row(items: Sequence[tuple[str, str]], *, key_prefix: str, 
                     "Part_Master_Template.xlsx": "parts",
                     "Material_Grade_Template.xlsx": "material_grades",
                     "Reference_Masters_Template.xlsx": "customers",
+                    "Customer_Standards_Template.xlsx": "customer_standards",
                     "Employee_Master_Template.xlsx": "employees",
                     "Inspection_Layout_Template.xlsx": "inspection_plans",
                     "MetLAB_Report_Layout_Template.xlsx": "test_plans",
@@ -164,6 +165,7 @@ def template_catalog() -> Sequence[tuple[str, str, str]]:
         ("Part_Master_Template.xlsx", "Part Master", "Parts, raw material, Jominy and heat treatment"),
         ("Material_Grade_Template.xlsx", "Material Grade", "Grade header and chemical composition"),
         ("Reference_Masters_Template.xlsx", "Reference Masters", "Parties, processes and inspection stages"),
+        ("Customer_Standards_Template.xlsx", "Customer Standards", "Customer/process-linked standards and specifications"),
         ("Employee_Master_Template.xlsx", "Employee Master", "Employee and approval authority fields"),
         ("RMTC_Entry_Template.xlsx", "RMTC Entry", "Header, parts, chemistry and Jominy"),
         ("Material_Inward_Template.xlsx", "Material Inward", "Inward and quantity fields"),
@@ -397,6 +399,16 @@ def apply_global_style() -> None:
     .npd-overdue{border-left-color:#B91C1C;background:#FEF2F2;box-shadow:0 0 0 1px #FCA5A5,0 3px 9px rgba(185,28,28,.11)}.npd-overdue .npd-process-status{color:#B91C1C}
     .npd-hold{border-left-color:#7C3AED;background:#F5F3FF}.npd-hold .npd-process-status{color:#6D28D9}
     .npd-not_planned{border-left-color:#64748B;background:#F8FAFC}.npd-not_planned .npd-process-status{color:#475569}
+
+    /* QCMS 4.10.1 — all-parts NPD horizontal card rows */
+    .npd-order-status-row{display:flex;gap:10px;align-items:stretch;margin:.45rem 0 .75rem;padding:8px;background:#FFFFFF;border:1px solid #C7D8E5;border-radius:12px;box-shadow:0 2px 8px rgba(11,45,77,.08);overflow-x:auto;}
+    .npd-order-summary-card{flex:0 0 238px;min-width:238px;background:linear-gradient(145deg,#0B416F,#0B75B7);color:#FFFFFF;border-radius:9px;padding:12px 13px;box-shadow:0 2px 6px rgba(8,59,110,.18);}
+    .npd-order-part{font-size:17px;font-weight:950;line-height:1.15;}.npd-order-name{font-size:11px;font-weight:800;opacity:.95;margin:4px 0 9px;line-height:1.25;}
+    .npd-order-meta{font-size:9.5px;line-height:1.45;overflow-wrap:anywhere;}.npd-order-progress{display:inline-block;margin-top:8px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:3px 8px;font-size:9px;font-weight:900;}
+    .npd-row-process-strip{display:flex;gap:8px;align-items:stretch;min-width:max-content;}
+    .npd-row-process-card{flex:0 0 185px;width:185px;min-height:116px;border:1px solid #CBD9E5;border-left:6px solid #7890A4;border-radius:9px;padding:9px 10px;background:#F8FBFD;box-shadow:0 2px 5px rgba(11,45,77,.06);}
+    .npd-row-process-card .npd-op{font-size:9px;font-weight:900;letter-spacing:.04em;color:#617789;text-transform:uppercase}.npd-row-process-card .npd-process-name{font-size:12px;font-weight:900;color:#0B3558;margin:4px 0 7px;line-height:1.2}.npd-row-process-card .npd-process-status{font-size:10px;font-weight:900;margin-bottom:5px;text-transform:uppercase}.npd-row-process-card .npd-process-date{font-size:8.8px;line-height:1.3;color:#607284}
+    .npd-empty-process{padding:30px 16px;color:#607284;font-weight:800;}
     </style>
     """, unsafe_allow_html=True)
 

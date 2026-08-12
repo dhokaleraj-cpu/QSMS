@@ -40,6 +40,7 @@ MASTER_GROUPS = {
     "Parties": "Customers, suppliers, steel mills and outside-process vendors",
     "Product & Material": "Parts, grades, chemistry and approved source relationships",
     "Process & Quality": "Processes, inspection stages, gauges, fixtures, plans and tests",
+    "Standards & Specifications": "Customer standards and specifications linked to processes and parts",
 }
 
 
@@ -167,6 +168,25 @@ DEFINITIONS = (
         columns=("source_code", "part_id", "supplier_id", "steel_mill_id", "supplier_part_number", "approval_reference", "approved", "valid_from", "valid_to"),
         search_fields=("source_code", "supplier_part_number", "approval_reference"),
         natural_key=("part_id", "supplier_id", "steel_mill_id"), order_by="created_at", status_field="approved", auto_code_field="source_code",
+    ),
+    MasterDef(
+        key="customer_standards", label="Customer Standards & Specifications", group="Standards & Specifications", table="customer_standards",
+        description="Controlled customer standards/specifications with author, revision, customer and related Process Master linkage.",
+        fields=(
+            FieldDef("standard_code", "Standard Code", required=True, placeholder="Auto-generated; editable"),
+            FieldDef("standard_name", "Standard / Specification Name", required=True, placeholder="Heat Treatment Specification"),
+            FieldDef("customer_id", "Customer", kind="lookup", lookup="customers", allow_none=True),
+            FieldDef("process_id", "Related Process", kind="lookup", lookup="processes", required=True, allow_none=False),
+            FieldDef("author_name", "Author / Issuing Authority"),
+            FieldDef("revision_number", "Revision Number", required=True, default="00"),
+            FieldDef("revision_date", "Revision Date", kind="date"),
+            FieldDef("status", "Record Status", kind="select", options=("ACTIVE", "INACTIVE", "SUPERSEDED"), default="ACTIVE", required=True),
+            FieldDef("remarks", "Remarks", kind="textarea"),
+        ),
+        columns=("standard_code", "standard_name", "customer_id", "process_id", "author_name", "revision_number", "revision_date", "status"),
+        search_fields=("standard_code", "standard_name", "author_name", "revision_number", "remarks"),
+        natural_key=("customer_id", "process_id", "standard_code", "revision_number"),
+        order_by="standard_code", auto_code_field="standard_code",
     ),
     MasterDef(
         key="processes", label="Processes", group="Process & Quality", table="processes",

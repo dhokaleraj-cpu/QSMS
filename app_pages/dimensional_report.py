@@ -9,6 +9,7 @@ from core.access import current_permissions
 from core.delete_service import password_delete_panel
 from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
 from core.reporting import dimensional_record_pdf_bytes
+from core.selection_labels import employee_label, party_label
 from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, style_status_dataframe, subpage_navigation, template_download_row
 
 
@@ -18,7 +19,7 @@ def _maps(service: InspectionService):
     processes = {str(row["id"]): row for row in service.processes()}
     stages = {str(row["id"]): row for row in service.stages()}
     employees = service.employees()
-    employee_map = {str(row["id"]): f"{row.get('employee_code')} · {row.get('first_name')} {row.get('last_name')}" for row in employees}
+    employee_map = {str(row["id"]): employee_label(row) for row in employees}
     return parts, parties, processes, stages, employee_map
 
 
@@ -26,7 +27,7 @@ def _inward_label(row: dict, parts: dict[str, dict], parties: dict[str, dict]) -
     part = parts.get(str(row.get("part_id"))) or {}
     supplier = parties.get(str(row.get("supplier_id"))) or {}
     return (
-        f"{row.get('inward_number')} · {part.get('part_number')} · {supplier.get('party_name')} · "
+        f"{row.get('inward_number')} · {part.get('part_number')} · {party_label(supplier)} · "
         f"Heat {row.get('heat_number')} · Steel {float(row.get('steel_quantity_kg') or row.get('quantity_received') or 0):,.3f} kg · "
         f"Production {float(row.get('production_quantity_pcs') or 0):,.0f} pcs"
     )

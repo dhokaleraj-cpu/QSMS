@@ -10,6 +10,7 @@ from core.delete_service import password_delete_panel
 from core.osp_service import OSPService
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes, dimensional_record_pdf_bytes, metlab_record_pdf_bytes
+from core.selection_labels import party_label, process_label
 from core.ui import kpi_grid, page_header, save_success_popup, section_bar, style_status_dataframe, subpage_navigation, workflow_progress
 
 
@@ -65,8 +66,8 @@ def render_material_out() -> None:
     if not specifications:
         st.warning("Create an active OSP Process Specification for this Part in Part Master before Material Out.")
         return
-    spec_labels = {str(row["id"]): f"{(processes.get(str(row.get('process_id'))) or {}).get('process_name','Process')} · {row.get('process_specification')}" for row in specifications}
-    vendor_labels = {str(row["id"]): f"{row.get('party_code')} · {row.get('party_name')}" for row in vendors}
+    spec_labels = {str(row["id"]): f"{process_label(processes.get(str(row.get('process_id'))) or {})} · {row.get('process_specification') or '-'}" for row in specifications}
+    vendor_labels = {str(row["id"]): party_label(row, include_type=True) for row in vendors}
     with st.form("osp_material_out_form"):
         c = st.columns(4, gap="small")
         spec_id = c[0].selectbox("OSP Process / Specification", list(spec_labels), format_func=lambda value: spec_labels[value])

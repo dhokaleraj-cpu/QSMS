@@ -24,6 +24,7 @@ from app_pages import (
     records_center,
     reports,
     rmtc_pages,
+    standards_bank,
     user_access,
     template_center,
 )
@@ -76,6 +77,8 @@ PAGE_ITEMS = (
     ("employee-records", st.Page(employee_master.render_records, title="Employee Records", icon=":material/groups:", url_path="employee-records")),
     ("user-access", st.Page(user_access.render, title="Users & Access", icon=":material/admin_panel_settings:", url_path="user-access")),
     ("master-import", st.Page(master_import.render, title="Master Import", icon=":material/upload_file:", url_path="master-import")),
+    ("standards-entry", st.Page(standards_bank.render_entry, title="Customer Standards Entry", icon=":material/library_books:", url_path="standards-entry")),
+    ("standards-records", st.Page(standards_bank.render_records, title="Customer Standards Records", icon=":material/menu_book:", url_path="standards-records")),
     ("my-account", st.Page(my_account.render, title="My Account", icon=":material/manage_accounts:", url_path="my-account")),
 
     ("rmtc-part", st.Page(rmtc_pages.render_part, title="RMTC Part Worksheet", icon=":material/format_list_bulleted:", url_path="rmtc-part")),
@@ -120,6 +123,8 @@ MODULE_SUBMENUS = {
         ("employee-entry", "Employee Entry", ":material/person_add:"),
         ("employee-records", "Employee Records", ":material/groups:"),
         ("user-access", "Users & Access", ":material/admin_panel_settings:"),
+        ("standards-entry", "Standards Bank", ":material/library_books:"),
+        ("standards-records", "Standards Records", ":material/menu_book:"),
         ("master-import", "Master Import", ":material/upload_file:"),
     ),
     "RMTC": (
@@ -189,7 +194,7 @@ ROUTE_MODULE = {
     "process-entry": "Masters", "process-records": "Masters",
     "grade-entry": "Masters", "grade-records": "Masters",
     "reference-entry": "Masters", "reference-records": "Masters",
-    "employee-entry": "Masters", "employee-records": "Masters", "user-access": "Masters", "master-import": "Masters", "my-account": "Dashboard",
+    "employee-entry": "Masters", "employee-records": "Masters", "user-access": "Masters", "master-import": "Masters", "standards-entry": "Masters", "standards-records": "Masters", "my-account": "Dashboard",
     "rmtc-entry": "RMTC", "rmtc-part": "RMTC", "rmtc-records": "RMTC", "rmtc-approval": "RMTC",
     "inward-entry": "Inward", "inward-records": "Inward",
     "osp-home": "OSP", "osp-material-out": "OSP", "osp-sample-receipt": "OSP", "osp-inward": "OSP",
@@ -215,7 +220,7 @@ PAGE_TITLE_TO_PATH = {
     "Process Master Records": "process-records", "Material Grade Entry": "grade-entry",
     "Material Grade Records": "grade-records", "Reference Master Entry": "reference-entry",
     "Reference Master Records": "reference-records", "Employee Entry": "employee-entry",
-    "Employee Records": "employee-records", "Users & Access": "user-access", "Master Import": "master-import", "My Account": "my-account",
+    "Employee Records": "employee-records", "Users & Access": "user-access", "Master Import": "master-import", "Customer Standards Entry": "standards-entry", "Customer Standards Records": "standards-records", "My Account": "my-account",
     "RMTC Part Worksheet": "rmtc-part", "RMTC Records": "rmtc-records",
     "RMTC Approval": "rmtc-approval", "Material Inward Records": "inward-records",
     "OSP Material Out": "osp-material-out", "OSP Sample Receipt": "osp-sample-receipt",

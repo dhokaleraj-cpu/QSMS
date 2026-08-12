@@ -9,7 +9,9 @@ import streamlit as st
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
-from core.reporting import controlled_record_pdf_bytes
+from core.reporting import controlled_record_pdf_bytes, npd_pending_status_pdf_bytes
+from core.selection_labels import employee_label, part_label, party_label, process_label
+from core.ui import safe
 from core.repository import Repository
 from core.ui import kpi_grid, page_header, save_success_popup, section_bar, status_chip
 
@@ -50,10 +52,7 @@ def _employee_rows(repo: Repository) -> list[dict]:
 
 
 def _employee_labels(rows: list[dict]) -> dict[str, str]:
-    return {
-        str(row["id"]): f"{row.get('employee_code') or ''} · {row.get('first_name') or ''} {row.get('last_name') or ''} · {row.get('designation') or ''}".strip(" ·")
-        for row in rows
-    }
+    return {str(row["id"]): employee_label(row) for row in rows}
 
 
 def _employee_option_maps(rows: list[dict], legacy_values: list[str] | None = None) -> tuple[list[str], dict[str, str | None]]:
@@ -73,9 +72,7 @@ def _labels(rows: list[dict], *fields: str) -> dict[str, str]:
 
 
 def _process_label(row: dict) -> str:
-    code = str(row.get("process_code") or "").strip()
-    name = str(row.get("process_name") or "").strip()
-    return f"{code} · {name}" if code else name
+    return process_label(row)
 
 
 def _flow_for_part(repo: Repository, part_id: str) -> dict | None:
@@ -153,7 +150,7 @@ def render_process_flow() -> None:
         st.info("Create Process Master records before defining a Process Flow.")
         return
 
-    part_labels = _labels(parts, "part_number", "part_name")
+    part_labels = {str(row["id"]): part_label(row) for row in parts}
     part_id = st.selectbox("Select Part Number", list(part_labels), format_func=lambda value: part_labels[value], key="npd_flow_part")
     part = next(row for row in parts if str(row["id"]) == part_id)
     flow = _flow_for_part(repo, part_id)
@@ -386,75 +383,68 @@ def _sync_order_overall_status(repo: Repository, order: dict, steps: list[dict])
 
 
 def _render_pending_order_matrix(repo: Repository, orders: list[dict], part_by_id: dict[str, dict], customer_by_id: dict[str, dict]) -> None:
-    """Show every pending Part / Order on one compact row with its process sequence beside it."""
+    """Show every pending Part / Order as one horizontal card row with process cards beside it."""
     pending = [row for row in orders if str(row.get("status") or "OPEN").upper() not in {"COMPLETED", "CANCELLED"}]
-    section_bar("ORDER PROCESS STATUS · ALL PENDING PARTS", "Each pending Part Number is one row. Process cells show the operation, real-time status and target date so all development orders can be reviewed together.")
+    section_bar("ORDER PROCESS STATUS · ALL PENDING PARTS", "Each pending Part is one horizontal card row. Process cards are color coded for real-time status and target date.")
     if not pending:
         st.success("No pending NPD orders are open.")
         return
     today = date.today()
-    step_sets: list[tuple[dict, list[dict]]] = []
-    max_steps = 0
+    pdf_rows: list[dict[str, Any]] = []
+    legend = {
+        "completed": ("Completed", "✓"), "completed_late": ("Completed Late", "✓"),
+        "in_progress": ("In Process", "●"), "pending": ("Pending", "○"),
+        "overdue": ("Overdue", "!"), "hold": ("On Hold", "Ⅱ"), "not_planned": ("Not Planned", "○"),
+    }
     for order in pending:
         steps = repo.select("npd_order_steps", eq={"npd_order_id": str(order.get("id"))}, order_by="operation_no", limit=500)
-        step_sets.append((order, steps))
-        max_steps = max(max_steps, len(steps))
-    symbols = {
-        "completed": "✅", "completed_late": "✅", "in_progress": "🔵", "pending": "🟠",
-        "overdue": "🔴", "hold": "🟣", "not_planned": "⚪",
-    }
-    rows: list[dict[str, Any]] = []
-    for order, steps in step_sets:
         part = part_by_id.get(str(order.get("part_id"))) or {}
         customer = customer_by_id.get(str(order.get("customer_id"))) or {}
         done = sum(str(step.get("status") or "").upper() == "COMPLETED" for step in steps)
-        row: dict[str, Any] = {
-            "Part Number": part.get("part_number"),
-            "Order": order.get("order_number"),
-            "Customer": customer.get("party_name"),
-            "Delivery": _parse_date(order.get("delivery_date")).strftime("%d-%m-%Y"),
-            "Progress": f"{done}/{len(steps)}",
-        }
-        for index in range(max_steps):
-            if index >= len(steps):
-                row[f"Process {index + 1}"] = "—"
-                continue
-            step = steps[index]
-            state, _detail = _step_realtime_state(step, today)
-            target = _parse_date(step.get("target_date")).strftime("%d-%m-%Y") if step.get("target_date") else "No target"
-            process_name = str(step.get("process_name") or "").strip()
-            row[f"Process {index + 1}"] = (
-                f"{symbols.get(state, '⚪')} OP {int(step.get('operation_no') or 0)} · {process_name}\n"
-                f"{str(step.get('status') or 'PENDING').replace('_', ' ').title()} · Target {target}"
+        delivery = _parse_date(order.get("delivery_date")).strftime("%d-%m-%Y")
+        summary_html = (
+            f'<div class="npd-order-summary-card">'
+            f'<div class="npd-order-part">{safe(part.get("part_number"))}</div>'
+            f'<div class="npd-order-name">{safe(part.get("part_name"))}</div>'
+            f'<div class="npd-order-meta"><b>Order:</b> {safe(order.get("order_number"))}</div>'
+            f'<div class="npd-order-meta"><b>Customer:</b> {safe(customer.get("party_code"))} · {safe(customer.get("party_name"))}</div>'
+            f'<div class="npd-order-meta"><b>Delivery:</b> {delivery}</div>'
+            f'<div class="npd-order-progress">Progress {done}/{len(steps)}</div>'
+            f'</div>'
+        )
+        cards: list[str] = []
+        pdf_steps: list[dict[str, Any]] = []
+        for step in steps:
+            state, detail = _step_realtime_state(step, today)
+            label, symbol = legend.get(state, (state.replace("_", " ").title(), "○"))
+            target = _parse_date(step.get("target_date")).strftime("%d-%m-%Y") if step.get("target_date") else "Not set"
+            process_name = str(step.get("process_name") or "Process")
+            cards.append(
+                f'<div class="npd-row-process-card npd-{state}">'
+                f'<div class="npd-op">OP {safe(step.get("operation_no"))}</div>'
+                f'<div class="npd-process-name">{safe(process_name)}</div>'
+                f'<div class="npd-process-status">{symbol} {safe(label)}</div>'
+                f'<div class="npd-process-date">Target {target}</div>'
+                f'<div class="npd-process-date">{safe(detail)}</div>'
+                f'</div>'
             )
-        rows.append(row)
-    frame = pd.DataFrame(rows)
-    column_config = {
-        "Part Number": st.column_config.TextColumn(width="medium"),
-        "Order": st.column_config.TextColumn(width="medium"),
-        "Customer": st.column_config.TextColumn(width="medium"),
-        "Delivery": st.column_config.TextColumn(width="small"),
-        "Progress": st.column_config.TextColumn(width="small"),
-    }
-    for index in range(max_steps):
-        column_config[f"Process {index + 1}"] = st.column_config.TextColumn(width="large")
-    st.dataframe(
-        frame, hide_index=True, width="stretch",
-        height=min(640, max(160, 78 + len(frame) * 62)),
-        column_config=column_config,
-    )
+            pdf_steps.append({"operation_no": step.get("operation_no"), "process_name": process_name, "state": state, "status": label, "target_date": target, "detail": detail})
+        st.markdown(
+            f'<div class="npd-order-status-row">{summary_html}<div class="npd-row-process-strip">{"".join(cards) or "<div class=\"npd-empty-process\">No process sequence</div>"}</div></div>',
+            unsafe_allow_html=True,
+        )
+        pdf_rows.append({
+            "part_number": part.get("part_number"), "part_name": part.get("part_name"),
+            "order_number": order.get("order_number"), "customer": f"{customer.get('party_code') or ''} · {customer.get('party_name') or ''}".strip(" ·"),
+            "delivery_date": delivery, "progress": f"{done}/{len(steps)}", "steps": pdf_steps,
+        })
     st.download_button(
         "Print / Download Pending Order Process Status PDF",
-        data=controlled_record_pdf_bytes(
-            "NPD Order Process Status - Pending",
-            {"Pending Parts / Orders": len(frame), "Printed Date": date.today().strftime("%d-%m-%Y")},
-            {"Order Process Status": frame},
-        ),
+        data=npd_pending_status_pdf_bytes(pdf_rows),
         file_name="QCMS_NPD_Pending_Order_Process_Status.pdf", mime="application/pdf",
-        icon=":material/picture_as_pdf:", width="stretch", key="npd_pending_process_matrix_pdf",
+        icon=":material/picture_as_pdf:", width="stretch", key="npd_pending_process_cards_pdf",
     )
-    st.caption("Legend: ✅ Completed · 🔵 In Progress · 🟠 Pending · 🔴 Overdue · 🟣 On Hold")
-
+    st.caption("Legend: ✓ Completed · ● In Process · ○ Pending · ! Overdue · Ⅱ On Hold")
 
 def render_npd_status() -> None:
     page_header("NPD Status")
@@ -464,7 +454,7 @@ def render_npd_status() -> None:
         st.info("Active Part Master and Customer Master records are required for NPD order tracking.")
         return
     part_by_id = {str(row["id"]): row for row in parts}; customer_by_id = {str(row["id"]): row for row in customers}
-    part_labels = _labels(parts, "part_number", "part_name"); customer_labels = _labels(customers, "party_code", "party_name")
+    part_labels = {str(row["id"]): part_label(row) for row in parts}; customer_labels = {str(row["id"]): party_label(row) for row in customers}
     employee_labels = _employee_labels(employees)
     employee_options, employee_option_to_id = _employee_option_maps(employees)
     employee_id_to_option = {employee_id: label for label, employee_id in employee_option_to_id.items() if employee_id}
@@ -745,7 +735,7 @@ def render_apqp() -> None:
     if not parts or not customers:
         st.info("Active Part and Customer records are required for APQP project tracking.")
         return
-    part_labels = _labels(parts, "part_number", "part_name"); customer_labels = _labels(customers, "party_code", "party_name")
+    part_labels = {str(row["id"]): part_label(row) for row in parts}; customer_labels = {str(row["id"]): party_label(row) for row in customers}
     projects = repo.select("ppap_projects", order_by="target_submission_date", limit=2000)
     project_options = [""] + [str(row["id"]) for row in projects]
     project_labels = {str(row["id"]): f"{row.get('project_code')} · {part_labels.get(str(row.get('part_id')), '')}" for row in projects}

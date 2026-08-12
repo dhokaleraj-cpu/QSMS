@@ -15,6 +15,7 @@ from core.calculations import band_status, calculate_di, calculate_jominy_curve
 from core.permissions import normalized_role
 from core.rmtc_service import RMTCService
 from core.reporting import rmtc_record_pdf_bytes
+from core.selection_labels import employee_label, part_label, party_label
 from core.steel_balance import remaining_planned_steel
 from core.ui import (DISPOSITION_EDITOR_OPTIONS, disposition_cards, disposition_label, normalize_disposition, page_header, save_success_popup, section_bar, style_status_dataframe, subpage_navigation, template_download_row, workflow_progress)
 
@@ -58,11 +59,11 @@ def _requirement_result(actual:Any,requirement:Any,applicable:bool=True)->str:
 
 
 def _employee_map(svc:RMTCService,authority:str)->dict[str,str]:
-    return _opts(svc.employees(authority),lambda r:f"{r.get('employee_code')} · {r.get('first_name')} {r.get('last_name')}")
+    return _opts(svc.employees(authority),lambda r:employee_label(r))
 
 
 def _part_maps(svc:RMTCService):
-    rows=svc.parts();return rows,_opts(rows,lambda r:f"{r.get('part_number')} · {r.get('part_name')}")
+    rows=svc.parts();return rows,_opts(rows,lambda r:part_label(r))
 
 
 def _valid_uuid(value: Any) -> str:
@@ -248,7 +249,7 @@ def render_entry()->None:
     primary_id=selected_parts[0] if selected_parts else str(existing.get('part_id') or next(iter(part_map)))
     sources=svc.source_details(primary_id)
     suppliers=svc.parties('SUPPLIER');mills=svc.parties('STEEL_MILL')
-    supplier_map=_opts(suppliers,lambda r:r.get('party_name'));mill_map=_opts(mills,lambda r:r.get('party_name'))
+    supplier_map=_opts(suppliers,lambda r:party_label(r));mill_map=_opts(mills,lambda r:party_label(r))
     source_map={str(s['id']):f"{supplier_map.get(str(s.get('supplier_id')),'Supplier')} · {s.get('section_size') or '-'} · {s.get('forging_route') or '-'}" for s in sources}
     current_source=str(existing.get('selected_source_detail_id') or '')
     prepared_map=_employee_map(svc,'RMTC_PREPARE')

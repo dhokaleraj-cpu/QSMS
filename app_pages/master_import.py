@@ -26,6 +26,7 @@ IMPORTABLE = (
     ("osp_vendors", "OSP Vendors", "REFERENCE_MASTERS", "Reference_Masters_Template.xlsx"),
     ("approved_sources", "Approved Sources", "REFERENCE_MASTERS", "Reference_Masters_Template.xlsx"),
     ("processes", "Processes", "REFERENCE_MASTERS", "Reference_Masters_Template.xlsx"),
+    ("customer_standards", "Customer Standards & Specifications", "REFERENCE_MASTERS", "Customer_Standards_Template.xlsx"),
     ("inspection_stages", "Inspection Stages", "REFERENCE_MASTERS", "Reference_Masters_Template.xlsx"),
     ("quality_assets", "Quality Assets", "REFERENCE_MASTERS", "Reference_Masters_Template.xlsx"),
     ("inspection_plans", "Inspection Plans", "INSPECTION_LAYOUTS", "Inspection_Layout_Template.xlsx"),
@@ -44,6 +45,7 @@ SHEET_HINTS = {
     "osp_vendors": ("OSP Vendors", "Parties"),
     "approved_sources": ("Approved Sources", "Sources"),
     "processes": ("Processes", "Process Master"),
+    "customer_standards": ("Customer Standards", "Standards Bank", "Customer Standards & Specifications"),
     "inspection_stages": ("Inspection Stages", "Stages"),
     "quality_assets": ("Quality Assets", "Assets", "Gauges"),
     "inspection_plans": ("Layout Header", "Inspection Plans"),
@@ -60,6 +62,9 @@ COMMON_SYNONYMS = {
     "forging weight kg": "forging_weight_kg", "gross weight kg": "gross_weight_kg",
     "raw material section": "section_size", "section size": "section_size",
     "process code": "process_code", "process name": "process_name", "process type": "process_type",
+    "standard code": "standard_code", "standard name": "standard_name", "specification name": "standard_name",
+    "author name": "author_name", "author": "author_name", "issuing authority": "author_name",
+    "revision number": "revision_number", "revision date": "revision_date", "related process": "process_id",
     "special process": "special_process", "cqi standard": "cqi_standard",
     "stage code": "stage_code", "stage name": "stage_name", "sequence no": "sequence_no", "sequence": "sequence_no",
     "employee code": "employee_code", "first name": "first_name", "last name": "last_name",
@@ -155,6 +160,9 @@ def _lookup_candidates(service: MasterService, lookup: str) -> list[tuple[str, s
         elif lookup == "processes":
             keys = [row.get("process_code"), row.get("process_name")]
             label = f"{row.get('process_code') or ''} · {row.get('process_name') or ''}".strip(" ·")
+        elif lookup == "customer_standards":
+            keys = [row.get("standard_code"), row.get("standard_name"), row.get("revision_number")]
+            label = f"{row.get('standard_code') or ''} · {row.get('standard_name') or ''} · Rev {row.get('revision_number') or ''}".strip(" ·")
         elif lookup == "inspection_stages":
             keys = [row.get("stage_code"), row.get("stage_name")]
             label = f"{row.get('stage_code') or ''} · {row.get('stage_name') or ''}".strip(" ·")

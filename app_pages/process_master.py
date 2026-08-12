@@ -8,11 +8,57 @@ from core.delete_service import password_delete_panel
 from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
 from core.reporting import controlled_record_pdf_bytes
+from core.attachments import AttachmentService
+from core.selection_labels import customer_standard_label, party_label, process_label
 from core.ui import page_header, save_success_popup, section_bar, template_download_row
 
 
 def _label(row: dict) -> str:
-    return f"{row.get('process_code') or '-'} · {row.get('process_name') or '-'}"
+    return process_label(row)
+
+
+def _related_standards(repo, process_id: str) -> tuple[list[dict], dict[str, dict], dict[str, dict]]:
+    rows = repo.select("customer_standards", eq={"process_id": process_id}, order_by="standard_code", limit=3000) if process_id else []
+    parties = {str(r["id"]): r for r in repo.select("parties", limit=3000)}
+    attachments = repo.select("document_attachments", eq={"entity_type": "CUSTOMER_STANDARD", "status": "ACTIVE"}, limit=5000)
+    amap = {str(r.get("entity_id")): r for r in attachments if str(r.get("document_type")) == "STANDARD_DOCUMENT"}
+    return rows, parties, amap
+
+
+def _render_related_standards(repo, process: dict, *, key_prefix: str) -> list[dict]:
+    standards, parties, attachments = _related_standards(repo, str(process.get("id") or ""))
+    section_bar("RELATED CUSTOMER STANDARDS & SPECIFICATIONS", "Standards linked to this Process Master. Attachments can be downloaded directly.")
+    if not standards:
+        st.info("No Customer Standards / Specifications are linked to this Process yet.")
+        st.page_link(st.session_state["_qsms_pages"]["standards-entry"], label="Open Customer Standards Bank", icon=":material/library_books:", width="stretch")
+        return []
+    display = [{
+        "Code": row.get("standard_code"), "Standard / Specification": row.get("standard_name"),
+        "Customer": party_label(parties.get(str(row.get("customer_id"))) or {}) or "General",
+        "Author": row.get("author_name"), "Revision": row.get("revision_number"),
+        "Revision Date": row.get("revision_date"), "Status": row.get("status"),
+        "Attachment": (attachments.get(str(row.get("id"))) or {}).get("file_name") or "Not attached",
+    } for row in standards]
+    st.dataframe(pd.DataFrame(display), hide_index=True, width="stretch", height=min(280, 72 + len(display) * 36))
+    service = AttachmentService(repo)
+    cols = st.columns(min(3, len(standards)), gap="small")
+    for index, row in enumerate(standards):
+        attachment = attachments.get(str(row.get("id")))
+        if not attachment:
+            continue
+        try:
+            content = service.download(attachment)
+        except Exception:
+            content = None
+        if content is not None:
+            with cols[index % len(cols)]:
+                st.download_button(
+                    f"Download {row.get('standard_code')} · Rev {row.get('revision_number') or '-'}", content,
+                    file_name=str(attachment.get("file_name") or f"{row.get('standard_code')}.pdf"),
+                    mime=str(attachment.get("mime_type") or "application/octet-stream"),
+                    key=f"{key_prefix}_{row.get('id')}", width="stretch",
+                )
+    return display
 
 
 def render_entry() -> None:
@@ -94,6 +140,9 @@ def render_entry() -> None:
         except Exception as exc:
             st.error(str(exc))
 
+    if existing:
+        _render_related_standards(service.repo, existing, key_prefix=f"process_standard_entry_{existing.get('id')}")
+
     if existing and password_delete_panel(
         repo=service.repo,
         table="processes",
@@ -130,10 +179,18 @@ def render_records() -> None:
                 icon=":material/edit:",
                 width="stretch",
             )
+        standards, standard_parties, standard_attachments = _related_standards(service.repo, selected)
+        standard_pdf_rows = [{
+            "Standard Code": row.get("standard_code"), "Standard / Specification": row.get("standard_name"),
+            "Customer": party_label(standard_parties.get(str(row.get("customer_id"))) or {}) or "General",
+            "Revision": row.get("revision_number"), "Revision Date": row.get("revision_date"),
+            "Author": row.get("author_name"), "Attachment": (standard_attachments.get(str(row.get("id"))) or {}).get("file_name") or "Not attached",
+        } for row in standards]
         with c2:
             pdf = controlled_record_pdf_bytes(
                 "PROCESS MASTER RECORD",
                 {"Process Code": selected_row.get("process_code"), "Process Name": selected_row.get("process_name"), "Process Type": selected_row.get("process_type"), "Special Process": selected_row.get("special_process"), "CQI Standard": selected_row.get("cqi_standard"), "Status": selected_row.get("status"), "Remarks": selected_row.get("remarks")},
+                {"Related Customer Standards / Specifications": standard_pdf_rows},
                 record_number=str(selected_row.get("process_code") or ""),
             )
             st.download_button("Download Process PDF", pdf, file_name=f"Process_{selected_row.get('process_code')}.pdf", mime="application/pdf", width="stretch")
@@ -150,6 +207,7 @@ def render_records() -> None:
             )
             if delete_clicked:
                 st.rerun()
+        _render_related_standards(service.repo, selected_row, key_prefix=f"process_standard_record_{selected}")
     else:
         st.info("No Process Master records match the selected filters.")
 

@@ -18,5 +18,5 @@ def test_verify_phase1_runs_as_direct_script() -> None:
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     report = json.loads(completed.stdout)
-    assert report["controlled_reference_masters"] == 14
+    assert report["controlled_reference_masters"] == 15
     assert report["errors"] == []

@@ -11,11 +11,12 @@ from core.database import get_session_client
 from core.delete_service import password_delete_panel
 from core.employee_service import AUTHORITIES, EmployeeService
 from core.reporting import controlled_record_pdf_bytes
+from core.selection_labels import employee_label
 from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 
 def _labels(rows:list[dict])->dict[str,str]:
-    return {str(r['id']):f"{r.get('employee_code')} · {r.get('first_name')} {r.get('last_name')}" for r in rows}
+    return {str(r['id']):employee_label(r) for r in rows}
 
 
 def _learned_select(catalog:LearnedValueCatalog,label:str,field_key:str,value:str,key:str):

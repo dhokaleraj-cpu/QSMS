@@ -64,11 +64,17 @@ required = [
     "supabase/migrations/20260812113000_qcms_universal_delete_account_import_print_v4100.sql",
     "tests/test_v4100_universal_delete_account_import_npd_photos.py",
     "docs/RELEASE_4_10_0.md",
+    "app_pages/standards_bank.py",
+    "core/selection_labels.py",
+    "templates/Customer_Standards_Template.xlsx",
+    "supabase/migrations/20260812130000_qcms_customer_standards_selection_cards_v4101.sql",
+    "tests/test_v4101_customer_standards_selection_npd_cards.py",
+    "docs/RELEASE_4_10_1.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.10.0 - Universal Delete, Account Password, Master Import, NPD Matrix & MetLAB Photos",
+    "phase": "QCMS 4.10.1 - Customer Standards Bank, Rich Selection & NPD Card Status",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

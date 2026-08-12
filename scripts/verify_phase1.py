@@ -96,6 +96,11 @@ required = [
     "supabase/migrations/20260812113000_qcms_universal_delete_account_import_print_v4100.sql",
     "core/hardness_conversion.py",
     "data/astm_e140_table1.json",
+    "app_pages/standards_bank.py",
+    "core/selection_labels.py",
+    "templates/Customer_Standards_Template.xlsx",
+    "supabase/migrations/20260812130000_qcms_customer_standards_selection_cards_v4101.sql",
+    "docs/RELEASE_4_10_1.md",
 ]
 for item in required:
     if not (ROOT / item).exists():
@@ -108,7 +113,7 @@ expected_paths = {
     "reports-home", "heat-transaction-report", "osp-balance-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
-    "user-access", "master-import", "my-account", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
+    "user-access", "master-import", "standards-entry", "standards-records", "my-account", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
     "osp-material-out", "osp-sample-receipt", "osp-inward", "osp-dimensional", "osp-metlab", "osp-records",
     "inspection-layout-entry", "inspection-layout-records", "dimensional-entry",
     "dimensional-records", "metlab-entry", "metlab-records",
@@ -191,7 +196,7 @@ if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
 report = {
-    "release": "QCMS 4.10.0 Universal Delete, Account Password, Master Import, NPD Matrix & MetLAB Photos",
+    "release": "QCMS 4.10.1 Customer Standards Bank, Rich Selection & NPD Card Status",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -273,6 +278,10 @@ report = {
     "first_admin_removed_from_login": True,
     "master_import_upload": True,
     "pending_order_process_matrix": True,
+    "customer_standards_bank": True,
+    "multiple_part_standard_links": True,
+    "rich_selection_labels": True,
+    "npd_card_rows_color_pdf": True,
     "metlab_photo_titles": True,
     "pdf_available_to_viewers": True,
     "errors": errors,

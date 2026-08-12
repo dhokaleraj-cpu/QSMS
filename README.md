@@ -1,4 +1,4 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.10.0
+# QUALITY CONTROL MONITORING SYSTEM 4.10.1
 
 Live Supabase-first Quality Control, RMTC, OSP and inspection workflow for Four Star Industries.
 
@@ -18,6 +18,15 @@ Visible workspaces:
 
 
 
+
+## Release 4.10.1 — Customer Standards Bank, Rich Selection & NPD Card Status
+
+- Added controlled **Customer Standards & Specification Bank** with standard code/name, author/issuing authority, revision number/date, Customer, related Process and private downloadable attachment.
+- Added multiple Customer Standard links inside Part Master, including direct attachment download and Part Master PDF listing.
+- Process Master now shows related customer standards and allows direct controlled attachment download.
+- Selection fields now use richer Code · Name · important-detail labels across the central masters and major transaction/inspection workflows, including RMTC Supplier and Steel Mill selection.
+- NPD Order Process Status now renders each pending Part as one horizontal card row with process cards beside it instead of a dataframe grid.
+- NPD pending-status PDF uses the same visual colors: green Completed, blue In Process, amber Pending, red Overdue and purple On Hold.
 
 ## Release 4.10.0 — Universal Delete, My Account, Master Import & One-Screen NPD Status
 
