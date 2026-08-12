@@ -423,12 +423,12 @@ def render_part()->None:
     planned_steel=round(float(planned_production_qty)*input_weight,3)
     pcols[2].number_input('Planned Steel Quantity (kg)',min_value=0.0,value=planned_steel,step=0.001,format='%.3f',disabled=True,key=f'planned_steel_{rid}_{part_id}')
     projected_current_remaining=remaining_planned_steel(planned_steel,current_part_inward_steel)
-    projected_commitment=round(max(current_heat_commitment-current_existing_remaining,0)+projected_current_remaining,3)
-    heat_remaining=max(global_heat_steel-projected_commitment,0)
+    projected_commitment=round(max(current_heat_commitment-current_existing_remaining,0.0)+projected_current_remaining,3)
+    heat_remaining=float(max(global_heat_steel-projected_commitment,0.0))
     pcols[3].number_input('Heat Steel Balance after Plan (kg)',min_value=0.0,value=heat_remaining,step=0.001,format='%.3f',disabled=True,key=f'plan_balance_{rid}_{part_id}')
     st.caption(
         f"Projected committed Heat steel: {projected_commitment:,.3f} kg = Inward {heat_inward_steel:,.3f} kg + "
-        f"Remaining active plans {max(projected_commitment-heat_inward_steel,0):,.3f} kg."
+        f"Remaining active plans {max(projected_commitment-heat_inward_steel,0.0):,.3f} kg."
     )
     plan_exceeds_heat=projected_commitment>global_heat_steel+0.001
     if input_weight<=0:

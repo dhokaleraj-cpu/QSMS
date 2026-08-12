@@ -204,8 +204,19 @@ ui_text = (ROOT / "core/ui.py").read_text()
 if "QCMS 4.10.3 — readability" not in ui_text or "font-weight:450!important" not in ui_text:
     errors.append("QCMS 4.10.3 stronger readability typography layer is missing")
 
+
+# QCMS 4.10.4 RMTC numeric stability and premium login checks.
+rmtc_text = (ROOT / "app_pages" / "rmtc_pages.py").read_text(encoding="utf-8")
+auth_text = (ROOT / "core" / "auth.py").read_text(encoding="utf-8")
+if "heat_remaining=float(max(global_heat_steel-projected_commitment,0.0))" not in rmtc_text:
+    errors.append("QCMS 4.10.4 RMTC Heat balance numeric-type normalization is missing")
+if "qcms_login_shell" not in auth_text or "Welcome back" not in auth_text or "Sign in to QCMS" not in auth_text:
+    errors.append("QCMS 4.10.4 premium login workspace is missing")
+if "QCMS 4.10.4 — premium authentication workspace" not in ui_text:
+    errors.append("QCMS 4.10.4 login design system is missing")
+
 report = {
-    "release": "QCMS 4.10.3 Standard visibility, Admin unlink control and improved readability",
+    "release": "QCMS 4.10.4 RMTC numeric stability and premium login workspace",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),

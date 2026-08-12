@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_4103():
-    assert (ROOT / "VERSION").read_text().strip() == "4.10.3"
+    assert (ROOT / "VERSION").read_text().strip() in {"4.10.3", "4.10.4"}
 
 
 def test_part_standard_download_shows_required_details_and_admin_unlink():

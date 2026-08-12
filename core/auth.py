@@ -7,7 +7,7 @@ import streamlit as st
 
 from core.config import get_settings, is_preview_session
 from core.database import get_session_client, new_client
-from core.ui import render_public_brand
+from core.ui import logo_data_uri, render_public_brand, safe
 
 
 PREVIEW_PROFILE = {
@@ -204,37 +204,64 @@ def logout() -> None:
 
 def render_login() -> None:
     settings = get_settings()
-    render_public_brand()
-    _, center, _ = st.columns([1, 1.12, 1])
+    uri = logo_data_uri()
+    logo = f'<img class="qcms-login-logo" src="{uri}" alt="Four Star Industries">' if uri else '<div class="qcms-login-logo-fallback">FSI</div>'
+
+    _, center, _ = st.columns([0.20, 1.60, 0.20])
     with center:
-        with st.container(border=True, key="fsi_login_card"):
-            st.markdown('<div class="fsi-login-card-title">Sign in to Quality</div>', unsafe_allow_html=True)
-            st.markdown('<div class="fsi-login-help">Your registered company email is the username.</div>', unsafe_allow_html=True)
-            with st.form("phase1_login_form"):
-                email = st.text_input("Email address", placeholder="name@company.com")
-                password = st.text_input("Password", type="password", placeholder="Enter password")
-                submitted = st.form_submit_button("Sign in", type="primary", width="stretch")
-            if submitted:
-                try:
-                    login(email, password)
-                    st.rerun()
-                except Exception as exc:
-                    st.error(_friendly_error(exc, "Sign-in"))
+        with st.container(key="qcms_login_shell"):
+            hero, panel = st.columns([1.08, 0.92], gap="large", vertical_alignment="center")
+            with hero:
+                st.markdown(
+                    f'''<div class="qcms-login-hero">
+                      <div class="qcms-login-logo-wrap">{logo}</div>
+                      <div class="qcms-login-eyebrow">FOUR STAR INDUSTRIES</div>
+                      <div class="qcms-login-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>
+                      <div class="qcms-login-subtitle">Connected quality. Controlled decisions. Complete traceability.</div>
+                      <div class="qcms-login-feature-list">
+                        <div class="qcms-login-feature"><span>01</span><div><b>Material &amp; RMTC control</b><small>Heat genealogy, inward quality and controlled release.</small></div></div>
+                        <div class="qcms-login-feature"><span>02</span><div><b>Inspection intelligence</b><small>Dimensional, MetLAB, OSP and validation workflows.</small></div></div>
+                        <div class="qcms-login-feature"><span>03</span><div><b>NPD &amp; APQP visibility</b><small>Process status, customer standards and accountable ownership.</small></div></div>
+                      </div>
+                      <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span></div>
+                      <div class="qcms-login-version">Plant {safe(settings.plant_code)} &nbsp;•&nbsp; QCMS {safe(settings.version)}</div>
+                    </div>''',
+                    unsafe_allow_html=True,
+                )
+            with panel:
+                with st.container(key="qcms_login_panel"):
+                    st.markdown(
+                        '<div class="qcms-login-panel-head"><div class="qcms-login-lock">✓</div>'
+                        '<div><div class="qcms-login-welcome">Welcome back</div>'
+                        '<div class="qcms-login-help">Sign in to your controlled quality workspace using your registered company email.</div></div></div>',
+                        unsafe_allow_html=True,
+                    )
+                    with st.form("phase1_login_form"):
+                        email = st.text_input("Email address", placeholder="name@company.com")
+                        password = st.text_input("Password", type="password", placeholder="Enter your password")
+                        submitted = st.form_submit_button("Sign in to QCMS", type="primary", width="stretch")
+                    if submitted:
+                        try:
+                            login(email, password)
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(_friendly_error(exc, "Sign-in"))
 
-            with st.expander("Forgot password"):
-                reset_email = st.text_input("Registered email", key="reset_email", placeholder="name@company.com")
-                if st.button("Send recovery email", key="send_recovery", width="stretch"):
-                    try:
-                        request_password_reset(reset_email)
-                        st.success("Recovery instructions were requested. Check the registered inbox.")
-                    except Exception as exc:
-                        st.error(_friendly_error(exc, "Password recovery"))
+                    st.markdown('<div class="qcms-login-security">Protected by role-based access, password verification and audit traceability.</div>', unsafe_allow_html=True)
+                    with st.expander("Forgot password?"):
+                        reset_email = st.text_input("Registered email", key="reset_email", placeholder="name@company.com")
+                        if st.button("Send recovery email", key="send_recovery", width="stretch"):
+                            try:
+                                request_password_reset(reset_email)
+                                st.success("Recovery instructions were requested. Check the registered inbox.")
+                            except Exception as exc:
+                                st.error(_friendly_error(exc, "Password recovery"))
 
-            if settings.allow_preview:
-                st.divider()
-                if st.button("Open controlled Phase 1 preview", width="stretch"):
-                    start_preview()
-                st.caption("Preview mode is session-only and never writes to Supabase.")
+                    if settings.allow_preview:
+                        st.markdown('<div class="qcms-login-preview-label">CONTROLLED PREVIEW</div>', unsafe_allow_html=True)
+                        if st.button("Open read-only preview", width="stretch", key="open_controlled_preview"):
+                            start_preview()
+                        st.caption("Preview mode is session-only and never writes to Supabase.")
 
 
 def render_first_admin_claim() -> None:

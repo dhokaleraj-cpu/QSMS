@@ -1,4 +1,4 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.10.3
+# QUALITY CONTROL MONITORING SYSTEM 4.10.4
 
 Live Supabase-first Quality Control, RMTC, OSP and inspection workflow for Four Star Industries.
 
