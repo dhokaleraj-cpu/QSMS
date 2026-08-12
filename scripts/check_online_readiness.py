@@ -70,11 +70,14 @@ required = [
     "supabase/migrations/20260812130000_qcms_customer_standards_selection_cards_v4101.sql",
     "tests/test_v4101_customer_standards_selection_npd_cards.py",
     "docs/RELEASE_4_10_1.md",
+    "supabase/migrations/20260812184500_qcms_admin_standard_unlink_readability_v4103.sql",
+    "tests/test_v4103_standard_visibility_admin_unlink_fonts.py",
+    "docs/RELEASE_4_10_3.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.10.2 - Part Master hotfix and Standards attachment workflow",
+    "phase": "QCMS 4.10.3 - Standard visibility, Admin unlink control and improved readability",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_and_release_note():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.9.3", "4.9.4", "4.9.5", "4.9.6", "4.9.7", "4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.9.3", "4.9.4", "4.9.5", "4.9.6", "4.9.7", "4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2", "4.10.3"}
     assert (ROOT / "docs/RELEASE_4_9_3.md").exists()
 
 

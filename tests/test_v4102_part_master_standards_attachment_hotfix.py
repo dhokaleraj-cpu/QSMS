@@ -18,4 +18,4 @@ def test_standards_bank_has_first_save_attachment_uploader():
 
 
 def test_patch_version():
-    assert (ROOT / "VERSION").read_text().strip() == "4.10.2"
+    assert (ROOT / "VERSION").read_text().strip() in {"4.10.2", "4.10.3"}

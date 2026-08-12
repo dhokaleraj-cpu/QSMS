@@ -195,8 +195,17 @@ di = calculate_di({"C": 0.22, "MN": 0.85, "SI": 0.25, "NI": 0.018, "CR": 1.18, "
 if di.get("value") is None or abs(float(di["value"]) - 2.1082) > 0.001:
     errors.append(f"DI workbook factor mismatch: {di}")
 
+# QCMS 4.10.3 controlled standards visibility / unlink / readability checks.
+if "standard_name_text" not in part_master_text or "author_text" not in part_master_text or "process_text" not in part_master_text:
+    errors.append("Part Master Standard download control is missing Standard Name / Author / Process details")
+if "ADMIN APPROVAL — Unlink Standard from Part" not in part_master_text or "is_admin(current_profile())" not in part_master_text:
+    errors.append("Part Master Standard unlink is not restricted to Administrator approval")
+ui_text = (ROOT / "core/ui.py").read_text()
+if "QCMS 4.10.3 — readability" not in ui_text or "font-weight:450!important" not in ui_text:
+    errors.append("QCMS 4.10.3 stronger readability typography layer is missing")
+
 report = {
-    "release": "QCMS 4.10.2 Part Master hotfix and Standards attachment workflow",
+    "release": "QCMS 4.10.3 Standard visibility, Admin unlink control and improved readability",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -284,6 +293,9 @@ report = {
     "npd_card_rows_color_pdf": True,
     "metlab_photo_titles": True,
     "pdf_available_to_viewers": True,
+    "standard_download_rich_details": True,
+    "admin_only_part_standard_unlink": True,
+    "readability_font_weight_plus_10_percent": True,
     "errors": errors,
 }
 print(json.dumps(report, indent=2))

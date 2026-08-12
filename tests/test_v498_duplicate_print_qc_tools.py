@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version_and_files():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2", "4.10.3"}
     for path in (
         "app_pages/qc_calculation_tools.py",
         "core/hardness_conversion.py",

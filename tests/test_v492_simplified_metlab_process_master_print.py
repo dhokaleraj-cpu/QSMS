@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_and_release_files():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.9.2", "4.9.3", "4.9.4", "4.9.5", "4.9.6", "4.9.7", "4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.9.2", "4.9.3", "4.9.4", "4.9.5", "4.9.6", "4.9.7", "4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2", "4.10.3"}
     assert (ROOT / "docs/RELEASE_4_9_2.md").exists()
     assert (ROOT / "supabase/migrations/20260805194500_qsms_simplified_metlab_process_master_print_v492.sql").exists()
 

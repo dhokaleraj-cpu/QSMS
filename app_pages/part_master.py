@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from core.access import current_permissions
+from core.auth import current_profile
 from core.attachments import AttachmentService, AttachmentSlot, render_attachment_manager
 from core.catalog import LearnedValueCatalog
 from core.database import get_session_client
@@ -15,6 +16,7 @@ from core.delete_service import password_delete_panel
 from core.osp_service import OSPService
 from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
+from core.permissions import is_admin
 from core.selection_labels import customer_standard_label, material_grade_label, part_label, party_label, process_label
 from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
@@ -472,33 +474,36 @@ def render_entry() -> None:
         )
         for row in standards
     }
+    # Backward contract: Save Linked Standards now means add-only; unlinking is a separate ADMIN/password action.
     existing_links = repo.select("part_standard_links", eq={"part_id": part_id}, order_by="sequence_no", limit=1000)
     linked_ids = [str(row.get("standard_id")) for row in existing_links if str(row.get("standard_id")) in standard_map]
+    available_standard_ids = [standard_id for standard_id in standard_map if standard_id not in set(linked_ids)]
     selected_standard_ids = st.multiselect(
-        "Linked Customer Standards / Specifications",
-        list(standard_map),
-        default=linked_ids,
+        "Add Customer Standards / Specifications",
+        available_standard_ids,
         format_func=lambda value: standard_map[value],
         disabled=not writable,
-        help="Select one or more controlled standards. Standards are filtered to General standards or the Customer selected in this Part Master.",
+        help=(
+            "Select one or more additional controlled standards. Existing links remain protected. "
+            "Unlinking an existing Standard from a Part requires QCMS Administrator approval and password confirmation."
+        ),
     ) if standard_map else []
     if not standard_map:
         st.info("No active Customer Standards / Specifications are available for this Part customer. Create them in the Standards Bank first.")
         st.page_link(st.session_state["_qsms_pages"]["standards-entry"], label="Open Customer Standards Bank", icon=":material/library_books:", width="stretch")
-    elif st.button("Save Linked Standards", type="primary", disabled=not writable, width="stretch", key=f"save_part_standards_{part_id}"):
+    elif st.button("Add Selected Standards", type="primary", disabled=not writable or not selected_standard_ids, width="stretch", key=f"save_part_standards_{part_id}"):
         try:
-            keep = set(selected_standard_ids)
             by_standard = {str(row.get("standard_id")): row for row in existing_links}
-            for seq, standard_id in enumerate(selected_standard_ids, start=1):
-                payload = {"part_id": part_id, "standard_id": standard_id, "sequence_no": seq * 10, "status": "ACTIVE"}
+            next_sequence = max([int(row.get("sequence_no") or 0) for row in existing_links] + [0]) + 10
+            for standard_id in selected_standard_ids:
                 if standard_id in by_standard:
-                    repo.update("part_standard_links", str(by_standard[standard_id]["id"]), payload)
-                else:
-                    repo.insert("part_standard_links", payload)
-            for standard_id, row in by_standard.items():
-                if standard_id not in keep:
-                    repo.delete("part_standard_links", str(row["id"]))
-            save_success_popup("Linked Customer Standards / Specifications saved successfully.", queue_for_rerun=True)
+                    continue
+                repo.insert(
+                    "part_standard_links",
+                    {"part_id": part_id, "standard_id": standard_id, "sequence_no": next_sequence, "status": "ACTIVE"},
+                )
+                next_sequence += 10
+            save_success_popup("Selected Customer Standards / Specifications linked successfully.", queue_for_rerun=True)
             st.rerun()
         except Exception as exc:
             st.error(str(exc))
@@ -537,14 +542,42 @@ def render_entry() -> None:
                 content = None
             if content is not None:
                 with dl_cols[idx % len(dl_cols)]:
+                    process_text = process_label(standard_processes.get(str(standard.get("process_id"))) or {}) or "No Process"
+                    author_text = str(standard.get("author_name") or "Author not specified").strip()
+                    standard_name_text = str(standard.get("standard_name") or "Standard / Specification").strip()
                     st.download_button(
-                        f"Download {standard.get('standard_code') or 'Standard'} · Rev {standard.get('revision_number') or '-'}",
+                        (
+                            f"Download {standard.get('standard_code') or 'Standard'} · {standard_name_text} · "
+                            f"{author_text} · {process_text} · Rev {standard.get('revision_number') or '-'}"
+                        ),
                         data=content,
                         file_name=str(attachment.get("file_name") or f"{standard.get('standard_code')}.pdf"),
                         mime=str(attachment.get("mime_type") or "application/octet-stream"),
                         key=f"part_standard_download_{part_id}_{standard.get('id')}",
                         width="stretch",
                     )
+
+        admin_unlink_allowed = is_admin(current_profile())
+        if not admin_unlink_allowed:
+            st.caption("Standard unlink is restricted to the QCMS Administrator. Contact the Administrator if a linked Standard must be removed from this Part.")
+        if password_delete_panel(
+            repo=repo,
+            table="part_standard_links",
+            rows=active_link_rows,
+            labeler=lambda link: customer_standard_label(
+                standard_by_id.get(str(link.get("standard_id"))) or {},
+                customer_name=party_label(standard_customers.get(str((standard_by_id.get(str(link.get("standard_id"))) or {}).get("customer_id"))) or {}),
+                process_name=process_label(standard_processes.get(str((standard_by_id.get(str(link.get("standard_id"))) or {}).get("process_id"))) or {}),
+            ) or str(link.get("standard_id") or "Standard"),
+            key=f"admin_unlink_part_standard_{part_id}",
+            can_delete=admin_unlink_allowed,
+            title="ADMIN APPROVAL — Unlink Standard from Part",
+            help_text=(
+                "Only an active QCMS Administrator can unlink a controlled Standard / Specification from a Part. "
+                "Administrator password confirmation is mandatory and the action is permanent."
+            ),
+        ):
+            st.rerun()
 
     suppliers = repo.select("parties", contains={"party_types": ["SUPPLIER"]}, eq={"status": "ACTIVE"}, order_by="party_name", limit=1000)
     supplier_map = {str(row["id"]): party_label(row) for row in suppliers}

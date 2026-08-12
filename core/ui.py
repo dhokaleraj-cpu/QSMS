@@ -409,6 +409,17 @@ def apply_global_style() -> None:
     .npd-row-process-card{flex:0 0 185px;width:185px;min-height:116px;border:1px solid #CBD9E5;border-left:6px solid #7890A4;border-radius:9px;padding:9px 10px;background:#F8FBFD;box-shadow:0 2px 5px rgba(11,45,77,.06);}
     .npd-row-process-card .npd-op{font-size:9px;font-weight:900;letter-spacing:.04em;color:#617789;text-transform:uppercase}.npd-row-process-card .npd-process-name{font-size:12px;font-weight:900;color:#0B3558;margin:4px 0 7px;line-height:1.2}.npd-row-process-card .npd-process-status{font-size:10px;font-weight:900;margin-bottom:5px;text-transform:uppercase}.npd-row-process-card .npd-process-date{font-size:8.8px;line-height:1.3;color:#607284}
     .npd-empty-process{padding:30px 16px;color:#607284;font-weight:800;}
+
+    /* QCMS 4.10.3 — readability: approximately 10% stronger visual font weight */
+    html,body,.stApp,div[data-testid="stAppViewContainer"],section.main{font-weight:450!important;}
+    p,[data-testid="stMarkdownContainer"],div[data-testid="stCaptionContainer"] p,[data-testid="stAlert"] p{font-weight:500!important;}
+    label[data-testid="stWidgetLabel"] p{font-weight:880!important;}
+    input,textarea,[data-baseweb="select"],[data-baseweb="select"] span{font-weight:520!important;}
+    .stButton>button,.stDownloadButton>button,.stFormSubmitButton>button,.stLinkButton>a{font-weight:900!important;}
+    div[data-testid="stDataFrame"] *,div[data-testid="stDataEditor"] *{font-weight:500!important;}
+    [class*="st-key-menu_"] div[data-testid="stPageLink"] a,[class*="st-key-menu_"] .stButton>button{font-weight:850!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a{font-weight:850!important;}
+    .fsi-master-card-count,.fsi-dashboard-count,.fsi-order-meta,.npd-order-meta{font-weight:800!important;}
     </style>
     """, unsafe_allow_html=True)
 
