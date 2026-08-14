@@ -226,7 +226,7 @@ ui_text = (ROOT / "core/ui.py").read_text()
 if "QCMS 4.10.9 — readability" not in ui_text or "font-weight:450!important" not in ui_text:
     errors.append("QCMS 4.10.9 stronger readability typography layer is missing")
 
-# QCMS 4.11.0 central Records navigation and minimal metallic UI contract.
+# QCMS 4.11.1 central Records navigation and visible Zoho-inspired UI contract.
 record_routes = {
     "records-center", "heat-ledger", "rmtc-records", "inward-records", "osp-records",
     "dimensional-records", "metlab-records", "inspection-layout-records",
@@ -246,13 +246,13 @@ for module_name in ("Dashboard", "Masters", "RMTC", "Inward", "OSP", "QC Calcula
         leaked = sorted(route for route in record_routes if f'("{route}",' in block)
         if leaked:
             errors.append(f"Record routes leaked into {module_name} submenu: {leaked}")
-if "QCMS 4.11.0 — minimal metallic enterprise UX" not in ui_text or "--qcms-metal-bg:#F1F3F5" not in ui_text:
-    errors.append("QCMS 4.11.0 minimal metallic UX layer is missing")
-if "4110-MINIMAL-RECORDS-UX" not in ui_text or "4110-MINIMAL-RECORDS-UX" not in auth_text:
-    errors.append("QCMS 4.11.0 build fingerprint is missing")
+if "QCMS 4.11.1 — Zoho-inspired clean white/blue enterprise shell visibility layer." not in ui_text or "--qcms-zoho-blue:#1884D8" not in ui_text:
+    errors.append("QCMS 4.11.1 Zoho-inspired visible shell layer is missing")
+if "4111-ZOHO-VISIBLE-SHELL" not in ui_text or "4111-ZOHO-VISIBLE-SHELL" not in auth_text:
+    errors.append("QCMS 4.11.1 visible-shell build fingerprint is missing")
 
 report = {
-    "release": "QCMS 4.11.0 Central Records navigation and minimal metallic UX",
+    "release": "QCMS 4.11.1 visible Zoho-inspired white/blue shell and central Records",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -268,6 +268,7 @@ report = {
     "enterprise_erp_theme": True,
     "central_records_navigation": True,
     "minimal_metallic_ui": True,
+    "zoho_visible_shell": True,
     "template_centre": True,
     "jominy_inch_to_mm": True,
     "reusable_grid_lists": True,

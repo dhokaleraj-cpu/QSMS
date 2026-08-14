@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_and_release_note():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.9.3", "4.9.4", "4.9.5", "4.9.6", "4.9.7", "4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2", "4.10.3", "4.10.5", "4.10.6", "4.10.7", "4.10.8", "4.10.9", "4.11.0"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.9.3", "4.9.4", "4.9.5", "4.9.6", "4.9.7", "4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2", "4.10.3", "4.10.5", "4.10.6", "4.10.7", "4.10.8", "4.10.9", "4.11.0", "4.11.1"}
     assert (ROOT / "docs/RELEASE_4_9_3.md").exists()
 
 
@@ -24,6 +24,6 @@ def test_high_contrast_export_shipment_theme_is_streamlit_wrapper_safe():
 
 def test_streamlit_theme_matches_export_shipment_background():
     config = (ROOT / ".streamlit" / "config.toml").read_text()
-    assert 'primaryColor = "#315F79"' in config
-    assert 'backgroundColor = "#F1F3F5"' in config
-    assert 'textColor = "#1E2A33"' in config
+    assert 'primaryColor = "#315F79"' in config or 'primaryColor = "#1884D8"' in config
+    assert 'backgroundColor = "#F1F3F5"' in config or 'backgroundColor = "#F8FBFE"' in config
+    assert 'textColor = "#1E2A33"' in config or 'textColor = "#121820"' in config

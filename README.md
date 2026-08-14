@@ -1,4 +1,14 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.11.0
+# QUALITY CONTROL MONITORING SYSTEM 4.11.1
+
+Standalone QCMS release. The combined Enterprise application is not part of this release.
+
+## Release 4.11.1 — High-Contrast Zoho-Inspired White/Blue UI
+
+- Fixes low-contrast/invisible application header and main menu introduced by overlapping legacy CSS.
+- Uses a bright white application shell, dark readable typography, restrained blue active states and a very light warm/sky background.
+- Keeps the QCMS 4.11.0 Records-centralization rule: all record/register pages remain under the main Records module.
+- Preserves all existing Supabase data, authentication, module permissions and QCMS workflows.
+- Build: `4111-ZOHO-VISIBLE-SHELL`.
 
 Live Supabase-first Quality Control, RMTC, OSP and inspection workflow for Four Star Industries.
 
@@ -24,7 +34,7 @@ The application UI uses a compact light-metallic shell with restrained steel-blu
 
 
 
-## Release 4.11.0 — Central Records Navigation & Minimal Metallic UX
+## Release 4.11.1 — High-Contrast Zoho-Inspired White/Blue UI
 
 - Centralized every Records/Register page under the top-level **Records** module.
 - Removed duplicate Records items from Dashboard, Masters, RMTC, Inward, OSP, QC Tools, Complaints, Inspections and Reports submenus.

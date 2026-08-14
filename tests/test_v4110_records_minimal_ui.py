@@ -23,7 +23,7 @@ def _module_submenus() -> dict:
 
 
 def test_release_version():
-    assert (ROOT / "VERSION").read_text().strip() == "4.11.0"
+    assert (ROOT / "VERSION").read_text().strip() in {"4.11.0", "4.11.1"}
     assert (ROOT / "docs/RELEASE_4_11_0.md").exists()
 
 
@@ -46,17 +46,20 @@ def test_record_routes_activate_records_top_level_module():
 
 
 def test_minimal_metallic_ui_contract():
+    # QCMS 4.11.1 supersedes the 4.11.0 metallic layer with a higher-contrast
+    # white/blue shell while retaining the same compact ERP density.
     ui = (ROOT / "core/ui.py").read_text()
     auth = (ROOT / "core/auth.py").read_text()
     config = (ROOT / ".streamlit/config.toml").read_text()
     for token in (
-        "QCMS 4.11.0 — minimal metallic enterprise UX",
-        "--qcms-metal-bg:#F1F3F5",
-        "--qcms-metal-steel:#315F79",
+        "QCMS 4.11.1 — Zoho-inspired clean white/blue enterprise shell visibility layer.",
+        "--qcms-zoho-blue:#1884D8",
         "fsi-top-menu-title{display:none!important;}",
-        "BUILD 4110-MINIMAL-RECORDS-UX",
+        "BUILD 4111-ZOHO-VISIBLE-SHELL",
+        "color:#17202A!important",
+        "color:#202A33!important",
     ):
         assert token in ui
-    assert "4110-MINIMAL-RECORDS-UX" in auth
-    assert 'backgroundColor = "#F1F3F5"' in config
-    assert 'primaryColor = "#315F79"' in config
+    assert "4111-ZOHO-VISIBLE-SHELL" in auth
+    assert 'backgroundColor = "#F8FBFE"' in config
+    assert 'primaryColor = "#1884D8"' in config

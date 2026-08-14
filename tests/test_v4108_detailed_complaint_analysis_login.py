@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version_4107():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.10.7", "4.10.8", "4.10.9", "4.11.0"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.10.7", "4.10.8", "4.10.9", "4.11.0", "4.11.1"}
 
 
 def test_detailed_complaint_analysis_route_and_ui():

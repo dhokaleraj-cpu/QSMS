@@ -5,9 +5,9 @@ def test_build_fingerprint_visible():
     auth=Path("core/auth.py").read_text()
     ui=Path("core/ui.py").read_text()
     complaints=Path("app_pages/complaints.py").read_text()
-    assert "BUILD 4109-LOGIN-IMPORT-GUARD" in auth or "BUILD 4110-MINIMAL-RECORDS-UX" in auth
-    assert "BUILD 4109-LOGIN-IMPORT-GUARD" in ui or "BUILD 4110-MINIMAL-RECORDS-UX" in ui
+    assert "BUILD 4109-LOGIN-IMPORT-GUARD" in auth or "BUILD 4110-MINIMAL-RECORDS-UX" in auth or "BUILD 4111-ZOHO-VISIBLE-SHELL" in auth
+    assert "BUILD 4109-LOGIN-IMPORT-GUARD" in ui or "BUILD 4110-MINIMAL-RECORDS-UX" in ui or "BUILD 4111-ZOHO-VISIBLE-SHELL" in ui
     assert "Detailed RCA/CAPA workflow" in complaints
 
 def test_version_4108():
-    assert Path("VERSION").read_text().strip() in {"4.10.9", "4.11.0"}
+    assert Path("VERSION").read_text().strip() in {"4.10.9", "4.11.0", "4.11.1"}
