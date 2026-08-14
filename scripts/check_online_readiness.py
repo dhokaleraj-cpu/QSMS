@@ -81,11 +81,13 @@ required = [
     "docs/RELEASE_4_10_7.md",
     "docs/RELEASE_4_11_0.md",
     "tests/test_v4110_records_minimal_ui.py",
+    "docs/RELEASE_4_11_2.md",
+    "tests/test_v4112_export_shipment_shell.py",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.11.1 - Visible Zoho-inspired white/blue shell and central Records",
+    "phase": "QCMS 4.11.2 - Export Shipment header/module shell and central Records",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

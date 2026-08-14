@@ -251,8 +251,19 @@ if "QCMS 4.11.1 — Zoho-inspired clean white/blue enterprise shell visibility l
 if "4111-ZOHO-VISIBLE-SHELL" not in ui_text or "4111-ZOHO-VISIBLE-SHELL" not in auth_text:
     errors.append("QCMS 4.11.1 visible-shell build fingerprint is missing")
 
+# QCMS 4.11.2 Export Shipment-inspired header and module shell contract.
+if "QCMS 4.11.2 — Export Shipment-inspired navy header and module navigation shell." not in ui_text:
+    errors.append("QCMS 4.11.2 Export Shipment shell layer is missing")
+for token in ("--qcms-export-navy:#073462", "--qcms-export-blue:#0A68AC", "4112-EXPORT-SHELL", "fsi-user-pills", "fsi-top-menu-title"):
+    if token not in ui_text:
+        errors.append(f"QCMS 4.11.2 shell token missing: {token}")
+if "4112-EXPORT-SHELL" not in auth_text:
+    errors.append("QCMS 4.11.2 login build fingerprint is missing")
+if "QUALITY CONTROL<br>MONITORING SYSTEM" not in ui_text or "render_app_launcher(app_registry())" in ui_text.split("def render_shell_header",1)[1].split("def render_side_navigation",1)[0]:
+    errors.append("QCMS 4.11.2 standalone header structure is incomplete")
+
 report = {
-    "release": "QCMS 4.11.1 visible Zoho-inspired white/blue shell and central Records",
+    "release": "QCMS 4.11.2 Export Shipment header/module shell and central Records",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -269,6 +280,7 @@ report = {
     "central_records_navigation": True,
     "minimal_metallic_ui": True,
     "zoho_visible_shell": True,
+    "export_shipment_shell": True,
     "template_centre": True,
     "jominy_inch_to_mm": True,
     "reusable_grid_lists": True,

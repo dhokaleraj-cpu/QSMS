@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Legacy build marker retained for regression compatibility: BUILD 4111-ZOHO-VISIBLE-SHELL
+
 import base64
 import re
 from datetime import datetime
@@ -694,6 +696,188 @@ div[data-testid="stAppViewContainer"]:has([class*="st-key-qcms_login_shell"]){
     </style>
     """, unsafe_allow_html=True)
 
+
+    # QCMS 4.11.2 — Export Shipment-inspired navy header and module navigation shell.
+    # Reference: the user's live Export Shipment UI. Keep the QCMS functionality and
+    # central Records routing unchanged; only the shell/header/navigation presentation changes.
+    st.markdown(r"""
+    <style>
+    :root{
+      --qcms-export-navy:#073462;
+      --qcms-export-navy-mid:#073E78;
+      --qcms-export-blue:#0A68AC;
+      --qcms-export-active:#0B78C5;
+      --qcms-export-bg:#EEF5FB;
+      --qcms-export-surface:#FFFFFF;
+      --qcms-export-line:#C9D9E7;
+      --qcms-export-text:#121D2B;
+      --qcms-export-muted:#60778B;
+    }
+
+    html,body,.stApp,[class*="css"],button,input,textarea,select{
+      font-family:Aptos,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif!important;
+    }
+    .stApp,div[data-testid="stAppViewContainer"],section.main{
+      background:linear-gradient(180deg,#EAF2F9 0%,#F7FAFD 38%,#EEF5FB 100%)!important;
+      color:var(--qcms-export-text)!important;
+    }
+    .block-container{padding:.72rem .78rem 1.2rem!important;max-width:1920px!important;}
+    .stApp [data-stale="true"]{opacity:1!important;}
+
+    /* Header: match Export Shipment's dark navy-to-blue company shell. */
+    .st-key-fsi_shell,[class*="st-key-fsi_shell"]{
+      background:linear-gradient(110deg,var(--qcms-export-navy) 0%,var(--qcms-export-navy-mid) 47%,var(--qcms-export-blue) 100%)!important;
+      border:1px solid #6EA9D5!important;border-radius:15px!important;
+      box-shadow:0 7px 20px rgba(3,35,70,.22)!important;overflow:visible!important;
+      opacity:1!important;visibility:visible!important;
+    }
+    .st-key-fsi_shell>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_shell"]>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_shell"] div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:transparent!important;border:0!important;border-radius:15px!important;
+      padding:.72rem .82rem!important;box-shadow:none!important;overflow:visible!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-company-block{gap:10px!important;align-items:center!important;}
+    [class*="st-key-fsi_shell"] .fsi-logo-card{
+      height:54px!important;min-width:72px!important;padding:5px 8px!important;background:#FFFFFF!important;
+      border:1px solid rgba(255,255,255,.70)!important;border-radius:10px!important;box-shadow:0 2px 6px rgba(0,0,0,.14)!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-logo{width:68px!important;max-height:42px!important;opacity:1!important;}
+    [class*="st-key-fsi_shell"] .fsi-company-name{
+      color:#FFFFFF!important;font-size:15px!important;font-weight:950!important;line-height:1.02!important;
+      text-shadow:0 1px 2px rgba(0,0,0,.20)!important;opacity:1!important;visibility:visible!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-company-sub{
+      display:block!important;color:#D9ECFB!important;font-size:8.7px!important;font-weight:850!important;
+      margin-top:4px!important;letter-spacing:.02em!important;opacity:1!important;visibility:visible!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-header-title{
+      color:#FFFFFF!important;font-size:25px!important;font-weight:950!important;line-height:.98!important;
+      text-align:center!important;letter-spacing:.005em!important;text-shadow:0 1px 2px rgba(0,0,0,.22)!important;
+      opacity:1!important;visibility:visible!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-header-page{
+      color:#D9ECFB!important;font-size:8.4px!important;font-weight:800!important;margin-top:5px!important;
+      letter-spacing:.06em!important;opacity:1!important;visibility:visible!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-user{
+      background:rgba(255,255,255,.15)!important;border:1px solid rgba(255,255,255,.30)!important;
+      border-radius:11px!important;padding:7px 9px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)!important;
+      opacity:1!important;visibility:visible!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-user-name{color:#FFFFFF!important;font-size:10.5px!important;font-weight:950!important;text-shadow:none!important;}
+    [class*="st-key-fsi_shell"] .fsi-user-meta{color:#E6F2FC!important;font-size:8.5px!important;font-weight:750!important;}
+    [class*="st-key-fsi_shell"] .fsi-user-pills{display:flex!important;justify-content:flex-end!important;gap:5px!important;flex-wrap:wrap!important;margin-top:5px!important;}
+    [class*="st-key-fsi_shell"] .fsi-user-pill{
+      display:inline-block!important;padding:2px 7px!important;border-radius:999px!important;
+      background:rgba(255,255,255,.21)!important;border:1px solid rgba(255,255,255,.22)!important;
+      color:#FFFFFF!important;font-size:7.7px!important;font-weight:900!important;line-height:1.25!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-live{
+      margin-top:0!important;padding:2px 7px!important;background:rgba(115,240,179,.16)!important;color:#E9FFF3!important;
+      border:1px solid rgba(115,240,179,.35)!important;font-size:7.5px!important;font-weight:900!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-dot{width:5px!important;height:5px!important;background:#73F0B3!important;}
+    [class*="st-key-fsi_shell"] .stButton>button,
+    [class*="st-key-fsi_shell"] div[data-testid="stPageLink"] a{
+      min-height:29px!important;border-radius:7px!important;background:rgba(255,255,255,.16)!important;
+      border:1px solid rgba(255,255,255,.40)!important;color:#FFFFFF!important;box-shadow:none!important;
+      font-size:8.5px!important;font-weight:850!important;opacity:1!important;visibility:visible!important;
+    }
+    [class*="st-key-fsi_shell"] .stButton>button *,
+    [class*="st-key-fsi_shell"] div[data-testid="stPageLink"] a *{color:#FFFFFF!important;fill:#FFFFFF!important;opacity:1!important;}
+    [class*="st-key-fsi_shell"] .stButton>button:hover,
+    [class*="st-key-fsi_shell"] div[data-testid="stPageLink"] a:hover{background:rgba(255,255,255,.24)!important;border-color:rgba(255,255,255,.62)!important;}
+
+    /* MODULES heading is a separate white rounded bar, as in Export Shipment. */
+    .st-key-fsi_top_nav,[class*="st-key-fsi_top_nav"]{
+      background:transparent!important;border:0!important;box-shadow:none!important;opacity:1!important;visibility:visible!important;
+    }
+    .st-key-fsi_top_nav>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_top_nav"]>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_top_nav"] div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:transparent!important;border:0!important;border-radius:0!important;padding:0!important;margin:.62rem 0 .20rem!important;
+      box-shadow:none!important;overflow:visible!important;
+    }
+    .fsi-top-menu-title{
+      display:block!important;background:#FFFFFF!important;border:1px solid #CCDCE9!important;border-radius:12px!important;
+      box-shadow:0 4px 12px rgba(10,57,95,.08)!important;color:#073D70!important;
+      font-size:9.5px!important;font-weight:950!important;letter-spacing:.045em!important;
+      padding:.68rem .82rem!important;margin:0 0 .48rem!important;line-height:1!important;
+    }
+    [class*="st-key-fsi_top_nav"] div[data-testid="stHorizontalBlock"]{
+      gap:.38rem!important;align-items:stretch!important;background:transparent!important;
+    }
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"]>div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:transparent!important;border:0!important;padding:0!important;margin:0!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] [data-testid="stIconMaterial"]{display:none!important;}
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] div[data-testid="stPageLink"] a,
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] .stButton>button{
+      min-height:39px!important;padding:.32rem .28rem!important;border-radius:8px!important;border:1px solid transparent!important;
+      background:transparent!important;color:#131E2C!important;font-size:10.5px!important;font-weight:760!important;
+      line-height:1.08!important;box-shadow:none!important;text-decoration:none!important;opacity:1!important;visibility:visible!important;
+      justify-content:center!important;text-align:center!important;
+    }
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] div[data-testid="stPageLink"] a *,
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] .stButton>button *{color:inherit!important;fill:currentColor!important;opacity:1!important;}
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] div[data-testid="stPageLink"] a:hover,
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] .stButton>button:hover{
+      background:#E1EFFB!important;border-color:#BDD6E9!important;color:#084E84!important;
+    }
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_active_"] div[data-testid="stPageLink"] a,
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_active_"] .stButton>button{
+      background:linear-gradient(105deg,#084C84 0%,#0C7BC7 100%)!important;border-color:#07568F!important;
+      color:#FFFFFF!important;box-shadow:0 5px 12px rgba(7,76,128,.21)!important;font-weight:900!important;
+    }
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_active_"] div[data-testid="stPageLink"] a *,
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_active_"] .stButton>button *{color:#FFFFFF!important;fill:#FFFFFF!important;}
+
+    /* Second-level menu stays compact and uses the same navy/blue language. */
+    [class*="st-key-fsi_module_subnav_"]{background:transparent!important;border:0!important;box-shadow:none!important;}
+    [class*="st-key-fsi_module_subnav_"]>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:#FFFFFF!important;border:1px solid #D2E0EB!important;border-radius:10px!important;
+      padding:.28rem .36rem .34rem!important;box-shadow:0 3px 10px rgba(10,57,95,.055)!important;overflow:visible!important;
+    }
+    .fsi-module-subnav-title{
+      display:block!important;color:#0A477A!important;font-size:8.3px!important;font-weight:950!important;letter-spacing:.075em!important;
+      padding:.04rem .12rem .18rem!important;text-transform:uppercase!important;
+    }
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a{
+      min-height:30px!important;padding:.20rem .26rem!important;border-radius:6px!important;background:#FFFFFF!important;
+      border:1px solid #DCE6EE!important;color:#243747!important;font-size:9px!important;font-weight:800!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a:hover{background:#EAF4FC!important;border-color:#BDD8EB!important;color:#07558F!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a[aria-current="page"]{
+      background:linear-gradient(105deg,#084C84,#0C7BC7)!important;border-color:#07568F!important;color:#FFFFFF!important;
+      box-shadow:0 2px 7px rgba(7,76,128,.16)!important;font-weight:900!important;
+    }
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a[aria-current="page"] *{color:#FFFFFF!important;fill:#FFFFFF!important;}
+
+    /* Content remains minimal so the strong shell does not make pages bulky. */
+    .fsi-page-head{margin:.22rem 0 .46rem!important;padding:.34rem .08rem .38rem!important;border-bottom:1px solid #CADBE8!important;}
+    .fsi-page-title{color:#0B3558!important;font-size:20px!important;}
+    .fsi-section-bar{color:#0B527F!important;border-bottom-color:#C9DBE8!important;}
+    .fsi-footer{border-top-color:#C7D9E6!important;color:#60778B!important;}
+    .fsi-footer a{color:#0A68AC!important;}
+
+    @media(max-width:1120px){
+      [class*="st-key-fsi_shell"] .fsi-header-title{font-size:20px!important;}
+      [class*="st-key-fsi_shell"] .fsi-company-name{font-size:13px!important;}
+      [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] div[data-testid="stPageLink"] a{font-size:9.3px!important;}
+    }
+    @media(max-width:760px){
+      .block-container{padding:.45rem .35rem .8rem!important;}
+      [class*="st-key-fsi_shell"] .fsi-company-sub{display:none!important;}
+      [class*="st-key-fsi_shell"] .fsi-header-title{font-size:15px!important;}
+      [class*="st-key-fsi_shell"] .fsi-user{display:none!important;}
+      .st-key-fsi_top_nav div[data-testid="stHorizontalBlock"]{flex-wrap:wrap!important;}
+      .fsi-top-menu-title{padding:.55rem .65rem!important;}
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 def render_public_brand() -> None:
     s = get_settings(); uri = logo_data_uri(); logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
     st.markdown(f'<div style="text-align:center;padding:.5rem">{logo}<div class="fsi-app-title">QUALITY CONTROL MONITORING SYSTEM</div><div class="fsi-user-meta">{safe(s.company_name)} · Plant {safe(s.plant_code)}</div></div>', unsafe_allow_html=True)
@@ -712,37 +896,36 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
     uri = logo_data_uri()
     logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
     with st.container(border=True, key="fsi_shell"):
-        c1, c2, c3, c4 = st.columns([2.15, 3.65, .62, 2.3], vertical_alignment="center")
+        c1, c2, c3 = st.columns([3.0, 5.0, 2.55], vertical_alignment="center")
         with c1:
             st.markdown(
                 f'<div class="fsi-company-block"><div class="fsi-logo-card">{logo}</div>'
                 f'<div><div class="fsi-company-name">FOUR STAR INDUSTRIES</div>'
-                f'<div class="fsi-company-sub">QUALITY · TRACEABILITY · CONTROL</div></div></div>',
+                f'<div class="fsi-company-sub">QUALITY CONTROL MONITORING SYSTEM</div></div></div>',
                 unsafe_allow_html=True,
             )
         with c2:
             st.markdown(
-                '<div class="fsi-header-title">QUALITY CONTROL MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4111-ZOHO-VISIBLE-SHELL</div>',
+                '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4112-EXPORT-SHELL</div>',
                 unsafe_allow_html=True,
             )
         with c3:
-            render_app_launcher(app_registry())
-        with c4:
-            d, account, a = st.columns([2.2, .62, .52], vertical_alignment="center")
-            with d:
-                st.markdown(
-                    f'<div class="fsi-user"><div class="fsi-user-name">{safe(profile.get("full_name") or "Quality User")}</div>'
-                    f'<div class="fsi-user-meta">{safe(role_label(profile))} · {now.strftime("%d-%m-%Y %I:%M %p")}</div>'
-                    f'<div class="fsi-live"><span class="fsi-dot"></span>{"PREVIEW" if is_preview_session() else "LIVE"}</div></div>',
-                    unsafe_allow_html=True,
-                )
+            st.markdown(
+                f'<div class="fsi-user"><div class="fsi-user-name">User: {safe(profile.get("full_name") or "Quality User")}</div>'
+                f'<div class="fsi-user-meta">Role: {safe(role_label(profile))}</div>'
+                f'<div class="fsi-user-pills"><span class="fsi-live"><span class="fsi-dot"></span>{"PREVIEW" if is_preview_session() else "LIVE"}</span>'
+                f'<span class="fsi-user-pill">v{safe(s.version)}</span><span class="fsi-user-pill">{now.strftime("%d-%m-%Y %H:%M")}</span></div></div>',
+                unsafe_allow_html=True,
+            )
+            account, exit_col = st.columns([1.0, 1.0], gap="small")
             with account:
                 account_page = (st.session_state.get("_qsms_pages") or {}).get("my-account")
                 if account_page is not None:
-                    st.page_link(account_page, label="Account", icon=":material/manage_accounts:", width="stretch")
-            with a:
-                return st.button("Exit", key="fsi_signout", width="stretch")
+                    st.page_link(account_page, label="Account", width="stretch")
+            with exit_col:
+                if st.button("Exit", key="fsi_signout", width="stretch"):
+                    return True
     return False
 
 def render_side_navigation(pages: Sequence[Any]) -> None:

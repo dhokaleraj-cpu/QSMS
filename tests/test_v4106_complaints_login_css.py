@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_v4106_version_and_complaint_schema():
-    assert (ROOT / 'VERSION').read_text().strip() in {'4.10.6','4.10.7','4.10.8','4.10.9','4.11.0','4.11.1'}
+    assert (ROOT / 'VERSION').read_text().strip() in {'4.10.6','4.10.7','4.10.8','4.10.9','4.11.0','4.11.1','4.11.2'}
     sql = (ROOT / 'supabase/migrations/20260812092238_qcms_complaint_management_login_v4106.sql').read_text()
     assert 'create table if not exists public.quality_complaints' in sql
     assert 'create table if not exists public.quality_complaint_followups' in sql

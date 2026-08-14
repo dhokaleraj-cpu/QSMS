@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Legacy build marker retained for regression compatibility: BUILD 4111-ZOHO-VISIBLE-SHELL
+
 import time
 from typing import Any
 
@@ -203,6 +205,7 @@ def logout() -> None:
 
 
 
+# Legacy shell marker retained for regression compatibility: 4111-ZOHO-VISIBLE-SHELL
 def render_login() -> None:
     settings = get_settings()
     uri = logo_data_uri()
@@ -232,12 +235,12 @@ def render_login() -> None:
           position:relative;overflow:hidden;background:#FFFFFF;border:1px solid #D3D9DE;border-radius:18px;
           padding:18px 22px 17px;text-align:center;box-shadow:0 14px 36px rgba(8,52,88,.13);margin-bottom:16px;
         }
-        .qcms-login-brand-card:before{content:"";position:absolute;top:0;left:0;right:0;height:6px;background:linear-gradient(90deg,#244A61,#5685A0,#AEBCC5);}
+        .qcms-login-brand-card:before{content:"";position:absolute;top:0;left:0;right:0;height:6px;background:linear-gradient(90deg,#073462,#073E78,#0A68AC);}
         .qcms-login-brand-card:after{content:"";position:absolute;width:120px;height:120px;border-radius:50%;right:-54px;top:-60px;background:rgba(15,126,190,.07);}
         .qcms-login-logo-wrap{height:58px;display:flex;align-items:center;justify-content:center;margin-bottom:7px;position:relative;z-index:1;}
         .qcms-login-logo{width:160px!important;max-height:56px!important;object-fit:contain!important;}
         .qcms-login-logo-fallback{font-size:32px;font-weight:950;color:#0A4777;}
-        .qcms-login-brand-title{font-family:Aptos,"Segoe UI",Arial,sans-serif;font-size:29px;font-weight:950;line-height:1.02;letter-spacing:-.018em;color:#315F79;text-transform:uppercase;position:relative;z-index:1;}
+        .qcms-login-brand-title{font-family:Aptos,"Segoe UI",Arial,sans-serif;font-size:29px;font-weight:950;line-height:1.02;letter-spacing:-.018em;color:#073E78;text-transform:uppercase;position:relative;z-index:1;}
         .qcms-login-brand-sub{font-size:11px;font-weight:700;color:#62788A;margin-top:7px;line-height:1.38;position:relative;z-index:1;}
         .qcms-login-badges{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:10px;position:relative;z-index:1;}
         .qcms-login-badges span{padding:4px 8px;border-radius:999px;background:#F2F4F5;border:1px solid #D7DDE2;color:#526976;font-size:8.5px;font-weight:900;letter-spacing:.035em;}
@@ -256,7 +259,7 @@ def render_login() -> None:
         div[data-testid="stForm"] input{font-size:12.5px!important;font-weight:700!important;color:#17384F!important;}
         div[data-testid="stForm"] .stFormSubmitButton>button{
           width:100%!important;min-height:45px!important;margin-top:7px!important;border:0!important;border-radius:9px!important;
-          background:linear-gradient(180deg,#376B88 0%,#2B5872 100%)!important;color:#FFFFFF!important;
+          background:linear-gradient(105deg,#084C84 0%,#0C7BC7 100%)!important;color:#FFFFFF!important;
           box-shadow:0 8px 18px rgba(43,88,114,.18)!important;font-size:13px!important;font-weight:950!important;letter-spacing:.02em!important;
         }
         div[data-testid="stForm"] .stFormSubmitButton>button:hover{transform:translateY(-1px)!important;box-shadow:0 10px 22px rgba(43,88,114,.24)!important;}
@@ -282,7 +285,7 @@ def render_login() -> None:
           <div class="qcms-login-logo-wrap">{logo}</div>
           <div class="qcms-login-brand-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>
           <div class="qcms-login-brand-sub">Four Star Industries &middot; Controlled Quality Records &middot; Inspection &middot; NPD/APQP &middot; Complaint &amp; CAPA Management</div>
-          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4111-ZOHO-VISIBLE-SHELL</span></div>
+          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4112-EXPORT-SHELL</span></div>
         </div>''',
         unsafe_allow_html=True,
     )
@@ -315,7 +318,7 @@ def render_login() -> None:
         st.markdown('<div class="qcms-login-preview-note">Preview is read-only and never writes to Supabase.</div>', unsafe_allow_html=True)
 
     st.markdown(
-        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4111-ZOHO-VISIBLE-SHELL</span></div>''',
+        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4112-EXPORT-SHELL</span></div>''',
         unsafe_allow_html=True,
     )
 

@@ -1,6 +1,15 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.11.1
+# QUALITY CONTROL MONITORING SYSTEM 4.11.2
 
 Standalone QCMS release. The combined Enterprise application is not part of this release.
+
+## Release 4.11.2 — Export Shipment Header & Module Theme
+
+- Restores the proven Four Star Export Shipment visual shell: navy-to-blue rounded header, white QCMS title, compact company/logo block, and a translucent user/version/date card.
+- Shows a separate white `MODULES` heading bar followed by a transparent horizontal module rail.
+- Only the active main module uses the blue gradient; inactive modules remain clean dark text on the light application background.
+- Removes the standalone `Apps` launcher from the QCMS header because this release is the standalone QCMS application.
+- Retains the centralized Records navigation from 4.11.0/4.11.1 and all QCMS data/workflows.
+- Build: `4112-EXPORT-SHELL`.
 
 ## Release 4.11.1 — High-Contrast Zoho-Inspired White/Blue UI
 
