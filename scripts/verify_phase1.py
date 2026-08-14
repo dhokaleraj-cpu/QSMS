@@ -226,8 +226,33 @@ ui_text = (ROOT / "core/ui.py").read_text()
 if "QCMS 4.10.9 — readability" not in ui_text or "font-weight:450!important" not in ui_text:
     errors.append("QCMS 4.10.9 stronger readability typography layer is missing")
 
+# QCMS 4.11.0 central Records navigation and minimal metallic UI contract.
+record_routes = {
+    "records-center", "heat-ledger", "rmtc-records", "inward-records", "osp-records",
+    "dimensional-records", "metlab-records", "inspection-layout-records",
+    "complaint-records", "qc-calculation-records", "part-records", "process-records",
+    "grade-records", "reference-records", "employee-records", "standards-records",
+}
+if "RECORD_ROUTES = {" not in app_text or '**{path: "Records" for path in RECORD_ROUTES}' not in app_text:
+    errors.append("Central Records route ownership is missing")
+records_block = app_text.split('"Records": (', 1)[1].split('    ),\n    "Reports":', 1)[0] if '"Records": (' in app_text else ""
+for route in sorted(record_routes):
+    if f'("{route}",' not in records_block:
+        errors.append(f"Records submenu is missing {route}")
+for module_name in ("Dashboard", "Masters", "RMTC", "Inward", "OSP", "QC Calculation Tools", "Complaints", "Inspections", "Reports"):
+    token = f'    "{module_name}": ('
+    if token in app_text:
+        block = app_text.split(token, 1)[1].split('    ),', 1)[0]
+        leaked = sorted(route for route in record_routes if f'("{route}",' in block)
+        if leaked:
+            errors.append(f"Record routes leaked into {module_name} submenu: {leaked}")
+if "QCMS 4.11.0 — minimal metallic enterprise UX" not in ui_text or "--qcms-metal-bg:#F1F3F5" not in ui_text:
+    errors.append("QCMS 4.11.0 minimal metallic UX layer is missing")
+if "4110-MINIMAL-RECORDS-UX" not in ui_text or "4110-MINIMAL-RECORDS-UX" not in auth_text:
+    errors.append("QCMS 4.11.0 build fingerprint is missing")
+
 report = {
-    "release": "QCMS 4.10.9 Detailed Complaint Analysis / CAPA and direct login CSS rebuild",
+    "release": "QCMS 4.11.0 Central Records navigation and minimal metallic UX",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -241,6 +266,8 @@ report = {
     "password_protected_delete": True,
     "back_navigation": True,
     "enterprise_erp_theme": True,
+    "central_records_navigation": True,
+    "minimal_metallic_ui": True,
     "template_centre": True,
     "jominy_inch_to_mm": True,
     "reusable_grid_lists": True,

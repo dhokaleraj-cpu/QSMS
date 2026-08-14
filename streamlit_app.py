@@ -113,36 +113,25 @@ render_pending_popups()
 MODULE_SUBMENUS = {
     "Dashboard": (
         ("dashboard", "Quality Dashboard", ":material/dashboard:"),
-        ("records-center", "Records Centre", ":material/table_view:"),
-        ("heat-ledger", "Heat Steel Ledger", ":material/monitoring:"),
     ),
     "Masters": (
         ("masters", "Masters Home", ":material/dataset:"),
         ("part-entry", "Part Entry", ":material/edit_note:"),
-        ("part-records", "Part Records", ":material/table_view:"),
         ("process-entry", "Process Entry", ":material/settings:"),
-        ("process-records", "Process Records", ":material/table_view:"),
         ("grade-entry", "Grade Entry", ":material/science:"),
-        ("grade-records", "Grade Records", ":material/table_view:"),
         ("reference-entry", "Reference Entry", ":material/edit_note:"),
-        ("reference-records", "Reference Records", ":material/table_view:"),
         ("employee-entry", "Employee Entry", ":material/person_add:"),
-        ("employee-records", "Employee Records", ":material/groups:"),
         ("user-access", "Users & Access", ":material/admin_panel_settings:"),
         ("standards-entry", "Standards Bank", ":material/library_books:"),
-        ("standards-records", "Standards Records", ":material/menu_book:"),
         ("master-import", "Master Import", ":material/upload_file:"),
     ),
     "RMTC": (
         ("rmtc-entry", "RMTC Entry", ":material/fact_check:"),
         ("rmtc-part", "Part Worksheet", ":material/format_list_bulleted:"),
         ("rmtc-approval", "Validation & Decision", ":material/approval:"),
-        ("rmtc-records", "RMTC Records", ":material/table_view:"),
-        ("heat-ledger", "Heat Steel Ledger", ":material/monitoring:"),
     ),
     "Inward": (
         ("inward-entry", "Material Inward Entry", ":material/input:"),
-        ("inward-records", "Material Inward Records", ":material/table_view:"),
         ("metlab-entry", "MetLAB Report", ":material/science:"),
         ("dimensional-entry", "Dimensional Report", ":material/straighten:"),
     ),
@@ -153,7 +142,6 @@ MODULE_SUBMENUS = {
         ("osp-dimensional", "OSP Dimensional", ":material/straighten:"),
         ("osp-metlab", "OSP MetLAB", ":material/science:"),
         ("osp-inward", "OSP Inward", ":material/input:"),
-        ("osp-records", "OSP Records", ":material/table_view:"),
     ),
     "NPD & APQP": (
         ("npd-process-flow", "Process Flow Designer", ":material/account_tree:"),
@@ -162,66 +150,73 @@ MODULE_SUBMENUS = {
     ),
     "QC Calculation Tools": (
         ("qc-tools", "Calculation Tools", ":material/calculate:"),
-        ("qc-calculation-records", "Calculation Records", ":material/receipt_long:"),
     ),
     "Complaints": (
         ("complaints-home", "Complaint Dashboard", ":material/support_agent:"),
         ("customer-complaint", "Customer Complaint", ":material/record_voice_over:"),
         ("supplier-complaint", "Supplier Complaint", ":material/feedback:"),
         ("complaint-analysis", "Analysis & CAPA", ":material/troubleshoot:"),
-        ("complaint-records", "Complaint Records", ":material/fact_check:"),
     ),
     "Inspections": (
         ("inspection-home", "Inspection Home", ":material/biotech:"),
         ("inspection-layout-entry", "Layout Entry", ":material/edit_document:"),
-        ("inspection-layout-records", "Layout Records", ":material/table_view:"),
         ("dimensional-entry", "Dimensional Entry", ":material/straighten:"),
-        ("dimensional-records", "Dimensional Records", ":material/table_view:"),
         ("metlab-entry", "MetLAB Entry", ":material/science:"),
-        ("metlab-records", "MetLAB Records", ":material/table_view:"),
     ),
     "Records": (
         ("records-center", "Records Centre", ":material/table_view:"),
+        ("rmtc-records", "RMTC", ":material/fact_check:"),
+        ("inward-records", "Material Inward", ":material/input:"),
+        ("osp-records", "OSP", ":material/factory:"),
+        ("dimensional-records", "Dimensional", ":material/straighten:"),
+        ("metlab-records", "MetLAB", ":material/science:"),
+        ("inspection-layout-records", "Inspection Layouts", ":material/view_list:"),
+        ("complaint-records", "Complaints", ":material/support_agent:"),
+        ("qc-calculation-records", "QC Calculations", ":material/calculate:"),
         ("heat-ledger", "Heat Steel Ledger", ":material/monitoring:"),
-        ("rmtc-records", "RMTC Records", ":material/fact_check:"),
-        ("inward-records", "Inward Records", ":material/input:"),
-        ("osp-records", "OSP Records", ":material/factory:"),
-        ("dimensional-records", "Dimensional Records", ":material/straighten:"),
-        ("metlab-records", "MetLAB Records", ":material/science:"),
-        ("complaint-records", "Complaint Records", ":material/fact_check:"),
+        ("part-records", "Parts", ":material/precision_manufacturing:"),
+        ("process-records", "Processes", ":material/account_tree:"),
+        ("grade-records", "Material Grades", ":material/science:"),
+        ("reference-records", "Reference Masters", ":material/library_books:"),
+        ("employee-records", "Employees", ":material/groups:"),
+        ("standards-records", "Customer Standards", ":material/menu_book:"),
     ),
     "Reports": (
         ("reports-home", "Reports Home", ":material/assessment:"),
         ("heat-transaction-report", "Heat Global Balance", ":material/monitoring:"),
         ("osp-balance-report", "OSP Heat Balance", ":material/factory:"),
-        ("heat-ledger", "Heat Steel Ledger", ":material/table_view:"),
     ),
     "Templates": (
         ("templates", "Download Templates", ":material/download:"),
-        ("masters", "Masters", ":material/dataset:"),
-        ("inspection-home", "Inspections", ":material/biotech:"),
     ),
 }
+
+# Every register / records route belongs to the Records top-level module.
+# Entry and workflow pages remain under their operational modules.
+RECORD_ROUTES = {
+    "records-center", "heat-ledger", "rmtc-records", "inward-records", "osp-records",
+    "dimensional-records", "metlab-records", "inspection-layout-records",
+    "complaint-records", "qc-calculation-records", "part-records", "process-records",
+    "grade-records", "reference-records", "employee-records", "standards-records",
+}
 ROUTE_MODULE = {
-    "dashboard": "Dashboard",
-    "masters": "Masters", "part-entry": "Masters", "part-records": "Masters",
-    "process-entry": "Masters", "process-records": "Masters",
-    "grade-entry": "Masters", "grade-records": "Masters",
-    "reference-entry": "Masters", "reference-records": "Masters",
-    "employee-entry": "Masters", "employee-records": "Masters", "user-access": "Masters", "master-import": "Masters", "standards-entry": "Masters", "standards-records": "Masters", "my-account": "Dashboard",
-    "rmtc-entry": "RMTC", "rmtc-part": "RMTC", "rmtc-records": "RMTC", "rmtc-approval": "RMTC",
-    "inward-entry": "Inward", "inward-records": "Inward",
-    "osp-home": "OSP", "osp-material-out": "OSP", "osp-sample-receipt": "OSP", "osp-inward": "OSP",
-    "osp-dimensional": "OSP", "osp-metlab": "OSP", "osp-records": "OSP",
+    "dashboard": "Dashboard", "my-account": "Dashboard",
+    "masters": "Masters", "part-entry": "Masters", "process-entry": "Masters",
+    "grade-entry": "Masters", "reference-entry": "Masters", "employee-entry": "Masters",
+    "user-access": "Masters", "master-import": "Masters", "standards-entry": "Masters",
+    "rmtc-entry": "RMTC", "rmtc-part": "RMTC", "rmtc-approval": "RMTC",
+    "inward-entry": "Inward",
+    "osp-home": "OSP", "osp-material-out": "OSP", "osp-sample-receipt": "OSP",
+    "osp-inward": "OSP", "osp-dimensional": "OSP", "osp-metlab": "OSP",
     "npd-process-flow": "NPD & APQP", "npd-status": "NPD & APQP", "apqp": "NPD & APQP",
-    "qc-tools": "QC Calculation Tools", "qc-calculation-records": "QC Calculation Tools",
-    "complaints-home": "Complaints", "customer-complaint": "Complaints", "supplier-complaint": "Complaints", "complaint-analysis": "Complaints", "complaint-records": "Complaints",
+    "qc-tools": "QC Calculation Tools",
+    "complaints-home": "Complaints", "customer-complaint": "Complaints",
+    "supplier-complaint": "Complaints", "complaint-analysis": "Complaints",
     "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
-    "inspection-layout-records": "Inspections", "dimensional-entry": "Inspections",
-    "dimensional-records": "Inspections", "metlab-entry": "Inspections", "metlab-records": "Inspections",
-    "records-center": "Records", "heat-ledger": "Records",
+    "dimensional-entry": "Inspections", "metlab-entry": "Inspections",
     "reports-home": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports",
     "templates": "Templates",
+    **{path: "Records" for path in RECORD_ROUTES},
 }
 
 PAGE_TITLE_TO_PATH = {
@@ -260,7 +255,7 @@ current_module = ROUTE_MODULE.get(current_path, "Dashboard")
 
 with st.container(border=True, key="fsi_top_nav"):
     st.markdown('<div class="fsi-top-menu-title">MODULES</div>', unsafe_allow_html=True)
-    cols = st.columns(12, gap="small")
+    cols = st.columns(12, gap="small")  # compact 4.11.0 app rail
     labels = (
         ("dashboard", "Dashboard", "Dashboard"),
         ("masters", "Masters", "Masters"),
@@ -293,7 +288,7 @@ with st.container(border=True, key="fsi_top_nav"):
                 else:
                     st.page_link(page, label=label, width="stretch")
 
-module_submenu(current_module, *MODULE_SUBMENUS[current_module])
+module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=8)
 
 nav.run()
 app_footer()

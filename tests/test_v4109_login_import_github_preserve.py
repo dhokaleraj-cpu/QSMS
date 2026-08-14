@@ -11,10 +11,10 @@ def test_login_helpers_are_imported():
 def test_login_build_fingerprint():
     auth = Path("core/auth.py").read_text()
     ui = Path("core/ui.py").read_text()
-    assert "4109-LOGIN-IMPORT-GUARD" in auth
-    assert "4109-LOGIN-IMPORT-GUARD" in ui
+    assert "4109-LOGIN-IMPORT-GUARD" in auth or "4110-MINIMAL-RECORDS-UX" in auth
+    assert "4109-LOGIN-IMPORT-GUARD" in ui or "4110-MINIMAL-RECORDS-UX" in ui
 
 
 def test_release_version():
-    assert Path("VERSION").read_text().strip() == "4.10.9"
+    assert Path("VERSION").read_text().strip() in {"4.10.9", "4.11.0"}
 

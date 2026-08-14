@@ -79,11 +79,13 @@ required = [
     "supabase/migrations/20260812165500_qcms_detailed_complaint_analysis_v4107.sql",
     "tests/test_v4108_detailed_complaint_analysis_login.py",
     "docs/RELEASE_4_10_7.md",
+    "docs/RELEASE_4_11_0.md",
+    "tests/test_v4110_records_minimal_ui.py",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.10.9 - Detailed Complaint Analysis / CAPA and direct login CSS rebuild",
+    "phase": "QCMS 4.11.0 - Central Records navigation and minimal metallic UX",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

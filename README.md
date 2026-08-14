@@ -1,4 +1,4 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.10.9
+# QUALITY CONTROL MONITORING SYSTEM 4.11.0
 
 Live Supabase-first Quality Control, RMTC, OSP and inspection workflow for Four Star Industries.
 
@@ -9,14 +9,30 @@ Visible workspaces:
 3. RMTC
 4. Material Inward
 5. OSP Transactions
-6. Inspections
-7. Records Centre
-8. NPD / APQP
-9. QC Calculation Tools
-10. Templates
+6. NPD / APQP
+7. QC Calculation Tools
+8. Complaints / CAPA
+9. Inspections
+10. Records
 11. Reports
+12. Templates
+
+**QCMS 4.11.0 navigation rule:** every register and records page is centralized under the main **Records** module. Operational modules now focus only on entry, workflow, analysis and approval.
+
+The application UI uses a compact light-metallic shell with restrained steel-blue accents, reduced card height, lighter section hierarchy and denser ERP navigation.
 
 
+
+
+## Release 4.11.0 — Central Records Navigation & Minimal Metallic UX
+
+- Centralized every Records/Register page under the top-level **Records** module.
+- Removed duplicate Records items from Dashboard, Masters, RMTC, Inward, OSP, QC Tools, Complaints, Inspections and Reports submenus.
+- Record pages keep **Records** active in the main application rail.
+- Rebuilt the QCMS shell with a compact metallic silver/white visual system, steel-blue accents, smaller cards, thinner navigation and reduced shadows.
+- Reworked page/section hierarchy, forms, KPI cards and data tables for a denser modern ERP experience.
+- Matching metallic styling applied to the QCMS sign-in experience.
+- No Supabase migration or data reset is required.
 
 
 ## Release 4.10.1 — Customer Standards Bank, Rich Selection & NPD Card Status
