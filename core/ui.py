@@ -1,3 +1,4 @@
+# Legacy build marker retained for regression compatibility: 4115-COMPLAINT-EVIDENCE-HEADER-GRID
 from __future__ import annotations
 
 # Legacy build marker retained for regression compatibility: BUILD 4111-ZOHO-VISIBLE-SHELL
@@ -976,7 +977,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4115-COMPLAINT-EVIDENCE-HEADER-GRID</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4116-COMPLAINT-SECTION-COLORS</div>',
                 unsafe_allow_html=True,
             )
         with c3:

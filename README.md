@@ -1,4 +1,12 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.11.5
+# QUALITY CONTROL MONITORING SYSTEM 4.11.6
+
+## Release 4.11.6 — High-Visibility Complaint Section Color Grading
+- Customer Complaint and Supplier Complaint now use clearly different pastel backgrounds for Complaint Details, Responsibility, Photographs & Multiple Attachments, Containment / Root Cause / Corrective Action, and Debit Note / Commercial Settlement.
+- The keyed complaint container itself is styled so Streamlit border-wrapper changes cannot hide the section background.
+- Each section also has a matching title strip and left accent border while preserving high-contrast field labels.
+- No database migration or data reset is required.
+- Build: `4116-COMPLAINT-SECTION-COLORS`.
+
 
 
 ## Release 4.11.5 — Complaint Evidence Visibility, Section Grading & Header Grid

@@ -288,21 +288,21 @@ for token in ("document_title", "COMPLAINT_MANAGEMENT", "complaints", "idx_docum
         errors.append(f"QCMS 4.11.4 complaint media migration token missing: {token}")
 if not (("fsi_header_actions" in ui_text and "st.columns([2.8, 4.8, 2.25, 1.25]" in ui_text) or ("fsi_header_actions_row" in ui_text and "st.columns([3.0, 5.4, 3.2]" in ui_text)):
     errors.append("QCMS 4.11.4+ header Account / Exit separation is missing")
-if not any(marker in ui_text and marker in auth_text for marker in ("4114-COMPLAINT-MEDIA-HEADER-FIX", "4115-COMPLAINT-EVIDENCE-HEADER-GRID")):
+if not any(marker in ui_text and marker in auth_text for marker in ("4114-COMPLAINT-MEDIA-HEADER-FIX", "4116-COMPLAINT-SECTION-COLORS")):
     errors.append("QCMS complaint media/header build fingerprint is missing")
 
 
 # QCMS 4.11.5 complaint evidence visibility, section grading and fixed header grid.
 for token in ("_stage_new_complaint_media", "_upload_staged_complaint_media", "complaint_customer_details", "complaint_supplier_details", "Add Selected Photographs"):
     if token not in complaints_text:
-        errors.append(f"QCMS 4.11.5 complaint evidence/section token missing: {token}")
+        errors.append(f"QCMS 4.11.6 complaint evidence/section token missing: {token}")
 if "fsi_header_actions_row" not in ui_text or "st.columns([3.0, 5.4, 3.2]" not in ui_text or "a1, a2 = st.columns(2" not in ui_text:
-    errors.append("QCMS 4.11.5 non-overlapping profile/action header grid is missing")
-if "4115-COMPLAINT-EVIDENCE-HEADER-GRID" not in ui_text or "4115-COMPLAINT-EVIDENCE-HEADER-GRID" not in auth_text:
-    errors.append("QCMS 4.11.5 build fingerprint is missing")
+    errors.append("QCMS 4.11.6 non-overlapping profile/action header grid is missing")
+if "4116-COMPLAINT-SECTION-COLORS" not in ui_text or "4116-COMPLAINT-SECTION-COLORS" not in auth_text:
+    errors.append("QCMS 4.11.6 build fingerprint is missing")
 
 report = {
-    "release": "QCMS 4.11.5 complaint evidence, section grading, drawing history and Export Shipment shell",
+    "release": "QCMS 4.11.6 high-visibility complaint section grading, drawing history and Export Shipment shell",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),

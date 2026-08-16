@@ -35,30 +35,116 @@ COMPLAINT_PHOTO_EXTENSIONS = ["png", "jpg", "jpeg", "webp"]
 
 
 def _complaint_entry_styles() -> None:
-    """Compact color-graded complaint entry sections for Customer and Supplier workflows."""
+    """High-visibility pastel grading for Customer and Supplier complaint sections."""
     st.markdown(
         r"""
 <style>
-/* QCMS 4.11.5 — complaint entry visual grading. Each major section has its own
-   low-saturation tone so long forms remain easy to scan without becoming bulky. */
-[class*="st-key-complaint_customer_details"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F5FAFF,#EEF7FF)!important;border:1px solid #BFD8EC!important;border-left:4px solid #2F80C7!important;border-radius:11px!important;padding:.62rem .72rem!important;}
-[class*="st-key-complaint_customer_responsibility"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F3FBFA,#ECF8F6)!important;border:1px solid #BFE2DC!important;border-left:4px solid #159A8B!important;border-radius:11px!important;padding:.62rem .72rem!important;}
-[class*="st-key-complaint_customer_evidence"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F7F6FF,#F1F0FF)!important;border:1px solid #D3CEEF!important;border-left:4px solid #6C55C4!important;border-radius:11px!important;padding:.62rem .72rem!important;}
-[class*="st-key-complaint_customer_action"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#FFF9EC,#FFF5DF)!important;border:1px solid #ECD6A3!important;border-left:4px solid #D59616!important;border-radius:11px!important;padding:.62rem .72rem!important;}
-[class*="st-key-complaint_customer_commercial"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#FFF6F8,#FFF0F3)!important;border:1px solid #EDC9D1!important;border-left:4px solid #C94D6A!important;border-radius:11px!important;padding:.62rem .72rem!important;}
-[class*="st-key-complaint_customer_followup"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F3FBF5,#ECF8EF)!important;border:1px solid #C6E2CC!important;border-left:4px solid #3D9860!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+/* QCMS 4.11.6 — complaint section color grading.
+   Style the keyed Streamlit container itself AND its first border wrapper so
+   the background remains visible across Streamlit DOM revisions. */
 
-[class*="st-key-complaint_supplier_details"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#FAF7FF,#F5F0FF)!important;border:1px solid #D8C9EE!important;border-left:4px solid #8056C7!important;border-radius:11px!important;padding:.62rem .72rem!important;}
-[class*="st-key-complaint_supplier_responsibility"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F3FAF6,#EDF8F1)!important;border:1px solid #C4E0CD!important;border-left:4px solid #348D59!important;border-radius:11px!important;padding:.62rem .72rem!important;}
-[class*="st-key-complaint_supplier_evidence"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F1FAFD,#EAF7FB)!important;border:1px solid #C3E0E9!important;border-left:4px solid #2A90B1!important;border-radius:11px!important;padding:.62rem .72rem!important;}
-[class*="st-key-complaint_supplier_action"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#FFF7F0,#FFF1E6)!important;border:1px solid #EDCEB4!important;border-left:4px solid #D4742C!important;border-radius:11px!important;padding:.62rem .72rem!important;}
-[class*="st-key-complaint_supplier_commercial"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F6F8FA,#EFF3F6)!important;border:1px solid #CFD8DF!important;border-left:4px solid #657B8B!important;border-radius:11px!important;padding:.62rem .72rem!important;}
-[class*="st-key-complaint_supplier_followup"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F7F9EE,#F1F6E5)!important;border:1px solid #D6DFB8!important;border-left:4px solid #718B32!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+/* ---------- CUSTOMER COMPLAINT ---------- */
+div[class*="st-key-complaint_customer_details"]{
+  background:linear-gradient(135deg,#E7F3FF 0%,#F4FAFF 100%)!important;
+  border:1px solid #A9CCE9!important;border-left:5px solid #287DB9!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
+div[class*="st-key-complaint_customer_responsibility"]{
+  background:linear-gradient(135deg,#E7F8F3 0%,#F3FBF8 100%)!important;
+  border:1px solid #A9DCCB!important;border-left:5px solid #16866F!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
+div[class*="st-key-complaint_customer_evidence"]{
+  background:linear-gradient(135deg,#F0EBFF 0%,#F8F6FF 100%)!important;
+  border:1px solid #C8BDEB!important;border-left:5px solid #6C50B8!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
+div[class*="st-key-complaint_customer_action"]{
+  background:linear-gradient(135deg,#FFF1D6 0%,#FFF9EC 100%)!important;
+  border:1px solid #E8CA8E!important;border-left:5px solid #C88912!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
+div[class*="st-key-complaint_customer_commercial"]{
+  background:linear-gradient(135deg,#FCE9EE 0%,#FFF5F7 100%)!important;
+  border:1px solid #E8B9C5!important;border-left:5px solid #B94D67!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
 
-[class*="st-key-complaint_customer_"] .fsi-section-bar,
-[class*="st-key-complaint_supplier_"] .fsi-section-bar{margin-top:.02rem!important;margin-bottom:.42rem!important;padding-top:.02rem!important;}
-[class*="st-key-complaint_customer_"] div[data-testid="stVerticalBlock"],
-[class*="st-key-complaint_supplier_"] div[data-testid="stVerticalBlock"]{gap:.45rem!important;}
+div[class*="st-key-complaint_customer_followup"]{
+  background:linear-gradient(135deg,#E9F7EC 0%,#F5FBF6 100%)!important;
+  border:1px solid #B8DCC0!important;border-left:5px solid #438D5A!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
+
+/* ---------- SUPPLIER COMPLAINT ---------- */
+div[class*="st-key-complaint_supplier_details"]{
+  background:linear-gradient(135deg,#EEE9FF 0%,#F8F5FF 100%)!important;
+  border:1px solid #C7B9E8!important;border-left:5px solid #7351B2!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
+div[class*="st-key-complaint_supplier_responsibility"]{
+  background:linear-gradient(135deg,#E8F7EC 0%,#F3FBF5 100%)!important;
+  border:1px solid #AED8B9!important;border-left:5px solid #3B8955!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
+div[class*="st-key-complaint_supplier_evidence"]{
+  background:linear-gradient(135deg,#E6F5FA 0%,#F2FBFD 100%)!important;
+  border:1px solid #ADD5E0!important;border-left:5px solid #277F9B!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
+div[class*="st-key-complaint_supplier_action"]{
+  background:linear-gradient(135deg,#FFEBD9 0%,#FFF7F0 100%)!important;
+  border:1px solid #E9C19F!important;border-left:5px solid #C66B29!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
+div[class*="st-key-complaint_supplier_commercial"]{
+  background:linear-gradient(135deg,#EAF0F5 0%,#F7F9FB 100%)!important;
+  border:1px solid #BBCAD5!important;border-left:5px solid #5A7181!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
+
+div[class*="st-key-complaint_supplier_followup"]{
+  background:linear-gradient(135deg,#F2F6E4 0%,#FAFBF3 100%)!important;
+  border:1px solid #CFD9A9!important;border-left:5px solid #748A37!important;
+  border-radius:12px!important;padding:.68rem .78rem!important;margin-bottom:.52rem!important;
+}
+
+/* Remove the white border-wrapper fill that can hide the keyed container tone. */
+div[class*="st-key-complaint_customer_details"] > div[data-testid="stVerticalBlockBorderWrapper"],
+div[class*="st-key-complaint_customer_responsibility"] > div[data-testid="stVerticalBlockBorderWrapper"],
+div[class*="st-key-complaint_customer_evidence"] > div[data-testid="stVerticalBlockBorderWrapper"],
+div[class*="st-key-complaint_customer_action"] > div[data-testid="stVerticalBlockBorderWrapper"],
+div[class*="st-key-complaint_customer_commercial"] > div[data-testid="stVerticalBlockBorderWrapper"],
+div[class*="st-key-complaint_customer_followup"] > div[data-testid="stVerticalBlockBorderWrapper"],
+div[class*="st-key-complaint_supplier_details"] > div[data-testid="stVerticalBlockBorderWrapper"],
+div[class*="st-key-complaint_supplier_responsibility"] > div[data-testid="stVerticalBlockBorderWrapper"],
+div[class*="st-key-complaint_supplier_evidence"] > div[data-testid="stVerticalBlockBorderWrapper"],
+div[class*="st-key-complaint_supplier_action"] > div[data-testid="stVerticalBlockBorderWrapper"],
+div[class*="st-key-complaint_supplier_commercial"] > div[data-testid="stVerticalBlockBorderWrapper"],
+div[class*="st-key-complaint_supplier_followup"] > div[data-testid="stVerticalBlockBorderWrapper"]{
+  background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;
+}
+
+/* Section title strips make the five form zones immediately distinguishable. */
+div[class*="st-key-complaint_customer_details"] .fsi-section-bar{background:#D7EAFA!important;color:#0B4F7E!important;border-color:#9EC7E4!important;}
+div[class*="st-key-complaint_customer_responsibility"] .fsi-section-bar{background:#D7F0E8!important;color:#126D5B!important;border-color:#9CD2C0!important;}
+div[class*="st-key-complaint_customer_evidence"] .fsi-section-bar{background:#E3DBFA!important;color:#533D97!important;border-color:#BAAAE4!important;}
+div[class*="st-key-complaint_customer_action"] .fsi-section-bar{background:#F8E5B9!important;color:#8A5A05!important;border-color:#DFC17D!important;}
+div[class*="st-key-complaint_customer_commercial"] .fsi-section-bar{background:#F6D9E0!important;color:#963A52!important;border-color:#DDAAB7!important;}
+div[class*="st-key-complaint_customer_followup"] .fsi-section-bar{background:#DBEFDF!important;color:#357248!important;border-color:#ADD2B5!important;}
+
+div[class*="st-key-complaint_supplier_details"] .fsi-section-bar{background:#E0D7F6!important;color:#55398C!important;border-color:#BBA9DF!important;}
+div[class*="st-key-complaint_supplier_responsibility"] .fsi-section-bar{background:#D9EFDE!important;color:#2E7146!important;border-color:#A2D0AE!important;}
+div[class*="st-key-complaint_supplier_evidence"] .fsi-section-bar{background:#D5EDF4!important;color:#206B82!important;border-color:#9DCFD9!important;}
+div[class*="st-key-complaint_supplier_action"] .fsi-section-bar{background:#F7DEC7!important;color:#954C17!important;border-color:#DEB38F!important;}
+div[class*="st-key-complaint_supplier_commercial"] .fsi-section-bar{background:#DDE6EC!important;color:#425C6D!important;border-color:#AEBFCC!important;}
+div[class*="st-key-complaint_supplier_followup"] .fsi-section-bar{background:#E6EDCF!important;color:#5F742D!important;border-color:#C4D195!important;}
+
+/* Keep labels and field text high contrast on all pastel panels. */
+div[class*="st-key-complaint_customer_"],div[class*="st-key-complaint_supplier_"]{color:#12293B!important;}
+div[class*="st-key-complaint_customer_"] label,div[class*="st-key-complaint_supplier_"] label{color:#17384F!important;font-weight:700!important;}
+div[class*="st-key-complaint_customer_"] div[data-testid="stVerticalBlock"],
+div[class*="st-key-complaint_supplier_"] div[data-testid="stVerticalBlock"]{gap:.45rem!important;}
 </style>
 """,
         unsafe_allow_html=True,
