@@ -1,6 +1,18 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.11.2
+# QUALITY CONTROL MONITORING SYSTEM 4.11.3
 
 Standalone QCMS release. The combined Enterprise application is not part of this release.
+
+
+## Release 4.11.3 — Controlled Drawing Revision History
+
+- Part Master Controlled Drawings now record Drawing Number, Revision Number and Revision Date per released file.
+- Finish, Forging and Heat Treatment drawings maintain full revision history.
+- Releasing a new revision automatically sets the previous revision to INACTIVE without deleting or overwriting its stored drawing.
+- Old drawings remain listed and downloadable from Drawing Revision History.
+- Database controls prevent duplicate revision identities and enforce only one ACTIVE revision per drawing type.
+- Current Finish Drawing Number/Revision in the Part header is derived from the active controlled Finish Drawing.
+- Export Shipment-inspired QCMS header/menu theme and centralized Records navigation are retained.
+- Build: `4113-DRAWING-HISTORY`.
 
 ## Release 4.11.2 — Export Shipment Header & Module Theme
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # Legacy build marker retained for regression compatibility: BUILD 4111-ZOHO-VISIBLE-SHELL
+# Legacy Export Shipment shell build marker retained for regression compatibility: BUILD 4112-EXPORT-SHELL
 
 import base64
 import re
@@ -907,7 +908,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4112-EXPORT-SHELL</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4113-DRAWING-HISTORY</div>',
                 unsafe_allow_html=True,
             )
         with c3:

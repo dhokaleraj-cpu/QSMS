@@ -16,5 +16,5 @@ def test_login_build_fingerprint():
 
 
 def test_release_version():
-    assert Path("VERSION").read_text().strip() in {"4.10.9", "4.11.0", "4.11.1", "4.11.2"}
+    assert Path("VERSION").read_text().strip() in {"4.10.9", "4.11.0", "4.11.1", "4.11.2", "4.11.3"}
 

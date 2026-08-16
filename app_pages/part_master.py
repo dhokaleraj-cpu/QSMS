@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import re
+import uuid
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -31,20 +34,82 @@ def _labels(rows: list[dict], code: str, name: str) -> dict[str, str]:
     return {str(r["id"]): " · ".join(str(v) for v in (r.get(code), r.get(name)) if v not in (None, "")) for r in rows}
 
 
-def _upload(repo: Repository, part_id: str, document_type: str, file: Any) -> None:
+def _storage_token(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9._-]+", "_", str(value or "").strip()).strip("._-") or "drawing"
+
+
+def _save_drawing_revision(
+    repo: Repository,
+    part_id: str,
+    document_type: str,
+    drawing_number: str,
+    revision_number: str,
+    revision_date: date,
+    file: Any,
+) -> dict:
+    """Store a new controlled drawing revision without overwriting earlier files."""
     client = get_session_client()
     if client is None:
-        raise RuntimeError("Live Supabase session is required for drawing upload.")
+        raise RuntimeError("Live Supabase session is required for controlled drawing upload.")
+    drawing_number = str(drawing_number or "").strip()
+    revision_number = str(revision_number or "").strip()
+    if not drawing_number:
+        raise ValueError("Drawing Number is mandatory.")
+    if not revision_number:
+        raise ValueError("Revision Number is mandatory.")
+    if revision_date is None:
+        raise ValueError("Revision Date is mandatory.")
+    if file is None:
+        raise ValueError("Select the controlled drawing file.")
+
     ext = Path(file.name).suffix.lower() or ".bin"
-    object_path = f"{repo.tenant_id}/parts/{part_id}/{document_type.lower()}_{hashlib.sha1(file.name.encode()).hexdigest()[:8]}{ext}"
     content = file.getvalue()
-    client.storage.from_("quality-documents").upload(object_path, content, {"content-type": file.type or "application/octet-stream", "upsert": "true"})
-    existing = repo.find_one("document_attachments", eq={"entity_type": "PART_MASTER", "entity_id": part_id, "document_type": document_type})
-    payload = {"entity_type": "PART_MASTER", "entity_id": part_id, "document_type": document_type, "file_name": file.name, "object_path": object_path, "mime_type": file.type, "size_bytes": len(content), "checksum": hashlib.sha256(content).hexdigest(), "status": "ACTIVE"}
-    if existing:
-        repo.update("document_attachments", str(existing["id"]), payload)
-    else:
-        repo.insert("document_attachments", payload)
+    if not content:
+        raise ValueError("The selected drawing file is empty.")
+    object_path = (
+        f"{repo.tenant_id}/parts/{part_id}/controlled_drawings/{document_type.lower()}/"
+        f"{_storage_token(drawing_number)}/{_storage_token(revision_number)}_"
+        f"{uuid.uuid4().hex[:10]}{ext}"
+    )
+    client.storage.from_("quality-documents").upload(
+        object_path,
+        content,
+        {"content-type": file.type or "application/octet-stream", "upsert": "false"},
+    )
+    try:
+        result = repo.rpc(
+            "qcms_activate_part_drawing_revision",
+            {
+                "p_part_id": part_id,
+                "p_document_type": document_type,
+                "p_drawing_number": drawing_number,
+                "p_revision": revision_number,
+                "p_revision_date": revision_date.isoformat(),
+                "p_file_name": str(file.name),
+                "p_object_path": object_path,
+                "p_mime_type": file.type or "application/octet-stream",
+                "p_size_bytes": len(content),
+                "p_checksum": hashlib.sha256(content).hexdigest(),
+            },
+        )
+    except Exception:
+        try:
+            client.storage.from_("quality-documents").remove([object_path])
+        except Exception:
+            pass
+        raise
+    if isinstance(result, list):
+        return dict(result[0]) if result else {}
+    return dict(result or {})
+
+
+def _drawing_label(row: dict) -> str:
+    dtype = dict(DRAWING_TYPES).get(str(row.get("document_type")), str(row.get("document_type") or "Drawing"))
+    return (
+        f"{dtype} · {row.get('drawing_number') or 'No drawing no.'} · "
+        f"Rev {row.get('revision') or '-'} · {row.get('revision_date') or '-'} · "
+        f"{str(row.get('status') or '').title()}"
+    )
 
 
 def _selected_part(repo: Repository) -> dict:
@@ -418,22 +483,24 @@ def render_entry() -> None:
         c = st.columns(4, gap="small")
         customer_id = c[0].selectbox("Customer", list(customer_map), format_func=lambda x: customer_map[x], index=list(customer_map).index(str(existing.get("customer_id"))) if str(existing.get("customer_id")) in customer_map else 0) if customer_map else None
         grade_id = c[1].selectbox("Material Grade", list(grade_map), format_func=lambda x: grade_map[x], index=list(grade_map).index(str(existing.get("material_grade_id"))) if str(existing.get("material_grade_id")) in grade_map else 0) if grade_map else None
-        drawing_number = c[2].text_input("Drawing Number", value=str(existing.get("drawing_number") or ""))
-        drawing_revision = c[3].text_input("Drawing Revision", value=str(existing.get("drawing_revision") or ""))
+        c[2].text_input("Current Finish Drawing No.", value=str(existing.get("drawing_number") or ""), disabled=True, help="Controlled by the latest ACTIVE Finish Drawing revision below.")
+        c[3].text_input("Current Finish Revision", value=str(existing.get("drawing_revision") or ""), disabled=True, help="Controlled by the latest ACTIVE Finish Drawing revision below.")
         remarks = st.text_area("Remarks", value=str(existing.get("remarks") or ""), height=80)
         submitted = st.form_submit_button("Save Part Master", type="primary", disabled=not writable, width="stretch")
     if submitted:
         try:
             if not all([part_number.strip(), part_name.strip(), customer_id, grade_id]):
                 raise ValueError("Part Number, Description, Customer and Material Grade are mandatory.")
-            payload = {"part_number": part_number.strip(), "part_name": part_name.strip(), "customer_id": customer_id, "material_grade_id": grade_id, "finished_weight_kg": finish_weight, "drawing_number": drawing_number.strip() or None, "drawing_revision": drawing_revision.strip() or None, "status": status, "remarks": remarks.strip() or None}
+            payload = {"part_number": part_number.strip(), "part_name": part_name.strip(), "customer_id": customer_id, "material_grade_id": grade_id, "finished_weight_kg": finish_weight, "status": status, "remarks": remarks.strip() or None}
+            if existing:
+                payload["drawing_number"] = existing.get("drawing_number")
+                payload["drawing_revision"] = existing.get("drawing_revision")
             for row in repo.select("parts", limit=5000):
                 if existing and str(row.get("id")) == str(existing.get("id")):
                     continue
                 if str(row.get("part_number") or "").strip().casefold() == part_number.strip().casefold():
                     raise ValueError("Duplicate Part Number is not allowed.")
             saved = repo.update("parts", str(existing["id"]), payload) if existing else repo.insert("parts", payload)
-            catalog.remember_many("part.drawing_revision", [drawing_revision])
             st.session_state["edit_part_id"] = str(saved["id"]); save_success_popup("Part Master saved successfully.", queue_for_rerun=True); st.rerun()
         except Exception as exc:
             st.error(str(exc))
@@ -443,19 +510,126 @@ def render_entry() -> None:
         return
     part_id = str(existing["id"])
 
-    section_bar("CONTROLLED DRAWINGS", "Finish, forging and heat-treatment drawings are stored in private Supabase Storage.")
-    attachments = repo.select("document_attachments", eq={"entity_type": "PART_MASTER", "entity_id": part_id, "status": "ACTIVE"}, limit=50)
-    amap = {str(a.get("document_type")): a for a in attachments}
+    section_bar("CONTROLLED DRAWINGS", "Drawing Number, Revision Number and Revision Date are revision-controlled. Uploading a new revision automatically makes the previous revision INACTIVE; old drawings remain downloadable in history.")
+    drawing_rows = [
+        row for row in repo.select(
+            "document_attachments",
+            eq={"entity_type": "PART_MASTER", "entity_id": part_id},
+            order_by="created_at",
+            desc=True,
+            limit=500,
+        )
+        if str(row.get("document_type")) in dict(DRAWING_TYPES)
+    ]
+    active_drawings = {
+        str(row.get("document_type")): row
+        for row in drawing_rows
+        if str(row.get("status") or "").upper() == "ACTIVE"
+    }
+    drawing_service = AttachmentService(repo)
     cols = st.columns(3, gap="small")
     for col, (dtype, label) in zip(cols, DRAWING_TYPES):
+        current = active_drawings.get(dtype) or {}
         with col:
-            file = st.file_uploader(label, type=["pdf", "png", "jpg", "jpeg", "dwg", "dxf"], key=f"draw_{dtype}_{part_id}")
-            st.caption("Current: " + str((amap.get(dtype) or {}).get("file_name") or "Not attached"))
-            if st.button(f"Upload {label}", key=f"up_{dtype}", disabled=not writable or file is None, width="stretch"):
-                try:
-                    _upload(repo, part_id, dtype, file); save_success_popup(f"{label} uploaded successfully.", queue_for_rerun=True); st.rerun()
-                except Exception as exc:
-                    st.error(str(exc))
+            with st.container(border=True, key=f"controlled_drawing_{dtype}_{part_id}"):
+                st.markdown(f"**{label}**")
+                if current:
+                    st.caption(
+                        f"ACTIVE · Drawing {current.get('drawing_number') or '-'} · "
+                        f"Rev {current.get('revision') or '-'} · {current.get('revision_date') or '-'}"
+                    )
+                    try:
+                        st.download_button(
+                            "Download Current",
+                            data=drawing_service.download(current),
+                            file_name=str(current.get("file_name") or f"{dtype}.pdf"),
+                            mime=str(current.get("mime_type") or "application/octet-stream"),
+                            key=f"download_current_{dtype}_{current.get('id')}",
+                            width="stretch",
+                        )
+                    except Exception as exc:
+                        st.caption(f"Current file unavailable: {exc}")
+                else:
+                    st.caption("No ACTIVE controlled drawing")
+
+                default_drawing_no = str(current.get("drawing_number") or (existing.get("drawing_number") if dtype == "FINISH_DRAWING" else "") or "")
+                drawing_no = st.text_input(
+                    "Drawing Number",
+                    value=default_drawing_no,
+                    key=f"drawing_no_{dtype}_{part_id}",
+                    disabled=not writable,
+                )
+                revision_no = st.text_input(
+                    "Revision Number",
+                    value="",
+                    key=f"drawing_rev_{dtype}_{part_id}",
+                    disabled=not writable,
+                )
+                revision_dt = st.date_input(
+                    "Revision Date",
+                    value=date.today(),
+                    key=f"drawing_rev_date_{dtype}_{part_id}",
+                    disabled=not writable,
+                )
+                file = st.file_uploader(
+                    "Controlled Drawing File",
+                    type=["pdf", "png", "jpg", "jpeg", "dwg", "dxf"],
+                    key=f"draw_{dtype}_{part_id}",
+                    disabled=not writable,
+                )
+                if st.button(
+                    f"Release New {label} Revision",
+                    key=f"up_{dtype}_{part_id}",
+                    disabled=not writable or file is None or not drawing_no.strip() or not revision_no.strip(),
+                    width="stretch",
+                ):
+                    try:
+                        _save_drawing_revision(repo, part_id, dtype, drawing_no, revision_no, revision_dt, file)
+                        save_success_popup(
+                            f"{label} {drawing_no} Rev {revision_no} released. Previous revision is now INACTIVE.",
+                            queue_for_rerun=True,
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(str(exc))
+
+    section_bar("DRAWING REVISION HISTORY", "All released drawings remain traceable. Only the latest revision for each drawing type is ACTIVE.")
+    if not drawing_rows:
+        st.info("No controlled drawing revisions have been released for this Part yet.")
+    else:
+        history_df = pd.DataFrame([
+            {
+                "Drawing Type": dict(DRAWING_TYPES).get(str(row.get("document_type")), str(row.get("document_type") or "")),
+                "Drawing Number": row.get("drawing_number") or "",
+                "Revision Number": row.get("revision") or "",
+                "Revision Date": row.get("revision_date") or "",
+                "Status": str(row.get("status") or "").upper(),
+                "File": row.get("file_name") or "",
+                "Released At": row.get("created_at") or "",
+                "Superseded At": row.get("superseded_at") or "",
+            }
+            for row in drawing_rows
+        ])
+        st.dataframe(history_df, hide_index=True, width="stretch")
+        history_map = {str(row["id"]): _drawing_label(row) for row in drawing_rows}
+        selected_drawing_id = st.selectbox(
+            "Select Drawing Revision to Download",
+            list(history_map),
+            format_func=lambda value: history_map[value],
+            key=f"drawing_history_select_{part_id}",
+        )
+        selected_drawing = next(row for row in drawing_rows if str(row.get("id")) == selected_drawing_id)
+        try:
+            st.download_button(
+                "Download Selected Drawing Revision",
+                data=drawing_service.download(selected_drawing),
+                file_name=str(selected_drawing.get("file_name") or "controlled_drawing"),
+                mime=str(selected_drawing.get("mime_type") or "application/octet-stream"),
+                key=f"drawing_history_download_{selected_drawing_id}",
+                width="stretch",
+            )
+        except Exception as exc:
+            st.error(f"Drawing download unavailable: {exc}")
 
     # Customer Standards / Specifications linked to this Part Master.
     section_bar("CUSTOMER STANDARDS & SPECIFICATIONS", "Link multiple customer/process standards to this Part. Controlled attachments can be downloaded directly from the Part Master.")

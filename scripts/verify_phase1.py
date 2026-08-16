@@ -262,8 +262,19 @@ if "4112-EXPORT-SHELL" not in auth_text:
 if "QUALITY CONTROL<br>MONITORING SYSTEM" not in ui_text or "render_app_launcher(app_registry())" in ui_text.split("def render_shell_header",1)[1].split("def render_side_navigation",1)[0]:
     errors.append("QCMS 4.11.2 standalone header structure is incomplete")
 
+# QCMS 4.11.3 controlled drawing revision history contract.
+part_master_text = (ROOT / "app_pages/part_master.py").read_text(encoding="utf-8")
+drawing_migration_text = (ROOT / "supabase/migrations/20260814102000_qcms_controlled_drawing_revision_history_v4113.sql").read_text(encoding="utf-8")
+for token in ("DRAWING REVISION HISTORY", "Drawing Number", "Revision Number", "Revision Date", "qcms_activate_part_drawing_revision", "INACTIVE"):
+    if token not in part_master_text and token not in drawing_migration_text:
+        errors.append(f"QCMS 4.11.3 controlled drawing token missing: {token}")
+if "4113-DRAWING-HISTORY" not in ui_text or "4113-DRAWING-HISTORY" not in auth_text:
+    errors.append("QCMS 4.11.3 build fingerprint is missing")
+if "superseded_at" not in drawing_migration_text or "ux_document_attachments_one_active_part_drawing" not in drawing_migration_text:
+    errors.append("QCMS 4.11.3 drawing revision history database controls are incomplete")
+
 report = {
-    "release": "QCMS 4.11.2 Export Shipment header/module shell and central Records",
+    "release": "QCMS 4.11.3 controlled drawing revision history with Export Shipment shell",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -281,6 +292,8 @@ report = {
     "minimal_metallic_ui": True,
     "zoho_visible_shell": True,
     "export_shipment_shell": True,
+    "controlled_drawing_revision_history": True,
+    "drawing_old_revisions_inactive": True,
     "template_centre": True,
     "jominy_inch_to_mm": True,
     "reusable_grid_lists": True,

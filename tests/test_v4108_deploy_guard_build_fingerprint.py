@@ -10,4 +10,4 @@ def test_build_fingerprint_visible():
     assert "Detailed RCA/CAPA workflow" in complaints
 
 def test_version_4108():
-    assert Path("VERSION").read_text().strip() in {"4.10.9", "4.11.0", "4.11.1", "4.11.2"}
+    assert Path("VERSION").read_text().strip() in {"4.10.9", "4.11.0", "4.11.1", "4.11.2", "4.11.3"}

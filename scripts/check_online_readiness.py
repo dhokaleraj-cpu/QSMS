@@ -83,11 +83,14 @@ required = [
     "tests/test_v4110_records_minimal_ui.py",
     "docs/RELEASE_4_11_2.md",
     "tests/test_v4112_export_shipment_shell.py",
+    "docs/RELEASE_4_11_3.md",
+    "tests/test_v4113_controlled_drawing_history.py",
+    "supabase/migrations/20260814102000_qcms_controlled_drawing_revision_history_v4113.sql",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.11.2 - Export Shipment header/module shell and central Records",
+    "phase": "QCMS 4.11.3 - Controlled Drawing revision history and Export Shipment shell",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),
