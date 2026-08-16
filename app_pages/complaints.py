@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any, Mapping
 
 import pandas as pd
 import streamlit as st
 
 from core.access import current_permissions
-from core.attachments import AttachmentService, AttachmentSlot, render_attachment_manager
+from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, AttachmentSlot, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes
 from core.repository import Repository
@@ -27,6 +28,10 @@ COMPLAINT_ATTACHMENT_SLOTS = (
     AttachmentSlot("ANALYSIS_EVIDENCE", "Analysis Evidence", "Photos, measurements, 5-Why/Fishbone evidence or supporting data"),
     AttachmentSlot("CLOSURE_REPORT", "8D / Closure Report", "Final 8D, corrective-action report or closure evidence"),
 )
+
+COMPLAINT_PHOTO_TYPE = "COMPLAINT_PHOTO"
+COMPLAINT_MULTI_ATTACHMENT_TYPE = "COMPLAINT_ATTACHMENT"
+COMPLAINT_PHOTO_EXTENSIONS = ["png", "jpg", "jpeg", "webp"]
 
 
 def _as_date(value: Any, fallback: date | None = None) -> date:
@@ -128,6 +133,229 @@ def _closure_readiness(complaint: Mapping[str, Any], actions: list[Mapping[str, 
 
 
 
+def _complaint_media_rows(repo: Repository, complaint_id: str) -> list[dict]:
+    rows = repo.select(
+        "document_attachments",
+        eq={"entity_type": "QUALITY_COMPLAINT", "entity_id": complaint_id, "status": "ACTIVE"},
+        order_by="created_at",
+        desc=True,
+        limit=250,
+    )
+    return [
+        row for row in rows
+        if str(row.get("document_type") or "") in {COMPLAINT_PHOTO_TYPE, COMPLAINT_MULTI_ATTACHMENT_TYPE}
+    ]
+
+
+def _media_title(row: Mapping[str, Any]) -> str:
+    return str(row.get("document_title") or row.get("file_name") or "Attachment").strip()
+
+
+def _render_media_delete(
+    service: AttachmentService,
+    row: Mapping[str, Any],
+    complaint_id: str,
+    *,
+    can_delete: bool,
+    key_prefix: str,
+) -> None:
+    if not can_delete:
+        return
+    with st.expander("Delete", expanded=False):
+        password = st.text_input(
+            "Current QCMS password",
+            type="password",
+            key=f"{key_prefix}_password_{row.get('id')}",
+        )
+        confirm = st.checkbox(
+            "Permanently delete this file",
+            key=f"{key_prefix}_confirm_{row.get('id')}",
+        )
+        if st.button(
+            "Delete file",
+            type="primary",
+            width="stretch",
+            key=f"{key_prefix}_button_{row.get('id')}",
+            disabled=not password or not confirm,
+        ):
+            try:
+                service.delete(
+                    attachment=row,
+                    entity_id=complaint_id,
+                    slot=AttachmentSlot(str(row.get("document_type") or "COMPLAINT_ATTACHMENT"), _media_title(row)),
+                    password=password,
+                )
+                save_success_popup("Complaint file deleted successfully.", queue_for_rerun=True)
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+
+def _render_complaint_media(
+    repo: Repository,
+    complaint: Mapping[str, Any],
+    perms: Mapping[str, bool],
+    *,
+    allow_upload: bool = True,
+    title: str = "PHOTOGRAPHS & MULTIPLE ATTACHMENTS",
+) -> None:
+    complaint_id = str(complaint.get("id") or "")
+    if not complaint_id:
+        return
+    section_bar(title)
+    st.caption(
+        "Photographs are stored with a mandatory title. Supporting documents are repeatable: upload one or many files without replacing earlier complaint evidence."
+    )
+    service = AttachmentService(repo)
+
+    if allow_upload and perms.get("can_edit"):
+        photo_col, attachment_col = st.columns(2, gap="small")
+        with photo_col:
+            with st.container(border=True, key=f"complaint_photo_upload_{complaint_id}"):
+                st.markdown("**Add Photograph**")
+                photo_title = st.text_input(
+                    "Photograph Title",
+                    key=f"complaint_photo_title_{complaint_id}",
+                    placeholder="e.g. Damaged spline at receipt",
+                )
+                photo_file = st.file_uploader(
+                    "Photograph",
+                    type=COMPLAINT_PHOTO_EXTENSIONS,
+                    key=f"complaint_photo_file_{complaint_id}",
+                )
+                if photo_file is not None:
+                    st.image(photo_file, caption=photo_title.strip() or str(photo_file.name), width="stretch")
+                if st.button(
+                    "Add Photograph",
+                    type="primary",
+                    width="stretch",
+                    key=f"complaint_photo_add_{complaint_id}",
+                    disabled=photo_file is None,
+                ):
+                    if not photo_title.strip():
+                        st.error("Photograph Title is mandatory.")
+                    else:
+                        try:
+                            service.upload_additional(
+                                entity_type="QUALITY_COMPLAINT",
+                                entity_id=complaint_id,
+                                folder="complaints",
+                                document_type=COMPLAINT_PHOTO_TYPE,
+                                title=photo_title.strip(),
+                                file=photo_file,
+                            )
+                            save_success_popup("Complaint photograph added successfully.", queue_for_rerun=True)
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(str(exc))
+
+        with attachment_col:
+            with st.container(border=True, key=f"complaint_multi_attachment_upload_{complaint_id}"):
+                st.markdown("**Add Supporting Attachments**")
+                attachment_title = st.text_input(
+                    "Attachment Title / Group",
+                    key=f"complaint_attachment_title_{complaint_id}",
+                    placeholder="Optional; file name is used when blank",
+                )
+                attachment_files = st.file_uploader(
+                    "Select one or multiple files",
+                    type=ALLOWED_ATTACHMENT_TYPES,
+                    accept_multiple_files=True,
+                    key=f"complaint_attachment_files_{complaint_id}",
+                )
+                if attachment_files:
+                    st.caption(f"{len(attachment_files)} file(s) selected")
+                if st.button(
+                    "Add Selected Attachments",
+                    type="primary",
+                    width="stretch",
+                    key=f"complaint_attachment_add_{complaint_id}",
+                    disabled=not attachment_files,
+                ):
+                    errors: list[str] = []
+                    added = 0
+                    for file in attachment_files or []:
+                        base_title = attachment_title.strip()
+                        file_title = Path(str(file.name)).stem or str(file.name)
+                        if base_title and len(attachment_files) == 1:
+                            final_title = base_title
+                        elif base_title:
+                            final_title = f"{base_title} · {file_title}"
+                        else:
+                            final_title = file_title
+                        try:
+                            service.upload_additional(
+                                entity_type="QUALITY_COMPLAINT",
+                                entity_id=complaint_id,
+                                folder="complaints",
+                                document_type=COMPLAINT_MULTI_ATTACHMENT_TYPE,
+                                title=final_title,
+                                file=file,
+                            )
+                            added += 1
+                        except Exception as exc:
+                            errors.append(f"{file.name}: {exc}")
+                    if errors:
+                        st.error("Some attachments could not be added: " + " | ".join(errors))
+                    if added:
+                        save_success_popup(f"{added} complaint attachment(s) added successfully.", queue_for_rerun=True)
+                        st.rerun()
+
+    rows = _complaint_media_rows(repo, complaint_id)
+    photos = [row for row in rows if str(row.get("document_type")) == COMPLAINT_PHOTO_TYPE]
+    attachments = [row for row in rows if str(row.get("document_type")) == COMPLAINT_MULTI_ATTACHMENT_TYPE]
+
+    st.markdown(f"**Photograph Register ({len(photos)})**")
+    if not photos:
+        st.caption("No complaint photographs uploaded yet.")
+    else:
+        photo_cols = st.columns(3, gap="small")
+        for index, row in enumerate(photos):
+            with photo_cols[index % 3]:
+                with st.container(border=True, key=f"complaint_photo_card_{row.get('id')}"):
+                    st.markdown(f"**{_media_title(row)}**")
+                    try:
+                        photo_bytes = service.download(row)
+                        st.image(photo_bytes, caption=str(row.get("file_name") or "Photograph"), width="stretch")
+                        st.download_button(
+                            "Download Photograph",
+                            data=photo_bytes,
+                            file_name=str(row.get("file_name") or "complaint_photo"),
+                            mime=str(row.get("mime_type") or "application/octet-stream"),
+                            width="stretch",
+                            key=f"complaint_photo_download_{row.get('id')}",
+                        )
+                    except Exception as exc:
+                        st.error(f"Photograph unavailable: {exc}")
+                    st.caption(f"Uploaded: {str(row.get('created_at') or '')[:16] or '-'}")
+                    _render_media_delete(service, row, complaint_id, can_delete=bool(perms.get("can_archive")), key_prefix="delete_complaint_photo")
+
+    st.markdown(f"**Attachment Register ({len(attachments)})**")
+    if not attachments:
+        st.caption("No additional complaint attachments uploaded yet.")
+    else:
+        for row in attachments:
+            with st.container(border=True, key=f"complaint_attachment_row_{row.get('id')}"):
+                c1, c2, c3 = st.columns([2.0, 1.4, 1.0], gap="small", vertical_alignment="center")
+                c1.markdown(f"**{_media_title(row)}**")
+                c1.caption(str(row.get("file_name") or "Attachment"))
+                c2.caption(f"Uploaded {str(row.get('created_at') or '')[:16] or '-'}")
+                try:
+                    file_bytes = service.download(row)
+                    c3.download_button(
+                        "Download",
+                        data=file_bytes,
+                        file_name=str(row.get("file_name") or "complaint_attachment"),
+                        mime=str(row.get("mime_type") or "application/octet-stream"),
+                        width="stretch",
+                        key=f"complaint_attachment_download_{row.get('id')}",
+                    )
+                except Exception as exc:
+                    c3.error(str(exc))
+                _render_media_delete(service, row, complaint_id, can_delete=bool(perms.get("can_archive")), key_prefix="delete_complaint_attachment")
+
+
+
 def _complaint_pdf(repo: Repository, complaint: Mapping[str, Any]) -> bytes:
     parties = {str(row["id"]): row for row in repo.select("parties", limit=5000)}
     parts = {str(row["id"]): row for row in repo.select("parts", limit=5000)}
@@ -135,6 +363,7 @@ def _complaint_pdf(repo: Repository, complaint: Mapping[str, Any]) -> bytes:
     processes = {str(row["id"]): row for row in repo.select("processes", limit=5000)}
     followups = repo.select("quality_complaint_followups", eq={"complaint_id": complaint.get("id")}, order_by="followup_date", limit=5000)
     actions = repo.select("quality_complaint_actions", eq={"complaint_id": complaint.get("id")}, order_by="action_no", limit=5000)
+    complaint_media = _complaint_media_rows(repo, str(complaint.get("id") or ""))
     party = parties.get(str(complaint.get("party_id"))) or {}
     part = parts.get(str(complaint.get("part_id"))) or {}
     process = processes.get(str(complaint.get("process_id"))) or {}
@@ -238,6 +467,15 @@ def _complaint_pdf(repo: Repository, complaint: Mapping[str, Any]) -> bytes:
             "Settled Date": complaint.get("debit_note_settled_date") or "-",
             "Commercial Remarks": complaint.get("commercial_remarks") or "-",
         },
+        "PHOTOGRAPHS & ATTACHMENTS REGISTER": [
+            {
+                "Type": "Photograph" if str(row.get("document_type")) == COMPLAINT_PHOTO_TYPE else "Attachment",
+                "Title": _media_title(row),
+                "File Name": row.get("file_name") or "-",
+                "Uploaded At": str(row.get("created_at") or "")[:16] or "-",
+            }
+            for row in complaint_media
+        ],
         "FOLLOW-UP HISTORY": [
             {
                 "Date": row.get("followup_date"),
@@ -447,6 +685,7 @@ def _render_entry(complaint_type: str) -> None:
         analysis_page = (st.session_state.get("_qsms_pages") or {}).get("complaint-analysis")
         if analysis_page is not None and st.button("Open Detailed Complaint Analysis & CAPA", type="primary", width="stretch", key=f"open_analysis_{complaint_type}_{selected_id}"):
             st.switch_page(analysis_page)
+        _render_complaint_media(repo, existing, perms, allow_upload=True)
         _render_followups(repo, existing, employees, employee_labels, perms)
         section_bar("PRINT / DELETE")
         pdf = _complaint_pdf(repo, existing)
@@ -697,11 +936,16 @@ def render_analysis() -> None:
         if password_delete_panel(repo=repo, table="quality_complaint_actions", rows=actions, labeler=lambda row: f"A{int(row.get('action_no') or 0):02d} · {str(row.get('action_type') or '').replace('_',' ').title()} · {str(row.get('action_description') or '')[:75]}", key=f"delete_action_{complaint_id}", can_delete=perms["can_archive"], title="Delete Selected Action Plan Item", help_text="Permanent deletion requires your current QCMS password."):
             st.rerun()
 
+    _render_complaint_media(
+        repo, complaint, perms, allow_upload=False,
+        title="6A. COMPLAINT ENTRY PHOTOGRAPHS & MULTIPLE ATTACHMENTS",
+    )
+
     render_attachment_manager(
         repo=repo, entity_type="QUALITY_COMPLAINT", entity_id=complaint_id, folder="complaints",
         slots=COMPLAINT_ATTACHMENT_SLOTS, key_prefix=f"complaint_{complaint_id}",
         can_add_or_replace=perms["can_edit"], can_delete=perms["can_archive"],
-        title="6. COMPLAINT / ANALYSIS / CLOSURE ATTACHMENTS",
+        title="6B. ANALYSIS / CLOSURE CONTROLLED ATTACHMENTS",
     )
 
     section_bar("7. FINAL CLOSURE & APPROVAL")

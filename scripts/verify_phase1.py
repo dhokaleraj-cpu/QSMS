@@ -268,13 +268,31 @@ drawing_migration_text = (ROOT / "supabase/migrations/20260814102000_qcms_contro
 for token in ("DRAWING REVISION HISTORY", "Drawing Number", "Revision Number", "Revision Date", "qcms_activate_part_drawing_revision", "INACTIVE"):
     if token not in part_master_text and token not in drawing_migration_text:
         errors.append(f"QCMS 4.11.3 controlled drawing token missing: {token}")
-if "4113-DRAWING-HISTORY" not in ui_text or "4113-DRAWING-HISTORY" not in auth_text:
-    errors.append("QCMS 4.11.3 build fingerprint is missing")
+if "DRAWING REVISION HISTORY" not in part_master_text:
+    errors.append("QCMS 4.11.3 drawing-history UI is missing")
 if "superseded_at" not in drawing_migration_text or "ux_document_attachments_one_active_part_drawing" not in drawing_migration_text:
     errors.append("QCMS 4.11.3 drawing revision history database controls are incomplete")
 
+
+# QCMS 4.11.4 complaint media + header action separation contract.
+complaints_text = (ROOT / "app_pages/complaints.py").read_text(encoding="utf-8")
+attachments_text = (ROOT / "core/attachments.py").read_text(encoding="utf-8")
+complaint_media_migration = (ROOT / "supabase/migrations/20260816160000_qcms_complaint_media_v4114.sql").read_text(encoding="utf-8")
+for token in ("Photograph Title", "accept_multiple_files=True", "COMPLAINT_PHOTO", "COMPLAINT_ATTACHMENT", "PHOTOGRAPHS & MULTIPLE ATTACHMENTS"):
+    if token not in complaints_text:
+        errors.append(f"QCMS 4.11.4 complaint media token missing: {token}")
+if "upload_additional" not in attachments_text or "document_title" not in attachments_text:
+    errors.append("QCMS 4.11.4 append-only attachment service is incomplete")
+for token in ("document_title", "COMPLAINT_MANAGEMENT", "complaints", "idx_document_attachments_complaint_media"):
+    if token not in complaint_media_migration:
+        errors.append(f"QCMS 4.11.4 complaint media migration token missing: {token}")
+if "fsi_header_actions" not in ui_text or "st.columns([2.8, 4.8, 2.25, 1.25]" not in ui_text:
+    errors.append("QCMS 4.11.4 header Account / Exit separation is missing")
+if "4114-COMPLAINT-MEDIA-HEADER-FIX" not in ui_text or "4114-COMPLAINT-MEDIA-HEADER-FIX" not in auth_text:
+    errors.append("QCMS 4.11.4 build fingerprint is missing")
+
 report = {
-    "release": "QCMS 4.11.3 controlled drawing revision history with Export Shipment shell",
+    "release": "QCMS 4.11.4 complaint media, drawing history and Export Shipment shell",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -294,6 +312,9 @@ report = {
     "export_shipment_shell": True,
     "controlled_drawing_revision_history": True,
     "drawing_old_revisions_inactive": True,
+    "complaint_titled_photographs": True,
+    "complaint_multiple_attachments": True,
+    "header_actions_non_overlapping": True,
     "template_centre": True,
     "jominy_inch_to_mm": True,
     "reusable_grid_lists": True,

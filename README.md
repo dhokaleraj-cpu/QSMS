@@ -1,4 +1,15 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.11.3
+# QUALITY CONTROL MONITORING SYSTEM 4.11.4
+
+
+## Release 4.11.4 — Complaint Media & Header Layout Fix
+
+- Customer and Supplier Complaint entries support titled photographs and repeatable multiple attachments.
+- Complaint photographs are shown as thumbnails and remain linked to the complaint record.
+- Multiple supporting documents can be uploaded in one action; each remains individually downloadable.
+- Complaint PDF includes the photo/document register.
+- Header profile, Account and Exit controls use dedicated columns/rows so they cannot overlap.
+- Existing QCMS data, drawing history, Records navigation and Export Shipment-style shell are preserved.
+- Build: `4114-COMPLAINT-MEDIA-HEADER-FIX`.
 
 Standalone QCMS release. The combined Enterprise application is not part of this release.
 

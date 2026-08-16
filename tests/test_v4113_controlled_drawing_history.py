@@ -4,9 +4,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version_and_build():
-    assert (ROOT / "VERSION").read_text().strip() == "4.11.3"
-    assert "4113-DRAWING-HISTORY" in (ROOT / "core/ui.py").read_text()
-    assert "4113-DRAWING-HISTORY" in (ROOT / "core/auth.py").read_text()
+    assert (ROOT / "VERSION").read_text().strip() in {"4.11.3", "4.11.4"}
+    assert "DRAWING REVISION HISTORY" in (ROOT / "app_pages/part_master.py").read_text()
 
 
 def test_part_master_controlled_drawing_fields_and_history():

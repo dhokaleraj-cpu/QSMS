@@ -86,11 +86,14 @@ required = [
     "docs/RELEASE_4_11_3.md",
     "tests/test_v4113_controlled_drawing_history.py",
     "supabase/migrations/20260814102000_qcms_controlled_drawing_revision_history_v4113.sql",
+    "supabase/migrations/20260816160000_qcms_complaint_media_v4114.sql",
+    "tests/test_v4114_complaint_media_header.py",
+    "docs/RELEASE_4_11_4.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.11.3 - Controlled Drawing revision history and Export Shipment shell",
+    "phase": "QCMS 4.11.4 - Complaint titled photographs, multiple attachments and header overlap fix",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

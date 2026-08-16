@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -16,7 +17,7 @@ from core.ui import section_bar
 
 ALLOWED_ATTACHMENT_TYPES = [
     "pdf", "xlsx", "xls", "docx", "doc", "csv", "txt",
-    "png", "jpg", "jpeg", "dwg", "dxf", "zip",
+    "png", "jpg", "jpeg", "webp", "dwg", "dxf", "zip",
 ]
 
 
@@ -44,7 +45,7 @@ class AttachmentService:
             "document_attachments",
             eq={"entity_type": entity_type, "entity_id": entity_id, "status": "ACTIVE"},
             order_by="created_at",
-            limit=50,
+            limit=250,
         )
 
     def _client(self):
@@ -117,6 +118,62 @@ class AttachmentService:
         if slot.parent_table and slot.parent_field:
             self.repo.update(slot.parent_table, entity_id, {slot.parent_field: object_path})
         return saved
+
+    def upload_additional(
+        self,
+        *,
+        entity_type: str,
+        entity_id: str,
+        folder: str,
+        document_type: str,
+        title: str,
+        file: Any,
+    ) -> dict:
+        """Append a uniquely stored controlled attachment without replacing earlier files."""
+        if not entity_id:
+            raise ValueError("Save the QCMS record before uploading an attachment.")
+        title = str(title or "").strip()
+        if not title:
+            raise ValueError("Attachment / Photograph Title is mandatory.")
+        content = self._bytes(file)
+        client = self._client()
+        original_name = str(getattr(file, "name", "attachment"))
+        suffix = Path(original_name).suffix.casefold() or ".bin"
+        stem = self._safe_token(Path(original_name).stem)
+        object_path = (
+            f"{self.repo.tenant_id}/{self._safe_token(folder)}/{entity_id}/"
+            f"{self._safe_token(document_type)}/{uuid.uuid4().hex[:12]}_{stem}{suffix}"
+        )
+        client.storage.from_(self.bucket).upload(
+            object_path,
+            content,
+            {
+                "content-type": getattr(file, "type", None) or "application/octet-stream",
+                "upsert": "false",
+            },
+        )
+        try:
+            return self.repo.insert(
+                "document_attachments",
+                {
+                    "entity_type": entity_type,
+                    "entity_id": entity_id,
+                    "document_type": document_type,
+                    "document_title": title,
+                    "file_name": original_name,
+                    "object_path": object_path,
+                    "mime_type": getattr(file, "type", None),
+                    "size_bytes": len(content),
+                    "checksum": hashlib.sha256(content).hexdigest(),
+                    "status": "ACTIVE",
+                },
+            )
+        except Exception:
+            try:
+                client.storage.from_(self.bucket).remove([object_path])
+            except Exception:
+                pass
+            raise
 
     def download(self, attachment: Mapping[str, Any]) -> bytes:
         path = str(attachment.get("object_path") or "").strip()

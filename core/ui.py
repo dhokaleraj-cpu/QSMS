@@ -868,11 +868,39 @@ div[data-testid="stAppViewContainer"]:has([class*="st-key-qcms_login_shell"]){
       [class*="st-key-fsi_shell"] .fsi-company-name{font-size:13px!important;}
       [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] div[data-testid="stPageLink"] a{font-size:9.3px!important;}
     }
+    /* QCMS 4.11.4 — dedicated header action rail: no profile/action overlap. */
+    [class*="st-key-fsi_header_actions"]{
+      background:transparent!important;border:0!important;box-shadow:none!important;
+      display:block!important;position:relative!important;z-index:3!important;
+    }
+    [class*="st-key-fsi_header_actions"]>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_header_actions"] div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:transparent!important;border:0!important;padding:0!important;margin:0!important;box-shadow:none!important;
+      display:flex!important;flex-direction:column!important;gap:6px!important;overflow:visible!important;
+    }
+    [class*="st-key-fsi_header_actions"] div[data-testid="stPageLink"],
+    [class*="st-key-fsi_header_actions"] .stButton{margin:0!important;padding:0!important;}
+    [class*="st-key-fsi_header_actions"] div[data-testid="stPageLink"] a,
+    [class*="st-key-fsi_header_actions"] .stButton>button{
+      width:100%!important;min-height:32px!important;margin:0!important;padding:.28rem .42rem!important;
+      border-radius:8px!important;background:rgba(255,255,255,.16)!important;
+      border:1px solid rgba(255,255,255,.42)!important;color:#FFFFFF!important;font-size:8.8px!important;font-weight:850!important;
+      display:flex!important;align-items:center!important;justify-content:center!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_header_actions"] div[data-testid="stPageLink"] a *,
+    [class*="st-key-fsi_header_actions"] .stButton>button *{color:#FFFFFF!important;fill:#FFFFFF!important;}
+    [class*="st-key-fsi_shell"] .fsi-user{min-height:66px!important;display:flex!important;flex-direction:column!important;justify-content:center!important;}
+
+    @media(max-width:980px){
+      [class*="st-key-fsi_header_actions"] div[data-testid="stPageLink"] a,
+      [class*="st-key-fsi_header_actions"] .stButton>button{font-size:8px!important;padding:.22rem .28rem!important;}
+    }
     @media(max-width:760px){
       .block-container{padding:.45rem .35rem .8rem!important;}
       [class*="st-key-fsi_shell"] .fsi-company-sub{display:none!important;}
       [class*="st-key-fsi_shell"] .fsi-header-title{font-size:15px!important;}
       [class*="st-key-fsi_shell"] .fsi-user{display:none!important;}
+      [class*="st-key-fsi_header_actions"]{display:none!important;}
       .st-key-fsi_top_nav div[data-testid="stHorizontalBlock"]{flex-wrap:wrap!important;}
       .fsi-top-menu-title{padding:.55rem .65rem!important;}
     }
@@ -897,7 +925,9 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
     uri = logo_data_uri()
     logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
     with st.container(border=True, key="fsi_shell"):
-        c1, c2, c3 = st.columns([3.0, 5.0, 2.55], vertical_alignment="center")
+        # QCMS 4.11.4: user information and actions use separate columns so
+        # Account / Exit can never overlap the profile card at desktop widths.
+        c1, c2, c3, c4 = st.columns([2.8, 4.8, 2.25, 1.25], vertical_alignment="center")
         with c1:
             st.markdown(
                 f'<div class="fsi-company-block"><div class="fsi-logo-card">{logo}</div>'
@@ -908,7 +938,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4113-DRAWING-HISTORY</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4114-COMPLAINT-MEDIA-HEADER-FIX</div>',
                 unsafe_allow_html=True,
             )
         with c3:
@@ -919,12 +949,11 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
                 f'<span class="fsi-user-pill">v{safe(s.version)}</span><span class="fsi-user-pill">{now.strftime("%d-%m-%Y %H:%M")}</span></div></div>',
                 unsafe_allow_html=True,
             )
-            account, exit_col = st.columns([1.0, 1.0], gap="small")
-            with account:
+        with c4:
+            with st.container(key="fsi_header_actions"):
                 account_page = (st.session_state.get("_qsms_pages") or {}).get("my-account")
                 if account_page is not None:
-                    st.page_link(account_page, label="Account", width="stretch")
-            with exit_col:
+                    st.page_link(account_page, label="Account", icon=":material/manage_accounts:", width="stretch")
                 if st.button("Exit", key="fsi_signout", width="stretch"):
                     return True
     return False
