@@ -4,9 +4,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_v4116_release_and_build():
-    assert (ROOT / "VERSION").read_text().strip() == "4.11.6"
-    assert "4116-COMPLAINT-SECTION-COLORS" in (ROOT / "core/ui.py").read_text()
-    assert "4116-COMPLAINT-SECTION-COLORS" in (ROOT / "core/auth.py").read_text()
+    assert (ROOT / "VERSION").read_text().strip() in {"4.11.6", "4.11.7"}
+    assert any(marker in (ROOT / "core/ui.py").read_text() for marker in ("4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS"))
+    assert any(marker in (ROOT / "core/auth.py").read_text() for marker in ("4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS"))
 
 
 def test_customer_complaint_has_five_distinct_visible_section_palettes():

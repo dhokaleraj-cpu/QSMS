@@ -977,7 +977,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4116-COMPLAINT-SECTION-COLORS</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4117-COMPLAINT-STAGE-EXPANDERS</div>',
                 unsafe_allow_html=True,
             )
         with c3:

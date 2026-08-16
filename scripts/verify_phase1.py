@@ -288,7 +288,7 @@ for token in ("document_title", "COMPLAINT_MANAGEMENT", "complaints", "idx_docum
         errors.append(f"QCMS 4.11.4 complaint media migration token missing: {token}")
 if not (("fsi_header_actions" in ui_text and "st.columns([2.8, 4.8, 2.25, 1.25]" in ui_text) or ("fsi_header_actions_row" in ui_text and "st.columns([3.0, 5.4, 3.2]" in ui_text)):
     errors.append("QCMS 4.11.4+ header Account / Exit separation is missing")
-if not any(marker in ui_text and marker in auth_text for marker in ("4114-COMPLAINT-MEDIA-HEADER-FIX", "4116-COMPLAINT-SECTION-COLORS")):
+if not any(marker in ui_text and marker in auth_text for marker in ("4114-COMPLAINT-MEDIA-HEADER-FIX", "4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS")):
     errors.append("QCMS complaint media/header build fingerprint is missing")
 
 
@@ -298,11 +298,25 @@ for token in ("_stage_new_complaint_media", "_upload_staged_complaint_media", "c
         errors.append(f"QCMS 4.11.6 complaint evidence/section token missing: {token}")
 if "fsi_header_actions_row" not in ui_text or "st.columns([3.0, 5.4, 3.2]" not in ui_text or "a1, a2 = st.columns(2" not in ui_text:
     errors.append("QCMS 4.11.6 non-overlapping profile/action header grid is missing")
-if "4116-COMPLAINT-SECTION-COLORS" not in ui_text or "4116-COMPLAINT-SECTION-COLORS" not in auth_text:
-    errors.append("QCMS 4.11.6 build fingerprint is missing")
+if not any(marker in ui_text and marker in auth_text for marker in ("4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS")):
+    errors.append("QCMS 4.11.6+ complaint build fingerprint is missing")
+
+# QCMS 4.11.7 staged collapsible complaint workflow.
+for token in (
+    'st.expander("A - COMPLAINT DETAILS", expanded=True)',
+    'st.expander("B - RESPONSIBILITY", expanded=False)',
+    'st.expander("C - PHOTOGRAPHS & MULTIPLE ATTACHMENTS", expanded=False)',
+    'st.expander("D - CONTAINMENT / ROOT CAUSE / CORRECTIVE ACTION", expanded=False)',
+    'st.expander("E - DEBIT NOTE / COMMERCIAL SETTLEMENT", expanded=False)',
+    'font-size:26px!important', 'font-weight:900!important', 'min-height:64px!important',
+):
+    if token not in complaints_text:
+        errors.append(f"QCMS 4.11.7 complaint stage token missing: {token}")
+if "4117-COMPLAINT-STAGE-EXPANDERS" not in ui_text or "4117-COMPLAINT-STAGE-EXPANDERS" not in auth_text:
+    errors.append("QCMS 4.11.7 build fingerprint is missing")
 
 report = {
-    "release": "QCMS 4.11.6 high-visibility complaint section grading, drawing history and Export Shipment shell",
+    "release": "QCMS 4.11.7 collapsible A-to-E complaint stages, drawing history and Export Shipment shell",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -325,6 +339,8 @@ report = {
     "complaint_titled_photographs": True,
     "complaint_entry_evidence_visible_before_first_save": True,
     "complaint_section_color_grading": True,
+    "complaint_collapsible_stage_sequence": True,
+    "complaint_stage_titles_100pct_larger": True,
     "header_profile_action_grid": True,
     "complaint_multiple_attachments": True,
     "header_actions_non_overlapping": True,

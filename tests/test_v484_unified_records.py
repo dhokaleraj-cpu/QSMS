@@ -3,7 +3,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 
 def test_v484_version_and_migration():
-    assert (ROOT/'VERSION').read_text().strip() in {'4.8.4','4.8.5','4.8.6','4.8.7','4.8.8','4.9.0','4.9.1','4.9.2','4.9.3','4.9.4','4.9.5','4.9.6','4.9.7','4.9.8', '4.9.9','4.10.0','4.10.1','4.10.2','4.10.3','4.10.5','4.10.6','4.10.7','4.10.8','4.10.9','4.11.0','4.11.1','4.11.2','4.11.3','4.11.4','4.11.5','4.11.6'}
+    assert (ROOT/'VERSION').read_text().strip() in {'4.8.4','4.8.5','4.8.6','4.8.7','4.8.8','4.9.0','4.9.1','4.9.2','4.9.3','4.9.4','4.9.5','4.9.6','4.9.7','4.9.8', '4.9.9','4.10.0','4.10.1','4.10.2','4.10.3','4.10.5','4.10.6','4.10.7','4.10.8','4.10.9','4.11.0','4.11.1','4.11.2','4.11.3','4.11.4','4.11.5','4.11.6','4.11.7'}
     sql=(ROOT/'supabase/migrations/20260802193000_qsms_unified_records_v484.sql').read_text()
     for token in ['v_qsms_inward_register','supplier_name','part_number','dimensional_report_disposition','metlab_report_disposition']:
         assert token in sql

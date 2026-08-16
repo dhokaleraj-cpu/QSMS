@@ -1,4 +1,14 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.11.6
+# QUALITY CONTROL MONITORING SYSTEM 4.11.7
+
+## Release 4.11.7 — Collapsible A→E Complaint Stage Workflow
+- Customer Complaint and Supplier Complaint now use five expandable stages: A Complaint Details, B Responsibility, C Photographs & Multiple Attachments, D Containment / Root Cause / Corrective Action, and E Debit Note / Commercial Settlement.
+- Stage header text is 26px and 900-weight bold, approximately 100% larger than the historic 13px section title.
+- Stage A opens by default; stages B–E stay collapsed until selected, reducing page height and improving focus.
+- Existing Customer and Supplier color grading is preserved on each expandable stage.
+- Titled photographs, multiple attachments, drawing revision history, centralized Records navigation and Export Shipment-style shell remain unchanged.
+- No database migration or data reset is required.
+- Build: `4117-COMPLAINT-STAGE-EXPANDERS`.
+
 
 ## Release 4.11.6 — High-Visibility Complaint Section Color Grading
 - Customer Complaint and Supplier Complaint now use clearly different pastel backgrounds for Complaint Details, Responsibility, Photographs & Multiple Attachments, Containment / Root Cause / Corrective Action, and Debit Note / Commercial Settlement.
