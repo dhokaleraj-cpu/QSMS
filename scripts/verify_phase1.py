@@ -286,13 +286,23 @@ if "upload_additional" not in attachments_text or "document_title" not in attach
 for token in ("document_title", "COMPLAINT_MANAGEMENT", "complaints", "idx_document_attachments_complaint_media"):
     if token not in complaint_media_migration:
         errors.append(f"QCMS 4.11.4 complaint media migration token missing: {token}")
-if "fsi_header_actions" not in ui_text or "st.columns([2.8, 4.8, 2.25, 1.25]" not in ui_text:
-    errors.append("QCMS 4.11.4 header Account / Exit separation is missing")
-if "4114-COMPLAINT-MEDIA-HEADER-FIX" not in ui_text or "4114-COMPLAINT-MEDIA-HEADER-FIX" not in auth_text:
-    errors.append("QCMS 4.11.4 build fingerprint is missing")
+if not (("fsi_header_actions" in ui_text and "st.columns([2.8, 4.8, 2.25, 1.25]" in ui_text) or ("fsi_header_actions_row" in ui_text and "st.columns([3.0, 5.4, 3.2]" in ui_text)):
+    errors.append("QCMS 4.11.4+ header Account / Exit separation is missing")
+if not any(marker in ui_text and marker in auth_text for marker in ("4114-COMPLAINT-MEDIA-HEADER-FIX", "4115-COMPLAINT-EVIDENCE-HEADER-GRID")):
+    errors.append("QCMS complaint media/header build fingerprint is missing")
+
+
+# QCMS 4.11.5 complaint evidence visibility, section grading and fixed header grid.
+for token in ("_stage_new_complaint_media", "_upload_staged_complaint_media", "complaint_customer_details", "complaint_supplier_details", "Add Selected Photographs"):
+    if token not in complaints_text:
+        errors.append(f"QCMS 4.11.5 complaint evidence/section token missing: {token}")
+if "fsi_header_actions_row" not in ui_text or "st.columns([3.0, 5.4, 3.2]" not in ui_text or "a1, a2 = st.columns(2" not in ui_text:
+    errors.append("QCMS 4.11.5 non-overlapping profile/action header grid is missing")
+if "4115-COMPLAINT-EVIDENCE-HEADER-GRID" not in ui_text or "4115-COMPLAINT-EVIDENCE-HEADER-GRID" not in auth_text:
+    errors.append("QCMS 4.11.5 build fingerprint is missing")
 
 report = {
-    "release": "QCMS 4.11.4 complaint media, drawing history and Export Shipment shell",
+    "release": "QCMS 4.11.5 complaint evidence, section grading, drawing history and Export Shipment shell",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -313,6 +323,9 @@ report = {
     "controlled_drawing_revision_history": True,
     "drawing_old_revisions_inactive": True,
     "complaint_titled_photographs": True,
+    "complaint_entry_evidence_visible_before_first_save": True,
+    "complaint_section_color_grading": True,
+    "header_profile_action_grid": True,
     "complaint_multiple_attachments": True,
     "header_actions_non_overlapping": True,
     "template_centre": True,

@@ -1,4 +1,17 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.11.4
+# QUALITY CONTROL MONITORING SYSTEM 4.11.5
+
+
+## Release 4.11.5 — Complaint Evidence Visibility, Section Grading & Header Grid
+
+- Fixes Account / Exit overlap by placing the QCMS profile card and a separate horizontal Account / Exit row in the same dedicated right-side header zone.
+- Customer Complaint and Supplier Complaint Entry always show the Photographs & Multiple Attachments section.
+- New complaints may select multiple photographs before the first Save; every photograph receives its own mandatory title and is uploaded after the complaint record is created.
+- Existing complaints support multiple titled photographs and multiple supporting attachments without overwriting earlier evidence.
+- Customer Complaint sections use blue / teal / violet / amber / rose / green low-saturation grades.
+- Supplier Complaint sections use violet / green / sky / orange / steel / olive low-saturation grades.
+- Existing RCA/CAPA, complaint PDF media register, Drawing Revision History, centralized Records navigation and Export Shipment-style shell are preserved.
+- No new destructive data operation is introduced.
+- Build: `4115-COMPLAINT-EVIDENCE-HEADER-GRID`.
 
 
 ## Release 4.11.4 — Complaint Media & Header Layout Fix

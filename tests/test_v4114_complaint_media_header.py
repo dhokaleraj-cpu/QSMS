@@ -4,9 +4,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_and_build():
-    assert (ROOT / "VERSION").read_text().strip() == "4.11.4"
-    assert "4114-COMPLAINT-MEDIA-HEADER-FIX" in (ROOT / "core/ui.py").read_text()
-    assert "4114-COMPLAINT-MEDIA-HEADER-FIX" in (ROOT / "core/auth.py").read_text()
+    assert (ROOT / "VERSION").read_text().strip() in {"4.11.4", "4.11.5"}
+    assert any(marker in (ROOT / "core/ui.py").read_text() for marker in ("4114-COMPLAINT-MEDIA-HEADER-FIX", "4115-COMPLAINT-EVIDENCE-HEADER-GRID"))
+    assert any(marker in (ROOT / "core/auth.py").read_text() for marker in ("4114-COMPLAINT-MEDIA-HEADER-FIX", "4115-COMPLAINT-EVIDENCE-HEADER-GRID"))
 
 
 def test_customer_supplier_entries_have_titled_photos_and_repeatable_attachments():
@@ -24,7 +24,7 @@ def test_customer_supplier_entries_have_titled_photos_and_repeatable_attachments
         "PHOTOGRAPHS & ATTACHMENTS REGISTER",
     ):
         assert token in text
-    assert "_render_complaint_media(repo, existing, perms, allow_upload=True)" in text
+    assert "_render_complaint_media(repo, existing, perms, allow_upload=True" in text
 
 
 def test_additional_attachment_storage_is_unique_and_append_only():
@@ -54,7 +54,6 @@ def test_complaint_media_migration_is_additive_and_permission_aware():
 
 def test_header_actions_have_dedicated_non_overlapping_column():
     text = (ROOT / "core/ui.py").read_text()
-    assert "st.columns([2.8, 4.8, 2.25, 1.25]" in text
-    assert 'key="fsi_header_actions"' in text
-    assert "dedicated header action rail" in text
+    assert any(token in text for token in ("st.columns([2.8, 4.8, 2.25, 1.25]", "st.columns([3.0, 5.4, 3.2]"))
+    assert any(token in text for token in ('key="fsi_header_actions"', 'key="fsi_header_actions_row"'))
     assert 'account, exit_col = st.columns' not in text

@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version_and_migration():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.10.0", "4.10.1", "4.10.2", "4.10.3", "4.10.5", "4.10.6", "4.10.7", "4.10.8", "4.10.9", "4.11.0", "4.11.1", "4.11.2", "4.11.3", "4.11.4"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.10.0", "4.10.1", "4.10.2", "4.10.3", "4.10.5", "4.10.6", "4.10.7", "4.10.8", "4.10.9", "4.11.0", "4.11.1", "4.11.2", "4.11.3", "4.11.4", "4.11.5"}
     migration = ROOT / "supabase/migrations/20260812113000_qcms_universal_delete_account_import_print_v4100.sql"
     text = migration.read_text()
     assert "rmtc_jominy_results" in text

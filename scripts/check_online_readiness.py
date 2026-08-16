@@ -89,11 +89,13 @@ required = [
     "supabase/migrations/20260816160000_qcms_complaint_media_v4114.sql",
     "tests/test_v4114_complaint_media_header.py",
     "docs/RELEASE_4_11_4.md",
+    "tests/test_v4115_complaint_evidence_header_grid.py",
+    "docs/RELEASE_4_11_5.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.11.4 - Complaint titled photographs, multiple attachments and header overlap fix",
+    "phase": "QCMS 4.11.5 - Complaint evidence visibility, color grading and fixed header grid",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

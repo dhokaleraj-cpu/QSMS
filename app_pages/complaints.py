@@ -34,6 +34,116 @@ COMPLAINT_MULTI_ATTACHMENT_TYPE = "COMPLAINT_ATTACHMENT"
 COMPLAINT_PHOTO_EXTENSIONS = ["png", "jpg", "jpeg", "webp"]
 
 
+def _complaint_entry_styles() -> None:
+    """Compact color-graded complaint entry sections for Customer and Supplier workflows."""
+    st.markdown(
+        r"""
+<style>
+/* QCMS 4.11.5 — complaint entry visual grading. Each major section has its own
+   low-saturation tone so long forms remain easy to scan without becoming bulky. */
+[class*="st-key-complaint_customer_details"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F5FAFF,#EEF7FF)!important;border:1px solid #BFD8EC!important;border-left:4px solid #2F80C7!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+[class*="st-key-complaint_customer_responsibility"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F3FBFA,#ECF8F6)!important;border:1px solid #BFE2DC!important;border-left:4px solid #159A8B!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+[class*="st-key-complaint_customer_evidence"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F7F6FF,#F1F0FF)!important;border:1px solid #D3CEEF!important;border-left:4px solid #6C55C4!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+[class*="st-key-complaint_customer_action"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#FFF9EC,#FFF5DF)!important;border:1px solid #ECD6A3!important;border-left:4px solid #D59616!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+[class*="st-key-complaint_customer_commercial"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#FFF6F8,#FFF0F3)!important;border:1px solid #EDC9D1!important;border-left:4px solid #C94D6A!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+[class*="st-key-complaint_customer_followup"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F3FBF5,#ECF8EF)!important;border:1px solid #C6E2CC!important;border-left:4px solid #3D9860!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+
+[class*="st-key-complaint_supplier_details"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#FAF7FF,#F5F0FF)!important;border:1px solid #D8C9EE!important;border-left:4px solid #8056C7!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+[class*="st-key-complaint_supplier_responsibility"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F3FAF6,#EDF8F1)!important;border:1px solid #C4E0CD!important;border-left:4px solid #348D59!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+[class*="st-key-complaint_supplier_evidence"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F1FAFD,#EAF7FB)!important;border:1px solid #C3E0E9!important;border-left:4px solid #2A90B1!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+[class*="st-key-complaint_supplier_action"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#FFF7F0,#FFF1E6)!important;border:1px solid #EDCEB4!important;border-left:4px solid #D4742C!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+[class*="st-key-complaint_supplier_commercial"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F6F8FA,#EFF3F6)!important;border:1px solid #CFD8DF!important;border-left:4px solid #657B8B!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+[class*="st-key-complaint_supplier_followup"]>div[data-testid="stVerticalBlockBorderWrapper"]{background:linear-gradient(180deg,#F7F9EE,#F1F6E5)!important;border:1px solid #D6DFB8!important;border-left:4px solid #718B32!important;border-radius:11px!important;padding:.62rem .72rem!important;}
+
+[class*="st-key-complaint_customer_"] .fsi-section-bar,
+[class*="st-key-complaint_supplier_"] .fsi-section-bar{margin-top:.02rem!important;margin-bottom:.42rem!important;padding-top:.02rem!important;}
+[class*="st-key-complaint_customer_"] div[data-testid="stVerticalBlock"],
+[class*="st-key-complaint_supplier_"] div[data-testid="stVerticalBlock"]{gap:.45rem!important;}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def _stage_new_complaint_media(complaint_type: str, writable: bool) -> dict[str, Any]:
+    """Render evidence uploaders before the first complaint save and return selected files/titles."""
+    result: dict[str, Any] = {"photos": [], "attachments": [], "attachment_group": ""}
+    section_bar("PHOTOGRAPHS & MULTIPLE ATTACHMENTS")
+    st.caption("You may add titled photographs and multiple supporting files before saving the complaint. They are uploaded immediately after the complaint record is created.")
+    photo_col, attachment_col = st.columns(2, gap="small")
+    with photo_col:
+        st.markdown("**Titled Photographs**")
+        photo_files = st.file_uploader(
+            "Select one or multiple photographs",
+            type=COMPLAINT_PHOTO_EXTENSIONS,
+            accept_multiple_files=True,
+            disabled=not writable,
+            key=f"{complaint_type}_new_photo_files",
+        )
+        staged_photos: list[tuple[str, Any]] = []
+        for index, photo in enumerate(photo_files or [], start=1):
+            default_title = Path(str(photo.name)).stem.replace("_", " ").strip() or f"Photograph {index}"
+            title = st.text_input(
+                f"Photograph {index} Title",
+                value=default_title,
+                disabled=not writable,
+                key=f"{complaint_type}_new_photo_title_{index}",
+            )
+            st.image(photo, caption=title.strip() or str(photo.name), width="stretch")
+            staged_photos.append((title.strip(), photo))
+        result["photos"] = staged_photos
+    with attachment_col:
+        st.markdown("**Supporting Attachments**")
+        result["attachment_group"] = st.text_input(
+            "Attachment Title / Group",
+            placeholder="Optional; each file name is retained",
+            disabled=not writable,
+            key=f"{complaint_type}_new_attachment_group",
+        ).strip()
+        result["attachments"] = st.file_uploader(
+            "Select one or multiple supporting files",
+            type=ALLOWED_ATTACHMENT_TYPES,
+            accept_multiple_files=True,
+            disabled=not writable,
+            key=f"{complaint_type}_new_attachment_files",
+        ) or []
+        if result["attachments"]:
+            st.caption(f"{len(result['attachments'])} supporting file(s) selected")
+    return result
+
+
+def _upload_staged_complaint_media(repo: Repository, complaint_id: str, staged: Mapping[str, Any]) -> tuple[int, list[str]]:
+    service = AttachmentService(repo)
+    added = 0
+    errors: list[str] = []
+    for title, photo in staged.get("photos") or []:
+        if not str(title or "").strip():
+            errors.append(f"{getattr(photo, 'name', 'Photograph')}: Photograph Title is mandatory")
+            continue
+        try:
+            service.upload_additional(
+                entity_type="QUALITY_COMPLAINT", entity_id=complaint_id, folder="complaints",
+                document_type=COMPLAINT_PHOTO_TYPE, title=str(title).strip(), file=photo,
+            )
+            added += 1
+        except Exception as exc:
+            errors.append(f"{getattr(photo, 'name', 'Photograph')}: {exc}")
+    attachment_group = str(staged.get("attachment_group") or "").strip()
+    attachments = list(staged.get("attachments") or [])
+    for file in attachments:
+        file_title = Path(str(file.name)).stem or str(file.name)
+        final_title = f"{attachment_group} · {file_title}" if attachment_group and len(attachments) > 1 else (attachment_group or file_title)
+        try:
+            service.upload_additional(
+                entity_type="QUALITY_COMPLAINT", entity_id=complaint_id, folder="complaints",
+                document_type=COMPLAINT_MULTI_ATTACHMENT_TYPE, title=final_title, file=file,
+            )
+            added += 1
+        except Exception as exc:
+            errors.append(f"{file.name}: {exc}")
+    return added, errors
+
+
 def _as_date(value: Any, fallback: date | None = None) -> date:
     if isinstance(value, date):
         return value
@@ -213,41 +323,52 @@ def _render_complaint_media(
         with photo_col:
             with st.container(border=True, key=f"complaint_photo_upload_{complaint_id}"):
                 st.markdown("**Add Photograph**")
-                photo_title = st.text_input(
-                    "Photograph Title",
-                    key=f"complaint_photo_title_{complaint_id}",
-                    placeholder="e.g. Damaged spline at receipt",
-                )
-                photo_file = st.file_uploader(
-                    "Photograph",
+                photo_files = st.file_uploader(
+                    "Select one or multiple photographs",
                     type=COMPLAINT_PHOTO_EXTENSIONS,
-                    key=f"complaint_photo_file_{complaint_id}",
+                    accept_multiple_files=True,
+                    key=f"complaint_photo_files_{complaint_id}",
                 )
-                if photo_file is not None:
+                titled_photos: list[tuple[str, Any]] = []
+                for index, photo_file in enumerate(photo_files or [], start=1):
+                    default_title = Path(str(photo_file.name)).stem.replace("_", " ").strip() or f"Photograph {index}"
+                    photo_title = st.text_input(
+                        f"Photograph {index} Title",
+                        value=default_title,
+                        key=f"complaint_photo_title_{complaint_id}_{index}",
+                    )
                     st.image(photo_file, caption=photo_title.strip() or str(photo_file.name), width="stretch")
+                    titled_photos.append((photo_title.strip(), photo_file))
                 if st.button(
-                    "Add Photograph",
+                    "Add Selected Photographs",
                     type="primary",
                     width="stretch",
                     key=f"complaint_photo_add_{complaint_id}",
-                    disabled=photo_file is None,
+                    disabled=not titled_photos,
                 ):
-                    if not photo_title.strip():
-                        st.error("Photograph Title is mandatory.")
-                    else:
+                    errors: list[str] = []
+                    added = 0
+                    for photo_title, photo_file in titled_photos:
+                        if not photo_title:
+                            errors.append(f"{photo_file.name}: Photograph Title is mandatory")
+                            continue
                         try:
                             service.upload_additional(
                                 entity_type="QUALITY_COMPLAINT",
                                 entity_id=complaint_id,
                                 folder="complaints",
                                 document_type=COMPLAINT_PHOTO_TYPE,
-                                title=photo_title.strip(),
+                                title=photo_title,
                                 file=photo_file,
                             )
-                            save_success_popup("Complaint photograph added successfully.", queue_for_rerun=True)
-                            st.rerun()
+                            added += 1
                         except Exception as exc:
-                            st.error(str(exc))
+                            errors.append(f"{photo_file.name}: {exc}")
+                    if errors:
+                        st.error("Some photographs could not be added: " + " | ".join(errors))
+                    if added:
+                        save_success_popup(f"{added} complaint photograph(s) added successfully.", queue_for_rerun=True)
+                        st.rerun()
 
         with attachment_col:
             with st.container(border=True, key=f"complaint_multi_attachment_upload_{complaint_id}"):
@@ -573,12 +694,21 @@ def render_supplier_entry() -> None:
 
 def _render_entry(complaint_type: str) -> None:
     party_word = "Customer" if complaint_type == "CUSTOMER" else "Supplier"
-    page_header(f"{party_word} Complaint", f"Controlled {party_word.lower()} complaint entry, action and follow-up.", "Complaints")
+    _complaint_entry_styles()
+    page_header(f"{party_word} Complaint", f"Controlled {party_word.lower()} complaint entry, evidence, action and follow-up.", "Complaints")
     repo = Repository(); perms = current_permissions("COMPLAINT_MANAGEMENT")
     parties = _party_rows(repo, complaint_type); parts = _parts(repo); employees = _employees(repo)
     party_labels = {str(row["id"]): party_label(row, include_type=True) for row in parties}
     part_labels = {"": "— Not linked to a Part —", **{str(row["id"]): part_label(row) for row in parts}}
     employee_labels = {str(row["id"]): employee_label(row) for row in employees}
+
+    pending_error_key = f"{complaint_type}_media_upload_error"
+    pending_info_key = f"{complaint_type}_media_upload_info"
+    if st.session_state.pop(pending_error_key, None):
+        st.error(st.session_state.pop(f"{pending_error_key}_message", "Some complaint evidence could not be uploaded."))
+    info_message = st.session_state.pop(pending_info_key, None)
+    if info_message:
+        st.success(info_message)
 
     records = repo.select("quality_complaints", eq={"complaint_type": complaint_type}, order_by="created_at", desc=True, limit=5000)
     record_labels = {"": "＋ New Complaint", **{str(row["id"]): _complaint_label(row, {str(p["id"]): p for p in parties}) for row in records}}
@@ -588,67 +718,83 @@ def _render_entry(complaint_type: str) -> None:
     existing = next((row for row in records if str(row.get("id")) == selected_id), None)
     writable = perms["can_edit"] if existing else perms["can_create"]
 
-    section_bar("COMPLAINT DETAILS")
-    c1, c2, c3, c4 = st.columns(4, gap="small")
-    c1.text_input("Complaint Number", value=str((existing or {}).get("complaint_number") or "Auto on Save"), disabled=True, key=f"{complaint_type}_number")
-    complaint_date = c2.date_input("Complaint Date", value=_as_date((existing or {}).get("complaint_date")), disabled=not writable, key=f"{complaint_type}_date")
-    severity = c3.selectbox("Severity", SEVERITIES, index=SEVERITIES.index(str((existing or {}).get("severity") or "MEDIUM")) if str((existing or {}).get("severity") or "MEDIUM") in SEVERITIES else 1, disabled=not writable, key=f"{complaint_type}_severity")
-    current_status = str((existing or {}).get("status") or "OPEN")
-    entry_statuses = ["OPEN", "CONTAINMENT", "ROOT_CAUSE", "CORRECTIVE_ACTION", "VERIFICATION", "CANCELLED"]
-    if current_status == "CLOSED": entry_statuses.append("CLOSED")
-    status = c4.selectbox("Complaint Status", entry_statuses, index=entry_statuses.index(current_status) if current_status in entry_statuses else 0, disabled=not writable or current_status == "CLOSED", key=f"{complaint_type}_status", help="Final CLOSED status is controlled from Detailed Complaint Analysis after RCA, actions and effectiveness verification are complete.")
+    with st.container(border=True, key=f"complaint_{complaint_type.lower()}_details"):
+        section_bar("COMPLAINT DETAILS")
+        c1, c2, c3, c4 = st.columns(4, gap="small")
+        c1.text_input("Complaint Number", value=str((existing or {}).get("complaint_number") or "Auto on Save"), disabled=True, key=f"{complaint_type}_number")
+        complaint_date = c2.date_input("Complaint Date", value=_as_date((existing or {}).get("complaint_date")), disabled=not writable, key=f"{complaint_type}_date")
+        severity = c3.selectbox("Severity", SEVERITIES, index=SEVERITIES.index(str((existing or {}).get("severity") or "MEDIUM")) if str((existing or {}).get("severity") or "MEDIUM") in SEVERITIES else 1, disabled=not writable, key=f"{complaint_type}_severity")
+        current_status = str((existing or {}).get("status") or "OPEN")
+        entry_statuses = ["OPEN", "CONTAINMENT", "ROOT_CAUSE", "CORRECTIVE_ACTION", "VERIFICATION", "CANCELLED"]
+        if current_status == "CLOSED": entry_statuses.append("CLOSED")
+        status = c4.selectbox("Complaint Status", entry_statuses, index=entry_statuses.index(current_status) if current_status in entry_statuses else 0, disabled=not writable or current_status == "CLOSED", key=f"{complaint_type}_status", help="Final CLOSED status is controlled from Detailed Complaint Analysis after RCA, actions and effectiveness verification are complete.")
 
-    p1, p2, p3 = st.columns([1.2, 1.2, 1], gap="small")
-    default_party = str((existing or {}).get("party_id") or "")
-    party_id = p1.selectbox(party_word, list(party_labels), index=list(party_labels).index(default_party) if default_party in party_labels else 0, format_func=lambda value: party_labels[value], disabled=not writable or not party_labels, key=f"{complaint_type}_party") if party_labels else ""
-    default_part = str((existing or {}).get("part_id") or "")
-    part_id = p2.selectbox("Part Number", list(part_labels), index=list(part_labels).index(default_part) if default_part in part_labels else 0, format_func=lambda value: part_labels[value], disabled=not writable, key=f"{complaint_type}_part")
-    external_reference = p3.text_input(f"{party_word} Complaint / Reference No.", value=str((existing or {}).get("external_reference") or ""), disabled=not writable, key=f"{complaint_type}_external_ref")
-    subject = st.text_input("Complaint Subject", value=str((existing or {}).get("subject") or ""), disabled=not writable, key=f"{complaint_type}_subject")
-    description = st.text_area("Complaint Description", value=str((existing or {}).get("description") or ""), height=100, disabled=not writable, key=f"{complaint_type}_description")
-    q1, q2 = st.columns(2, gap="small")
-    affected_qty = q1.number_input("Affected Quantity", min_value=0.0, value=float((existing or {}).get("affected_quantity") or 0.0), step=1.0, disabled=not writable, key=f"{complaint_type}_qty")
-    target_closure = q2.date_input("Target Closure Date", value=_as_date((existing or {}).get("target_closure_date"), date.today()), disabled=not writable, key=f"{complaint_type}_target")
+        p1, p2, p3 = st.columns([1.2, 1.2, 1], gap="small")
+        default_party = str((existing or {}).get("party_id") or "")
+        party_id = p1.selectbox(party_word, list(party_labels), index=list(party_labels).index(default_party) if default_party in party_labels else 0, format_func=lambda value: party_labels[value], disabled=not writable or not party_labels, key=f"{complaint_type}_party") if party_labels else ""
+        default_part = str((existing or {}).get("part_id") or "")
+        part_id = p2.selectbox("Part Number", list(part_labels), index=list(part_labels).index(default_part) if default_part in part_labels else 0, format_func=lambda value: part_labels[value], disabled=not writable, key=f"{complaint_type}_part")
+        external_reference = p3.text_input(f"{party_word} Complaint / Reference No.", value=str((existing or {}).get("external_reference") or ""), disabled=not writable, key=f"{complaint_type}_external_ref")
+        subject = st.text_input("Complaint Subject", value=str((existing or {}).get("subject") or ""), disabled=not writable, key=f"{complaint_type}_subject")
+        description = st.text_area("Complaint Description", value=str((existing or {}).get("description") or ""), height=100, disabled=not writable, key=f"{complaint_type}_description")
+        q1, q2 = st.columns(2, gap="small")
+        affected_qty = q1.number_input("Affected Quantity", min_value=0.0, value=float((existing or {}).get("affected_quantity") or 0.0), step=1.0, disabled=not writable, key=f"{complaint_type}_qty")
+        target_closure = q2.date_input("Target Closure Date", value=_as_date((existing or {}).get("target_closure_date"), date.today()), disabled=not writable, key=f"{complaint_type}_target")
 
-    section_bar("RESPONSIBILITY")
-    r1, r2 = st.columns(2, gap="small")
-    default_emp = str((existing or {}).get("fourstar_responsible_employee_id") or "")
-    fourstar_employee_id = r1.selectbox("Four Star Responsible Person", list(employee_labels), index=list(employee_labels).index(default_emp) if default_emp in employee_labels else 0, format_func=lambda value: employee_labels[value], disabled=not writable or not employee_labels, key=f"{complaint_type}_fsi_resp") if employee_labels else ""
-    external_name = r2.text_input(f"{party_word} Responsible Person", value=str((existing or {}).get("external_responsible_name") or ""), disabled=not writable, key=f"{complaint_type}_external_name")
-    r3, r4 = st.columns(2, gap="small")
-    external_email = r3.text_input(f"{party_word} Responsible Email", value=str((existing or {}).get("external_responsible_email") or ""), disabled=not writable, key=f"{complaint_type}_external_email")
-    external_phone = r4.text_input(f"{party_word} Responsible Phone", value=str((existing or {}).get("external_responsible_phone") or ""), disabled=not writable, key=f"{complaint_type}_external_phone")
+    with st.container(border=True, key=f"complaint_{complaint_type.lower()}_responsibility"):
+        section_bar("RESPONSIBILITY")
+        r1, r2 = st.columns(2, gap="small")
+        default_emp = str((existing or {}).get("fourstar_responsible_employee_id") or "")
+        fourstar_employee_id = r1.selectbox("Four Star Responsible Person", list(employee_labels), index=list(employee_labels).index(default_emp) if default_emp in employee_labels else 0, format_func=lambda value: employee_labels[value], disabled=not writable or not employee_labels, key=f"{complaint_type}_fsi_resp") if employee_labels else ""
+        external_name = r2.text_input(f"{party_word} Responsible Person", value=str((existing or {}).get("external_responsible_name") or ""), disabled=not writable, key=f"{complaint_type}_external_name")
+        r3, r4 = st.columns(2, gap="small")
+        external_email = r3.text_input(f"{party_word} Responsible Email", value=str((existing or {}).get("external_responsible_email") or ""), disabled=not writable, key=f"{complaint_type}_external_email")
+        external_phone = r4.text_input(f"{party_word} Responsible Phone", value=str((existing or {}).get("external_responsible_phone") or ""), disabled=not writable, key=f"{complaint_type}_external_phone")
 
-    section_bar("CONTAINMENT / ROOT CAUSE / CORRECTIVE ACTION")
-    containment = st.text_area("Containment Action", value=str((existing or {}).get("containment_action") or ""), height=75, disabled=not writable, key=f"{complaint_type}_containment")
-    root_cause = st.text_area("Root Cause", value=str((existing or {}).get("root_cause") or ""), height=75, disabled=not writable, key=f"{complaint_type}_root")
-    corrective = st.text_area("Corrective Action", value=str((existing or {}).get("corrective_action") or ""), height=75, disabled=not writable, key=f"{complaint_type}_corrective")
-    verification = st.text_area("Effectiveness / Verification Result", value=str((existing or {}).get("verification_result") or ""), height=75, disabled=not writable, key=f"{complaint_type}_verification")
-    close1, close2 = st.columns(2, gap="small")
-    closure_date = close1.date_input("Actual Closure Date", value=_as_date((existing or {}).get("closure_date"), date.today()), disabled=not writable or status != "CLOSED", key=f"{complaint_type}_closure_date")
-    closure_remarks = close2.text_area("Closure Remarks", value=str((existing or {}).get("closure_remarks") or ""), height=75, disabled=not writable, key=f"{complaint_type}_closure_remarks")
+    with st.container(border=True, key=f"complaint_{complaint_type.lower()}_evidence"):
+        if existing:
+            staged_media: dict[str, Any] = {}
+            _render_complaint_media(repo, existing, perms, allow_upload=True, title="PHOTOGRAPHS & MULTIPLE ATTACHMENTS")
+        else:
+            staged_media = _stage_new_complaint_media(complaint_type, writable)
 
-    section_bar("DEBIT NOTE / COMMERCIAL SETTLEMENT")
-    debit_required = st.checkbox("Debit Note Required", value=bool((existing or {}).get("debit_note_required")), disabled=not writable, key=f"{complaint_type}_debit_required")
-    d1, d2, d3, d4 = st.columns(4, gap="small")
-    default_debit_status = str((existing or {}).get("debit_note_status") or ("PENDING" if debit_required else "NOT_REQUIRED"))
-    if default_debit_status not in DEBIT_STATUSES: default_debit_status = "PENDING" if debit_required else "NOT_REQUIRED"
-    debit_status = d1.selectbox("Debit Note Status", DEBIT_STATUSES, index=DEBIT_STATUSES.index(default_debit_status), disabled=not writable or not debit_required, key=f"{complaint_type}_debit_status")
-    debit_number = d2.text_input("Debit Note Number", value=str((existing or {}).get("debit_note_number") or ""), disabled=not writable or not debit_required, key=f"{complaint_type}_debit_no")
-    debit_date = d3.date_input("Debit Note Date", value=_as_date((existing or {}).get("debit_note_date"), date.today()), disabled=not writable or not debit_required, key=f"{complaint_type}_debit_date")
-    currency = d4.selectbox("Currency", ["INR", "EUR", "USD", "GBP", "JPY"], index=["INR", "EUR", "USD", "GBP", "JPY"].index(str((existing or {}).get("currency") or "INR")) if str((existing or {}).get("currency") or "INR") in ["INR", "EUR", "USD", "GBP", "JPY"] else 0, disabled=not writable or not debit_required, key=f"{complaint_type}_currency")
-    a1, a2, a3 = st.columns(3, gap="small")
-    debit_amount = a1.number_input("Debit Note Amount", min_value=0.0, value=float((existing or {}).get("debit_note_amount") or 0.0), step=0.01, disabled=not writable or not debit_required, key=f"{complaint_type}_debit_amount")
-    settled_amount = a2.number_input("Settled Amount", min_value=0.0, value=float((existing or {}).get("debit_note_settled_amount") or 0.0), step=0.01, disabled=not writable or not debit_required, key=f"{complaint_type}_settled_amount")
-    settled_date = a3.date_input("Settled Date", value=_as_date((existing or {}).get("debit_note_settled_date"), date.today()), disabled=not writable or debit_status != "SETTLED", key=f"{complaint_type}_settled_date")
-    commercial_remarks = st.text_area("Commercial / Debit Note Remarks", value=str((existing or {}).get("commercial_remarks") or ""), height=70, disabled=not writable, key=f"{complaint_type}_commercial")
-    debit_balance = max(float(debit_amount or 0.0) - float(settled_amount or 0.0), 0.0) if debit_required else 0.0
-    if debit_required:
-        st.caption(f"Debit Note Settlement Balance: {currency} {debit_balance:,.2f}")
+    with st.container(border=True, key=f"complaint_{complaint_type.lower()}_action"):
+        section_bar("CONTAINMENT / ROOT CAUSE / CORRECTIVE ACTION")
+        containment = st.text_area("Containment Action", value=str((existing or {}).get("containment_action") or ""), height=75, disabled=not writable, key=f"{complaint_type}_containment")
+        root_cause = st.text_area("Root Cause", value=str((existing or {}).get("root_cause") or ""), height=75, disabled=not writable, key=f"{complaint_type}_root")
+        corrective = st.text_area("Corrective Action", value=str((existing or {}).get("corrective_action") or ""), height=75, disabled=not writable, key=f"{complaint_type}_corrective")
+        verification = st.text_area("Effectiveness / Verification Result", value=str((existing or {}).get("verification_result") or ""), height=75, disabled=not writable, key=f"{complaint_type}_verification")
+        close1, close2 = st.columns(2, gap="small")
+        closure_date = close1.date_input("Actual Closure Date", value=_as_date((existing or {}).get("closure_date"), date.today()), disabled=not writable or status != "CLOSED", key=f"{complaint_type}_closure_date")
+        closure_remarks = close2.text_area("Closure Remarks", value=str((existing or {}).get("closure_remarks") or ""), height=75, disabled=not writable, key=f"{complaint_type}_closure_remarks")
+
+    with st.container(border=True, key=f"complaint_{complaint_type.lower()}_commercial"):
+        section_bar("DEBIT NOTE / COMMERCIAL SETTLEMENT")
+        debit_required = st.checkbox("Debit Note Required", value=bool((existing or {}).get("debit_note_required")), disabled=not writable, key=f"{complaint_type}_debit_required")
+        d1, d2, d3, d4 = st.columns(4, gap="small")
+        default_debit_status = str((existing or {}).get("debit_note_status") or ("PENDING" if debit_required else "NOT_REQUIRED"))
+        if default_debit_status not in DEBIT_STATUSES: default_debit_status = "PENDING" if debit_required else "NOT_REQUIRED"
+        debit_status = d1.selectbox("Debit Note Status", DEBIT_STATUSES, index=DEBIT_STATUSES.index(default_debit_status), disabled=not writable or not debit_required, key=f"{complaint_type}_debit_status")
+        debit_number = d2.text_input("Debit Note Number", value=str((existing or {}).get("debit_note_number") or ""), disabled=not writable or not debit_required, key=f"{complaint_type}_debit_no")
+        debit_date = d3.date_input("Debit Note Date", value=_as_date((existing or {}).get("debit_note_date"), date.today()), disabled=not writable or not debit_required, key=f"{complaint_type}_debit_date")
+        currencies = ["INR", "EUR", "USD", "GBP", "JPY"]
+        current_currency = str((existing or {}).get("currency") or "INR")
+        currency = d4.selectbox("Currency", currencies, index=currencies.index(current_currency) if current_currency in currencies else 0, disabled=not writable or not debit_required, key=f"{complaint_type}_currency")
+        a1, a2, a3 = st.columns(3, gap="small")
+        debit_amount = a1.number_input("Debit Note Amount", min_value=0.0, value=float((existing or {}).get("debit_note_amount") or 0.0), step=0.01, disabled=not writable or not debit_required, key=f"{complaint_type}_debit_amount")
+        settled_amount = a2.number_input("Settled Amount", min_value=0.0, value=float((existing or {}).get("debit_note_settled_amount") or 0.0), step=0.01, disabled=not writable or not debit_required, key=f"{complaint_type}_settled_amount")
+        settled_date = a3.date_input("Settled Date", value=_as_date((existing or {}).get("debit_note_settled_date"), date.today()), disabled=not writable or debit_status != "SETTLED", key=f"{complaint_type}_settled_date")
+        commercial_remarks = st.text_area("Commercial / Debit Note Remarks", value=str((existing or {}).get("commercial_remarks") or ""), height=70, disabled=not writable, key=f"{complaint_type}_commercial")
+        debit_balance = max(float(debit_amount or 0.0) - float(settled_amount or 0.0), 0.0) if debit_required else 0.0
+        if debit_required:
+            st.caption(f"Debit Note Settlement Balance: {currency} {debit_balance:,.2f}")
 
     if st.button("Update Complaint" if existing else "Save Complaint", type="primary", width="stretch", disabled=not writable, key=f"save_{complaint_type}_complaint"):
+        staged_photo_gaps = [str(getattr(photo, "name", "Photograph")) for title, photo in (staged_media.get("photos") or []) if not str(title or "").strip()] if not existing else []
         if not party_id or not subject.strip() or not description.strip() or not fourstar_employee_id:
             st.error(f"{party_word}, Complaint Subject, Complaint Description and Four Star Responsible Person are mandatory.")
+        elif staged_photo_gaps:
+            st.error("Every selected photograph requires a title before the complaint can be saved: " + ", ".join(staged_photo_gaps))
         elif debit_required and float(settled_amount or 0.0) > float(debit_amount or 0.0) + 0.001:
             st.error("Settled Amount cannot be greater than the Debit Note Amount.")
         elif debit_required and debit_status == "SETTLED" and float(debit_amount or 0.0) > 0 and float(settled_amount or 0.0) + 0.001 < float(debit_amount or 0.0):
@@ -676,7 +822,15 @@ def _render_entry(complaint_type: str) -> None:
                 "commercial_remarks": commercial_remarks.strip() or None,
             }
             saved = repo.update("quality_complaints", str(existing["id"]), payload) if existing else repo.insert("quality_complaints", payload)
-            st.session_state[f"selected_{complaint_type.lower()}_complaint"] = str(saved["id"])
+            saved_id = str(saved["id"])
+            st.session_state[f"selected_{complaint_type.lower()}_complaint"] = saved_id
+            if not existing and staged_media:
+                added, media_errors = _upload_staged_complaint_media(repo, saved_id, staged_media)
+                if media_errors:
+                    st.session_state[pending_error_key] = True
+                    st.session_state[f"{pending_error_key}_message"] = "Complaint saved, but some evidence could not be uploaded: " + " | ".join(media_errors)
+                if added:
+                    st.session_state[pending_info_key] = f"{added} photograph/attachment file(s) uploaded with the complaint."
             save_success_popup(f"{party_word} complaint {number} saved successfully.", queue_for_rerun=True)
             st.rerun()
 
@@ -685,8 +839,8 @@ def _render_entry(complaint_type: str) -> None:
         analysis_page = (st.session_state.get("_qsms_pages") or {}).get("complaint-analysis")
         if analysis_page is not None and st.button("Open Detailed Complaint Analysis & CAPA", type="primary", width="stretch", key=f"open_analysis_{complaint_type}_{selected_id}"):
             st.switch_page(analysis_page)
-        _render_complaint_media(repo, existing, perms, allow_upload=True)
-        _render_followups(repo, existing, employees, employee_labels, perms)
+        with st.container(border=True, key=f"complaint_{complaint_type.lower()}_followup"):
+            _render_followups(repo, existing, employees, employee_labels, perms)
         section_bar("PRINT / DELETE")
         pdf = _complaint_pdf(repo, existing)
         p1, p2 = st.columns(2, gap="small")

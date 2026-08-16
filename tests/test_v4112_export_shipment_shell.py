@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.11.2", "4.11.3", "4.11.4"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.11.2", "4.11.3", "4.11.4", "4.11.5"}
 
 
 def test_export_shipment_header_shell_contract():

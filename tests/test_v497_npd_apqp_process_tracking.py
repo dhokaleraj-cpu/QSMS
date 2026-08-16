@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_497_files_and_version():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.9.7", "4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2", "4.10.3", "4.10.5", "4.10.6", "4.10.7", "4.10.8", "4.10.9", "4.11.0", "4.11.1", "4.11.2", "4.11.3", "4.11.4"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.9.7", "4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2", "4.10.3", "4.10.5", "4.10.6", "4.10.7", "4.10.8", "4.10.9", "4.11.0", "4.11.1", "4.11.2", "4.11.3", "4.11.4", "4.11.5"}
     assert (ROOT / "docs" / "RELEASE_4_9_7.md").exists()
     assert (ROOT / "app_pages" / "npd_apqp.py").exists()
     assert (ROOT / "supabase" / "migrations" / "20260811103000_qcms_npd_apqp_process_flow_v497.sql").exists()
