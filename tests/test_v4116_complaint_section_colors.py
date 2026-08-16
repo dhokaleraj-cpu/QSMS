@@ -3,24 +3,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_v4116_release_and_build():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.11.6", "4.11.7"}
-    assert any(marker in (ROOT / "core/ui.py").read_text() for marker in ("4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS"))
-    assert any(marker in (ROOT / "core/auth.py").read_text() for marker in ("4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS"))
+def test_v4116_release_continuity():
+    assert (ROOT / "VERSION").read_text().strip() in {"4.11.6", "4.11.7", "4.11.8"}
+    ui = (ROOT / "core/ui.py").read_text()
+    assert any(marker in ui for marker in ("4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS", "4118-GLOBAL-STAGED-SECTIONS"))
 
 
-def test_customer_complaint_has_five_distinct_visible_section_palettes():
-    text = (ROOT / "app_pages/complaints.py").read_text()
-    for key in ("complaint_customer_details", "complaint_customer_responsibility", "complaint_customer_evidence", "complaint_customer_action", "complaint_customer_commercial"):
-        assert key in text
-    for color in ("#E7F3FF", "#E7F8F3", "#F0EBFF", "#FFF1D6", "#FCE9EE"):
-        assert color in text
-
-
-def test_supplier_complaint_has_five_distinct_visible_section_palettes():
-    text = (ROOT / "app_pages/complaints.py").read_text()
-    for key in ("complaint_supplier_details", "complaint_supplier_responsibility", "complaint_supplier_evidence", "complaint_supplier_action", "complaint_supplier_commercial"):
-        assert key in text
-    for color in ("#EEE9FF", "#E8F7EC", "#E6F5FA", "#FFEBD9", "#EAF0F5"):
-        assert color in text
-    assert 'background:transparent!important;border:0!important' in text
+def test_v4118_replaces_unrelated_complaint_palettes_with_one_blue_family():
+    ui = (ROOT / "core/ui.py").read_text()
+    complaints = (ROOT / "app_pages/complaints.py").read_text()
+    for token in ("st-key-fsi_stage_a_", "st-key-fsi_stage_b_", "st-key-fsi_stage_c_", "st-key-fsi_stage_d_", "st-key-fsi_stage_e_"):
+        assert token in ui
+    # complaint stages must now use the same global stage framework rather than separate customer/supplier colour families
+    for label in ("COMPLAINT DETAILS", "RESPONSIBILITY", "PHOTOGRAPHS & MULTIPLE ATTACHMENTS", "CONTAINMENT / ROOT CAUSE / CORRECTIVE ACTION", "DEBIT NOTE / COMMERCIAL SETTLEMENT"):
+        assert f'stage_section(' in complaints and label in complaints
+    assert "global QCMS staged-section CSS" in complaints

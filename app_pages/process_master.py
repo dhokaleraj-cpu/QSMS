@@ -10,7 +10,7 @@ from core.master_service import MasterService
 from core.reporting import controlled_record_pdf_bytes
 from core.attachments import AttachmentService
 from core.selection_labels import customer_standard_label, party_label, process_label
-from core.ui import page_header, save_success_popup, section_bar, template_download_row
+from core.ui import page_header, save_success_popup, section_bar, stage_section, template_download_row
 
 
 def _label(row: dict) -> str:
@@ -25,9 +25,10 @@ def _related_standards(repo, process_id: str) -> tuple[list[dict], dict[str, dic
     return rows, parties, amap
 
 
-def _render_related_standards(repo, process: dict, *, key_prefix: str) -> list[dict]:
+def _render_related_standards(repo, process: dict, *, key_prefix: str, show_heading: bool = True) -> list[dict]:
     standards, parties, attachments = _related_standards(repo, str(process.get("id") or ""))
-    section_bar("RELATED CUSTOMER STANDARDS & SPECIFICATIONS", "Standards linked to this Process Master. Attachments can be downloaded directly.")
+    if show_heading:
+        section_bar("RELATED CUSTOMER STANDARDS & SPECIFICATIONS", "Standards linked to this Process Master. Attachments can be downloaded directly.")
     if not standards:
         st.info("No Customer Standards / Specifications are linked to this Process yet.")
         st.page_link(st.session_state["_qsms_pages"]["standards-entry"], label="Open Customer Standards Bank", icon=":material/library_books:", width="stretch")
@@ -87,61 +88,62 @@ def render_entry() -> None:
         except Exception:
             st.session_state[auto_key] = ""
 
-    section_bar("PROCESS DETAILS")
-    with st.form(f"process_master_{selected}"):
-        c1, c2, c3 = st.columns(3, gap="small")
-        process_code = c1.text_input(
-            "Process Code",
-            value=str(existing.get("process_code") or st.session_state.get(auto_key) or ""),
-            help="Generated automatically for new records and editable before saving.",
-        )
-        process_name = c2.text_input("Process Name", value=str(existing.get("process_name") or ""))
-        process_type = c3.selectbox(
-            "Process Type",
-            ["IN_HOUSE", "OUTSOURCED"],
-            index=0 if str(existing.get("process_type") or "IN_HOUSE") == "IN_HOUSE" else 1,
-        )
-        c1, c2, c3 = st.columns(3, gap="small")
-        special_process = c1.checkbox("Special Process", value=bool(existing.get("special_process", False)))
-        cqi_standard = c2.text_input("CQI Standard", value=str(existing.get("cqi_standard") or ""), placeholder="CQI-9")
-        status = c3.selectbox(
-            "Status", ["ACTIVE", "INACTIVE"],
-            index=0 if str(existing.get("status") or "ACTIVE") == "ACTIVE" else 1,
-        )
-        remarks = st.text_area("Remarks", value=str(existing.get("remarks") or ""), height=80)
-        save = st.form_submit_button("Save Process Master", type="primary", disabled=not writable, width="stretch")
-
-    if save:
-        try:
-            if not process_code.strip() or not process_name.strip():
-                raise ValueError("Process Code and Process Name are mandatory.")
-            payload = {
-                "process_code": process_code.strip(),
-                "process_name": process_name.strip(),
-                "process_type": process_type,
-                "special_process": special_process,
-                "cqi_standard": cqi_standard.strip() or None,
-                "status": status,
-                "remarks": remarks.strip() or None,
-            }
-            service.assert_no_duplicate(
-                definition,
-                payload,
-                record_id=str(existing["id"]) if existing else None,
-                extra_unique_fields=("process_name",),
+    with stage_section("A", "PROCESS DETAILS", key="process_master_render_entry_a"):
+        with st.form(f"process_master_{selected}"):
+            c1, c2, c3 = st.columns(3, gap="small")
+            process_code = c1.text_input(
+                "Process Code",
+                value=str(existing.get("process_code") or st.session_state.get(auto_key) or ""),
+                help="Generated automatically for new records and editable before saving.",
             )
-            if existing:
-                service.repo.update("processes", str(existing["id"]), payload)
-            else:
-                service.repo.insert("processes", payload)
-            st.session_state.pop(auto_key, None)
-            save_success_popup("Process Master saved successfully.")
-            st.rerun()
-        except Exception as exc:
-            st.error(str(exc))
+            process_name = c2.text_input("Process Name", value=str(existing.get("process_name") or ""))
+            process_type = c3.selectbox(
+                "Process Type",
+                ["IN_HOUSE", "OUTSOURCED"],
+                index=0 if str(existing.get("process_type") or "IN_HOUSE") == "IN_HOUSE" else 1,
+            )
+            c1, c2, c3 = st.columns(3, gap="small")
+            special_process = c1.checkbox("Special Process", value=bool(existing.get("special_process", False)))
+            cqi_standard = c2.text_input("CQI Standard", value=str(existing.get("cqi_standard") or ""), placeholder="CQI-9")
+            status = c3.selectbox(
+                "Status", ["ACTIVE", "INACTIVE"],
+                index=0 if str(existing.get("status") or "ACTIVE") == "ACTIVE" else 1,
+            )
+            remarks = st.text_area("Remarks", value=str(existing.get("remarks") or ""), height=80)
+            save = st.form_submit_button("Save Process Master", type="primary", disabled=not writable, width="stretch")
+
+        if save:
+            try:
+                if not process_code.strip() or not process_name.strip():
+                    raise ValueError("Process Code and Process Name are mandatory.")
+                payload = {
+                    "process_code": process_code.strip(),
+                    "process_name": process_name.strip(),
+                    "process_type": process_type,
+                    "special_process": special_process,
+                    "cqi_standard": cqi_standard.strip() or None,
+                    "status": status,
+                    "remarks": remarks.strip() or None,
+                }
+                service.assert_no_duplicate(
+                    definition,
+                    payload,
+                    record_id=str(existing["id"]) if existing else None,
+                    extra_unique_fields=("process_name",),
+                )
+                if existing:
+                    service.repo.update("processes", str(existing["id"]), payload)
+                else:
+                    service.repo.insert("processes", payload)
+                st.session_state.pop(auto_key, None)
+                save_success_popup("Process Master saved successfully.")
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
 
     if existing:
-        _render_related_standards(service.repo, existing, key_prefix=f"process_standard_entry_{existing.get('id')}")
+        with stage_section("B", "RELATED CUSTOMER STANDARDS & SPECIFICATIONS", "Standards linked to this Process Master. Attachments can be downloaded directly.", key="process_master_render_entry_b"):
+            _render_related_standards(service.repo, existing, key_prefix=f"process_standard_entry_{existing.get('id')}", show_heading=False)
 
     if existing and password_delete_panel(
         repo=service.repo,

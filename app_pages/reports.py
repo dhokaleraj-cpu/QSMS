@@ -10,7 +10,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from core.reporting import report_pdf_bytes
 from core.config import get_settings
 from core.repository import Repository
-from core.ui import disposition_cards, page_header, section_bar, subpage_navigation
+from core.ui import disposition_cards, page_header, section_bar, stage_section, subpage_navigation
 
 
 def _number(value: Any) -> float:
@@ -211,33 +211,33 @@ def render_heat_transactions() -> None:
         "Production Qty pcs": "production_quantity_pcs",
         "Status": "transaction_status",
     })
-    section_bar("HEAT GLOBAL BALANCE")
-    st.dataframe(summary_frame, hide_index=True, width="stretch", height=min(400, 100 + max(len(summary_frame), 1) * 36))
-    section_bar("HEAT TRANSACTION HISTORY", "Chronological genealogy from RMTC planning through Material Inward and OSP movement.")
-    st.dataframe(transaction_frame, hide_index=True, width="stretch", height=560)
-    suffix = selected_key or "ALL_HEATS"
-    export_sections = {"Heat Balance": summary_frame, "Transactions": transaction_frame}
-    c1, c2 = st.columns(2, gap="small")
-    with c1:
-        st.download_button(
-            "Download Excel Report",
-            data=_excel_bytes(export_sections, "HEAT NUMBER GLOBAL BALANCE WITH TRANSACTIONS"),
-            file_name=f"QCMS_Heat_Global_Balance_{suffix}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            icon=":material/download:", width="stretch",
-        )
-    with c2:
-        st.download_button(
-            "Download Print PDF",
-            data=report_pdf_bytes(
-                "HEAT NUMBER GLOBAL BALANCE WITH TRANSACTIONS",
-                export_sections,
-                subtitle=f"Heat filter: {selected}",
-            ),
-            file_name=f"QCMS_Heat_Global_Balance_{suffix}.pdf",
-            mime="application/pdf",
-            icon=":material/picture_as_pdf:", width="stretch",
-        )
+    with stage_section("A", "HEAT GLOBAL BALANCE", key="reports_heat_transactions_a"):
+        st.dataframe(summary_frame, hide_index=True, width="stretch", height=min(400, 100 + max(len(summary_frame), 1) * 36))
+    with stage_section("B", "HEAT TRANSACTION HISTORY", "Chronological genealogy from RMTC planning through Material Inward and OSP movement.", key="reports_heat_transactions_b"):
+        st.dataframe(transaction_frame, hide_index=True, width="stretch", height=560)
+        suffix = selected_key or "ALL_HEATS"
+        export_sections = {"Heat Balance": summary_frame, "Transactions": transaction_frame}
+        c1, c2 = st.columns(2, gap="small")
+        with c1:
+            st.download_button(
+                "Download Excel Report",
+                data=_excel_bytes(export_sections, "HEAT NUMBER GLOBAL BALANCE WITH TRANSACTIONS"),
+                file_name=f"QCMS_Heat_Global_Balance_{suffix}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                icon=":material/download:", width="stretch",
+            )
+        with c2:
+            st.download_button(
+                "Download Print PDF",
+                data=report_pdf_bytes(
+                    "HEAT NUMBER GLOBAL BALANCE WITH TRANSACTIONS",
+                    export_sections,
+                    subtitle=f"Heat filter: {selected}",
+                ),
+                file_name=f"QCMS_Heat_Global_Balance_{suffix}.pdf",
+                mime="application/pdf",
+                icon=":material/picture_as_pdf:", width="stretch",
+            )
 
 
 def render_osp_balance() -> None:
@@ -332,30 +332,30 @@ def render_osp_balance() -> None:
         "Final Quality Decision": "receipt_quality_disposition",
         "Status": "status",
     })
-    section_bar("HEAT / PART OSP BALANCE")
-    st.dataframe(balance_frame, hide_index=True, width="stretch", height=min(480, 100 + max(len(balance_frame), 1) * 36))
-    section_bar("OSP TRANSACTION DETAILS")
-    st.dataframe(job_frame, hide_index=True, width="stretch", height=540)
-    suffix = (heat_key or "ALL_HEATS") + ("_" + selected_part.replace("/", "-") if selected_part != "All Part Numbers" else "")
-    export_sections = {"OSP Balance": balance_frame, "OSP Transactions": job_frame}
-    c1, c2 = st.columns(2, gap="small")
-    with c1:
-        st.download_button(
-            "Download Excel Report",
-            data=_excel_bytes(export_sections, "HEAT-WISE OSP INWARD, OUTWARD AND BALANCE"),
-            file_name=f"QCMS_OSP_Heat_Balance_{suffix}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            icon=":material/download:", width="stretch",
-        )
-    with c2:
-        st.download_button(
-            "Download Print PDF",
-            data=report_pdf_bytes(
-                "HEAT-WISE OSP INWARD, OUTWARD AND BALANCE",
-                export_sections,
-                subtitle=f"Heat: {selected_heat} · Part: {selected_part}",
-            ),
-            file_name=f"QCMS_OSP_Heat_Balance_{suffix}.pdf",
-            mime="application/pdf",
-            icon=":material/picture_as_pdf:", width="stretch",
-        )
+    with stage_section("A", "HEAT / PART OSP BALANCE", key="reports_osp_balance_a"):
+        st.dataframe(balance_frame, hide_index=True, width="stretch", height=min(480, 100 + max(len(balance_frame), 1) * 36))
+    with stage_section("B", "OSP TRANSACTION DETAILS", key="reports_osp_balance_b"):
+        st.dataframe(job_frame, hide_index=True, width="stretch", height=540)
+        suffix = (heat_key or "ALL_HEATS") + ("_" + selected_part.replace("/", "-") if selected_part != "All Part Numbers" else "")
+        export_sections = {"OSP Balance": balance_frame, "OSP Transactions": job_frame}
+        c1, c2 = st.columns(2, gap="small")
+        with c1:
+            st.download_button(
+                "Download Excel Report",
+                data=_excel_bytes(export_sections, "HEAT-WISE OSP INWARD, OUTWARD AND BALANCE"),
+                file_name=f"QCMS_OSP_Heat_Balance_{suffix}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                icon=":material/download:", width="stretch",
+            )
+        with c2:
+            st.download_button(
+                "Download Print PDF",
+                data=report_pdf_bytes(
+                    "HEAT-WISE OSP INWARD, OUTWARD AND BALANCE",
+                    export_sections,
+                    subtitle=f"Heat: {selected_heat} · Part: {selected_part}",
+                ),
+                file_name=f"QCMS_OSP_Heat_Balance_{suffix}.pdf",
+                mime="application/pdf",
+                icon=":material/picture_as_pdf:", width="stretch",
+            )

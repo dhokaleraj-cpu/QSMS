@@ -36,7 +36,7 @@ def test_dashboard_has_multiple_kpis_and_three_pie_charts():
     text = (ROOT / "app_pages" / "dashboard.py").read_text()
     for label in ["RMTC Steel kg", "Inward Steel kg", "Planned Production", "Accepted Production"]:
         assert label in text
-    assert 'section_bar("STATUS PIE CHARTS")' in text
+    assert ('section_bar("STATUS PIE CHARTS")' in text or 'stage_section("B", "STATUS PIE CHARTS"' in text)
     assert '_donut("Recent Inwards"' in text
     assert '_donut("RMTC Validation Status"' in text
     assert '_donut("Inward Status"' in text

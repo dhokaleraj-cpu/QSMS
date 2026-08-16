@@ -94,11 +94,13 @@ required = [
     "docs/RELEASE_4_11_6.md",
     "docs/RELEASE_4_11_7.md",
     "tests/test_v4117_complaint_stage_expanders.py",
+    "docs/RELEASE_4_11_8.md",
+    "tests/test_v4118_global_staged_sections.py",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.11.7 - Collapsible A-to-E complaint stage workflow",
+    "phase": "QCMS 4.11.8 - Global collapsed A-to-H workflow section system",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

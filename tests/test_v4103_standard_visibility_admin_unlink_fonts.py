@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_4103():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.10.3", "4.10.5", "4.10.6", "4.10.7", "4.10.8", "4.10.9", "4.11.0", "4.11.1", "4.11.2", "4.11.3", "4.11.4", "4.11.5", "4.11.6", "4.11.7"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.10.3", "4.10.5", "4.10.6", "4.10.7", "4.10.8", "4.10.9", "4.11.0", "4.11.1", "4.11.2", "4.11.3", "4.11.4", "4.11.5", "4.11.6", "4.11.7", "4.11.8"}
 
 
 def test_part_standard_download_shows_required_details_and_admin_unlink():
@@ -17,7 +17,7 @@ def test_part_standard_download_shows_required_details_and_admin_unlink():
     assert 'table="part_standard_links"' in text
     assert "Add Selected Standards" in text
     # ordinary linking must no longer delete links as a side effect of multiselect save
-    link_block = text.split('section_bar("CUSTOMER STANDARDS & SPECIFICATIONS"', 1)[1].split('section_bar("RAW MATERIAL DETAILS"', 1)[0]
+    link_block = text.split("part_master_render_entry_d", 1)[1].split("part_master_render_entry_e", 1)[0]
     assert 'repo.delete("part_standard_links"' not in link_block
 
 

@@ -13,7 +13,7 @@ from core.reporting import controlled_record_pdf_bytes, npd_pending_status_pdf_b
 from core.selection_labels import employee_label, part_label, party_label, process_label
 from core.ui import safe
 from core.repository import Repository
-from core.ui import kpi_grid, page_header, save_success_popup, section_bar, status_chip
+from core.ui import kpi_grid, page_header, save_success_popup, section_bar, stage_section, status_chip
 
 
 ORDER_STATUSES = ["OPEN", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"]
@@ -156,201 +156,201 @@ def render_process_flow() -> None:
     flow = _flow_for_part(repo, part_id)
     existing_steps = _flow_steps(repo, str(flow["id"]) if flow else None)
 
-    section_bar("PROCESS FLOW HEADER")
-    c = st.columns(4, gap="small")
-    revision = c[0].text_input("Revision", value=str((flow or {}).get("revision") or "A"), disabled=not perms["can_edit"])
-    effective_date = c[1].date_input("Effective Date", value=_parse_date((flow or {}).get("effective_date")), format="DD-MM-YYYY", disabled=not perms["can_edit"])
-    flow_status = c[2].selectbox("Flow Status", ["ACTIVE", "DRAFT", "INACTIVE"], index=["ACTIVE", "DRAFT", "INACTIVE"].index(str((flow or {}).get("status") or "ACTIVE")) if str((flow or {}).get("status") or "ACTIVE") in ["ACTIVE", "DRAFT", "INACTIVE"] else 0, disabled=not perms["can_edit"])
-    c[3].text_input("Part", value=f"{part.get('part_number')} · {part.get('part_name')}", disabled=True)
-    remarks = st.text_area("Flow Remarks", value=str((flow or {}).get("remarks") or ""), height=70, disabled=not perms["can_edit"])
+    with stage_section("A", 'PROCESS FLOW HEADER', key="npd_apqp_render_process_flow_a"):
+        c = st.columns(4, gap="small")
+        revision = c[0].text_input("Revision", value=str((flow or {}).get("revision") or "A"), disabled=not perms["can_edit"])
+        effective_date = c[1].date_input("Effective Date", value=_parse_date((flow or {}).get("effective_date")), format="DD-MM-YYYY", disabled=not perms["can_edit"])
+        flow_status = c[2].selectbox("Flow Status", ["ACTIVE", "DRAFT", "INACTIVE"], index=["ACTIVE", "DRAFT", "INACTIVE"].index(str((flow or {}).get("status") or "ACTIVE")) if str((flow or {}).get("status") or "ACTIVE") in ["ACTIVE", "DRAFT", "INACTIVE"] else 0, disabled=not perms["can_edit"])
+        c[3].text_input("Part", value=f"{part.get('part_number')} · {part.get('part_name')}", disabled=True)
+        remarks = st.text_area("Flow Remarks", value=str((flow or {}).get("remarks") or ""), height=70, disabled=not perms["can_edit"])
 
-    section_bar("OPERATIONAL SEQUENCE")
-    process_by_id = {str(row["id"]): row for row in processes}
-    process_label_to_id = {_process_label(row): str(row["id"]) for row in processes}
-    employee_labels = _employee_labels(employees)
-    legacy_values = [str(row.get("responsible") or "") for row in existing_steps if not row.get("responsible_employee_id")]
-    employee_options, employee_option_to_id = _employee_option_maps(employees, legacy_values)
-    employee_id_to_option = {employee_id: label for label, employee_id in employee_option_to_id.items() if employee_id}
+    with stage_section("B", 'OPERATIONAL SEQUENCE', key="npd_apqp_render_process_flow_b"):
+        process_by_id = {str(row["id"]): row for row in processes}
+        process_label_to_id = {_process_label(row): str(row["id"]) for row in processes}
+        employee_labels = _employee_labels(employees)
+        legacy_values = [str(row.get("responsible") or "") for row in existing_steps if not row.get("responsible_employee_id")]
+        employee_options, employee_option_to_id = _employee_option_maps(employees, legacy_values)
+        employee_id_to_option = {employee_id: label for label, employee_id in employee_option_to_id.items() if employee_id}
 
-    initial = []
-    for row in existing_steps:
-        proc = process_by_id.get(str(row.get("process_id")))
-        responsible_option = employee_id_to_option.get(str(row.get("responsible_employee_id") or ""))
-        if not responsible_option and row.get("responsible"):
-            responsible_option = f"Legacy · {row.get('responsible')}"
-        initial.append({
-            "Operation No.": int(row.get("operation_no") or 0),
-            "Process": _process_label(proc) if proc else str(row.get("process_name_snapshot") or ""),
-            "Target Lead Days": int(row.get("target_lead_days") or 0),
-            "Responsible Employee": responsible_option or "— Not assigned —",
-            "Remarks": str(row.get("remarks") or ""),
-        })
-    if not initial:
-        initial = [{"Operation No.": 0, "Process": next(iter(process_label_to_id)), "Target Lead Days": 0, "Responsible Employee": "— Not assigned —", "Remarks": ""}]
-    edited = st.data_editor(
-        pd.DataFrame(initial), num_rows="dynamic", hide_index=True, width="stretch", height=390,
-        key=f"npd_flow_grid_{part_id}", disabled=not perms["can_edit"],
-        column_config={
-            "Operation No.": st.column_config.NumberColumn(min_value=0, step=10, required=True, width="small"),
-            "Process": st.column_config.SelectboxColumn(options=list(process_label_to_id), required=True, width="large"),
-            "Target Lead Days": st.column_config.NumberColumn(min_value=0, step=1, help="Optional default lead-time allocation for this process."),
-            "Responsible Employee": st.column_config.SelectboxColumn(options=employee_options, width="large"),
-            "Remarks": st.column_config.TextColumn(width="large"),
-        },
-    )
-
-    if st.button("Save Process Flow", type="primary", width="stretch", disabled=not (perms["can_edit"] or perms["can_create"])):
-        try:
-            rows = edited.fillna("").to_dict("records")
-            clean = []
-            seen = set()
-            for row in rows:
-                process_label = str(row.get("Process") or "").strip()
-                if not process_label:
-                    continue
-                operation_no = int(float(row.get("Operation No.") or 0))
-                if operation_no in seen:
-                    raise ValueError(f"Operation Number {operation_no} is duplicated. Each operation number must be unique.")
-                seen.add(operation_no)
-                process_id = process_label_to_id.get(process_label)
-                if not process_id:
-                    raise ValueError(f"Process '{process_label}' is not an active Process Master record.")
-                clean.append((operation_no, process_id, process_by_id[process_id], row))
-            if not clean:
-                raise ValueError("Add at least one process step before saving the Process Flow.")
-            clean.sort(key=lambda item: item[0])
-            payload = {"part_id": part_id, "revision": revision.strip() or "A", "effective_date": effective_date.isoformat(), "status": flow_status, "remarks": remarks.strip() or None}
-            saved = repo.update("npd_process_flows", str(flow["id"]), payload) if flow else repo.insert("npd_process_flows", payload)
-            old_steps = _flow_steps(repo, str(saved["id"]))
-            old_by_op = {int(row.get("operation_no") or 0): row for row in old_steps}
-            retained_ids: set[str] = set()
-            for operation_no, process_id, process, source in clean:
-                responsible_option = str(source.get("Responsible Employee") or "— Not assigned —")
-                employee_id = employee_option_to_id.get(responsible_option)
-                snapshot = employee_labels.get(str(employee_id)) if employee_id else (responsible_option.removeprefix("Legacy · ").strip() if responsible_option.startswith("Legacy · ") else None)
-                step_payload = {
-                    "flow_id": str(saved["id"]), "process_id": process_id, "operation_no": operation_no,
-                    "process_name_snapshot": str(process.get("process_name") or ""),
-                    "target_lead_days": int(float(source.get("Target Lead Days") or 0)),
-                    "responsible_employee_id": employee_id,
-                    "responsible": snapshot,
-                    "remarks": str(source.get("Remarks") or "").strip() or None,
-                }
-                existing_step = old_by_op.get(operation_no)
-                if existing_step:
-                    repo.update("npd_process_flow_steps", str(existing_step["id"]), step_payload)
-                    retained_ids.add(str(existing_step["id"]))
-                else:
-                    created = repo.insert("npd_process_flow_steps", step_payload)
-                    retained_ids.add(str(created["id"]))
-            for old_step in old_steps:
-                if str(old_step["id"]) not in retained_ids:
-                    repo.delete("npd_process_flow_steps", str(old_step["id"]))
-            save_success_popup("Part Process Flow saved in operational sequence.", queue_for_rerun=True)
-            st.rerun()
-        except Exception as exc:
-            st.error(str(exc))
-
-    if not flow:
-        st.info("Save the Process Flow first. Checkpoints / bullet points can then be added under each process.")
-        return
-
-    # Refresh after any saved flow so checkpoint rows are always tied to stable step IDs.
-    flow = _flow_for_part(repo, part_id)
-    existing_steps = _flow_steps(repo, str(flow["id"]) if flow else None)
-    section_bar("PROCESS CHECKPOINTS / BULLET POINTS", "Add the quality, development or completion points that must be closed under each process.")
-    all_point_rows: list[dict] = []
-    for step in existing_steps:
-        step_id = str(step["id"])
-        points = repo.select("npd_process_flow_points", eq={"flow_step_id": step_id}, order_by="sequence_no", limit=300)
-        all_point_rows.extend([{**point, "_operation_no": step.get("operation_no"), "_process_name": step.get("process_name_snapshot")} for point in points])
-        with st.expander(f"OP {step.get('operation_no')} - {step.get('process_name_snapshot')} · {len(points)} checkpoint(s)", expanded=False):
-            legacy_point_values = [str(point.get("responsible_snapshot") or "") for point in points if not point.get("responsible_employee_id")]
-            point_options, point_option_to_id = _employee_option_maps(employees, legacy_point_values)
-            point_id_to_option = {employee_id: label for label, employee_id in point_option_to_id.items() if employee_id}
-            point_frame = pd.DataFrame([{
-                "ID": str(point["id"]),
-                "Seq": int(point.get("sequence_no") or 10),
-                "Checkpoint / Bullet Point": point.get("point_text") or "",
-                "Responsible Employee": point_id_to_option.get(str(point.get("responsible_employee_id") or "")) or (f"Legacy · {point.get('responsible_snapshot')}" if point.get("responsible_snapshot") else "— Not assigned —"),
-                "Status": point.get("status") or "ACTIVE",
-                "Remarks": point.get("remarks") or "",
-            } for point in points], columns=["ID", "Seq", "Checkpoint / Bullet Point", "Responsible Employee", "Status", "Remarks"])
-            point_edit = st.data_editor(
-                point_frame, num_rows="dynamic", hide_index=True, width="stretch", height=max(180, min(420, 110 + 38 * max(1, len(point_frame)))),
-                key=f"npd_flow_points_{step_id}", disabled=not perms["can_edit"],
-                column_config={
-                    "ID": None,
-                    "Seq": st.column_config.NumberColumn(min_value=0, step=10, required=True, width="small"),
-                    "Checkpoint / Bullet Point": st.column_config.TextColumn(required=True, width="large"),
-                    "Responsible Employee": st.column_config.SelectboxColumn(options=point_options, width="large"),
-                    "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"], required=True),
-                    "Remarks": st.column_config.TextColumn(width="large"),
-                },
-            )
-            if st.button(f"Save Checkpoints - OP {step.get('operation_no')}", key=f"save_points_{step_id}", type="primary", width="stretch", disabled=not perms["can_edit"]):
-                try:
-                    existing_ids = {str(point["id"]) for point in points}
-                    retained: set[str] = set()
-                    seen_seq: set[int] = set()
-                    for row in point_edit.fillna("").to_dict("records"):
-                        point_text = str(row.get("Checkpoint / Bullet Point") or "").strip()
-                        if not point_text:
-                            continue
-                        sequence_no = int(float(row.get("Seq") or 0))
-                        if sequence_no in seen_seq:
-                            raise ValueError(f"Checkpoint sequence {sequence_no} is duplicated in OP {step.get('operation_no')}.")
-                        seen_seq.add(sequence_no)
-                        resp_option = str(row.get("Responsible Employee") or "— Not assigned —")
-                        resp_id = point_option_to_id.get(resp_option)
-                        resp_snapshot = employee_labels.get(str(resp_id)) if resp_id else (resp_option.removeprefix("Legacy · ").strip() if resp_option.startswith("Legacy · ") else None)
-                        payload = {
-                            "flow_step_id": step_id, "sequence_no": sequence_no, "point_text": point_text,
-                            "responsible_employee_id": resp_id, "responsible_snapshot": resp_snapshot,
-                            "status": str(row.get("Status") or "ACTIVE"), "remarks": str(row.get("Remarks") or "").strip() or None,
-                        }
-                        record_id = str(row.get("ID") or "").strip()
-                        if record_id in existing_ids:
-                            repo.update("npd_process_flow_points", record_id, payload); retained.add(record_id)
-                        else:
-                            created = repo.insert("npd_process_flow_points", payload); retained.add(str(created["id"]))
-                    for record_id in existing_ids - retained:
-                        repo.delete("npd_process_flow_points", record_id)
-                    save_success_popup(f"Checkpoints saved for OP {step.get('operation_no')}.", queue_for_rerun=True)
-                    st.rerun()
-                except Exception as exc:
-                    st.error(str(exc))
-
-    if existing_steps:
-        section_bar("CURRENT PROCESS FLOW")
-        preview_steps = [{"operation_no": row.get("operation_no"), "process_name": row.get("process_name_snapshot"), "status": "PENDING", "target_date": None} for row in existing_steps]
-        _render_process_cards(preview_steps)
-        step_rows = [{
-            "Operation No.": row.get("operation_no"), "Process": row.get("process_name_snapshot"),
-            "Target Lead Days": row.get("target_lead_days"), "Responsible": row.get("responsible"), "Remarks": row.get("remarks")
-        } for row in existing_steps]
-        point_rows = [{
-            "Operation No.": row.get("_operation_no"), "Process": row.get("_process_name"), "Seq": row.get("sequence_no"),
-            "Checkpoint": row.get("point_text"), "Responsible": row.get("responsible_snapshot"), "Status": row.get("status"), "Remarks": row.get("remarks")
-        } for row in all_point_rows]
-        pdf = controlled_record_pdf_bytes(
-            "NPD PROCESS FLOW",
-            {"Part Number": part.get("part_number"), "Part Description": part.get("part_name"), "Revision": flow.get("revision"), "Effective Date": flow.get("effective_date"), "Status": flow.get("status"), "Remarks": flow.get("remarks")},
-            {"Operational Sequence": step_rows, "Process Checkpoints / Bullet Points": point_rows},
-            record_number=f"{part.get('part_number')}-REV-{flow.get('revision')}",
+        initial = []
+        for row in existing_steps:
+            proc = process_by_id.get(str(row.get("process_id")))
+            responsible_option = employee_id_to_option.get(str(row.get("responsible_employee_id") or ""))
+            if not responsible_option and row.get("responsible"):
+                responsible_option = f"Legacy · {row.get('responsible')}"
+            initial.append({
+                "Operation No.": int(row.get("operation_no") or 0),
+                "Process": _process_label(proc) if proc else str(row.get("process_name_snapshot") or ""),
+                "Target Lead Days": int(row.get("target_lead_days") or 0),
+                "Responsible Employee": responsible_option or "— Not assigned —",
+                "Remarks": str(row.get("remarks") or ""),
+            })
+        if not initial:
+            initial = [{"Operation No.": 0, "Process": next(iter(process_label_to_id)), "Target Lead Days": 0, "Responsible Employee": "— Not assigned —", "Remarks": ""}]
+        edited = st.data_editor(
+            pd.DataFrame(initial), num_rows="dynamic", hide_index=True, width="stretch", height=390,
+            key=f"npd_flow_grid_{part_id}", disabled=not perms["can_edit"],
+            column_config={
+                "Operation No.": st.column_config.NumberColumn(min_value=0, step=10, required=True, width="small"),
+                "Process": st.column_config.SelectboxColumn(options=list(process_label_to_id), required=True, width="large"),
+                "Target Lead Days": st.column_config.NumberColumn(min_value=0, step=1, help="Optional default lead-time allocation for this process."),
+                "Responsible Employee": st.column_config.SelectboxColumn(options=employee_options, width="large"),
+                "Remarks": st.column_config.TextColumn(width="large"),
+            },
         )
-        c_pdf, c_del = st.columns([2, 1], gap="small")
-        with c_pdf:
-            st.download_button("Download Process Flow PDF", pdf, file_name=f"Process_Flow_{part.get('part_number')}_Rev_{flow.get('revision')}.pdf", mime="application/pdf", width="stretch")
-        with c_del:
-            if password_delete_panel(
-                repo=repo, table="npd_process_flows", rows=[flow],
-                labeler=lambda row: f"{part.get('part_number')} · Rev {row.get('revision')}",
-                key=f"npd_flow_delete_{flow.get('id')}", can_delete=perms["can_archive"],
-                title="Delete Process Flow",
-                help_text="Deletes the selected Process Flow revision and its linked process/checkpoint rows. Current QCMS password is required.",
-            ):
+
+        if st.button("Save Process Flow", type="primary", width="stretch", disabled=not (perms["can_edit"] or perms["can_create"])):
+            try:
+                rows = edited.fillna("").to_dict("records")
+                clean = []
+                seen = set()
+                for row in rows:
+                    process_label = str(row.get("Process") or "").strip()
+                    if not process_label:
+                        continue
+                    operation_no = int(float(row.get("Operation No.") or 0))
+                    if operation_no in seen:
+                        raise ValueError(f"Operation Number {operation_no} is duplicated. Each operation number must be unique.")
+                    seen.add(operation_no)
+                    process_id = process_label_to_id.get(process_label)
+                    if not process_id:
+                        raise ValueError(f"Process '{process_label}' is not an active Process Master record.")
+                    clean.append((operation_no, process_id, process_by_id[process_id], row))
+                if not clean:
+                    raise ValueError("Add at least one process step before saving the Process Flow.")
+                clean.sort(key=lambda item: item[0])
+                payload = {"part_id": part_id, "revision": revision.strip() or "A", "effective_date": effective_date.isoformat(), "status": flow_status, "remarks": remarks.strip() or None}
+                saved = repo.update("npd_process_flows", str(flow["id"]), payload) if flow else repo.insert("npd_process_flows", payload)
+                old_steps = _flow_steps(repo, str(saved["id"]))
+                old_by_op = {int(row.get("operation_no") or 0): row for row in old_steps}
+                retained_ids: set[str] = set()
+                for operation_no, process_id, process, source in clean:
+                    responsible_option = str(source.get("Responsible Employee") or "— Not assigned —")
+                    employee_id = employee_option_to_id.get(responsible_option)
+                    snapshot = employee_labels.get(str(employee_id)) if employee_id else (responsible_option.removeprefix("Legacy · ").strip() if responsible_option.startswith("Legacy · ") else None)
+                    step_payload = {
+                        "flow_id": str(saved["id"]), "process_id": process_id, "operation_no": operation_no,
+                        "process_name_snapshot": str(process.get("process_name") or ""),
+                        "target_lead_days": int(float(source.get("Target Lead Days") or 0)),
+                        "responsible_employee_id": employee_id,
+                        "responsible": snapshot,
+                        "remarks": str(source.get("Remarks") or "").strip() or None,
+                    }
+                    existing_step = old_by_op.get(operation_no)
+                    if existing_step:
+                        repo.update("npd_process_flow_steps", str(existing_step["id"]), step_payload)
+                        retained_ids.add(str(existing_step["id"]))
+                    else:
+                        created = repo.insert("npd_process_flow_steps", step_payload)
+                        retained_ids.add(str(created["id"]))
+                for old_step in old_steps:
+                    if str(old_step["id"]) not in retained_ids:
+                        repo.delete("npd_process_flow_steps", str(old_step["id"]))
+                save_success_popup("Part Process Flow saved in operational sequence.", queue_for_rerun=True)
                 st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+        if not flow:
+            st.info("Save the Process Flow first. Checkpoints / bullet points can then be added under each process.")
+            return
+
+        # Refresh after any saved flow so checkpoint rows are always tied to stable step IDs.
+        flow = _flow_for_part(repo, part_id)
+        existing_steps = _flow_steps(repo, str(flow["id"]) if flow else None)
+    with stage_section("C", 'PROCESS CHECKPOINTS / BULLET POINTS', 'Add the quality, development or completion points that must be closed under each process.', key="npd_apqp_render_process_flow_c"):
+        all_point_rows: list[dict] = []
+        for step in existing_steps:
+            step_id = str(step["id"])
+            points = repo.select("npd_process_flow_points", eq={"flow_step_id": step_id}, order_by="sequence_no", limit=300)
+            all_point_rows.extend([{**point, "_operation_no": step.get("operation_no"), "_process_name": step.get("process_name_snapshot")} for point in points])
+            with st.expander(f"OP {step.get('operation_no')} - {step.get('process_name_snapshot')} · {len(points)} checkpoint(s)", expanded=False):
+                legacy_point_values = [str(point.get("responsible_snapshot") or "") for point in points if not point.get("responsible_employee_id")]
+                point_options, point_option_to_id = _employee_option_maps(employees, legacy_point_values)
+                point_id_to_option = {employee_id: label for label, employee_id in point_option_to_id.items() if employee_id}
+                point_frame = pd.DataFrame([{
+                    "ID": str(point["id"]),
+                    "Seq": int(point.get("sequence_no") or 10),
+                    "Checkpoint / Bullet Point": point.get("point_text") or "",
+                    "Responsible Employee": point_id_to_option.get(str(point.get("responsible_employee_id") or "")) or (f"Legacy · {point.get('responsible_snapshot')}" if point.get("responsible_snapshot") else "— Not assigned —"),
+                    "Status": point.get("status") or "ACTIVE",
+                    "Remarks": point.get("remarks") or "",
+                } for point in points], columns=["ID", "Seq", "Checkpoint / Bullet Point", "Responsible Employee", "Status", "Remarks"])
+                point_edit = st.data_editor(
+                    point_frame, num_rows="dynamic", hide_index=True, width="stretch", height=max(180, min(420, 110 + 38 * max(1, len(point_frame)))),
+                    key=f"npd_flow_points_{step_id}", disabled=not perms["can_edit"],
+                    column_config={
+                        "ID": None,
+                        "Seq": st.column_config.NumberColumn(min_value=0, step=10, required=True, width="small"),
+                        "Checkpoint / Bullet Point": st.column_config.TextColumn(required=True, width="large"),
+                        "Responsible Employee": st.column_config.SelectboxColumn(options=point_options, width="large"),
+                        "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"], required=True),
+                        "Remarks": st.column_config.TextColumn(width="large"),
+                    },
+                )
+                if st.button(f"Save Checkpoints - OP {step.get('operation_no')}", key=f"save_points_{step_id}", type="primary", width="stretch", disabled=not perms["can_edit"]):
+                    try:
+                        existing_ids = {str(point["id"]) for point in points}
+                        retained: set[str] = set()
+                        seen_seq: set[int] = set()
+                        for row in point_edit.fillna("").to_dict("records"):
+                            point_text = str(row.get("Checkpoint / Bullet Point") or "").strip()
+                            if not point_text:
+                                continue
+                            sequence_no = int(float(row.get("Seq") or 0))
+                            if sequence_no in seen_seq:
+                                raise ValueError(f"Checkpoint sequence {sequence_no} is duplicated in OP {step.get('operation_no')}.")
+                            seen_seq.add(sequence_no)
+                            resp_option = str(row.get("Responsible Employee") or "— Not assigned —")
+                            resp_id = point_option_to_id.get(resp_option)
+                            resp_snapshot = employee_labels.get(str(resp_id)) if resp_id else (resp_option.removeprefix("Legacy · ").strip() if resp_option.startswith("Legacy · ") else None)
+                            payload = {
+                                "flow_step_id": step_id, "sequence_no": sequence_no, "point_text": point_text,
+                                "responsible_employee_id": resp_id, "responsible_snapshot": resp_snapshot,
+                                "status": str(row.get("Status") or "ACTIVE"), "remarks": str(row.get("Remarks") or "").strip() or None,
+                            }
+                            record_id = str(row.get("ID") or "").strip()
+                            if record_id in existing_ids:
+                                repo.update("npd_process_flow_points", record_id, payload); retained.add(record_id)
+                            else:
+                                created = repo.insert("npd_process_flow_points", payload); retained.add(str(created["id"]))
+                        for record_id in existing_ids - retained:
+                            repo.delete("npd_process_flow_points", record_id)
+                        save_success_popup(f"Checkpoints saved for OP {step.get('operation_no')}.", queue_for_rerun=True)
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(str(exc))
+
+        if existing_steps:
+            st.markdown("**Current Process Flow**")
+            preview_steps = [{"operation_no": row.get("operation_no"), "process_name": row.get("process_name_snapshot"), "status": "PENDING", "target_date": None} for row in existing_steps]
+            _render_process_cards(preview_steps)
+            step_rows = [{
+                "Operation No.": row.get("operation_no"), "Process": row.get("process_name_snapshot"),
+                "Target Lead Days": row.get("target_lead_days"), "Responsible": row.get("responsible"), "Remarks": row.get("remarks")
+            } for row in existing_steps]
+            point_rows = [{
+                "Operation No.": row.get("_operation_no"), "Process": row.get("_process_name"), "Seq": row.get("sequence_no"),
+                "Checkpoint": row.get("point_text"), "Responsible": row.get("responsible_snapshot"), "Status": row.get("status"), "Remarks": row.get("remarks")
+            } for row in all_point_rows]
+            pdf = controlled_record_pdf_bytes(
+                "NPD PROCESS FLOW",
+                {"Part Number": part.get("part_number"), "Part Description": part.get("part_name"), "Revision": flow.get("revision"), "Effective Date": flow.get("effective_date"), "Status": flow.get("status"), "Remarks": flow.get("remarks")},
+                {"Operational Sequence": step_rows, "Process Checkpoints / Bullet Points": point_rows},
+                record_number=f"{part.get('part_number')}-REV-{flow.get('revision')}",
+            )
+            c_pdf, c_del = st.columns([2, 1], gap="small")
+            with c_pdf:
+                st.download_button("Download Process Flow PDF", pdf, file_name=f"Process_Flow_{part.get('part_number')}_Rev_{flow.get('revision')}.pdf", mime="application/pdf", width="stretch")
+            with c_del:
+                if password_delete_panel(
+                    repo=repo, table="npd_process_flows", rows=[flow],
+                    labeler=lambda row: f"{part.get('part_number')} · Rev {row.get('revision')}",
+                    key=f"npd_flow_delete_{flow.get('id')}", can_delete=perms["can_archive"],
+                    title="Delete Process Flow",
+                    help_text="Deletes the selected Process Flow revision and its linked process/checkpoint rows. Current QCMS password is required.",
+                ):
+                    st.rerun()
 
 
 def _suggested_target_dates(start: date, delivery: date, count: int) -> list[date]:
@@ -462,257 +462,258 @@ def render_npd_status() -> None:
 
     tab1, tab2 = st.tabs(["Order Entry", "Order Status"])
     with tab1:
-        section_bar("NPD ORDER / PART STATUS ENTRY")
-        edit_options = [""] + [str(row["id"]) for row in orders]
-        edit_id = st.selectbox("Edit Existing Order (optional)", edit_options, format_func=lambda value: "New Order" if not value else _order_label(next(row for row in orders if str(row["id"]) == value), part_by_id, customer_by_id), key="npd_order_edit")
-        existing = next((row for row in orders if str(row["id"]) == edit_id), None)
-        default_part_id = str((existing or {}).get("part_id") or parts[0]["id"])
-        default_part = part_by_id.get(default_part_id) or parts[0]
-        linked_customer = str(default_part.get("customer_id") or "")
-        default_customer_id = str((existing or {}).get("customer_id") or linked_customer or customers[0]["id"])
-        with st.form("npd_order_form"):
-            c = st.columns(4, gap="small")
-            order_number = c[0].text_input("Customer / Internal Order Number", value=str((existing or {}).get("order_number") or ""))
-            part_id = c[1].selectbox("Part Number", list(part_labels), index=list(part_labels).index(default_part_id) if default_part_id in part_labels else 0, format_func=lambda value: part_labels[value], disabled=bool(existing))
-            customer_id = c[2].selectbox("Customer", list(customer_labels), index=list(customer_labels).index(default_customer_id) if default_customer_id in customer_labels else 0, format_func=lambda value: customer_labels[value])
-            qty = c[3].number_input("Order Qty (pcs)", min_value=1.0, value=float((existing or {}).get("order_qty") or 1), step=1.0)
-            c = st.columns(4, gap="small")
-            order_date = c[0].date_input("Order Date", value=_parse_date((existing or {}).get("order_date")), format="DD-MM-YYYY")
-            start_date = c[1].date_input("NPD Start Date", value=_parse_date((existing or {}).get("start_date")), format="DD-MM-YYYY")
-            delivery_date = c[2].date_input("Customer Delivery Date", value=_parse_date((existing or {}).get("delivery_date"), date.today() + timedelta(days=30)), format="DD-MM-YYYY")
-            c[3].selectbox("Order Status", ORDER_STATUSES, index=ORDER_STATUSES.index(str((existing or {}).get("status") or "OPEN")) if str((existing or {}).get("status") or "OPEN") in ORDER_STATUSES else 0, disabled=True)
-            remarks = st.text_area("Order / Development Remarks", value=str((existing or {}).get("remarks") or ""), height=70)
-            submitted = st.form_submit_button("Save NPD Order", type="primary", width="stretch", disabled=not (perms["can_create"] or perms["can_edit"]))
-        if submitted:
-            try:
-                if not order_number.strip():
-                    raise ValueError("Order Number is required.")
-                if delivery_date < start_date:
-                    raise ValueError("Customer Delivery Date cannot be before the NPD Start Date.")
-                # Case-insensitive duplicate order-number protection on both create and edit.
-                for row in orders:
-                    if existing and str(row.get("id")) == str(existing.get("id")):
-                        continue
-                    if str(row.get("order_number") or "").strip().casefold() == order_number.strip().casefold():
-                        raise ValueError("Duplicate NPD Order Number is not allowed.")
-                flow = _flow_for_part(repo, part_id)
-                flow_steps = _flow_steps(repo, str(flow["id"]) if flow else None)
-                if not flow_steps and not existing:
-                    raise ValueError("Create and save the Part Process Flow before creating this NPD Order.")
-                payload = {"order_number": order_number.strip(), "part_id": part_id, "customer_id": customer_id, "order_qty": qty, "order_date": order_date.isoformat(), "start_date": start_date.isoformat(), "delivery_date": delivery_date.isoformat(), "remarks": remarks.strip() or None}
-                saved = repo.update("npd_orders", str(existing["id"]), payload) if existing else repo.insert("npd_orders", {**payload, "status": "OPEN"})
-                if not existing:
-                    suggested = _suggested_target_dates(start_date, delivery_date, len(flow_steps))
-                    for index, step in enumerate(flow_steps):
-                        order_step = repo.insert("npd_order_steps", {
-                            "npd_order_id": str(saved["id"]), "flow_step_id": str(step["id"]), "operation_no": int(step.get("operation_no") or 0),
-                            "process_id": step.get("process_id"), "process_name": str(step.get("process_name_snapshot") or ""),
-                            "target_date": suggested[index].isoformat(), "status": "PENDING", "completed_date": None,
-                            "responsible_employee_id": step.get("responsible_employee_id"), "responsible": step.get("responsible"), "remarks": None,
-                        })
-                        flow_points = repo.select("npd_process_flow_points", eq={"flow_step_id": str(step["id"]), "status": "ACTIVE"}, order_by="sequence_no", limit=300)
-                        for point in flow_points:
-                            repo.insert("npd_order_step_points", {
-                                "npd_order_step_id": str(order_step["id"]), "flow_point_id": str(point["id"]),
-                                "sequence_no": int(point.get("sequence_no") or 10), "point_text": point.get("point_text"),
-                                "responsible_employee_id": point.get("responsible_employee_id"), "responsible_snapshot": point.get("responsible_snapshot"),
+        with stage_section("A", "NPD ORDER / PART STATUS ENTRY", key="npd_status_entry_a"):
+            edit_options = [""] + [str(row["id"]) for row in orders]
+            edit_id = st.selectbox("Edit Existing Order (optional)", edit_options, format_func=lambda value: "New Order" if not value else _order_label(next(row for row in orders if str(row["id"]) == value), part_by_id, customer_by_id), key="npd_order_edit")
+            existing = next((row for row in orders if str(row["id"]) == edit_id), None)
+            default_part_id = str((existing or {}).get("part_id") or parts[0]["id"])
+            default_part = part_by_id.get(default_part_id) or parts[0]
+            linked_customer = str(default_part.get("customer_id") or "")
+            default_customer_id = str((existing or {}).get("customer_id") or linked_customer or customers[0]["id"])
+            with st.form("npd_order_form"):
+                c = st.columns(4, gap="small")
+                order_number = c[0].text_input("Customer / Internal Order Number", value=str((existing or {}).get("order_number") or ""))
+                part_id = c[1].selectbox("Part Number", list(part_labels), index=list(part_labels).index(default_part_id) if default_part_id in part_labels else 0, format_func=lambda value: part_labels[value], disabled=bool(existing))
+                customer_id = c[2].selectbox("Customer", list(customer_labels), index=list(customer_labels).index(default_customer_id) if default_customer_id in customer_labels else 0, format_func=lambda value: customer_labels[value])
+                qty = c[3].number_input("Order Qty (pcs)", min_value=1.0, value=float((existing or {}).get("order_qty") or 1), step=1.0)
+                c = st.columns(4, gap="small")
+                order_date = c[0].date_input("Order Date", value=_parse_date((existing or {}).get("order_date")), format="DD-MM-YYYY")
+                start_date = c[1].date_input("NPD Start Date", value=_parse_date((existing or {}).get("start_date")), format="DD-MM-YYYY")
+                delivery_date = c[2].date_input("Customer Delivery Date", value=_parse_date((existing or {}).get("delivery_date"), date.today() + timedelta(days=30)), format="DD-MM-YYYY")
+                c[3].selectbox("Order Status", ORDER_STATUSES, index=ORDER_STATUSES.index(str((existing or {}).get("status") or "OPEN")) if str((existing or {}).get("status") or "OPEN") in ORDER_STATUSES else 0, disabled=True)
+                remarks = st.text_area("Order / Development Remarks", value=str((existing or {}).get("remarks") or ""), height=70)
+                submitted = st.form_submit_button("Save NPD Order", type="primary", width="stretch", disabled=not (perms["can_create"] or perms["can_edit"]))
+            if submitted:
+                try:
+                    if not order_number.strip():
+                        raise ValueError("Order Number is required.")
+                    if delivery_date < start_date:
+                        raise ValueError("Customer Delivery Date cannot be before the NPD Start Date.")
+                    # Case-insensitive duplicate order-number protection on both create and edit.
+                    for row in orders:
+                        if existing and str(row.get("id")) == str(existing.get("id")):
+                            continue
+                        if str(row.get("order_number") or "").strip().casefold() == order_number.strip().casefold():
+                            raise ValueError("Duplicate NPD Order Number is not allowed.")
+                    flow = _flow_for_part(repo, part_id)
+                    flow_steps = _flow_steps(repo, str(flow["id"]) if flow else None)
+                    if not flow_steps and not existing:
+                        raise ValueError("Create and save the Part Process Flow before creating this NPD Order.")
+                    payload = {"order_number": order_number.strip(), "part_id": part_id, "customer_id": customer_id, "order_qty": qty, "order_date": order_date.isoformat(), "start_date": start_date.isoformat(), "delivery_date": delivery_date.isoformat(), "remarks": remarks.strip() or None}
+                    saved = repo.update("npd_orders", str(existing["id"]), payload) if existing else repo.insert("npd_orders", {**payload, "status": "OPEN"})
+                    if not existing:
+                        suggested = _suggested_target_dates(start_date, delivery_date, len(flow_steps))
+                        for index, step in enumerate(flow_steps):
+                            order_step = repo.insert("npd_order_steps", {
+                                "npd_order_id": str(saved["id"]), "flow_step_id": str(step["id"]), "operation_no": int(step.get("operation_no") or 0),
+                                "process_id": step.get("process_id"), "process_name": str(step.get("process_name_snapshot") or ""),
                                 "target_date": suggested[index].isoformat(), "status": "PENDING", "completed_date": None,
-                                "remarks": point.get("remarks"),
+                                "responsible_employee_id": step.get("responsible_employee_id"), "responsible": step.get("responsible"), "remarks": None,
                             })
-                save_success_popup("NPD Order saved and process/checkpoint status cards created from the Part Process Flow.", queue_for_rerun=True)
-                st.rerun()
-            except Exception as exc:
-                st.error(str(exc))
+                            flow_points = repo.select("npd_process_flow_points", eq={"flow_step_id": str(step["id"]), "status": "ACTIVE"}, order_by="sequence_no", limit=300)
+                            for point in flow_points:
+                                repo.insert("npd_order_step_points", {
+                                    "npd_order_step_id": str(order_step["id"]), "flow_point_id": str(point["id"]),
+                                    "sequence_no": int(point.get("sequence_no") or 10), "point_text": point.get("point_text"),
+                                    "responsible_employee_id": point.get("responsible_employee_id"), "responsible_snapshot": point.get("responsible_snapshot"),
+                                    "target_date": suggested[index].isoformat(), "status": "PENDING", "completed_date": None,
+                                    "remarks": point.get("remarks"),
+                                })
+                    save_success_popup("NPD Order saved and process/checkpoint status cards created from the Part Process Flow.", queue_for_rerun=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
 
-        if existing:
-            if password_delete_panel(
-                repo=repo, table="npd_orders", rows=[existing],
-                labeler=lambda row: f"{row.get('order_number')} · {(part_by_id.get(str(row.get('part_id'))) or {}).get('part_number')}",
-                key=f"npd_order_entry_delete_{existing.get('id')}", can_delete=perms["can_archive"],
-                title="Delete Selected NPD Order",
-                help_text="Permanently deletes the selected order entry and its process/checkpoint history after verifying your current QCMS password.",
-            ):
-                st.rerun()
+            if existing:
+                if password_delete_panel(
+                    repo=repo, table="npd_orders", rows=[existing],
+                    labeler=lambda row: f"{row.get('order_number')} · {(part_by_id.get(str(row.get('part_id'))) or {}).get('part_number')}",
+                    key=f"npd_order_entry_delete_{existing.get('id')}", can_delete=perms["can_archive"],
+                    title="Delete Selected NPD Order",
+                    help_text="Permanently deletes the selected order entry and its process/checkpoint history after verifying your current QCMS password.",
+                ):
+                    st.rerun()
 
         if orders:
-            section_bar("ORDER REGISTER")
-            frame = pd.DataFrame([{
-                "Order": row.get("order_number"), "Part": (part_by_id.get(str(row.get("part_id"))) or {}).get("part_number"),
-                "Customer": (customer_by_id.get(str(row.get("customer_id"))) or {}).get("party_name"), "Order Qty": row.get("order_qty"),
-                "Start Date": row.get("start_date"), "Delivery Date": row.get("delivery_date"), "Status": str(row.get("status") or "").replace("_", " ").title(),
-            } for row in orders])
-            st.dataframe(frame, hide_index=True, width="stretch", height=330)
+            with stage_section("B", "ORDER REGISTER", key="npd_status_entry_b"):
+                frame = pd.DataFrame([{
+                    "Order": row.get("order_number"), "Part": (part_by_id.get(str(row.get("part_id"))) or {}).get("part_number"),
+                    "Customer": (customer_by_id.get(str(row.get("customer_id"))) or {}).get("party_name"), "Order Qty": row.get("order_qty"),
+                    "Start Date": row.get("start_date"), "Delivery Date": row.get("delivery_date"), "Status": str(row.get("status") or "").replace("_", " ").title(),
+                } for row in orders])
+                st.dataframe(frame, hide_index=True, width="stretch", height=330)
 
     with tab2:
         if not orders:
             st.info("Create an NPD Order to open the real-time Process Status view.")
             return
-        _render_pending_order_matrix(repo, orders, part_by_id, customer_by_id)
-        section_bar("SELECTED ORDER DETAIL", "Open one order below to update target dates, process status, responsible employees and checkpoint remarks.")
-        order_labels = {str(row["id"]): _order_label(row, part_by_id, customer_by_id) for row in orders}
-        order_id = st.selectbox("Open Order Status", list(order_labels), format_func=lambda value: order_labels[value], key="npd_status_order")
-        order = next(row for row in orders if str(row["id"]) == order_id)
-        steps = repo.select("npd_order_steps", eq={"npd_order_id": order_id}, order_by="operation_no", limit=500)
-        points_by_step: dict[str, list[dict]] = {}
-        for step in steps:
-            points_by_step[str(step["id"])] = repo.select("npd_order_step_points", eq={"npd_order_step_id": str(step["id"])}, order_by="sequence_no", limit=500)
-        point_progress = {
-            step_id: (
-                sum(str(point.get("status") or "") in {"COMPLETED", "NOT_APPLICABLE"} for point in points),
-                len(points),
-            )
-            for step_id, points in points_by_step.items()
-        }
-        today = date.today()
-        overdue_count = sum(_step_realtime_state(row, today)[0] == "overdue" for row in steps)
-        completed_count = sum(str(row.get("status") or "") == "COMPLETED" for row in steps)
-        in_progress_count = sum(str(row.get("status") or "") == "IN_PROGRESS" for row in steps)
-        all_points = [point for points in points_by_step.values() for point in points]
-        completed_points = sum(str(point.get("status") or "") in {"COMPLETED", "NOT_APPLICABLE"} for point in all_points)
-        due = _parse_date(order.get("delivery_date"))
-        days_to_delivery = (due - today).days
-        overall = "COMPLETED" if steps and completed_count == len(steps) else ("DELAYED" if overdue_count else "ON TRACK")
-        kpi_grid([
-            {"label": "Order Qty", "value": f"{float(order.get('order_qty') or 0):,.0f}", "foot": "pcs", "color": "#1469A8", "background": "#EFF6FF"},
-            {"label": "Processes Complete", "value": f"{completed_count}/{len(steps)}", "foot": "Operational sequence", "color": "#15803D", "background": "#F0FDF4"},
-            {"label": "Checkpoints Complete", "value": f"{completed_points}/{len(all_points)}", "foot": "Bullet-point closure", "color": "#0F766E", "background": "#F0FDFA"},
-            {"label": "Overdue Processes", "value": overdue_count, "foot": "Target date exceeded", "color": "#B91C1C", "background": "#FEF2F2"},
-            {"label": "Days to Delivery", "value": days_to_delivery, "foot": due.strftime("%d-%m-%Y"), "color": "#D97706" if days_to_delivery < 7 else "#0F766E", "background": "#FFF7ED" if days_to_delivery < 7 else "#F0FDFA"},
-            {"label": "Real-time Status", "value": overall, "foot": "Date-driven evaluation", "color": "#B91C1C" if overall == "DELAYED" else "#15803D", "background": "#FEF2F2" if overall == "DELAYED" else "#F0FDF4"},
-        ])
-        section_bar("ORDER PROCESS STATUS")
-        _render_process_cards(steps, point_progress)
-
-        section_bar("UPDATE PROCESS TARGETS & STATUS")
-        legacy_values = [str(row.get("responsible") or "") for row in steps if not row.get("responsible_employee_id")]
-        process_employee_options, process_option_to_id = _employee_option_maps(employees, legacy_values)
-        process_id_to_option = {employee_id: label for label, employee_id in process_option_to_id.items() if employee_id}
-        process_frame = pd.DataFrame([{
-            "ID": str(row["id"]), "Operation No.": int(row.get("operation_no") or 0), "Process": row.get("process_name"),
-            "Target Date": _parse_date(row.get("target_date")) if row.get("target_date") else None,
-            "Status": str(row.get("status") or "PENDING"), "Completed Date": _parse_date(row.get("completed_date")) if row.get("completed_date") else None,
-            "Responsible Employee": process_id_to_option.get(str(row.get("responsible_employee_id") or "")) or (f"Legacy · {row.get('responsible')}" if row.get("responsible") else "— Not assigned —"),
-            "Remarks": row.get("remarks") or "",
-        } for row in steps])
-        edited = st.data_editor(
-            process_frame, hide_index=True, width="stretch", height=max(260, min(560, 92 + 38 * max(1, len(process_frame)))), key=f"npd_order_step_editor_{order_id}", disabled=not perms["can_edit"],
-            column_config={
-                "ID": None, "Operation No.": st.column_config.NumberColumn(disabled=True, width="small"), "Process": st.column_config.TextColumn(disabled=True, width="large"),
-                "Target Date": st.column_config.DateColumn(format="DD-MM-YYYY", required=True), "Status": st.column_config.SelectboxColumn(options=STEP_STATUSES, required=True),
-                "Completed Date": st.column_config.DateColumn(format="DD-MM-YYYY"), "Responsible Employee": st.column_config.SelectboxColumn(options=process_employee_options, width="large"), "Remarks": st.column_config.TextColumn(width="large"),
-            },
-        )
-        if st.button("Update Order Process Status", type="primary", width="stretch", disabled=not perms["can_edit"]):
-            try:
-                for row in edited.to_dict("records"):
-                    status = str(row.get("Status") or "PENDING")
-                    completed = row.get("Completed Date")
-                    if status == "COMPLETED" and (completed is None or pd.isna(completed)):
-                        completed = date.today()
-                    if status != "COMPLETED":
-                        completed = None
-                    target = row.get("Target Date")
-                    resp_option = str(row.get("Responsible Employee") or "— Not assigned —")
-                    resp_id = process_option_to_id.get(resp_option)
-                    resp_snapshot = employee_labels.get(str(resp_id)) if resp_id else (resp_option.removeprefix("Legacy · ").strip() if resp_option.startswith("Legacy · ") else None)
-                    repo.update("npd_order_steps", str(row["ID"]), {
-                        "target_date": target.isoformat() if isinstance(target, date) else str(target)[:10], "status": status,
-                        "completed_date": completed.isoformat() if isinstance(completed, date) else (str(completed)[:10] if completed else None),
-                        "responsible_employee_id": resp_id, "responsible": resp_snapshot,
-                        "remarks": str(row.get("Remarks") or "").strip() or None,
-                    })
-                refreshed = repo.select("npd_order_steps", eq={"npd_order_id": order_id}, order_by="operation_no", limit=500)
-                _sync_order_overall_status(repo, order, refreshed)
-                save_success_popup("Process target dates and real-time status updated.", queue_for_rerun=True)
-                st.rerun()
-            except Exception as exc:
-                st.error(str(exc))
-
-        section_bar("PROCESS CHECKPOINTS / BULLET POINTS", "Update each point as Pending, In Progress, Completed, On Hold or Not Applicable, with responsible employee and remarks.")
-        for step in steps:
-            step_id = str(step["id"])
-            points = points_by_step.get(step_id, [])
-            done, total = point_progress.get(step_id, (0, 0))
-            with st.expander(f"OP {step.get('operation_no')} - {step.get('process_name')} · Checkpoints {done}/{total}", expanded=False):
-                if not points:
-                    st.caption("No checkpoints were defined in the Process Flow for this operation.")
-                    continue
-                legacy_point_values = [str(point.get("responsible_snapshot") or "") for point in points if not point.get("responsible_employee_id")]
-                point_employee_options, point_option_to_id = _employee_option_maps(employees, legacy_point_values)
-                point_id_to_option = {employee_id: label for label, employee_id in point_option_to_id.items() if employee_id}
-                point_frame = pd.DataFrame([{
-                    "ID": str(point["id"]), "Seq": int(point.get("sequence_no") or 10), "Checkpoint / Bullet Point": point.get("point_text"),
-                    "Target Date": _parse_date(point.get("target_date")) if point.get("target_date") else None,
-                    "Status": point.get("status") or "PENDING", "Completed Date": _parse_date(point.get("completed_date")) if point.get("completed_date") else None,
-                    "Responsible Employee": point_id_to_option.get(str(point.get("responsible_employee_id") or "")) or (f"Legacy · {point.get('responsible_snapshot')}" if point.get("responsible_snapshot") else "— Not assigned —"),
-                    "Remarks": point.get("remarks") or "",
-                } for point in points])
-                point_edit = st.data_editor(
-                    point_frame, hide_index=True, width="stretch", height=max(180, min(430, 110 + 38 * len(point_frame))), key=f"npd_order_points_{step_id}", disabled=not perms["can_edit"],
-                    column_config={
-                        "ID": None, "Seq": st.column_config.NumberColumn(disabled=True, width="small"), "Checkpoint / Bullet Point": st.column_config.TextColumn(disabled=True, width="large"),
-                        "Target Date": st.column_config.DateColumn(format="DD-MM-YYYY"), "Status": st.column_config.SelectboxColumn(options=["PENDING","IN_PROGRESS","ON_HOLD","COMPLETED","NOT_APPLICABLE"], required=True),
-                        "Completed Date": st.column_config.DateColumn(format="DD-MM-YYYY"), "Responsible Employee": st.column_config.SelectboxColumn(options=point_employee_options, width="large"),
-                        "Remarks": st.column_config.TextColumn(width="large"),
-                    },
+        with stage_section("A", "PENDING ORDER PROCESS STATUS", key="npd_status_detail_a"):
+            _render_pending_order_matrix(repo, orders, part_by_id, customer_by_id)
+        with stage_section("B", "SELECTED ORDER DETAIL", "Open one order below to review the current process status and target dates.", key="npd_status_detail_b"):
+            order_labels = {str(row["id"]): _order_label(row, part_by_id, customer_by_id) for row in orders}
+            order_id = st.selectbox("Open Order Status", list(order_labels), format_func=lambda value: order_labels[value], key="npd_status_order")
+            order = next(row for row in orders if str(row["id"]) == order_id)
+            steps = repo.select("npd_order_steps", eq={"npd_order_id": order_id}, order_by="operation_no", limit=500)
+            points_by_step: dict[str, list[dict]] = {}
+            for step in steps:
+                points_by_step[str(step["id"])] = repo.select("npd_order_step_points", eq={"npd_order_step_id": str(step["id"])}, order_by="sequence_no", limit=500)
+            point_progress = {
+                step_id: (
+                    sum(str(point.get("status") or "") in {"COMPLETED", "NOT_APPLICABLE"} for point in points),
+                    len(points),
                 )
-                if st.button(f"Update Checkpoints - OP {step.get('operation_no')}", key=f"update_order_points_{step_id}", type="primary", width="stretch", disabled=not perms["can_edit"]):
-                    try:
-                        for row in point_edit.to_dict("records"):
-                            point_status = str(row.get("Status") or "PENDING")
-                            completed = row.get("Completed Date")
-                            if point_status == "COMPLETED" and (completed is None or pd.isna(completed)):
-                                completed = date.today()
-                            if point_status != "COMPLETED":
-                                completed = None
-                            target = row.get("Target Date")
-                            resp_option = str(row.get("Responsible Employee") or "— Not assigned —")
-                            resp_id = point_option_to_id.get(resp_option)
-                            resp_snapshot = employee_labels.get(str(resp_id)) if resp_id else (resp_option.removeprefix("Legacy · ").strip() if resp_option.startswith("Legacy · ") else None)
-                            repo.update("npd_order_step_points", str(row["ID"]), {
-                                "target_date": target.isoformat() if isinstance(target, date) else (str(target)[:10] if target else None),
-                                "status": point_status,
-                                "completed_date": completed.isoformat() if isinstance(completed, date) else (str(completed)[:10] if completed else None),
-                                "responsible_employee_id": resp_id, "responsible_snapshot": resp_snapshot,
-                                "remarks": str(row.get("Remarks") or "").strip() or None,
-                            })
-                        save_success_popup(f"Checkpoint status updated for OP {step.get('operation_no')}.", queue_for_rerun=True)
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(str(exc))
+                for step_id, points in points_by_step.items()
+            }
+            today = date.today()
+            overdue_count = sum(_step_realtime_state(row, today)[0] == "overdue" for row in steps)
+            completed_count = sum(str(row.get("status") or "") == "COMPLETED" for row in steps)
+            in_progress_count = sum(str(row.get("status") or "") == "IN_PROGRESS" for row in steps)
+            all_points = [point for points in points_by_step.values() for point in points]
+            completed_points = sum(str(point.get("status") or "") in {"COMPLETED", "NOT_APPLICABLE"} for point in all_points)
+            due = _parse_date(order.get("delivery_date"))
+            days_to_delivery = (due - today).days
+            overall = "COMPLETED" if steps and completed_count == len(steps) else ("DELAYED" if overdue_count else "ON TRACK")
+            kpi_grid([
+                {"label": "Order Qty", "value": f"{float(order.get('order_qty') or 0):,.0f}", "foot": "pcs", "color": "#1469A8", "background": "#EFF6FF"},
+                {"label": "Processes Complete", "value": f"{completed_count}/{len(steps)}", "foot": "Operational sequence", "color": "#15803D", "background": "#F0FDF4"},
+                {"label": "Checkpoints Complete", "value": f"{completed_points}/{len(all_points)}", "foot": "Bullet-point closure", "color": "#0F766E", "background": "#F0FDFA"},
+                {"label": "Overdue Processes", "value": overdue_count, "foot": "Target date exceeded", "color": "#B91C1C", "background": "#FEF2F2"},
+                {"label": "Days to Delivery", "value": days_to_delivery, "foot": due.strftime("%d-%m-%Y"), "color": "#D97706" if days_to_delivery < 7 else "#0F766E", "background": "#FFF7ED" if days_to_delivery < 7 else "#F0FDFA"},
+                {"label": "Real-time Status", "value": overall, "foot": "Date-driven evaluation", "color": "#B91C1C" if overall == "DELAYED" else "#15803D", "background": "#FEF2F2" if overall == "DELAYED" else "#F0FDF4"},
+            ])
+        with stage_section("C", "ORDER PROCESS STATUS", key="npd_status_detail_c"):
+            _render_process_cards(steps, point_progress)
 
-        part = part_by_id.get(str(order.get("part_id"))) or {}
-        customer = customer_by_id.get(str(order.get("customer_id"))) or {}
-        process_pdf_rows = [{
-            "Operation No.": row.get("operation_no"), "Process": row.get("process_name"), "Target Date": row.get("target_date"),
-            "Status": row.get("status"), "Completed Date": row.get("completed_date"), "Responsible": row.get("responsible"), "Remarks": row.get("remarks")
-        } for row in steps]
-        point_pdf_rows = []
-        for step in steps:
-            for point in points_by_step.get(str(step["id"]), []):
-                point_pdf_rows.append({
-                    "Operation No.": step.get("operation_no"), "Process": step.get("process_name"), "Seq": point.get("sequence_no"),
-                    "Checkpoint": point.get("point_text"), "Target Date": point.get("target_date"), "Status": point.get("status"),
-                    "Completed Date": point.get("completed_date"), "Responsible": point.get("responsible_snapshot"), "Remarks": point.get("remarks"),
-                })
-        pdf = controlled_record_pdf_bytes(
-            "NPD ORDER STATUS",
-            {"Order Number": order.get("order_number"), "Part Number": part.get("part_number"), "Part Description": part.get("part_name"), "Customer": customer.get("party_name"), "Order Qty": order.get("order_qty"), "Order Date": order.get("order_date"), "Start Date": order.get("start_date"), "Delivery Date": order.get("delivery_date"), "Overall Status": overall, "Order Remarks": order.get("remarks")},
-            {"Process Status": process_pdf_rows, "Process Checkpoints / Bullet Points": point_pdf_rows},
-            record_number=str(order.get("order_number") or ""),
-        )
-        c_pdf, c_del = st.columns([2, 1], gap="small")
-        with c_pdf:
-            st.download_button("Download NPD Order Status PDF", pdf, file_name=f"NPD_Order_Status_{order.get('order_number')}.pdf", mime="application/pdf", width="stretch")
-        with c_del:
-            if password_delete_panel(
-                repo=repo, table="npd_orders", rows=[order],
-                labeler=lambda row: f"{row.get('order_number')} · {part.get('part_number')}",
-                key=f"npd_order_delete_{order.get('id')}", can_delete=perms["can_archive"],
-                title="Delete NPD Order",
-                help_text="Deletes this NPD Order and its process/checkpoint status history. Current QCMS password is required.",
-            ):
-                st.rerun()
+        with stage_section("D", "UPDATE PROCESS TARGETS & STATUS", key="npd_status_detail_d"):
+            legacy_values = [str(row.get("responsible") or "") for row in steps if not row.get("responsible_employee_id")]
+            process_employee_options, process_option_to_id = _employee_option_maps(employees, legacy_values)
+            process_id_to_option = {employee_id: label for label, employee_id in process_option_to_id.items() if employee_id}
+            process_frame = pd.DataFrame([{
+                "ID": str(row["id"]), "Operation No.": int(row.get("operation_no") or 0), "Process": row.get("process_name"),
+                "Target Date": _parse_date(row.get("target_date")) if row.get("target_date") else None,
+                "Status": str(row.get("status") or "PENDING"), "Completed Date": _parse_date(row.get("completed_date")) if row.get("completed_date") else None,
+                "Responsible Employee": process_id_to_option.get(str(row.get("responsible_employee_id") or "")) or (f"Legacy · {row.get('responsible')}" if row.get("responsible") else "— Not assigned —"),
+                "Remarks": row.get("remarks") or "",
+            } for row in steps])
+            edited = st.data_editor(
+                process_frame, hide_index=True, width="stretch", height=max(260, min(560, 92 + 38 * max(1, len(process_frame)))), key=f"npd_order_step_editor_{order_id}", disabled=not perms["can_edit"],
+                column_config={
+                    "ID": None, "Operation No.": st.column_config.NumberColumn(disabled=True, width="small"), "Process": st.column_config.TextColumn(disabled=True, width="large"),
+                    "Target Date": st.column_config.DateColumn(format="DD-MM-YYYY", required=True), "Status": st.column_config.SelectboxColumn(options=STEP_STATUSES, required=True),
+                    "Completed Date": st.column_config.DateColumn(format="DD-MM-YYYY"), "Responsible Employee": st.column_config.SelectboxColumn(options=process_employee_options, width="large"), "Remarks": st.column_config.TextColumn(width="large"),
+                },
+            )
+            if st.button("Update Order Process Status", type="primary", width="stretch", disabled=not perms["can_edit"]):
+                try:
+                    for row in edited.to_dict("records"):
+                        status = str(row.get("Status") or "PENDING")
+                        completed = row.get("Completed Date")
+                        if status == "COMPLETED" and (completed is None or pd.isna(completed)):
+                            completed = date.today()
+                        if status != "COMPLETED":
+                            completed = None
+                        target = row.get("Target Date")
+                        resp_option = str(row.get("Responsible Employee") or "— Not assigned —")
+                        resp_id = process_option_to_id.get(resp_option)
+                        resp_snapshot = employee_labels.get(str(resp_id)) if resp_id else (resp_option.removeprefix("Legacy · ").strip() if resp_option.startswith("Legacy · ") else None)
+                        repo.update("npd_order_steps", str(row["ID"]), {
+                            "target_date": target.isoformat() if isinstance(target, date) else str(target)[:10], "status": status,
+                            "completed_date": completed.isoformat() if isinstance(completed, date) else (str(completed)[:10] if completed else None),
+                            "responsible_employee_id": resp_id, "responsible": resp_snapshot,
+                            "remarks": str(row.get("Remarks") or "").strip() or None,
+                        })
+                    refreshed = repo.select("npd_order_steps", eq={"npd_order_id": order_id}, order_by="operation_no", limit=500)
+                    _sync_order_overall_status(repo, order, refreshed)
+                    save_success_popup("Process target dates and real-time status updated.", queue_for_rerun=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
+
+        with stage_section("E", "PROCESS CHECKPOINTS / BULLET POINTS", "Update each point as Pending, In Progress, Completed, On Hold or Not Applicable, with responsible employee and remarks.", key="npd_status_detail_e"):
+            for step in steps:
+                step_id = str(step["id"])
+                points = points_by_step.get(step_id, [])
+                done, total = point_progress.get(step_id, (0, 0))
+                with st.expander(f"OP {step.get('operation_no')} - {step.get('process_name')} · Checkpoints {done}/{total}", expanded=False):
+                    if not points:
+                        st.caption("No checkpoints were defined in the Process Flow for this operation.")
+                        continue
+                    legacy_point_values = [str(point.get("responsible_snapshot") or "") for point in points if not point.get("responsible_employee_id")]
+                    point_employee_options, point_option_to_id = _employee_option_maps(employees, legacy_point_values)
+                    point_id_to_option = {employee_id: label for label, employee_id in point_option_to_id.items() if employee_id}
+                    point_frame = pd.DataFrame([{
+                        "ID": str(point["id"]), "Seq": int(point.get("sequence_no") or 10), "Checkpoint / Bullet Point": point.get("point_text"),
+                        "Target Date": _parse_date(point.get("target_date")) if point.get("target_date") else None,
+                        "Status": point.get("status") or "PENDING", "Completed Date": _parse_date(point.get("completed_date")) if point.get("completed_date") else None,
+                        "Responsible Employee": point_id_to_option.get(str(point.get("responsible_employee_id") or "")) or (f"Legacy · {point.get('responsible_snapshot')}" if point.get("responsible_snapshot") else "— Not assigned —"),
+                        "Remarks": point.get("remarks") or "",
+                    } for point in points])
+                    point_edit = st.data_editor(
+                        point_frame, hide_index=True, width="stretch", height=max(180, min(430, 110 + 38 * len(point_frame))), key=f"npd_order_points_{step_id}", disabled=not perms["can_edit"],
+                        column_config={
+                            "ID": None, "Seq": st.column_config.NumberColumn(disabled=True, width="small"), "Checkpoint / Bullet Point": st.column_config.TextColumn(disabled=True, width="large"),
+                            "Target Date": st.column_config.DateColumn(format="DD-MM-YYYY"), "Status": st.column_config.SelectboxColumn(options=["PENDING","IN_PROGRESS","ON_HOLD","COMPLETED","NOT_APPLICABLE"], required=True),
+                            "Completed Date": st.column_config.DateColumn(format="DD-MM-YYYY"), "Responsible Employee": st.column_config.SelectboxColumn(options=point_employee_options, width="large"),
+                            "Remarks": st.column_config.TextColumn(width="large"),
+                        },
+                    )
+                    if st.button(f"Update Checkpoints - OP {step.get('operation_no')}", key=f"update_order_points_{step_id}", type="primary", width="stretch", disabled=not perms["can_edit"]):
+                        try:
+                            for row in point_edit.to_dict("records"):
+                                point_status = str(row.get("Status") or "PENDING")
+                                completed = row.get("Completed Date")
+                                if point_status == "COMPLETED" and (completed is None or pd.isna(completed)):
+                                    completed = date.today()
+                                if point_status != "COMPLETED":
+                                    completed = None
+                                target = row.get("Target Date")
+                                resp_option = str(row.get("Responsible Employee") or "— Not assigned —")
+                                resp_id = point_option_to_id.get(resp_option)
+                                resp_snapshot = employee_labels.get(str(resp_id)) if resp_id else (resp_option.removeprefix("Legacy · ").strip() if resp_option.startswith("Legacy · ") else None)
+                                repo.update("npd_order_step_points", str(row["ID"]), {
+                                    "target_date": target.isoformat() if isinstance(target, date) else (str(target)[:10] if target else None),
+                                    "status": point_status,
+                                    "completed_date": completed.isoformat() if isinstance(completed, date) else (str(completed)[:10] if completed else None),
+                                    "responsible_employee_id": resp_id, "responsible_snapshot": resp_snapshot,
+                                    "remarks": str(row.get("Remarks") or "").strip() or None,
+                                })
+                            save_success_popup(f"Checkpoint status updated for OP {step.get('operation_no')}.", queue_for_rerun=True)
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(str(exc))
+
+            part = part_by_id.get(str(order.get("part_id"))) or {}
+            customer = customer_by_id.get(str(order.get("customer_id"))) or {}
+            process_pdf_rows = [{
+                "Operation No.": row.get("operation_no"), "Process": row.get("process_name"), "Target Date": row.get("target_date"),
+                "Status": row.get("status"), "Completed Date": row.get("completed_date"), "Responsible": row.get("responsible"), "Remarks": row.get("remarks")
+            } for row in steps]
+            point_pdf_rows = []
+            for step in steps:
+                for point in points_by_step.get(str(step["id"]), []):
+                    point_pdf_rows.append({
+                        "Operation No.": step.get("operation_no"), "Process": step.get("process_name"), "Seq": point.get("sequence_no"),
+                        "Checkpoint": point.get("point_text"), "Target Date": point.get("target_date"), "Status": point.get("status"),
+                        "Completed Date": point.get("completed_date"), "Responsible": point.get("responsible_snapshot"), "Remarks": point.get("remarks"),
+                    })
+            pdf = controlled_record_pdf_bytes(
+                "NPD ORDER STATUS",
+                {"Order Number": order.get("order_number"), "Part Number": part.get("part_number"), "Part Description": part.get("part_name"), "Customer": customer.get("party_name"), "Order Qty": order.get("order_qty"), "Order Date": order.get("order_date"), "Start Date": order.get("start_date"), "Delivery Date": order.get("delivery_date"), "Overall Status": overall, "Order Remarks": order.get("remarks")},
+                {"Process Status": process_pdf_rows, "Process Checkpoints / Bullet Points": point_pdf_rows},
+                record_number=str(order.get("order_number") or ""),
+            )
+            c_pdf, c_del = st.columns([2, 1], gap="small")
+            with c_pdf:
+                st.download_button("Download NPD Order Status PDF", pdf, file_name=f"NPD_Order_Status_{order.get('order_number')}.pdf", mime="application/pdf", width="stretch")
+            with c_del:
+                if password_delete_panel(
+                    repo=repo, table="npd_orders", rows=[order],
+                    labeler=lambda row: f"{row.get('order_number')} · {part.get('part_number')}",
+                    key=f"npd_order_delete_{order.get('id')}", can_delete=perms["can_archive"],
+                    title="Delete NPD Order",
+                    help_text="Deletes this NPD Order and its process/checkpoint status history. Current QCMS password is required.",
+                ):
+                    st.rerun()
 
 
 def _default_apqp_tasks() -> list[tuple[int, str, str]]:
@@ -749,132 +750,132 @@ def render_apqp() -> None:
     coordinator_id_to_option = {employee_id: label for label, employee_id in coordinator_option_to_id.items() if employee_id}
     existing_coordinator_option = coordinator_id_to_option.get(str((existing or {}).get("coordinator_employee_id") or "")) or (f"Legacy · {(existing or {}).get('coordinator')}" if (existing or {}).get("coordinator") else "— Not assigned —")
 
-    section_bar("APQP PROJECT HEADER")
-    with st.form("apqp_project_form"):
-        c = st.columns(4, gap="small")
-        project_code = c[0].text_input("Project / NPD Number", value=str((existing or {}).get("project_code") or ""))
-        part_id = c[1].selectbox("Part Number", list(part_labels), index=list(part_labels).index(default_part_id) if default_part_id in part_labels else 0, format_func=lambda value: part_labels[value])
-        customer_id = c[2].selectbox("Customer", list(customer_labels), index=list(customer_labels).index(default_customer_id) if default_customer_id in customer_labels else 0, format_func=lambda value: customer_labels[value])
-        submission_level = c[3].selectbox("PPAP Submission Level", ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"], index=max(0, ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"].index(str((existing or {}).get("submission_level") or "Level 3"))) if str((existing or {}).get("submission_level") or "Level 3") in ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"] else 2)
-        c = st.columns(4, gap="small")
-        target_date = c[0].date_input("Target PPAP Submission", value=_parse_date((existing or {}).get("target_submission_date"), date.today() + timedelta(days=60)), format="DD-MM-YYYY")
-        coordinator_option = c[1].selectbox("APQP Coordinator", coordinator_options, index=coordinator_options.index(existing_coordinator_option) if existing_coordinator_option in coordinator_options else 0)
-        reason = c[2].text_input("Reason / Program", value=str((existing or {}).get("reason") or "New Product Development"))
-        status = c[3].selectbox("Project Status", ["IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"], index=["IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"].index(str((existing or {}).get("status") or "IN_PROGRESS")) if str((existing or {}).get("status") or "IN_PROGRESS") in ["IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"] else 0)
-        remarks = st.text_area("APQP Remarks", value=str((existing or {}).get("remarks") or ""), height=70)
-        save = st.form_submit_button("Save APQP Project", type="primary", width="stretch", disabled=not (perms["can_create"] or perms["can_edit"]))
-    if save:
-        try:
-            if not project_code.strip():
-                raise ValueError("Project / NPD Number is required.")
-            coordinator_employee_id = coordinator_option_to_id.get(coordinator_option)
-            coordinator_snapshot = employee_labels.get(str(coordinator_employee_id)) if coordinator_employee_id else (coordinator_option.removeprefix("Legacy · ").strip() if coordinator_option.startswith("Legacy · ") else None)
-            payload = {"project_code": project_code.strip(), "part_id": part_id, "customer_id": customer_id, "submission_level": submission_level, "reason": reason.strip() or None, "target_submission_date": target_date.isoformat(), "coordinator_employee_id": coordinator_employee_id, "coordinator": coordinator_snapshot, "status": status, "remarks": remarks.strip() or None}
-            saved = repo.update("ppap_projects", str(existing["id"]), payload) if existing else repo.insert("ppap_projects", {**payload, "completion_percent": 0})
-            save_success_popup("APQP Project saved successfully.", queue_for_rerun=True)
-            st.session_state["apqp_selected_project"] = str(saved["id"])
-            st.rerun()
-        except Exception as exc:
-            st.error(str(exc))
-
-    project_id = str((existing or {}).get("id") or st.session_state.get("apqp_selected_project") or "")
-    if not project_id:
-        return
-    project = repo.get("ppap_projects", project_id) or existing
-    tasks = repo.select("ppap_documents", eq={"ppap_project_id": project_id}, order_by="sequence_no", limit=500)
-    section_bar("APQP PHASE STATUS")
-    if not tasks and st.button("Load Standard APQP Gates", width="stretch", disabled=not perms["can_create"]):
-        for sequence_no, phase, activity in _default_apqp_tasks():
-            repo.insert("ppap_documents", {"ppap_project_id": project_id, "sequence_no": sequence_no, "apqp_phase": phase, "document_type": activity, "status": "NOT_STARTED"})
-        save_success_popup("Standard APQP gates loaded successfully.", queue_for_rerun=True)
-        st.rerun()
-    if tasks:
-        completed = sum(str(row.get("status") or "") in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"} for row in tasks)
-        completion = round(completed * 100 / len(tasks)) if tasks else 0
-        due = _parse_date((project or {}).get("target_submission_date"))
-        overdue = sum(str(row.get("status") or "") not in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"} and row.get("due_date") and _parse_date(row.get("due_date")) < date.today() for row in tasks)
-        kpi_grid([
-            {"label": "APQP Completion", "value": f"{completion}%", "foot": f"{completed}/{len(tasks)} gates closed", "color": "#15803D", "background": "#F0FDF4"},
-            {"label": "Open Gates", "value": len(tasks)-completed, "foot": "Pending / in progress", "color": "#D97706", "background": "#FFF7ED"},
-            {"label": "Overdue Gates", "value": overdue, "foot": "Target dates exceeded", "color": "#B91C1C", "background": "#FEF2F2"},
-            {"label": "PPAP Target", "value": due.strftime("%d-%m-%Y"), "foot": f"{(due-date.today()).days} day(s)", "color": "#1469A8", "background": "#EFF6FF"},
-        ])
-        task_frame = pd.DataFrame([{
-            "ID": str(row["id"]), "Seq": int(row.get("sequence_no") or 0), "APQP Phase": row.get("apqp_phase") or "", "Activity / Deliverable": row.get("document_type") or "",
-            "Evidence / Document No.": row.get("document_number") or "", "Revision": row.get("revision") or "",
-            "Owner": ({str(emp["id"]): label for emp, label in [(emp, employee_labels.get(str(emp["id"]), "")) for emp in employees]}.get(str(row.get("owner_employee_id"))) or (f"Legacy · {row.get('owner')}" if row.get("owner") else "— Not assigned —")),
-            "Due Date": _parse_date(row.get("due_date")) if row.get("due_date") else None, "Status": str(row.get("status") or "NOT_STARTED"),
-            "Approved Date": _parse_date(row.get("approved_date")) if row.get("approved_date") else None, "Remarks": row.get("remarks") or "",
-        } for row in tasks])
-        task_owner_options, task_owner_option_to_id = _employee_option_maps(employees, [str(row.get("owner") or "") for row in tasks if not row.get("owner_employee_id")])
-        edited = st.data_editor(
-            task_frame, num_rows="dynamic", hide_index=True, width="stretch", height=430, key=f"apqp_tasks_{project_id}", disabled=not perms["can_edit"],
-            column_config={
-                "ID": None, "Seq": st.column_config.NumberColumn(min_value=0, step=10, required=True), "APQP Phase": st.column_config.TextColumn(required=True, width="large"),
-                "Activity / Deliverable": st.column_config.TextColumn(required=True, width="large"), "Due Date": st.column_config.DateColumn(format="DD-MM-YYYY"),
-                "Owner": st.column_config.SelectboxColumn(options=task_owner_options, width="large"),
-                "Status": st.column_config.SelectboxColumn(options=APQP_STATUSES, required=True), "Approved Date": st.column_config.DateColumn(format="DD-MM-YYYY"),
-            },
-        )
-        if st.button("Update APQP Gates", type="primary", width="stretch", disabled=not perms["can_edit"]):
+    with stage_section("A", 'APQP PROJECT HEADER', key="npd_apqp_render_apqp_a"):
+        with st.form("apqp_project_form"):
+            c = st.columns(4, gap="small")
+            project_code = c[0].text_input("Project / NPD Number", value=str((existing or {}).get("project_code") or ""))
+            part_id = c[1].selectbox("Part Number", list(part_labels), index=list(part_labels).index(default_part_id) if default_part_id in part_labels else 0, format_func=lambda value: part_labels[value])
+            customer_id = c[2].selectbox("Customer", list(customer_labels), index=list(customer_labels).index(default_customer_id) if default_customer_id in customer_labels else 0, format_func=lambda value: customer_labels[value])
+            submission_level = c[3].selectbox("PPAP Submission Level", ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"], index=max(0, ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"].index(str((existing or {}).get("submission_level") or "Level 3"))) if str((existing or {}).get("submission_level") or "Level 3") in ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"] else 2)
+            c = st.columns(4, gap="small")
+            target_date = c[0].date_input("Target PPAP Submission", value=_parse_date((existing or {}).get("target_submission_date"), date.today() + timedelta(days=60)), format="DD-MM-YYYY")
+            coordinator_option = c[1].selectbox("APQP Coordinator", coordinator_options, index=coordinator_options.index(existing_coordinator_option) if existing_coordinator_option in coordinator_options else 0)
+            reason = c[2].text_input("Reason / Program", value=str((existing or {}).get("reason") or "New Product Development"))
+            status = c[3].selectbox("Project Status", ["IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"], index=["IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"].index(str((existing or {}).get("status") or "IN_PROGRESS")) if str((existing or {}).get("status") or "IN_PROGRESS") in ["IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"] else 0)
+            remarks = st.text_area("APQP Remarks", value=str((existing or {}).get("remarks") or ""), height=70)
+            save = st.form_submit_button("Save APQP Project", type="primary", width="stretch", disabled=not (perms["can_create"] or perms["can_edit"]))
+        if save:
             try:
-                existing_ids = {str(row["id"]) for row in tasks}
-                retained_ids = set()
-                for row in edited.fillna("").to_dict("records"):
-                    activity = str(row.get("Activity / Deliverable") or "").strip()
-                    if not activity:
-                        continue
-                    record_id = str(row.get("ID") or "").strip()
-                    due_date = row.get("Due Date")
-                    approved_date = row.get("Approved Date")
-                    payload = {
-                        "ppap_project_id": project_id, "sequence_no": int(float(row.get("Seq") or 0)), "apqp_phase": str(row.get("APQP Phase") or "").strip() or None,
-                        "document_type": activity, "document_number": str(row.get("Evidence / Document No.") or "").strip() or None,
-                        "revision": str(row.get("Revision") or "").strip() or None,
-                        "owner_employee_id": task_owner_option_to_id.get(str(row.get("Owner") or "")),
-                        "owner": (employee_labels.get(str(task_owner_option_to_id.get(str(row.get("Owner") or "")))) if task_owner_option_to_id.get(str(row.get("Owner") or "")) else (str(row.get("Owner") or "").removeprefix("Legacy · ").strip() or None)),
-                        "due_date": due_date.isoformat() if isinstance(due_date, date) else (str(due_date)[:10] if due_date else None),
-                        "status": str(row.get("Status") or "NOT_STARTED"), "approved_date": approved_date.isoformat() if isinstance(approved_date, date) else (str(approved_date)[:10] if approved_date else None),
-                        "remarks": str(row.get("Remarks") or "").strip() or None,
-                    }
-                    if record_id in existing_ids:
-                        repo.update("ppap_documents", record_id, payload); retained_ids.add(record_id)
-                    else:
-                        saved = repo.insert("ppap_documents", payload); retained_ids.add(str(saved["id"]))
-                for record_id in existing_ids - retained_ids:
-                    repo.delete("ppap_documents", record_id)
-                refreshed = repo.select("ppap_documents", eq={"ppap_project_id": project_id}, limit=500)
-                closed = sum(str(row.get("status") or "") in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"} for row in refreshed)
-                percent = round(closed * 100 / len(refreshed)) if refreshed else 0
-                repo.update("ppap_projects", project_id, {"completion_percent": percent})
-                save_success_popup("APQP gates updated successfully.", queue_for_rerun=True)
+                if not project_code.strip():
+                    raise ValueError("Project / NPD Number is required.")
+                coordinator_employee_id = coordinator_option_to_id.get(coordinator_option)
+                coordinator_snapshot = employee_labels.get(str(coordinator_employee_id)) if coordinator_employee_id else (coordinator_option.removeprefix("Legacy · ").strip() if coordinator_option.startswith("Legacy · ") else None)
+                payload = {"project_code": project_code.strip(), "part_id": part_id, "customer_id": customer_id, "submission_level": submission_level, "reason": reason.strip() or None, "target_submission_date": target_date.isoformat(), "coordinator_employee_id": coordinator_employee_id, "coordinator": coordinator_snapshot, "status": status, "remarks": remarks.strip() or None}
+                saved = repo.update("ppap_projects", str(existing["id"]), payload) if existing else repo.insert("ppap_projects", {**payload, "completion_percent": 0})
+                save_success_popup("APQP Project saved successfully.", queue_for_rerun=True)
+                st.session_state["apqp_selected_project"] = str(saved["id"])
                 st.rerun()
             except Exception as exc:
                 st.error(str(exc))
 
-    project = repo.get("ppap_projects", project_id) or project or {}
-    part_row = next((row for row in parts if str(row.get("id")) == str(project.get("part_id"))), {})
-    customer_row = next((row for row in customers if str(row.get("id")) == str(project.get("customer_id"))), {})
-    pdf_tasks = [{
-        "Seq": row.get("sequence_no"), "APQP Phase": row.get("apqp_phase"), "Activity / Deliverable": row.get("document_type"),
-        "Evidence / Document No.": row.get("document_number"), "Revision": row.get("revision"), "Owner": row.get("owner"),
-        "Due Date": row.get("due_date"), "Status": row.get("status"), "Approved Date": row.get("approved_date"), "Remarks": row.get("remarks"),
-    } for row in tasks]
-    pdf = controlled_record_pdf_bytes(
-        "APQP PROJECT STATUS",
-        {"Project / NPD Number": project.get("project_code"), "Part Number": part_row.get("part_number"), "Part Description": part_row.get("part_name"), "Customer": customer_row.get("party_name"), "PPAP Submission Level": project.get("submission_level"), "Target Submission": project.get("target_submission_date"), "Coordinator": project.get("coordinator"), "Completion %": project.get("completion_percent"), "Status": project.get("status"), "Remarks": project.get("remarks")},
-        {"APQP Gates / Deliverables": pdf_tasks},
-        record_number=str(project.get("project_code") or ""),
-    )
-    c_pdf, c_del = st.columns([2, 1], gap="small")
-    with c_pdf:
-        st.download_button("Download APQP Project PDF", pdf, file_name=f"APQP_{project.get('project_code')}.pdf", mime="application/pdf", width="stretch")
-    with c_del:
-        if password_delete_panel(
-            repo=repo, table="ppap_projects", rows=[project],
-            labeler=lambda row: f"{row.get('project_code')} · {part_row.get('part_number')}",
-            key=f"apqp_project_delete_{project.get('id')}", can_delete=perms["can_archive"],
-            title="Delete APQP Project",
-            help_text="Deletes the selected APQP project and its linked APQP gates/documents. Current QCMS password is required.",
-        ):
+        project_id = str((existing or {}).get("id") or st.session_state.get("apqp_selected_project") or "")
+        if not project_id:
+            return
+        project = repo.get("ppap_projects", project_id) or existing
+        tasks = repo.select("ppap_documents", eq={"ppap_project_id": project_id}, order_by="sequence_no", limit=500)
+    with stage_section("B", 'APQP PHASE STATUS', key="npd_apqp_render_apqp_b"):
+        if not tasks and st.button("Load Standard APQP Gates", width="stretch", disabled=not perms["can_create"]):
+            for sequence_no, phase, activity in _default_apqp_tasks():
+                repo.insert("ppap_documents", {"ppap_project_id": project_id, "sequence_no": sequence_no, "apqp_phase": phase, "document_type": activity, "status": "NOT_STARTED"})
+            save_success_popup("Standard APQP gates loaded successfully.", queue_for_rerun=True)
             st.rerun()
+        if tasks:
+            completed = sum(str(row.get("status") or "") in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"} for row in tasks)
+            completion = round(completed * 100 / len(tasks)) if tasks else 0
+            due = _parse_date((project or {}).get("target_submission_date"))
+            overdue = sum(str(row.get("status") or "") not in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"} and row.get("due_date") and _parse_date(row.get("due_date")) < date.today() for row in tasks)
+            kpi_grid([
+                {"label": "APQP Completion", "value": f"{completion}%", "foot": f"{completed}/{len(tasks)} gates closed", "color": "#15803D", "background": "#F0FDF4"},
+                {"label": "Open Gates", "value": len(tasks)-completed, "foot": "Pending / in progress", "color": "#D97706", "background": "#FFF7ED"},
+                {"label": "Overdue Gates", "value": overdue, "foot": "Target dates exceeded", "color": "#B91C1C", "background": "#FEF2F2"},
+                {"label": "PPAP Target", "value": due.strftime("%d-%m-%Y"), "foot": f"{(due-date.today()).days} day(s)", "color": "#1469A8", "background": "#EFF6FF"},
+            ])
+            task_frame = pd.DataFrame([{
+                "ID": str(row["id"]), "Seq": int(row.get("sequence_no") or 0), "APQP Phase": row.get("apqp_phase") or "", "Activity / Deliverable": row.get("document_type") or "",
+                "Evidence / Document No.": row.get("document_number") or "", "Revision": row.get("revision") or "",
+                "Owner": ({str(emp["id"]): label for emp, label in [(emp, employee_labels.get(str(emp["id"]), "")) for emp in employees]}.get(str(row.get("owner_employee_id"))) or (f"Legacy · {row.get('owner')}" if row.get("owner") else "— Not assigned —")),
+                "Due Date": _parse_date(row.get("due_date")) if row.get("due_date") else None, "Status": str(row.get("status") or "NOT_STARTED"),
+                "Approved Date": _parse_date(row.get("approved_date")) if row.get("approved_date") else None, "Remarks": row.get("remarks") or "",
+            } for row in tasks])
+            task_owner_options, task_owner_option_to_id = _employee_option_maps(employees, [str(row.get("owner") or "") for row in tasks if not row.get("owner_employee_id")])
+            edited = st.data_editor(
+                task_frame, num_rows="dynamic", hide_index=True, width="stretch", height=430, key=f"apqp_tasks_{project_id}", disabled=not perms["can_edit"],
+                column_config={
+                    "ID": None, "Seq": st.column_config.NumberColumn(min_value=0, step=10, required=True), "APQP Phase": st.column_config.TextColumn(required=True, width="large"),
+                    "Activity / Deliverable": st.column_config.TextColumn(required=True, width="large"), "Due Date": st.column_config.DateColumn(format="DD-MM-YYYY"),
+                    "Owner": st.column_config.SelectboxColumn(options=task_owner_options, width="large"),
+                    "Status": st.column_config.SelectboxColumn(options=APQP_STATUSES, required=True), "Approved Date": st.column_config.DateColumn(format="DD-MM-YYYY"),
+                },
+            )
+            if st.button("Update APQP Gates", type="primary", width="stretch", disabled=not perms["can_edit"]):
+                try:
+                    existing_ids = {str(row["id"]) for row in tasks}
+                    retained_ids = set()
+                    for row in edited.fillna("").to_dict("records"):
+                        activity = str(row.get("Activity / Deliverable") or "").strip()
+                        if not activity:
+                            continue
+                        record_id = str(row.get("ID") or "").strip()
+                        due_date = row.get("Due Date")
+                        approved_date = row.get("Approved Date")
+                        payload = {
+                            "ppap_project_id": project_id, "sequence_no": int(float(row.get("Seq") or 0)), "apqp_phase": str(row.get("APQP Phase") or "").strip() or None,
+                            "document_type": activity, "document_number": str(row.get("Evidence / Document No.") or "").strip() or None,
+                            "revision": str(row.get("Revision") or "").strip() or None,
+                            "owner_employee_id": task_owner_option_to_id.get(str(row.get("Owner") or "")),
+                            "owner": (employee_labels.get(str(task_owner_option_to_id.get(str(row.get("Owner") or "")))) if task_owner_option_to_id.get(str(row.get("Owner") or "")) else (str(row.get("Owner") or "").removeprefix("Legacy · ").strip() or None)),
+                            "due_date": due_date.isoformat() if isinstance(due_date, date) else (str(due_date)[:10] if due_date else None),
+                            "status": str(row.get("Status") or "NOT_STARTED"), "approved_date": approved_date.isoformat() if isinstance(approved_date, date) else (str(approved_date)[:10] if approved_date else None),
+                            "remarks": str(row.get("Remarks") or "").strip() or None,
+                        }
+                        if record_id in existing_ids:
+                            repo.update("ppap_documents", record_id, payload); retained_ids.add(record_id)
+                        else:
+                            saved = repo.insert("ppap_documents", payload); retained_ids.add(str(saved["id"]))
+                    for record_id in existing_ids - retained_ids:
+                        repo.delete("ppap_documents", record_id)
+                    refreshed = repo.select("ppap_documents", eq={"ppap_project_id": project_id}, limit=500)
+                    closed = sum(str(row.get("status") or "") in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"} for row in refreshed)
+                    percent = round(closed * 100 / len(refreshed)) if refreshed else 0
+                    repo.update("ppap_projects", project_id, {"completion_percent": percent})
+                    save_success_popup("APQP gates updated successfully.", queue_for_rerun=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
+
+        project = repo.get("ppap_projects", project_id) or project or {}
+        part_row = next((row for row in parts if str(row.get("id")) == str(project.get("part_id"))), {})
+        customer_row = next((row for row in customers if str(row.get("id")) == str(project.get("customer_id"))), {})
+        pdf_tasks = [{
+            "Seq": row.get("sequence_no"), "APQP Phase": row.get("apqp_phase"), "Activity / Deliverable": row.get("document_type"),
+            "Evidence / Document No.": row.get("document_number"), "Revision": row.get("revision"), "Owner": row.get("owner"),
+            "Due Date": row.get("due_date"), "Status": row.get("status"), "Approved Date": row.get("approved_date"), "Remarks": row.get("remarks"),
+        } for row in tasks]
+        pdf = controlled_record_pdf_bytes(
+            "APQP PROJECT STATUS",
+            {"Project / NPD Number": project.get("project_code"), "Part Number": part_row.get("part_number"), "Part Description": part_row.get("part_name"), "Customer": customer_row.get("party_name"), "PPAP Submission Level": project.get("submission_level"), "Target Submission": project.get("target_submission_date"), "Coordinator": project.get("coordinator"), "Completion %": project.get("completion_percent"), "Status": project.get("status"), "Remarks": project.get("remarks")},
+            {"APQP Gates / Deliverables": pdf_tasks},
+            record_number=str(project.get("project_code") or ""),
+        )
+        c_pdf, c_del = st.columns([2, 1], gap="small")
+        with c_pdf:
+            st.download_button("Download APQP Project PDF", pdf, file_name=f"APQP_{project.get('project_code')}.pdf", mime="application/pdf", width="stretch")
+        with c_del:
+            if password_delete_panel(
+                repo=repo, table="ppap_projects", rows=[project],
+                labeler=lambda row: f"{row.get('project_code')} · {part_row.get('part_number')}",
+                key=f"apqp_project_delete_{project.get('id')}", can_delete=perms["can_archive"],
+                title="Delete APQP Project",
+                help_text="Deletes the selected APQP project and its linked APQP gates/documents. Current QCMS password is required.",
+            ):
+                st.rerun()

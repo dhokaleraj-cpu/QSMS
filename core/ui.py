@@ -1,3 +1,4 @@
+# QCMS 4.11.8 — GLOBAL-STAGED-SECTIONS
 # Legacy build marker retained for regression compatibility: 4115-COMPLAINT-EVIDENCE-HEADER-GRID
 from __future__ import annotations
 
@@ -6,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import re
+from contextlib import contextmanager
 from datetime import datetime
 from functools import lru_cache
 from html import escape
@@ -385,6 +387,34 @@ def apply_global_style() -> None:
     [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a[aria-current="page"]{
       background:linear-gradient(100deg,#07508A,#0B75BD)!important;border-color:#064879!important;color:#FFFFFF!important;
     }
+
+
+    /* QCMS 4.11.8 — GLOBAL STAGED SECTION SYSTEM.
+       One blue family, progressively deeper grading A→H; every stage is collapsed by default in Python. */
+    [class*="st-key-fsi_stage_"]{
+      --stage-bg:#F5FAFF;--stage-head:#DDEEFF;--stage-border:#A8CAE4;--stage-accent:#0A68AC;--stage-text:#083D70;
+      background:var(--stage-bg)!important;border:1px solid var(--stage-border)!important;border-left:5px solid var(--stage-accent)!important;
+      border-radius:11px!important;padding:.42rem .55rem!important;margin:.34rem 0!important;box-shadow:0 2px 7px rgba(7,65,112,.05)!important;
+    }
+    [class*="st-key-fsi_stage_a_"]{--stage-bg:#F7FBFF;--stage-head:#E3F1FD;--stage-border:#B8D5EB;--stage-accent:#075A97;}
+    [class*="st-key-fsi_stage_b_"]{--stage-bg:#F4F9FE;--stage-head:#DAECFB;--stage-border:#ACCEE7;--stage-accent:#08639F;}
+    [class*="st-key-fsi_stage_c_"]{--stage-bg:#F1F7FD;--stage-head:#D1E7F9;--stage-border:#9FC7E3;--stage-accent:#096AA7;}
+    [class*="st-key-fsi_stage_d_"]{--stage-bg:#EEF5FC;--stage-head:#C8E2F7;--stage-border:#93C0DF;--stage-accent:#0A71AF;}
+    [class*="st-key-fsi_stage_e_"]{--stage-bg:#EBF3FA;--stage-head:#BFDCF5;--stage-border:#86B9DB;--stage-accent:#0B78B7;}
+    [class*="st-key-fsi_stage_f_"]{--stage-bg:#E8F1F9;--stage-head:#B6D7F2;--stage-border:#7AB2D7;--stage-accent:#0C7FBF;}
+    [class*="st-key-fsi_stage_g_"]{--stage-bg:#E5EFF7;--stage-head:#ADD2F0;--stage-border:#6DABD3;--stage-accent:#0D86C7;}
+    [class*="st-key-fsi_stage_h_"]{--stage-bg:#E2EDF6;--stage-head:#A4CDEE;--stage-border:#61A4CF;--stage-accent:#0E8DCF;}
+    [class*="st-key-fsi_stage_i_"],[class*="st-key-fsi_stage_j_"],[class*="st-key-fsi_stage_k_"],[class*="st-key-fsi_stage_l_"]{--stage-bg:#E0EBF4;--stage-head:#9FC8EA;--stage-border:#589CC8;--stage-accent:#0B75BD;}
+    [class*="st-key-fsi_stage_"] > div[data-testid="stVerticalBlockBorderWrapper"]{background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;}
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] details{background:transparent!important;border:0!important;box-shadow:none!important;border-radius:8px!important;}
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] summary{
+      background:var(--stage-head)!important;color:var(--stage-text)!important;min-height:64px!important;padding:.68rem .82rem!important;
+      border:1px solid var(--stage-border)!important;border-radius:8px!important;display:flex!important;align-items:center!important;
+    }
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] summary p{color:var(--stage-text)!important;font-size:26px!important;font-weight:900!important;line-height:1.12!important;letter-spacing:.015em!important;margin:0!important;}
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] summary svg{color:var(--stage-accent)!important;fill:var(--stage-accent)!important;width:1.25rem!important;height:1.25rem!important;}
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] details[open] > summary{box-shadow:inset 4px 0 0 var(--stage-accent)!important;}
+    [class*="st-key-fsi_stage_"] label{color:#17384F!important;font-weight:700!important;}
 
     @media(max-width:1100px){.block-container{padding:.5rem .55rem 1rem!important}.fsi-logo{width:108px}.fsi-app-title{font-size:17px}.fsi-app-sub{display:none}.fsi-status-grid,.fsi-kpi-grid{grid-template-columns:repeat(3,1fr)}[class*="st-key-menu_"] div[data-testid="stPageLink"] a{font-size:11px!important;padding:.32rem .25rem!important;}}
     @media(max-width:760px){.block-container{padding:.4rem .35rem .8rem!important}.fsi-page-title{font-size:18px}.fsi-status-grid,.fsi-kpi-grid{grid-template-columns:repeat(2,1fr)}.fsi-user{display:none}.st-key-fsi_top_nav div[data-testid="stHorizontalBlock"]{flex-wrap:wrap!important;}[class*="st-key-menu_"] div[data-testid="stPageLink"] a{min-height:38px!important;}}
@@ -977,7 +1007,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4117-COMPLAINT-STAGE-EXPANDERS</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4118-GLOBAL-STAGED-SECTIONS</div>',
                 unsafe_allow_html=True,
             )
         with c3:
@@ -1085,6 +1115,38 @@ def page_header(title: str, subtitle: str = "", context: str = "") -> None:
     # Data-heavy pages deliberately show only one clear title; taglines and context
     # badges are suppressed to prevent clutter and field overlap.
     st.markdown(f'<div class="fsi-page-head"><div class="fsi-page-title">{safe(title)}</div></div>', unsafe_allow_html=True)
+
+
+STAGE_LETTERS = tuple(chr(code) for code in range(ord("A"), ord("Z") + 1))
+
+
+def stage_letter(index: int) -> str:
+    """Return a stable A-Z stage code for one-based or zero-based section sequences."""
+    numeric = max(0, int(index))
+    return STAGE_LETTERS[min(numeric, len(STAGE_LETTERS) - 1)]
+
+
+def _stage_slug(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(value or "section").casefold()).strip("_") or "section"
+
+
+@contextmanager
+def stage_section(stage: str, title: str, note: str = "", *, key: str | None = None):
+    """Render one globally consistent, collapsed-by-default QCMS workflow stage.
+
+    All staged sections share the Export-Shipment navy/blue design family. The stage
+    letter controls only a progressively deeper light-blue grade, so A/B/C/D... are
+    visually ordered without introducing unrelated colours.
+    """
+    letter = str(stage or "A").strip().upper()[:1]
+    if letter not in STAGE_LETTERS:
+        letter = "A"
+    slug = _stage_slug(key or title)
+    with st.container(border=False, key=f"fsi_stage_{letter.casefold()}_{slug}"):
+        with st.expander(f"{letter} - {title}", expanded=False):
+            if note:
+                st.caption(note)
+            yield
 
 
 def section_bar(title: str, note: str = "") -> None:

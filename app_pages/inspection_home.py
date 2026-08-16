@@ -7,7 +7,7 @@ from core.inspection_queue import pending_count
 from core.inspection_service import InspectionService
 from core.osp_service import OSPService
 from core.repository import Repository
-from core.ui import dashboard_card, kpi_grid, page_header, section_bar, style_status_dataframe, subpage_navigation
+from core.ui import dashboard_card, kpi_grid, page_header, section_bar, stage_section, style_status_dataframe, subpage_navigation
 
 
 def _count(repo: Repository, table: str, eq: dict | None = None) -> int:
@@ -64,72 +64,72 @@ def render() -> None:
         {"label": "Released Heats", "value": released, "foot": "Eligible for next process", "color": "#15803D", "background": "#F0FDF4"},
     ])
 
-    section_bar("PENDING INSPECTION WORKLIST")
-    pending = [row for row in queue if row.get("dimensional_pending") or row.get("metlab_pending")]
-    if not pending:
-        st.success("No Material Inward records are pending Dimensional or MetLAB inspection.")
-    else:
-        st.dataframe(
-            style_status_dataframe(_worklist_frame(pending, parts, parties)),
-            hide_index=True,
-            width="stretch",
-            height=min(360, 84 + 38 * len(pending)),
-        )
-        options = {str(row["id"]): row for row in pending}
-        selected_id = st.selectbox(
-            "Select Pending Material Inward",
-            list(options),
-            format_func=lambda value: (
-                f"{options[value].get('inward_number')} · "
-                f"{(parts.get(str(options[value].get('part_id'))) or {}).get('part_number')} · "
-                f"Heat {options[value].get('heat_number')}"
-            ),
-            key="inspection_pending_inward_select",
-        )
-        selected = options[selected_id]
-        st.session_state["inspection_inward_id"] = selected_id
-
-        if selected.get("dimensional_report_id"):
-            st.session_state["edit_dimensional_id"] = str(selected.get("dimensional_report_id"))
+    with stage_section("A", "PENDING INSPECTION WORKLIST", key="inspection_home_render_a"):
+        pending = [row for row in queue if row.get("dimensional_pending") or row.get("metlab_pending")]
+        if not pending:
+            st.success("No Material Inward records are pending Dimensional or MetLAB inspection.")
         else:
-            st.session_state.pop("edit_dimensional_id", None)
-        if selected.get("metlab_report_id"):
-            st.session_state["edit_metlab_id"] = str(selected.get("metlab_report_id"))
-        else:
-            st.session_state.pop("edit_metlab_id", None)
+            st.dataframe(
+                style_status_dataframe(_worklist_frame(pending, parts, parties)),
+                hide_index=True,
+                width="stretch",
+                height=min(360, 84 + 38 * len(pending)),
+            )
+            options = {str(row["id"]): row for row in pending}
+            selected_id = st.selectbox(
+                "Select Pending Material Inward",
+                list(options),
+                format_func=lambda value: (
+                    f"{options[value].get('inward_number')} · "
+                    f"{(parts.get(str(options[value].get('part_id'))) or {}).get('part_number')} · "
+                    f"Heat {options[value].get('heat_number')}"
+                ),
+                key="inspection_pending_inward_select",
+            )
+            selected = options[selected_id]
+            st.session_state["inspection_inward_id"] = selected_id
 
-        c1, c2 = st.columns(2, gap="small")
+            if selected.get("dimensional_report_id"):
+                st.session_state["edit_dimensional_id"] = str(selected.get("dimensional_report_id"))
+            else:
+                st.session_state.pop("edit_dimensional_id", None)
+            if selected.get("metlab_report_id"):
+                st.session_state["edit_metlab_id"] = str(selected.get("metlab_report_id"))
+            else:
+                st.session_state.pop("edit_metlab_id", None)
+
+            c1, c2 = st.columns(2, gap="small")
+            with c1:
+                st.page_link(
+                    st.session_state["_qsms_pages"]["dimensional-entry"],
+                    label=f"Open Dimensional · {selected.get('dimensional_queue_status')}",
+                    icon=":material/straighten:",
+                    width="stretch",
+                    disabled=not bool(selected.get("dimensional_pending")),
+                )
+            with c2:
+                st.page_link(
+                    st.session_state["_qsms_pages"]["metlab-entry"],
+                    label=f"Open MetLAB · {selected.get('metlab_queue_status')}",
+                    icon=":material/science:",
+                    width="stretch",
+                    disabled=not bool(selected.get("metlab_pending")),
+                )
+
+    with stage_section("B", "WORKSPACES", key="inspection_home_render_b"):
+        c1, c2, c3 = st.columns(3, gap="small")
         with c1:
-            st.page_link(
-                st.session_state["_qsms_pages"]["dimensional-entry"],
-                label=f"Open Dimensional · {selected.get('dimensional_queue_status')}",
-                icon=":material/straighten:",
-                width="stretch",
-                disabled=not bool(selected.get("dimensional_pending")),
-            )
+            dashboard_card(title="Inspection Layouts", description="", count_text=f"{plans} layouts", color="#7C3AED", page_path="inspection-layout-entry", button_label="Open Layout Master")
         with c2:
-            st.page_link(
-                st.session_state["_qsms_pages"]["metlab-entry"],
-                label=f"Open MetLAB · {selected.get('metlab_queue_status')}",
-                icon=":material/science:",
-                width="stretch",
-                disabled=not bool(selected.get("metlab_pending")),
-            )
+            dashboard_card(title="Dimensional Report", description="", count_text=f"{dim_pending} pending", color="#1469A8", page_path="dimensional-entry", button_label="Open Dimensional")
+        with c3:
+            dashboard_card(title="MetLAB Report", description="", count_text=f"{met_pending} pending", color="#0F8B6D", page_path="metlab-entry", button_label="Open MetLAB")
 
-    section_bar("WORKSPACES")
-    c1, c2, c3 = st.columns(3, gap="small")
-    with c1:
-        dashboard_card(title="Inspection Layouts", description="", count_text=f"{plans} layouts", color="#7C3AED", page_path="inspection-layout-entry", button_label="Open Layout Master")
-    with c2:
-        dashboard_card(title="Dimensional Report", description="", count_text=f"{dim_pending} pending", color="#1469A8", page_path="dimensional-entry", button_label="Open Dimensional")
-    with c3:
-        dashboard_card(title="MetLAB Report", description="", count_text=f"{met_pending} pending", color="#0F8B6D", page_path="metlab-entry", button_label="Open MetLAB")
-
-    section_bar("OSP INSPECTION WORKSPACES")
-    c1, c2, c3 = st.columns(3, gap="small")
-    with c1:
-        dashboard_card(title="OSP Transactions", description="", count_text=f"{osp_sample_pending + osp_receipt_pending} quality gates pending", color="#DC2626", page_path="osp-home", button_label="Open OSP Home")
-    with c2:
-        dashboard_card(title="OSP Dimensional", description="", count_text="Sample and full-batch inspection", color="#0284C7", page_path="osp-dimensional", button_label="Open OSP Dimensional")
-    with c3:
-        dashboard_card(title="OSP MetLAB", description="", count_text="Process-specific inspection", color="#16A34A", page_path="osp-metlab", button_label="Open OSP MetLAB")
+    with stage_section("C", "OSP INSPECTION WORKSPACES", key="inspection_home_render_c"):
+        c1, c2, c3 = st.columns(3, gap="small")
+        with c1:
+            dashboard_card(title="OSP Transactions", description="", count_text=f"{osp_sample_pending + osp_receipt_pending} quality gates pending", color="#DC2626", page_path="osp-home", button_label="Open OSP Home")
+        with c2:
+            dashboard_card(title="OSP Dimensional", description="", count_text="Sample and full-batch inspection", color="#0284C7", page_path="osp-dimensional", button_label="Open OSP Dimensional")
+        with c3:
+            dashboard_card(title="OSP MetLAB", description="", count_text="Process-specific inspection", color="#16A34A", page_path="osp-metlab", button_label="Open OSP MetLAB")

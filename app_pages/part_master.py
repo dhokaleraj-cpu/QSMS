@@ -21,7 +21,7 @@ from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
 from core.permissions import is_admin
 from core.selection_labels import customer_standard_label, material_grade_label, part_label, party_label, process_label
-from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.ui import page_header, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
 
 DRAWING_TYPES = (
     ("FINISH_DRAWING", "Finish Drawing"),
@@ -174,8 +174,11 @@ def _render_osp_metlab_requirements(
     part_id: str,
     writable: bool,
     can_delete: bool,
+    *,
+    show_heading: bool = True,
 ) -> None:
-    section_bar("OSP INSPECTION FOR METLAB")
+    if show_heading:
+        section_bar("OSP INSPECTION FOR METLAB")
     processes = repo.select(
         "processes",
         eq={"status": "ACTIVE", "process_type": "OUTSOURCED"},
@@ -359,8 +362,11 @@ def _render_metallurgical_requirements(
     part_id: str,
     writable: bool,
     can_delete: bool,
+    *,
+    show_heading: bool = True,
 ) -> None:
-    section_bar("METALLURGICAL REQUIREMENTS")
+    if show_heading:
+        section_bar("METALLURGICAL REQUIREMENTS")
     rows = repo.select(
         "part_metallurgical_requirements",
         eq={"part_id": part_id, "status": "ACTIVE"},
@@ -473,356 +479,359 @@ def render_entry() -> None:
     customer_map = {str(row["id"]): party_label(row) for row in customers}
     grade_map = {str(row["id"]): material_grade_label(row) for row in grades}
 
-    section_bar("PART DETAILS", "All fields shown in the approved Part Master layout.")
-    with st.form("part_header"):
-        c = st.columns(4, gap="small")
-        part_number = c[0].text_input("Part Number", value=str(existing.get("part_number") or ""))
-        part_name = c[1].text_input("Part Description", value=str(existing.get("part_name") or ""))
-        finish_weight = c[2].number_input("Part Finish Weight (kg)", min_value=0.0, value=float(existing.get("finished_weight_kg") or 0), step=0.01)
-        status = c[3].selectbox("Status", ["ACTIVE", "INACTIVE"], index=0 if str(existing.get("status") or "ACTIVE") == "ACTIVE" else 1)
-        c = st.columns(4, gap="small")
-        customer_id = c[0].selectbox("Customer", list(customer_map), format_func=lambda x: customer_map[x], index=list(customer_map).index(str(existing.get("customer_id"))) if str(existing.get("customer_id")) in customer_map else 0) if customer_map else None
-        grade_id = c[1].selectbox("Material Grade", list(grade_map), format_func=lambda x: grade_map[x], index=list(grade_map).index(str(existing.get("material_grade_id"))) if str(existing.get("material_grade_id")) in grade_map else 0) if grade_map else None
-        c[2].text_input("Current Finish Drawing No.", value=str(existing.get("drawing_number") or ""), disabled=True, help="Controlled by the latest ACTIVE Finish Drawing revision below.")
-        c[3].text_input("Current Finish Revision", value=str(existing.get("drawing_revision") or ""), disabled=True, help="Controlled by the latest ACTIVE Finish Drawing revision below.")
-        remarks = st.text_area("Remarks", value=str(existing.get("remarks") or ""), height=80)
-        submitted = st.form_submit_button("Save Part Master", type="primary", disabled=not writable, width="stretch")
-    if submitted:
-        try:
-            if not all([part_number.strip(), part_name.strip(), customer_id, grade_id]):
-                raise ValueError("Part Number, Description, Customer and Material Grade are mandatory.")
-            payload = {"part_number": part_number.strip(), "part_name": part_name.strip(), "customer_id": customer_id, "material_grade_id": grade_id, "finished_weight_kg": finish_weight, "status": status, "remarks": remarks.strip() or None}
-            if existing:
-                payload["drawing_number"] = existing.get("drawing_number")
-                payload["drawing_revision"] = existing.get("drawing_revision")
-            for row in repo.select("parts", limit=5000):
-                if existing and str(row.get("id")) == str(existing.get("id")):
-                    continue
-                if str(row.get("part_number") or "").strip().casefold() == part_number.strip().casefold():
-                    raise ValueError("Duplicate Part Number is not allowed.")
-            saved = repo.update("parts", str(existing["id"]), payload) if existing else repo.insert("parts", payload)
-            st.session_state["edit_part_id"] = str(saved["id"]); save_success_popup("Part Master saved successfully.", queue_for_rerun=True); st.rerun()
-        except Exception as exc:
-            st.error(str(exc))
+    with stage_section("A", 'PART DETAILS', 'All fields shown in the approved Part Master layout.', key="part_master_render_entry_a"):
+        with st.form("part_header"):
+            c = st.columns(4, gap="small")
+            part_number = c[0].text_input("Part Number", value=str(existing.get("part_number") or ""))
+            part_name = c[1].text_input("Part Description", value=str(existing.get("part_name") or ""))
+            finish_weight = c[2].number_input("Part Finish Weight (kg)", min_value=0.0, value=float(existing.get("finished_weight_kg") or 0), step=0.01)
+            status = c[3].selectbox("Status", ["ACTIVE", "INACTIVE"], index=0 if str(existing.get("status") or "ACTIVE") == "ACTIVE" else 1)
+            c = st.columns(4, gap="small")
+            customer_id = c[0].selectbox("Customer", list(customer_map), format_func=lambda x: customer_map[x], index=list(customer_map).index(str(existing.get("customer_id"))) if str(existing.get("customer_id")) in customer_map else 0) if customer_map else None
+            grade_id = c[1].selectbox("Material Grade", list(grade_map), format_func=lambda x: grade_map[x], index=list(grade_map).index(str(existing.get("material_grade_id"))) if str(existing.get("material_grade_id")) in grade_map else 0) if grade_map else None
+            c[2].text_input("Current Finish Drawing No.", value=str(existing.get("drawing_number") or ""), disabled=True, help="Controlled by the latest ACTIVE Finish Drawing revision below.")
+            c[3].text_input("Current Finish Revision", value=str(existing.get("drawing_revision") or ""), disabled=True, help="Controlled by the latest ACTIVE Finish Drawing revision below.")
+            remarks = st.text_area("Remarks", value=str(existing.get("remarks") or ""), height=80)
+            submitted = st.form_submit_button("Save Part Master", type="primary", disabled=not writable, width="stretch")
+        if submitted:
+            try:
+                if not all([part_number.strip(), part_name.strip(), customer_id, grade_id]):
+                    raise ValueError("Part Number, Description, Customer and Material Grade are mandatory.")
+                payload = {"part_number": part_number.strip(), "part_name": part_name.strip(), "customer_id": customer_id, "material_grade_id": grade_id, "finished_weight_kg": finish_weight, "status": status, "remarks": remarks.strip() or None}
+                if existing:
+                    payload["drawing_number"] = existing.get("drawing_number")
+                    payload["drawing_revision"] = existing.get("drawing_revision")
+                for row in repo.select("parts", limit=5000):
+                    if existing and str(row.get("id")) == str(existing.get("id")):
+                        continue
+                    if str(row.get("part_number") or "").strip().casefold() == part_number.strip().casefold():
+                        raise ValueError("Duplicate Part Number is not allowed.")
+                saved = repo.update("parts", str(existing["id"]), payload) if existing else repo.insert("parts", payload)
+                st.session_state["edit_part_id"] = str(saved["id"]); save_success_popup("Part Master saved successfully.", queue_for_rerun=True); st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
 
-    if not existing:
-        st.info("Save the Part header first. Drawing attachments and requirement grids will then become available.")
-        return
-    part_id = str(existing["id"])
+        if not existing:
+            st.info("Save the Part header first. Drawing attachments and requirement grids will then become available.")
+            return
+        part_id = str(existing["id"])
 
-    section_bar("CONTROLLED DRAWINGS", "Drawing Number, Revision Number and Revision Date are revision-controlled. Uploading a new revision automatically makes the previous revision INACTIVE; old drawings remain downloadable in history.")
-    drawing_rows = [
-        row for row in repo.select(
-            "document_attachments",
-            eq={"entity_type": "PART_MASTER", "entity_id": part_id},
-            order_by="created_at",
-            desc=True,
-            limit=500,
-        )
-        if str(row.get("document_type")) in dict(DRAWING_TYPES)
-    ]
-    active_drawings = {
-        str(row.get("document_type")): row
-        for row in drawing_rows
-        if str(row.get("status") or "").upper() == "ACTIVE"
-    }
-    drawing_service = AttachmentService(repo)
-    cols = st.columns(3, gap="small")
-    for col, (dtype, label) in zip(cols, DRAWING_TYPES):
-        current = active_drawings.get(dtype) or {}
-        with col:
-            with st.container(border=True, key=f"controlled_drawing_{dtype}_{part_id}"):
-                st.markdown(f"**{label}**")
-                if current:
-                    st.caption(
-                        f"ACTIVE · Drawing {current.get('drawing_number') or '-'} · "
-                        f"Rev {current.get('revision') or '-'} · {current.get('revision_date') or '-'}"
+    with stage_section("B", 'CONTROLLED DRAWINGS', 'Drawing Number, Revision Number and Revision Date are revision-controlled. Uploading a new revision automatically makes the previous revision INACTIVE; old drawings remain downloadable in history.', key="part_master_render_entry_b"):
+        drawing_rows = [
+            row for row in repo.select(
+                "document_attachments",
+                eq={"entity_type": "PART_MASTER", "entity_id": part_id},
+                order_by="created_at",
+                desc=True,
+                limit=500,
+            )
+            if str(row.get("document_type")) in dict(DRAWING_TYPES)
+        ]
+        active_drawings = {
+            str(row.get("document_type")): row
+            for row in drawing_rows
+            if str(row.get("status") or "").upper() == "ACTIVE"
+        }
+        drawing_service = AttachmentService(repo)
+        cols = st.columns(3, gap="small")
+        for col, (dtype, label) in zip(cols, DRAWING_TYPES):
+            current = active_drawings.get(dtype) or {}
+            with col:
+                with st.container(border=True, key=f"controlled_drawing_{dtype}_{part_id}"):
+                    st.markdown(f"**{label}**")
+                    if current:
+                        st.caption(
+                            f"ACTIVE · Drawing {current.get('drawing_number') or '-'} · "
+                            f"Rev {current.get('revision') or '-'} · {current.get('revision_date') or '-'}"
+                        )
+                        try:
+                            st.download_button(
+                                "Download Current",
+                                data=drawing_service.download(current),
+                                file_name=str(current.get("file_name") or f"{dtype}.pdf"),
+                                mime=str(current.get("mime_type") or "application/octet-stream"),
+                                key=f"download_current_{dtype}_{current.get('id')}",
+                                width="stretch",
+                            )
+                        except Exception as exc:
+                            st.caption(f"Current file unavailable: {exc}")
+                    else:
+                        st.caption("No ACTIVE controlled drawing")
+
+                    default_drawing_no = str(current.get("drawing_number") or (existing.get("drawing_number") if dtype == "FINISH_DRAWING" else "") or "")
+                    drawing_no = st.text_input(
+                        "Drawing Number",
+                        value=default_drawing_no,
+                        key=f"drawing_no_{dtype}_{part_id}",
+                        disabled=not writable,
                     )
-                    try:
+                    revision_no = st.text_input(
+                        "Revision Number",
+                        value="",
+                        key=f"drawing_rev_{dtype}_{part_id}",
+                        disabled=not writable,
+                    )
+                    revision_dt = st.date_input(
+                        "Revision Date",
+                        value=date.today(),
+                        key=f"drawing_rev_date_{dtype}_{part_id}",
+                        disabled=not writable,
+                    )
+                    file = st.file_uploader(
+                        "Controlled Drawing File",
+                        type=["pdf", "png", "jpg", "jpeg", "dwg", "dxf"],
+                        key=f"draw_{dtype}_{part_id}",
+                        disabled=not writable,
+                    )
+                    if st.button(
+                        f"Release New {label} Revision",
+                        key=f"up_{dtype}_{part_id}",
+                        disabled=not writable or file is None or not drawing_no.strip() or not revision_no.strip(),
+                        width="stretch",
+                    ):
+                        try:
+                            _save_drawing_revision(repo, part_id, dtype, drawing_no, revision_no, revision_dt, file)
+                            save_success_popup(
+                                f"{label} {drawing_no} Rev {revision_no} released. Previous revision is now INACTIVE.",
+                                queue_for_rerun=True,
+                            )
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(str(exc))
+
+    with stage_section("C", 'DRAWING REVISION HISTORY', 'All released drawings remain traceable. Only the latest revision for each drawing type is ACTIVE.', key="part_master_render_entry_c"):
+        if not drawing_rows:
+            st.info("No controlled drawing revisions have been released for this Part yet.")
+        else:
+            history_df = pd.DataFrame([
+                {
+                    "Drawing Type": dict(DRAWING_TYPES).get(str(row.get("document_type")), str(row.get("document_type") or "")),
+                    "Drawing Number": row.get("drawing_number") or "",
+                    "Revision Number": row.get("revision") or "",
+                    "Revision Date": row.get("revision_date") or "",
+                    "Status": str(row.get("status") or "").upper(),
+                    "File": row.get("file_name") or "",
+                    "Released At": row.get("created_at") or "",
+                    "Superseded At": row.get("superseded_at") or "",
+                }
+                for row in drawing_rows
+            ])
+            st.dataframe(history_df, hide_index=True, width="stretch")
+            history_map = {str(row["id"]): _drawing_label(row) for row in drawing_rows}
+            selected_drawing_id = st.selectbox(
+                "Select Drawing Revision to Download",
+                list(history_map),
+                format_func=lambda value: history_map[value],
+                key=f"drawing_history_select_{part_id}",
+            )
+            selected_drawing = next(row for row in drawing_rows if str(row.get("id")) == selected_drawing_id)
+            try:
+                st.download_button(
+                    "Download Selected Drawing Revision",
+                    data=drawing_service.download(selected_drawing),
+                    file_name=str(selected_drawing.get("file_name") or "controlled_drawing"),
+                    mime=str(selected_drawing.get("mime_type") or "application/octet-stream"),
+                    key=f"drawing_history_download_{selected_drawing_id}",
+                    width="stretch",
+                )
+            except Exception as exc:
+                st.error(f"Drawing download unavailable: {exc}")
+
+        # Customer Standards / Specifications linked to this Part Master.
+    with stage_section("D", 'CUSTOMER STANDARDS & SPECIFICATIONS', 'Link multiple customer/process standards to this Part. Controlled attachments can be downloaded directly from the Part Master.', key="part_master_render_entry_d"):
+        all_standards = repo.select("customer_standards", eq={"status": "ACTIVE"}, order_by="standard_code", limit=3000)
+        standards = [
+            row for row in all_standards
+            if not row.get("customer_id") or str(row.get("customer_id")) == str(existing.get("customer_id"))
+        ]
+        standard_processes = {str(r["id"]): r for r in repo.select("processes", limit=3000)}
+        standard_customers = {str(r["id"]): r for r in repo.select("parties", limit=3000)}
+        standard_map = {
+            str(row["id"]): customer_standard_label(
+                row,
+                customer_name=party_label(standard_customers.get(str(row.get("customer_id"))) or {}),
+                process_name=process_label(standard_processes.get(str(row.get("process_id"))) or {}),
+            )
+            for row in standards
+        }
+        # Backward contract: Save Linked Standards now means add-only; unlinking is a separate ADMIN/password action.
+        existing_links = repo.select("part_standard_links", eq={"part_id": part_id}, order_by="sequence_no", limit=1000)
+        linked_ids = [str(row.get("standard_id")) for row in existing_links if str(row.get("standard_id")) in standard_map]
+        available_standard_ids = [standard_id for standard_id in standard_map if standard_id not in set(linked_ids)]
+        selected_standard_ids = st.multiselect(
+            "Add Customer Standards / Specifications",
+            available_standard_ids,
+            format_func=lambda value: standard_map[value],
+            disabled=not writable,
+            help=(
+                "Select one or more additional controlled standards. Existing links remain protected. "
+                "Unlinking an existing Standard from a Part requires QCMS Administrator approval and password confirmation."
+            ),
+        ) if standard_map else []
+        if not standard_map:
+            st.info("No active Customer Standards / Specifications are available for this Part customer. Create them in the Standards Bank first.")
+            st.page_link(st.session_state["_qsms_pages"]["standards-entry"], label="Open Customer Standards Bank", icon=":material/library_books:", width="stretch")
+        elif st.button("Add Selected Standards", type="primary", disabled=not writable or not selected_standard_ids, width="stretch", key=f"save_part_standards_{part_id}"):
+            try:
+                by_standard = {str(row.get("standard_id")): row for row in existing_links}
+                next_sequence = max([int(row.get("sequence_no") or 0) for row in existing_links] + [0]) + 10
+                for standard_id in selected_standard_ids:
+                    if standard_id in by_standard:
+                        continue
+                    repo.insert(
+                        "part_standard_links",
+                        {"part_id": part_id, "standard_id": standard_id, "sequence_no": next_sequence, "status": "ACTIVE"},
+                    )
+                    next_sequence += 10
+                save_success_popup("Selected Customer Standards / Specifications linked successfully.", queue_for_rerun=True)
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+        active_link_rows = repo.select("part_standard_links", eq={"part_id": part_id, "status": "ACTIVE"}, order_by="sequence_no", limit=1000)
+        standard_by_id = {str(row["id"]): row for row in all_standards}
+        attachment_service = AttachmentService(repo)
+        attachment_rows = repo.select("document_attachments", eq={"entity_type": "CUSTOMER_STANDARD", "status": "ACTIVE"}, limit=5000)
+        attachment_by_standard = {str(row.get("entity_id")): row for row in attachment_rows if str(row.get("document_type")) == "STANDARD_DOCUMENT"}
+        linked_display = []
+        for link in active_link_rows:
+            standard = standard_by_id.get(str(link.get("standard_id"))) or {}
+            if not standard:
+                continue
+            linked_display.append({
+                "Code": standard.get("standard_code"),
+                "Standard / Specification": standard.get("standard_name"),
+                "Revision": standard.get("revision_number"),
+                "Revision Date": standard.get("revision_date"),
+                "Related Process": process_label(standard_processes.get(str(standard.get("process_id"))) or {}),
+                "Customer": party_label(standard_customers.get(str(standard.get("customer_id"))) or {}) or "General",
+                "Author": standard.get("author_name"),
+                "Attachment": (attachment_by_standard.get(str(standard.get("id"))) or {}).get("file_name") or "Not attached",
+            })
+        if linked_display:
+            st.dataframe(pd.DataFrame(linked_display), hide_index=True, width="stretch", height=min(280, 72 + len(linked_display) * 36))
+            dl_cols = st.columns(min(3, len(active_link_rows)), gap="small") if active_link_rows else []
+            for idx, link in enumerate(active_link_rows):
+                standard = standard_by_id.get(str(link.get("standard_id"))) or {}
+                attachment = attachment_by_standard.get(str(standard.get("id")))
+                if not attachment:
+                    continue
+                try:
+                    content = attachment_service.download(attachment)
+                except Exception:
+                    content = None
+                if content is not None:
+                    with dl_cols[idx % len(dl_cols)]:
+                        process_text = process_label(standard_processes.get(str(standard.get("process_id"))) or {}) or "No Process"
+                        author_text = str(standard.get("author_name") or "Author not specified").strip()
+                        standard_name_text = str(standard.get("standard_name") or "Standard / Specification").strip()
                         st.download_button(
-                            "Download Current",
-                            data=drawing_service.download(current),
-                            file_name=str(current.get("file_name") or f"{dtype}.pdf"),
-                            mime=str(current.get("mime_type") or "application/octet-stream"),
-                            key=f"download_current_{dtype}_{current.get('id')}",
+                            (
+                                f"Download {standard.get('standard_code') or 'Standard'} · {standard_name_text} · "
+                                f"{author_text} · {process_text} · Rev {standard.get('revision_number') or '-'}"
+                            ),
+                            data=content,
+                            file_name=str(attachment.get("file_name") or f"{standard.get('standard_code')}.pdf"),
+                            mime=str(attachment.get("mime_type") or "application/octet-stream"),
+                            key=f"part_standard_download_{part_id}_{standard.get('id')}",
                             width="stretch",
                         )
-                    except Exception as exc:
-                        st.caption(f"Current file unavailable: {exc}")
-                else:
-                    st.caption("No ACTIVE controlled drawing")
 
-                default_drawing_no = str(current.get("drawing_number") or (existing.get("drawing_number") if dtype == "FINISH_DRAWING" else "") or "")
-                drawing_no = st.text_input(
-                    "Drawing Number",
-                    value=default_drawing_no,
-                    key=f"drawing_no_{dtype}_{part_id}",
-                    disabled=not writable,
-                )
-                revision_no = st.text_input(
-                    "Revision Number",
-                    value="",
-                    key=f"drawing_rev_{dtype}_{part_id}",
-                    disabled=not writable,
-                )
-                revision_dt = st.date_input(
-                    "Revision Date",
-                    value=date.today(),
-                    key=f"drawing_rev_date_{dtype}_{part_id}",
-                    disabled=not writable,
-                )
-                file = st.file_uploader(
-                    "Controlled Drawing File",
-                    type=["pdf", "png", "jpg", "jpeg", "dwg", "dxf"],
-                    key=f"draw_{dtype}_{part_id}",
-                    disabled=not writable,
-                )
-                if st.button(
-                    f"Release New {label} Revision",
-                    key=f"up_{dtype}_{part_id}",
-                    disabled=not writable or file is None or not drawing_no.strip() or not revision_no.strip(),
-                    width="stretch",
-                ):
-                    try:
-                        _save_drawing_revision(repo, part_id, dtype, drawing_no, revision_no, revision_dt, file)
-                        save_success_popup(
-                            f"{label} {drawing_no} Rev {revision_no} released. Previous revision is now INACTIVE.",
-                            queue_for_rerun=True,
-                        )
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(str(exc))
+            admin_unlink_allowed = is_admin(current_profile())
+            if not admin_unlink_allowed:
+                st.caption("Standard unlink is restricted to the QCMS Administrator. Contact the Administrator if a linked Standard must be removed from this Part.")
+            if password_delete_panel(
+                repo=repo,
+                table="part_standard_links",
+                rows=active_link_rows,
+                labeler=lambda link: customer_standard_label(
+                    standard_by_id.get(str(link.get("standard_id"))) or {},
+                    customer_name=party_label(standard_customers.get(str((standard_by_id.get(str(link.get("standard_id"))) or {}).get("customer_id"))) or {}),
+                    process_name=process_label(standard_processes.get(str((standard_by_id.get(str(link.get("standard_id"))) or {}).get("process_id"))) or {}),
+                ) or str(link.get("standard_id") or "Standard"),
+                key=f"admin_unlink_part_standard_{part_id}",
+                can_delete=admin_unlink_allowed,
+                title="ADMIN APPROVAL — Unlink Standard from Part",
+                help_text=(
+                    "Only an active QCMS Administrator can unlink a controlled Standard / Specification from a Part. "
+                    "Administrator password confirmation is mandatory and the action is permanent."
+                ),
+            ):
+                st.rerun()
 
-    section_bar("DRAWING REVISION HISTORY", "All released drawings remain traceable. Only the latest revision for each drawing type is ACTIVE.")
-    if not drawing_rows:
-        st.info("No controlled drawing revisions have been released for this Part yet.")
-    else:
-        history_df = pd.DataFrame([
-            {
-                "Drawing Type": dict(DRAWING_TYPES).get(str(row.get("document_type")), str(row.get("document_type") or "")),
-                "Drawing Number": row.get("drawing_number") or "",
-                "Revision Number": row.get("revision") or "",
-                "Revision Date": row.get("revision_date") or "",
-                "Status": str(row.get("status") or "").upper(),
-                "File": row.get("file_name") or "",
-                "Released At": row.get("created_at") or "",
-                "Superseded At": row.get("superseded_at") or "",
-            }
-            for row in drawing_rows
-        ])
-        st.dataframe(history_df, hide_index=True, width="stretch")
-        history_map = {str(row["id"]): _drawing_label(row) for row in drawing_rows}
-        selected_drawing_id = st.selectbox(
-            "Select Drawing Revision to Download",
-            list(history_map),
-            format_func=lambda value: history_map[value],
-            key=f"drawing_history_select_{part_id}",
-        )
-        selected_drawing = next(row for row in drawing_rows if str(row.get("id")) == selected_drawing_id)
-        try:
-            st.download_button(
-                "Download Selected Drawing Revision",
-                data=drawing_service.download(selected_drawing),
-                file_name=str(selected_drawing.get("file_name") or "controlled_drawing"),
-                mime=str(selected_drawing.get("mime_type") or "application/octet-stream"),
-                key=f"drawing_history_download_{selected_drawing_id}",
-                width="stretch",
-            )
-        except Exception as exc:
-            st.error(f"Drawing download unavailable: {exc}")
+        suppliers = repo.select("parties", contains={"party_types": ["SUPPLIER"]}, eq={"status": "ACTIVE"}, order_by="party_name", limit=1000)
+        supplier_map = {str(row["id"]): party_label(row) for row in suppliers}
+        supplier_by_name = {name: sid for sid, name in supplier_map.items()}
 
-    # Customer Standards / Specifications linked to this Part Master.
-    section_bar("CUSTOMER STANDARDS & SPECIFICATIONS", "Link multiple customer/process standards to this Part. Controlled attachments can be downloaded directly from the Part Master.")
-    all_standards = repo.select("customer_standards", eq={"status": "ACTIVE"}, order_by="standard_code", limit=3000)
-    standards = [
-        row for row in all_standards
-        if not row.get("customer_id") or str(row.get("customer_id")) == str(existing.get("customer_id"))
-    ]
-    standard_processes = {str(r["id"]): r for r in repo.select("processes", limit=3000)}
-    standard_customers = {str(r["id"]): r for r in repo.select("parties", limit=3000)}
-    standard_map = {
-        str(row["id"]): customer_standard_label(
-            row,
-            customer_name=party_label(standard_customers.get(str(row.get("customer_id"))) or {}),
-            process_name=process_label(standard_processes.get(str(row.get("process_id"))) or {}),
-        )
-        for row in standards
-    }
-    # Backward contract: Save Linked Standards now means add-only; unlinking is a separate ADMIN/password action.
-    existing_links = repo.select("part_standard_links", eq={"part_id": part_id}, order_by="sequence_no", limit=1000)
-    linked_ids = [str(row.get("standard_id")) for row in existing_links if str(row.get("standard_id")) in standard_map]
-    available_standard_ids = [standard_id for standard_id in standard_map if standard_id not in set(linked_ids)]
-    selected_standard_ids = st.multiselect(
-        "Add Customer Standards / Specifications",
-        available_standard_ids,
-        format_func=lambda value: standard_map[value],
-        disabled=not writable,
-        help=(
-            "Select one or more additional controlled standards. Existing links remain protected. "
-            "Unlinking an existing Standard from a Part requires QCMS Administrator approval and password confirmation."
-        ),
-    ) if standard_map else []
-    if not standard_map:
-        st.info("No active Customer Standards / Specifications are available for this Part customer. Create them in the Standards Bank first.")
-        st.page_link(st.session_state["_qsms_pages"]["standards-entry"], label="Open Customer Standards Bank", icon=":material/library_books:", width="stretch")
-    elif st.button("Add Selected Standards", type="primary", disabled=not writable or not selected_standard_ids, width="stretch", key=f"save_part_standards_{part_id}"):
-        try:
-            by_standard = {str(row.get("standard_id")): row for row in existing_links}
-            next_sequence = max([int(row.get("sequence_no") or 0) for row in existing_links] + [0]) + 10
-            for standard_id in selected_standard_ids:
-                if standard_id in by_standard:
-                    continue
-                repo.insert(
-                    "part_standard_links",
-                    {"part_id": part_id, "standard_id": standard_id, "sequence_no": next_sequence, "status": "ACTIVE"},
-                )
-                next_sequence += 10
-            save_success_popup("Selected Customer Standards / Specifications linked successfully.", queue_for_rerun=True)
+    with stage_section("E", 'RAW MATERIAL DETAILS', 'Supplier forging parameters used for steel-to-production quantity validation.', key="part_master_render_entry_e"):
+        raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=200)
+        if password_delete_panel(repo=repo, table="part_raw_material_details", rows=raw, labeler=lambda r: f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · {r.get('section_size') or '-'} · {r.get('forging_route') or '-'}", key=f"delete_raw_{part_id}", can_delete=perms["can_archive"], title="Delete Raw Material row"):
             st.rerun()
-        except Exception as exc:
-            st.error(str(exc))
-
-    active_link_rows = repo.select("part_standard_links", eq={"part_id": part_id, "status": "ACTIVE"}, order_by="sequence_no", limit=1000)
-    standard_by_id = {str(row["id"]): row for row in all_standards}
-    attachment_service = AttachmentService(repo)
-    attachment_rows = repo.select("document_attachments", eq={"entity_type": "CUSTOMER_STANDARD", "status": "ACTIVE"}, limit=5000)
-    attachment_by_standard = {str(row.get("entity_id")): row for row in attachment_rows if str(row.get("document_type")) == "STANDARD_DOCUMENT"}
-    linked_display = []
-    for link in active_link_rows:
-        standard = standard_by_id.get(str(link.get("standard_id"))) or {}
-        if not standard:
-            continue
-        linked_display.append({
-            "Code": standard.get("standard_code"),
-            "Standard / Specification": standard.get("standard_name"),
-            "Revision": standard.get("revision_number"),
-            "Revision Date": standard.get("revision_date"),
-            "Related Process": process_label(standard_processes.get(str(standard.get("process_id"))) or {}),
-            "Customer": party_label(standard_customers.get(str(standard.get("customer_id"))) or {}) or "General",
-            "Author": standard.get("author_name"),
-            "Attachment": (attachment_by_standard.get(str(standard.get("id"))) or {}).get("file_name") or "Not attached",
-        })
-    if linked_display:
-        st.dataframe(pd.DataFrame(linked_display), hide_index=True, width="stretch", height=min(280, 72 + len(linked_display) * 36))
-        dl_cols = st.columns(min(3, len(active_link_rows)), gap="small") if active_link_rows else []
-        for idx, link in enumerate(active_link_rows):
-            standard = standard_by_id.get(str(link.get("standard_id"))) or {}
-            attachment = attachment_by_standard.get(str(standard.get("id")))
-            if not attachment:
-                continue
+        raw_df = pd.DataFrame([{
+            "Supplier Name": supplier_map.get(str(r.get("supplier_id")), ""),
+            "Forging Weight": r.get("forging_weight_kg"),
+            "Gross Weight": r.get("gross_weight_kg"),
+            "Input Weight kg/part": r.get("input_weight_kg") or r.get("gross_weight_kg") or r.get("forging_weight_kg"),
+            "Section": r.get("section_size"), "Forging Route": r.get("forging_route"),
+            "Status": r.get("status") or "ACTIVE"
+        } for r in raw], columns=["Supplier Name", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section", "Forging Route", "Status"])
+        section_options = _catalog_options(catalog, "part.rm_section", [r.get("section_size") for r in raw])
+        route_options = _catalog_options(catalog, "part.forging_route", [r.get("forging_route") for r in raw])
+        with st.expander("Manage reusable Section and Forging Route lists", expanded=False):
+            _catalog_add_control(catalog, "part.rm_section", "Section", section_options, f"section_{part_id}")
+            _catalog_add_control(catalog, "part.forging_route", "Forging Route", route_options, f"route_{part_id}")
+        raw_edit = st.data_editor(
+            raw_df, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"raw_{part_id}", disabled=not writable,
+            column_config={
+                "Supplier Name": st.column_config.SelectboxColumn(options=list(supplier_by_name), required=True),
+                "Forging Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
+                "Gross Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
+                "Input Weight kg/part": st.column_config.NumberColumn(min_value=0.001, format="%.3f", required=True, help="Steel input required for one production part."),
+                "Section": st.column_config.SelectboxColumn(options=section_options or [""], required=True),
+                "Forging Route": st.column_config.SelectboxColumn(options=route_options or [""], required=True),
+                "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
+            },
+        )
+        if st.button("Save Raw Material Details", type="primary", disabled=not writable, width="stretch"):
             try:
-                content = attachment_service.download(attachment)
-            except Exception:
-                content = None
-            if content is not None:
-                with dl_cols[idx % len(dl_cols)]:
-                    process_text = process_label(standard_processes.get(str(standard.get("process_id"))) or {}) or "No Process"
-                    author_text = str(standard.get("author_name") or "Author not specified").strip()
-                    standard_name_text = str(standard.get("standard_name") or "Standard / Specification").strip()
-                    st.download_button(
-                        (
-                            f"Download {standard.get('standard_code') or 'Standard'} · {standard_name_text} · "
-                            f"{author_text} · {process_text} · Rev {standard.get('revision_number') or '-'}"
-                        ),
-                        data=content,
-                        file_name=str(attachment.get("file_name") or f"{standard.get('standard_code')}.pdf"),
-                        mime=str(attachment.get("mime_type") or "application/octet-stream"),
-                        key=f"part_standard_download_{part_id}_{standard.get('id')}",
-                        width="stretch",
-                    )
-
-        admin_unlink_allowed = is_admin(current_profile())
-        if not admin_unlink_allowed:
-            st.caption("Standard unlink is restricted to the QCMS Administrator. Contact the Administrator if a linked Standard must be removed from this Part.")
-        if password_delete_panel(
-            repo=repo,
-            table="part_standard_links",
-            rows=active_link_rows,
-            labeler=lambda link: customer_standard_label(
-                standard_by_id.get(str(link.get("standard_id"))) or {},
-                customer_name=party_label(standard_customers.get(str((standard_by_id.get(str(link.get("standard_id"))) or {}).get("customer_id"))) or {}),
-                process_name=process_label(standard_processes.get(str((standard_by_id.get(str(link.get("standard_id"))) or {}).get("process_id"))) or {}),
-            ) or str(link.get("standard_id") or "Standard"),
-            key=f"admin_unlink_part_standard_{part_id}",
-            can_delete=admin_unlink_allowed,
-            title="ADMIN APPROVAL — Unlink Standard from Part",
-            help_text=(
-                "Only an active QCMS Administrator can unlink a controlled Standard / Specification from a Part. "
-                "Administrator password confirmation is mandatory and the action is permanent."
-            ),
-        ):
+                def mapper(row, index):
+                    name = str(row.get("Supplier Name") or "").strip(); sid = supplier_by_name.get(name)
+                    if not sid: return {}
+                    catalog.remember_many("part.rm_section", [row.get("Section")]); catalog.remember_many("part.forging_route", [row.get("Forging Route")])
+                    input_weight = None if pd.isna(row.get("Input Weight kg/part")) else row.get("Input Weight kg/part")
+                    if input_weight is None or float(input_weight) <= 0:
+                        raise ValueError(f"Input Weight kg/part is required for {name}.")
+                    return {"supplier_id": sid, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
+                _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id",), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+    with stage_section("F", 'JOMINY REQUIREMENT', 'Controlled 1/16 inch to millimetre conversion and HRC requirement band.', key="part_master_render_entry_f"):
+        distances = repo.select("jominy_distances", eq={"status": "ACTIVE"}, order_by="distance_16th", limit=100)
+        dmap = {str(d.get("distance_label")): d for d in distances}
+        jom = repo.select("part_jominy_requirements", eq={"part_id": part_id}, order_by="sequence_no", limit=100)
+        if password_delete_panel(repo=repo, table="part_jominy_requirements", rows=jom, labeler=lambda r: f"{r.get('distance_label')} · {r.get('minimum_hrc')}–{r.get('maximum_hrc')} HRC", key=f"delete_jom_{part_id}", can_delete=perms["can_archive"], title="Delete Jominy Requirement row"):
             st.rerun()
+        jdf = pd.DataFrame([{"Distance (inch)": r.get("distance_label"), "MM (Auto)": round(float((dmap.get(str(r.get("distance_label"))) or {}).get("distance_16th") or 0) * 25.4 / 16, 2), "Minimum HRC": r.get("minimum_hrc"), "Maximum HRC": r.get("maximum_hrc"), "Status": r.get("status") or "ACTIVE"} for r in jom], columns=["Distance (inch)", "MM (Auto)", "Minimum HRC", "Maximum HRC", "Status"])
+        disabled = True if not writable else ["MM (Auto)"]
+        jedit = st.data_editor(jdf, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"jom_{part_id}", disabled=disabled, column_config={"Distance (inch)": st.column_config.SelectboxColumn(options=list(dmap), required=True), "MM (Auto)": st.column_config.NumberColumn(format="%.2f"), "Minimum HRC": st.column_config.NumberColumn(format="%.2f"), "Maximum HRC": st.column_config.NumberColumn(format="%.2f"), "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"])})
+        if st.button("Save Jominy Requirements", type="primary", disabled=not writable, width="stretch"):
+            try:
+                def mapper(row, index):
+                    label = str(row.get("Distance (inch)") or "").strip()
+                    if not label: return {}
+                    distance = dmap.get(label)
+                    if not distance: raise ValueError(f"Select a valid Jominy distance for {label}.")
+                    low = None if pd.isna(row.get("Minimum HRC")) else row.get("Minimum HRC"); high = None if pd.isna(row.get("Maximum HRC")) else row.get("Maximum HRC")
+                    if low is not None and high is not None and float(low) > float(high): raise ValueError(f"Jominy {label}: minimum exceeds maximum.")
+                    return {"jominy_distance_id": distance.get("id"), "distance_label": label, "minimum_hrc": low, "maximum_hrc": high, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
+                _save_rows(repo, "part_jominy_requirements", part_id, jedit, ("jominy_distance_id",), mapper); save_success_popup("Jominy Requirements saved successfully.", queue_for_rerun=True); st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+    with stage_section("G", "OSP INSPECTION FOR METLAB", key="part_master_render_entry_g"):
+        _render_osp_metlab_requirements(repo, catalog, part_id, writable, perms["can_archive"], show_heading=False)
 
-    suppliers = repo.select("parties", contains={"party_types": ["SUPPLIER"]}, eq={"status": "ACTIVE"}, order_by="party_name", limit=1000)
-    supplier_map = {str(row["id"]): party_label(row) for row in suppliers}
-    supplier_by_name = {name: sid for sid, name in supplier_map.items()}
-
-    section_bar("RAW MATERIAL DETAILS", "Supplier forging parameters used for steel-to-production quantity validation.")
-    raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=200)
-    if password_delete_panel(repo=repo, table="part_raw_material_details", rows=raw, labeler=lambda r: f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · {r.get('section_size') or '-'} · {r.get('forging_route') or '-'}", key=f"delete_raw_{part_id}", can_delete=perms["can_archive"], title="Delete Raw Material row"):
-        st.rerun()
-    raw_df = pd.DataFrame([{
-        "Supplier Name": supplier_map.get(str(r.get("supplier_id")), ""),
-        "Forging Weight": r.get("forging_weight_kg"),
-        "Gross Weight": r.get("gross_weight_kg"),
-        "Input Weight kg/part": r.get("input_weight_kg") or r.get("gross_weight_kg") or r.get("forging_weight_kg"),
-        "Section": r.get("section_size"), "Forging Route": r.get("forging_route"),
-        "Status": r.get("status") or "ACTIVE"
-    } for r in raw], columns=["Supplier Name", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section", "Forging Route", "Status"])
-    section_options = _catalog_options(catalog, "part.rm_section", [r.get("section_size") for r in raw])
-    route_options = _catalog_options(catalog, "part.forging_route", [r.get("forging_route") for r in raw])
-    with st.expander("Manage reusable Section and Forging Route lists", expanded=False):
-        _catalog_add_control(catalog, "part.rm_section", "Section", section_options, f"section_{part_id}")
-        _catalog_add_control(catalog, "part.forging_route", "Forging Route", route_options, f"route_{part_id}")
-    raw_edit = st.data_editor(
-        raw_df, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"raw_{part_id}", disabled=not writable,
-        column_config={
-            "Supplier Name": st.column_config.SelectboxColumn(options=list(supplier_by_name), required=True),
-            "Forging Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
-            "Gross Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
-            "Input Weight kg/part": st.column_config.NumberColumn(min_value=0.001, format="%.3f", required=True, help="Steel input required for one production part."),
-            "Section": st.column_config.SelectboxColumn(options=section_options or [""], required=True),
-            "Forging Route": st.column_config.SelectboxColumn(options=route_options or [""], required=True),
-            "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
-        },
-    )
-    if st.button("Save Raw Material Details", type="primary", disabled=not writable, width="stretch"):
-        try:
-            def mapper(row, index):
-                name = str(row.get("Supplier Name") or "").strip(); sid = supplier_by_name.get(name)
-                if not sid: return {}
-                catalog.remember_many("part.rm_section", [row.get("Section")]); catalog.remember_many("part.forging_route", [row.get("Forging Route")])
-                input_weight = None if pd.isna(row.get("Input Weight kg/part")) else row.get("Input Weight kg/part")
-                if input_weight is None or float(input_weight) <= 0:
-                    raise ValueError(f"Input Weight kg/part is required for {name}.")
-                return {"supplier_id": sid, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
-            _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id",), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
-        except Exception as exc:
-            st.error(str(exc))
-    section_bar("JOMINY REQUIREMENT", "Controlled 1/16 inch to millimetre conversion and HRC requirement band.")
-    distances = repo.select("jominy_distances", eq={"status": "ACTIVE"}, order_by="distance_16th", limit=100)
-    dmap = {str(d.get("distance_label")): d for d in distances}
-    jom = repo.select("part_jominy_requirements", eq={"part_id": part_id}, order_by="sequence_no", limit=100)
-    if password_delete_panel(repo=repo, table="part_jominy_requirements", rows=jom, labeler=lambda r: f"{r.get('distance_label')} · {r.get('minimum_hrc')}–{r.get('maximum_hrc')} HRC", key=f"delete_jom_{part_id}", can_delete=perms["can_archive"], title="Delete Jominy Requirement row"):
-        st.rerun()
-    jdf = pd.DataFrame([{"Distance (inch)": r.get("distance_label"), "MM (Auto)": round(float((dmap.get(str(r.get("distance_label"))) or {}).get("distance_16th") or 0) * 25.4 / 16, 2), "Minimum HRC": r.get("minimum_hrc"), "Maximum HRC": r.get("maximum_hrc"), "Status": r.get("status") or "ACTIVE"} for r in jom], columns=["Distance (inch)", "MM (Auto)", "Minimum HRC", "Maximum HRC", "Status"])
-    disabled = True if not writable else ["MM (Auto)"]
-    jedit = st.data_editor(jdf, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"jom_{part_id}", disabled=disabled, column_config={"Distance (inch)": st.column_config.SelectboxColumn(options=list(dmap), required=True), "MM (Auto)": st.column_config.NumberColumn(format="%.2f"), "Minimum HRC": st.column_config.NumberColumn(format="%.2f"), "Maximum HRC": st.column_config.NumberColumn(format="%.2f"), "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"])})
-    if st.button("Save Jominy Requirements", type="primary", disabled=not writable, width="stretch"):
-        try:
-            def mapper(row, index):
-                label = str(row.get("Distance (inch)") or "").strip()
-                if not label: return {}
-                distance = dmap.get(label)
-                if not distance: raise ValueError(f"Select a valid Jominy distance for {label}.")
-                low = None if pd.isna(row.get("Minimum HRC")) else row.get("Minimum HRC"); high = None if pd.isna(row.get("Maximum HRC")) else row.get("Maximum HRC")
-                if low is not None and high is not None and float(low) > float(high): raise ValueError(f"Jominy {label}: minimum exceeds maximum.")
-                return {"jominy_distance_id": distance.get("id"), "distance_label": label, "minimum_hrc": low, "maximum_hrc": high, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
-            _save_rows(repo, "part_jominy_requirements", part_id, jedit, ("jominy_distance_id",), mapper); save_success_popup("Jominy Requirements saved successfully.", queue_for_rerun=True); st.rerun()
-        except Exception as exc:
-            st.error(str(exc))
-    _render_osp_metlab_requirements(repo, catalog, part_id, writable, perms["can_archive"])
-    _render_metallurgical_requirements(repo, catalog, part_id, writable, perms["can_archive"])
+    with stage_section("H", "METALLURGICAL REQUIREMENTS", key="part_master_render_entry_h"):
+        _render_metallurgical_requirements(repo, catalog, part_id, writable, perms["can_archive"], show_heading=False)
 
 
 

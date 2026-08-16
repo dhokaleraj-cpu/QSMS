@@ -10,7 +10,7 @@ from core.delete_service import password_delete_panel
 from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
 from core.reporting import dimensional_record_pdf_bytes
 from core.selection_labels import employee_label, party_label
-from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, style_status_dataframe, subpage_navigation, template_download_row
+from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
 
 
 def _maps(service: InspectionService):
@@ -98,127 +98,127 @@ def render_entry() -> None:
     service = InspectionService(); perms = current_permissions("DIMENSIONAL_REPORT")
     parts, parties, processes, stages, employee_map = _maps(service)
     pending_queue = [row for row in service.inspection_queue() if row.get("dimensional_pending")]
-    section_bar("DIMENSIONAL PENDING LIST")
-    if pending_queue:
-        st.dataframe(
-            style_status_dataframe(_pending_frame(pending_queue, parts, parties)),
-            hide_index=True, width="stretch", height=min(300, 84 + 38 * len(pending_queue)),
-        )
-    else:
-        st.success("No Dimensional inspections are pending.")
-    inward_rows = service.inward_lots()
-    if not inward_rows:
-        st.warning("No Accepted or Accepted Under Reserve Material Inward is available.")
-        return
+    with stage_section("A", 'DIMENSIONAL PENDING LIST', key="dimensional_report_render_entry_a"):
+        if pending_queue:
+            st.dataframe(
+                style_status_dataframe(_pending_frame(pending_queue, parts, parties)),
+                hide_index=True, width="stretch", height=min(300, 84 + 38 * len(pending_queue)),
+            )
+        else:
+            st.success("No Dimensional inspections are pending.")
+        inward_rows = service.inward_lots()
+        if not inward_rows:
+            st.warning("No Accepted or Accepted Under Reserve Material Inward is available.")
+            return
 
-    existing_id = str(st.session_state.get("edit_dimensional_id") or "")
-    existing = service.get_dimensional(existing_id) if existing_id else None
-    inward_map = {str(row["id"]): _inward_label(row, parts, parties) for row in inward_rows}
-    current_inward = str((existing or {}).get("inward_lot_id") or st.session_state.get("inspection_inward_id") or next(iter(inward_map)))
-    inward_id = st.selectbox("Material Inward / Part / Supplier / Quantity", list(inward_map), index=list(inward_map).index(current_inward) if current_inward in inward_map else 0, format_func=lambda value: inward_map[value], disabled=bool(existing))
-    inward = next(row for row in inward_rows if str(row["id"]) == inward_id)
-    part_id = str(inward.get("part_id")); part = parts.get(part_id) or {}
+        existing_id = str(st.session_state.get("edit_dimensional_id") or "")
+        existing = service.get_dimensional(existing_id) if existing_id else None
+        inward_map = {str(row["id"]): _inward_label(row, parts, parties) for row in inward_rows}
+        current_inward = str((existing or {}).get("inward_lot_id") or st.session_state.get("inspection_inward_id") or next(iter(inward_map)))
+        inward_id = st.selectbox("Material Inward / Part / Supplier / Quantity", list(inward_map), index=list(inward_map).index(current_inward) if current_inward in inward_map else 0, format_func=lambda value: inward_map[value], disabled=bool(existing))
+        inward = next(row for row in inward_rows if str(row["id"]) == inward_id)
+        part_id = str(inward.get("part_id")); part = parts.get(part_id) or {}
 
-    all_plans = service.plans("DIMENSIONAL", part_id, approved_only=True)
-    if not all_plans:
-        st.warning("No Approved Dimensional Layout is configured for this Part Number.")
-        st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Dimensional Layout", icon=":material/add:", width="stretch")
-        return
+        all_plans = service.plans("DIMENSIONAL", part_id, approved_only=True)
+        if not all_plans:
+            st.warning("No Approved Dimensional Layout is configured for this Part Number.")
+            st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Dimensional Layout", icon=":material/add:", width="stretch")
+            return
 
-    selection_mode = st.radio("Layout Selection", ["Automatic", "Manual"], horizontal=True, disabled=bool(existing), help="Automatic uses the approved Part + Process + Inspection Stage layout. Manual allows an approved alternative.")
-    plan_map = {str(row["id"]): f"{row.get('layout_name')} · {row.get('plan_number')} Rev {row.get('revision')}" for row in all_plans}
-    recommended = service.ranked_plans("DIMENSIONAL", part_id)[0]
-    if existing:
-        plan_id = str(existing.get("inspection_plan_id") or recommended.get("id"))
-    elif selection_mode == "Automatic":
-        plan_id = str(recommended["id"])
-        st.info(f"Automatically selected: {plan_map[plan_id]}")
-    else:
-        plan_id = st.selectbox("Approved Layout Plan", list(plan_map), format_func=lambda value: plan_map[value])
-    if selection_mode == "Automatic" or existing:
-        st.selectbox("Approved Layout Plan", [plan_id], format_func=lambda value: plan_map.get(value, value), disabled=True)
-    plan = next(row for row in all_plans if str(row["id"]) == plan_id)
-    section_name = str(plan.get("layout_type") or "DIMENSIONAL")
+        selection_mode = st.radio("Layout Selection", ["Automatic", "Manual"], horizontal=True, disabled=bool(existing), help="Automatic uses the approved Part + Process + Inspection Stage layout. Manual allows an approved alternative.")
+        plan_map = {str(row["id"]): f"{row.get('layout_name')} · {row.get('plan_number')} Rev {row.get('revision')}" for row in all_plans}
+        recommended = service.ranked_plans("DIMENSIONAL", part_id)[0]
+        if existing:
+            plan_id = str(existing.get("inspection_plan_id") or recommended.get("id"))
+        elif selection_mode == "Automatic":
+            plan_id = str(recommended["id"])
+            st.info(f"Automatically selected: {plan_map[plan_id]}")
+        else:
+            plan_id = st.selectbox("Approved Layout Plan", list(plan_map), format_func=lambda value: plan_map[value])
+        if selection_mode == "Automatic" or existing:
+            st.selectbox("Approved Layout Plan", [plan_id], format_func=lambda value: plan_map.get(value, value), disabled=True)
+        plan = next(row for row in all_plans if str(row["id"]) == plan_id)
+        section_name = str(plan.get("layout_type") or "DIMENSIONAL")
 
-    c1, c2, c3, c4 = st.columns(4, gap="small")
-    c1.text_input("Layout Name", value=str(plan.get("layout_name") or ""), disabled=True)
-    c2.text_input("Section / Layout Type", value=section_name, disabled=True)
-    c3.text_input("Process", value=str((processes.get(str(plan.get("process_id"))) or {}).get("process_name") or "Not assigned"), disabled=True)
-    c4.text_input("Inspection Stage", value=str((stages.get(str(plan.get("inspection_stage_id"))) or {}).get("stage_name") or "Not assigned"), disabled=True)
+        c1, c2, c3, c4 = st.columns(4, gap="small")
+        c1.text_input("Layout Name", value=str(plan.get("layout_name") or ""), disabled=True)
+        c2.text_input("Section / Layout Type", value=section_name, disabled=True)
+        c3.text_input("Process", value=str((processes.get(str(plan.get("process_id"))) or {}).get("process_name") or "Not assigned"), disabled=True)
+        c4.text_input("Inspection Stage", value=str((stages.get(str(plan.get("inspection_stage_id"))) or {}).get("stage_name") or "Not assigned"), disabled=True)
 
-    sample_size = min(max(int((existing or {}).get("sample_size") or plan.get("default_sample_size") or 1), 1), 10)
-    c1, c2, c3, c4, c5 = st.columns(5, gap="small")
-    report_no = c1.text_input("Report Number", value=str((existing or {}).get("report_number") or ""), placeholder="Auto on first save")
-    inspection_date = c2.date_input("Inspection Date", value=date.fromisoformat(str((existing or {}).get("inspection_date"))[:10]) if (existing or {}).get("inspection_date") else date.today(), format="DD-MM-YYYY")
-    c3.text_input("Part Number", value=str(part.get("part_number") or ""), disabled=True)
-    c4.text_input("Heat Number", value=str(inward.get("heat_number") or ""), disabled=True)
-    c5.text_input("Heat Code", value=str(inward.get("heat_code") or ""), disabled=True)
-    c1, c2, c3, c4, c5 = st.columns(5, gap="small")
-    c1.text_input("Supplier", value=str((parties.get(str(inward.get("supplier_id"))) or {}).get("party_name") or ""), disabled=True)
-    c2.text_input("Steel Quantity (kg)", value=f"{float(inward.get('steel_quantity_kg') or inward.get('quantity_received') or 0):,.3f}", disabled=True)
-    c3.text_input("Production Quantity (pcs)", value=f"{float(inward.get('production_quantity_pcs') or 0):,.0f}", disabled=True)
-    lot_qty = c4.number_input("Lot Quantity (pcs)", min_value=0.0, value=float((existing or {}).get("lot_quantity") or inward.get("production_quantity_pcs") or 0), step=1.0)
-    sample_size = c5.number_input("Sample Size", min_value=1, max_value=10, value=sample_size, step=1, disabled=bool(existing))
+        sample_size = min(max(int((existing or {}).get("sample_size") or plan.get("default_sample_size") or 1), 1), 10)
+        c1, c2, c3, c4, c5 = st.columns(5, gap="small")
+        report_no = c1.text_input("Report Number", value=str((existing or {}).get("report_number") or ""), placeholder="Auto on first save")
+        inspection_date = c2.date_input("Inspection Date", value=date.fromisoformat(str((existing or {}).get("inspection_date"))[:10]) if (existing or {}).get("inspection_date") else date.today(), format="DD-MM-YYYY")
+        c3.text_input("Part Number", value=str(part.get("part_number") or ""), disabled=True)
+        c4.text_input("Heat Number", value=str(inward.get("heat_number") or ""), disabled=True)
+        c5.text_input("Heat Code", value=str(inward.get("heat_code") or ""), disabled=True)
+        c1, c2, c3, c4, c5 = st.columns(5, gap="small")
+        c1.text_input("Supplier", value=str((parties.get(str(inward.get("supplier_id"))) or {}).get("party_name") or ""), disabled=True)
+        c2.text_input("Steel Quantity (kg)", value=f"{float(inward.get('steel_quantity_kg') or inward.get('quantity_received') or 0):,.3f}", disabled=True)
+        c3.text_input("Production Quantity (pcs)", value=f"{float(inward.get('production_quantity_pcs') or 0):,.0f}", disabled=True)
+        lot_qty = c4.number_input("Lot Quantity (pcs)", min_value=0.0, value=float((existing or {}).get("lot_quantity") or inward.get("production_quantity_pcs") or 0), step=1.0)
+        sample_size = c5.number_input("Sample Size", min_value=1, max_value=10, value=sample_size, step=1, disabled=bool(existing))
 
-    rows = _report_rows(service, plan_id, str(existing.get("id")) if existing else None, int(sample_size), section_name)
-    frame = _editor_frame(rows, int(sample_size))
-    section_bar("LAYOUT CHARACTERISTICS")
-    edited = st.data_editor(frame, hide_index=True, width="stretch", height=min(620, max(260, 90 + len(frame) * 32)), disabled=["Section", "Sr No", "Parameter", "Specification", "Min", "Max", "Checking Aid", "Result", "_sequence", "_characteristic_id", "_type", "_unit"], column_config={"NA": st.column_config.CheckboxColumn(), "_sequence": None, "_characteristic_id": None, "_type": None, "_unit": None}, key=f"dimensional_grid_{existing_id or 'new'}_{plan_id}")
+        rows = _report_rows(service, plan_id, str(existing.get("id")) if existing else None, int(sample_size), section_name)
+        frame = _editor_frame(rows, int(sample_size))
+    with stage_section("B", 'LAYOUT CHARACTERISTICS', key="dimensional_report_render_entry_b"):
+        edited = st.data_editor(frame, hide_index=True, width="stretch", height=min(620, max(260, 90 + len(frame) * 32)), disabled=["Section", "Sr No", "Parameter", "Specification", "Min", "Max", "Checking Aid", "Result", "_sequence", "_characteristic_id", "_type", "_unit"], column_config={"NA": st.column_config.CheckboxColumn(), "_sequence": None, "_characteristic_id": None, "_type": None, "_unit": None}, key=f"dimensional_grid_{existing_id or 'new'}_{plan_id}")
 
-    c1, c2 = st.columns([3, 1], gap="small")
-    remarks = c1.text_area("Report Remarks", value=str((existing or {}).get("remarks") or ""), height=52)
-    attachment = c2.file_uploader("Attach Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"dim_attachment_{existing_id or 'new'}")
+        c1, c2 = st.columns([3, 1], gap="small")
+        remarks = c1.text_area("Report Remarks", value=str((existing or {}).get("remarks") or ""), height=52)
+        attachment = c2.file_uploader("Attach Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"dim_attachment_{existing_id or 'new'}")
 
-    employee_options = [""] + list(employee_map)
-    c1, c2, c3 = st.columns(3, gap="small")
-    prepared_current = str((existing or {}).get("prepared_by_employee_id") or "")
-    prepared = c1.selectbox("Inspected / Prepared By", employee_options, index=employee_options.index(prepared_current) if prepared_current in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
-    disposition_options = ["PENDING", *FINAL_DISPOSITIONS]
-    disposition = c2.selectbox("Validation Decision", disposition_options, index=disposition_options.index(str((existing or {}).get("disposition") or "PENDING")), format_func=disposition_label)
-    reason = c3.text_input("Hold / Reserve / Rejection Reason", value=str((existing or {}).get("disposition_reason") or ""))
-
-    saved_rows = []
-    for _, row in edited.iterrows():
-        observations = [row.get(f"Actual {index + 1}") for index in range(int(sample_size))]
-        na = bool(row.get("NA"))
-        result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, observations, na)
-        saved_rows.append({"sequence_no": int(row.get("_sequence") or len(saved_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "characteristic_no": row.get("Sr No"), "characteristic": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "unit": row.get("_unit"), "checking_aid": row.get("Checking Aid"), "observations": observations, "result": result, "remarks": row.get("Remark"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "report_section": section_name})
-
-    writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT") != "FINAL"
-    if st.button("Save Dimensional Report Draft", type="primary", disabled=not writable or not prepared, width="stretch"):
-        try:
-            final_number = report_no.strip() or service.next_number("DIMENSIONAL")
-            payload = {"report_number": final_number, "report_type": "DIMENSIONAL", "inspection_plan_id": plan_id, "inspection_stage_id": plan.get("inspection_stage_id"), "process_id": plan.get("process_id"), "part_id": part_id, "inward_lot_id": inward_id, "inspection_date": inspection_date.isoformat(), "sample_size": int(sample_size), "accepted_quantity": 0, "rejected_quantity": 0, "inspector": employee_map.get(prepared), "overall_result": "NOT_EVALUATED", "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None, "disposition": str((existing or {}).get("disposition") or "PENDING"), "heat_number": inward.get("heat_number"), "heat_code": inward.get("heat_code"), "lot_quantity": lot_qty, "supplier_id": inward.get("supplier_id"), "drawing_number": part.get("drawing_number"), "drawing_revision": part.get("drawing_revision"), "prepared_by_employee_id": prepared, "source_layout_revision": plan.get("revision"), "layout_name_snapshot": plan.get("layout_name"), "layout_type_name": section_name, "steel_quantity_kg": inward.get("steel_quantity_kg") or inward.get("quantity_received"), "production_quantity_pcs": inward.get("production_quantity_pcs")}
-            with st.spinner("Saving report and layout characteristics…"):
-                saved = service.save_dimensional(payload, saved_rows, str(existing["id"]) if existing else None)
-                if attachment is not None:
-                    service.upload_attachment("DIMENSIONAL_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "inspection_reports", "attachment_path")
-            st.session_state["edit_dimensional_id"] = str(saved["id"])
-            save_success_popup(f"Dimensional Report {final_number} saved successfully.", queue_for_rerun=True)
-            st.rerun()
-        except Exception as exc:
-            st.error(str(exc))
-
-    if existing:
-        disposition_cards([{"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")}, {"label": "Decision", "value": existing.get("disposition")}, {"label": "Layout", "value": existing.get("layout_name_snapshot") or plan.get("layout_name")}])
+        employee_options = [""] + list(employee_map)
         c1, c2, c3 = st.columns(3, gap="small")
-        validator = c1.selectbox("Validated By", employee_options, index=employee_options.index(str(existing.get("validated_by_employee_id") or "")) if str(existing.get("validated_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
-        approver = c2.selectbox("Approved By", employee_options, index=employee_options.index(str(existing.get("approved_by_employee_id") or "")) if str(existing.get("approved_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
-        if c3.button("Finalize Dimensional Decision", disabled=not perms["can_approve"] or disposition == "PENDING" or not validator or not approver or str(existing.get("status")) == "FINAL", width="stretch"):
+        prepared_current = str((existing or {}).get("prepared_by_employee_id") or "")
+        prepared = c1.selectbox("Inspected / Prepared By", employee_options, index=employee_options.index(prepared_current) if prepared_current in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
+        disposition_options = ["PENDING", *FINAL_DISPOSITIONS]
+        disposition = c2.selectbox("Validation Decision", disposition_options, index=disposition_options.index(str((existing or {}).get("disposition") or "PENDING")), format_func=disposition_label)
+        reason = c3.text_input("Hold / Reserve / Rejection Reason", value=str((existing or {}).get("disposition_reason") or ""))
+
+        saved_rows = []
+        for _, row in edited.iterrows():
+            observations = [row.get(f"Actual {index + 1}") for index in range(int(sample_size))]
+            na = bool(row.get("NA"))
+            result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, observations, na)
+            saved_rows.append({"sequence_no": int(row.get("_sequence") or len(saved_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "characteristic_no": row.get("Sr No"), "characteristic": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "unit": row.get("_unit"), "checking_aid": row.get("Checking Aid"), "observations": observations, "result": result, "remarks": row.get("Remark"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "report_section": section_name})
+
+        writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT") != "FINAL"
+        if st.button("Save Dimensional Report Draft", type="primary", disabled=not writable or not prepared, width="stretch"):
             try:
-                service.finalize_dimensional(str(existing["id"]), disposition, reason, validator, approver)
-                save_success_popup("Dimensional decision finalized successfully.", queue_for_rerun=True)
+                final_number = report_no.strip() or service.next_number("DIMENSIONAL")
+                payload = {"report_number": final_number, "report_type": "DIMENSIONAL", "inspection_plan_id": plan_id, "inspection_stage_id": plan.get("inspection_stage_id"), "process_id": plan.get("process_id"), "part_id": part_id, "inward_lot_id": inward_id, "inspection_date": inspection_date.isoformat(), "sample_size": int(sample_size), "accepted_quantity": 0, "rejected_quantity": 0, "inspector": employee_map.get(prepared), "overall_result": "NOT_EVALUATED", "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None, "disposition": str((existing or {}).get("disposition") or "PENDING"), "heat_number": inward.get("heat_number"), "heat_code": inward.get("heat_code"), "lot_quantity": lot_qty, "supplier_id": inward.get("supplier_id"), "drawing_number": part.get("drawing_number"), "drawing_revision": part.get("drawing_revision"), "prepared_by_employee_id": prepared, "source_layout_revision": plan.get("revision"), "layout_name_snapshot": plan.get("layout_name"), "layout_type_name": section_name, "steel_quantity_kg": inward.get("steel_quantity_kg") or inward.get("quantity_received"), "production_quantity_pcs": inward.get("production_quantity_pcs")}
+                with st.spinner("Saving report and layout characteristics…"):
+                    saved = service.save_dimensional(payload, saved_rows, str(existing["id"]) if existing else None)
+                    if attachment is not None:
+                        service.upload_attachment("DIMENSIONAL_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "inspection_reports", "attachment_path")
+                st.session_state["edit_dimensional_id"] = str(saved["id"])
+                save_success_popup(f"Dimensional Report {final_number} saved successfully.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
                 st.error(str(exc))
-        if password_delete_panel(
-            repo=service.repo, table="inspection_reports", rows=[existing],
-            labeler=lambda row: row.get("report_number"),
-            key=f"delete_dimensional_entry_{existing.get('id')}", can_delete=perms["can_archive"],
-            title="Delete This Dimensional Report",
-            help_text="Permanent deletion requires your current QCMS password and Dimensional Delete permission.",
-        ):
-            st.session_state.pop("edit_dimensional_id", None); st.rerun()
+
+        if existing:
+            disposition_cards([{"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")}, {"label": "Decision", "value": existing.get("disposition")}, {"label": "Layout", "value": existing.get("layout_name_snapshot") or plan.get("layout_name")}])
+            c1, c2, c3 = st.columns(3, gap="small")
+            validator = c1.selectbox("Validated By", employee_options, index=employee_options.index(str(existing.get("validated_by_employee_id") or "")) if str(existing.get("validated_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
+            approver = c2.selectbox("Approved By", employee_options, index=employee_options.index(str(existing.get("approved_by_employee_id") or "")) if str(existing.get("approved_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
+            if c3.button("Finalize Dimensional Decision", disabled=not perms["can_approve"] or disposition == "PENDING" or not validator or not approver or str(existing.get("status")) == "FINAL", width="stretch"):
+                try:
+                    service.finalize_dimensional(str(existing["id"]), disposition, reason, validator, approver)
+                    save_success_popup("Dimensional decision finalized successfully.", queue_for_rerun=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
+            if password_delete_panel(
+                repo=service.repo, table="inspection_reports", rows=[existing],
+                labeler=lambda row: row.get("report_number"),
+                key=f"delete_dimensional_entry_{existing.get('id')}", can_delete=perms["can_archive"],
+                title="Delete This Dimensional Report",
+                help_text="Permanent deletion requires your current QCMS password and Dimensional Delete permission.",
+            ):
+                st.session_state.pop("edit_dimensional_id", None); st.rerun()
 
 
 def render_records() -> None:

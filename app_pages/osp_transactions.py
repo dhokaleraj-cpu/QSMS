@@ -11,7 +11,7 @@ from core.osp_service import OSPService
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes, dimensional_record_pdf_bytes, metlab_record_pdf_bytes
 from core.selection_labels import party_label, process_label
-from core.ui import kpi_grid, page_header, save_success_popup, section_bar, style_status_dataframe, subpage_navigation, workflow_progress
+from core.ui import kpi_grid, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, workflow_progress
 
 
 def _label(row: dict) -> str:
@@ -143,7 +143,6 @@ def render_inward() -> None:
 
 
 def _render_register(rows: list[dict], height: int = 560) -> None:
-    section_bar("OSP TRANSACTION REGISTER")
     display = pd.DataFrame([{
         "OSP Job": r.get("osp_job_number"), "Material Out Date": r.get("dispatch_date"), "Heat Number": r.get("heat_number"),
         "Part Number": r.get("part_number"), "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"),
@@ -166,62 +165,63 @@ def render_records() -> None:
         inspection = InspectionService()
         metlab_rows = inspection.repo.select("lab_tests", eq={"osp_job_id": selected, "test_type": "METLAB"}, order_by="updated_at", desc=True, limit=20)
         dimensional_rows = inspection.repo.select("inspection_reports", eq={"osp_job_id": selected, "report_type": "DIMENSIONAL"}, order_by="updated_at", desc=True, limit=20)
-        section_bar("OSP CONTROLLED PDF REPORTS")
-        transaction_pdf = controlled_record_pdf_bytes(
-            "OSP TRANSACTION RECORD",
-            {
-                "OSP Job": selected_row.get("osp_job_number"), "Heat Number": selected_row.get("heat_number"),
-                "Part Number": selected_row.get("part_number"), "OSP Vendor": selected_row.get("vendor_name"),
-                "Process": selected_row.get("process_name"), "Material Out Date": selected_row.get("dispatch_date"),
-                "Out Qty pcs": selected_row.get("quantity_dispatched"), "Expected Return": selected_row.get("expected_return_date"),
-                "Vendor Batch": selected_row.get("vendor_batch_number"), "Sample Gate": selected_row.get("sample_gate_status"),
-                "OSP Inward": selected_row.get("receipt_number"), "Inward Qty pcs": selected_row.get("quantity_received"),
-                "Receipt Decision": selected_row.get("receipt_quality_disposition"), "Production Qty Available": selected_row.get("production_available_quantity"),
-                "Status": selected_row.get("status"),
-            },
-            record_number=str(selected_row.get("osp_job_number") or ""),
-        )
-        st.download_button("OSP Transaction PDF", transaction_pdf, file_name=f"{selected_row.get('osp_job_number')}_OSP_Transaction.pdf", mime="application/pdf", key=f"osp_txn_pdf_{selected}", width="stretch")
-        if not metlab_rows and not dimensional_rows:
-            st.info("No completed OSP MetLAB or Dimensional report is linked to the selected OSP record yet.")
-        else:
-            cols = st.columns(2, gap="small")
-            with cols[0]:
-                for report in metlab_rows:
-                    try:
-                        pdf = metlab_record_pdf_bytes(inspection.metlab_report_payload(str(report["id"])))
-                        st.download_button(f"MetLAB PDF · {report.get('report_number')}", pdf, file_name=f"{report.get('report_number') or selected_row.get('osp_job_number')}_MetLAB.pdf", mime="application/pdf", key=f"osp_metlab_pdf_{report['id']}", width="stretch")
-                    except Exception as exc:
-                        st.error(f"MetLAB PDF could not be generated: {exc}")
-            with cols[1]:
-                for report in dimensional_rows:
-                    try:
-                        pdf = dimensional_record_pdf_bytes(inspection.dimensional_report_payload(str(report["id"])))
-                        st.download_button(f"Dimensional PDF · {report.get('report_number')}", pdf, file_name=f"{report.get('report_number') or selected_row.get('osp_job_number')}_Dimensional.pdf", mime="application/pdf", key=f"osp_dim_pdf_{report['id']}", width="stretch")
-                    except Exception as exc:
-                        st.error(f"Dimensional PDF could not be generated: {exc}")
-        section_bar("DELETE OSP RECORD")
-        if metlab_rows or dimensional_rows:
-            st.caption("Delete linked OSP MetLAB / Dimensional inspection records first; then delete the parent OSP transaction.")
-        linked_rows = [*metlab_rows, *dimensional_rows]
-        if linked_rows:
-            report_labels = lambda row: f"{row.get('report_number')} · {row.get('test_type') or row.get('report_type')}"
-            # MetLAB and Dimensional use different physical tables, so expose a separate password panel for each.
-            if metlab_rows and password_delete_panel(
-                repo=inspection.repo, table="lab_tests", rows=metlab_rows, labeler=report_labels,
-                key=f"osp_metlab_delete_{selected}", can_delete=perms["can_archive"], title="Delete linked OSP MetLAB report",
-            ):
-                st.rerun()
-            if dimensional_rows and password_delete_panel(
-                repo=inspection.repo, table="inspection_reports", rows=dimensional_rows, labeler=report_labels,
-                key=f"osp_dim_delete_{selected}", can_delete=perms["can_archive"], title="Delete linked OSP Dimensional report",
-            ):
-                st.rerun()
-        if not metlab_rows and not dimensional_rows:
-            if password_delete_panel(
-                repo=inspection.repo, table="osp_jobs", rows=[selected_row], labeler=lambda row: _label(row),
-                key=f"osp_job_delete_{selected}", can_delete=perms["can_archive"], title="Delete OSP transaction",
-                help_text="Deletes the selected OSP transaction. Current QCMS password is required. Linked inspection records must be deleted first.",
-            ):
-                st.rerun()
-    _render_register(filtered)
+        with stage_section("A", "OSP CONTROLLED PDF REPORTS", key="osp_records_a"):
+            transaction_pdf = controlled_record_pdf_bytes(
+                "OSP TRANSACTION RECORD",
+                {
+                    "OSP Job": selected_row.get("osp_job_number"), "Heat Number": selected_row.get("heat_number"),
+                    "Part Number": selected_row.get("part_number"), "OSP Vendor": selected_row.get("vendor_name"),
+                    "Process": selected_row.get("process_name"), "Material Out Date": selected_row.get("dispatch_date"),
+                    "Out Qty pcs": selected_row.get("quantity_dispatched"), "Expected Return": selected_row.get("expected_return_date"),
+                    "Vendor Batch": selected_row.get("vendor_batch_number"), "Sample Gate": selected_row.get("sample_gate_status"),
+                    "OSP Inward": selected_row.get("receipt_number"), "Inward Qty pcs": selected_row.get("quantity_received"),
+                    "Receipt Decision": selected_row.get("receipt_quality_disposition"), "Production Qty Available": selected_row.get("production_available_quantity"),
+                    "Status": selected_row.get("status"),
+                },
+                record_number=str(selected_row.get("osp_job_number") or ""),
+            )
+            st.download_button("OSP Transaction PDF", transaction_pdf, file_name=f"{selected_row.get('osp_job_number')}_OSP_Transaction.pdf", mime="application/pdf", key=f"osp_txn_pdf_{selected}", width="stretch")
+            if not metlab_rows and not dimensional_rows:
+                st.info("No completed OSP MetLAB or Dimensional report is linked to the selected OSP record yet.")
+            else:
+                cols = st.columns(2, gap="small")
+                with cols[0]:
+                    for report in metlab_rows:
+                        try:
+                            pdf = metlab_record_pdf_bytes(inspection.metlab_report_payload(str(report["id"])))
+                            st.download_button(f"MetLAB PDF · {report.get('report_number')}", pdf, file_name=f"{report.get('report_number') or selected_row.get('osp_job_number')}_MetLAB.pdf", mime="application/pdf", key=f"osp_metlab_pdf_{report['id']}", width="stretch")
+                        except Exception as exc:
+                            st.error(f"MetLAB PDF could not be generated: {exc}")
+                with cols[1]:
+                    for report in dimensional_rows:
+                        try:
+                            pdf = dimensional_record_pdf_bytes(inspection.dimensional_report_payload(str(report["id"])))
+                            st.download_button(f"Dimensional PDF · {report.get('report_number')}", pdf, file_name=f"{report.get('report_number') or selected_row.get('osp_job_number')}_Dimensional.pdf", mime="application/pdf", key=f"osp_dim_pdf_{report['id']}", width="stretch")
+                        except Exception as exc:
+                            st.error(f"Dimensional PDF could not be generated: {exc}")
+        with stage_section("B", "DELETE OSP RECORD", key="osp_records_b"):
+            if metlab_rows or dimensional_rows:
+                st.caption("Delete linked OSP MetLAB / Dimensional inspection records first; then delete the parent OSP transaction.")
+            linked_rows = [*metlab_rows, *dimensional_rows]
+            if linked_rows:
+                report_labels = lambda row: f"{row.get('report_number')} · {row.get('test_type') or row.get('report_type')}"
+                # MetLAB and Dimensional use different physical tables, so expose a separate password panel for each.
+                if metlab_rows and password_delete_panel(
+                    repo=inspection.repo, table="lab_tests", rows=metlab_rows, labeler=report_labels,
+                    key=f"osp_metlab_delete_{selected}", can_delete=perms["can_archive"], title="Delete linked OSP MetLAB report",
+                ):
+                    st.rerun()
+                if dimensional_rows and password_delete_panel(
+                    repo=inspection.repo, table="inspection_reports", rows=dimensional_rows, labeler=report_labels,
+                    key=f"osp_dim_delete_{selected}", can_delete=perms["can_archive"], title="Delete linked OSP Dimensional report",
+                ):
+                    st.rerun()
+            if not metlab_rows and not dimensional_rows:
+                if password_delete_panel(
+                    repo=inspection.repo, table="osp_jobs", rows=[selected_row], labeler=lambda row: _label(row),
+                    key=f"osp_job_delete_{selected}", can_delete=perms["can_archive"], title="Delete OSP transaction",
+                    help_text="Deletes the selected OSP transaction. Current QCMS password is required. Linked inspection records must be deleted first.",
+                ):
+                    st.rerun()
+    with stage_section("C", "OSP TRANSACTION REGISTER", key="osp_records_c"):
+        _render_register(filtered)

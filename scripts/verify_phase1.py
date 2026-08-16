@@ -288,35 +288,65 @@ for token in ("document_title", "COMPLAINT_MANAGEMENT", "complaints", "idx_docum
         errors.append(f"QCMS 4.11.4 complaint media migration token missing: {token}")
 if not (("fsi_header_actions" in ui_text and "st.columns([2.8, 4.8, 2.25, 1.25]" in ui_text) or ("fsi_header_actions_row" in ui_text and "st.columns([3.0, 5.4, 3.2]" in ui_text)):
     errors.append("QCMS 4.11.4+ header Account / Exit separation is missing")
-if not any(marker in ui_text and marker in auth_text for marker in ("4114-COMPLAINT-MEDIA-HEADER-FIX", "4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS")):
+if not any(marker in ui_text and marker in auth_text for marker in ("4114-COMPLAINT-MEDIA-HEADER-FIX", "4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS", "4118-GLOBAL-STAGED-SECTIONS")):
     errors.append("QCMS complaint media/header build fingerprint is missing")
 
 
-# QCMS 4.11.5 complaint evidence visibility, section grading and fixed header grid.
-for token in ("_stage_new_complaint_media", "_upload_staged_complaint_media", "complaint_customer_details", "complaint_supplier_details", "Add Selected Photographs"):
+# QCMS 4.11.5+ complaint evidence/header continuity and QCMS 4.11.8 global staged workflows.
+for token in ("_stage_new_complaint_media", "_upload_staged_complaint_media", "Add Selected Photographs", "PHOTOGRAPHS & MULTIPLE ATTACHMENTS"):
     if token not in complaints_text:
-        errors.append(f"QCMS 4.11.6 complaint evidence/section token missing: {token}")
+        errors.append(f"QCMS complaint evidence token missing: {token}")
 if "fsi_header_actions_row" not in ui_text or "st.columns([3.0, 5.4, 3.2]" not in ui_text or "a1, a2 = st.columns(2" not in ui_text:
-    errors.append("QCMS 4.11.6 non-overlapping profile/action header grid is missing")
-if not any(marker in ui_text and marker in auth_text for marker in ("4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS")):
-    errors.append("QCMS 4.11.6+ complaint build fingerprint is missing")
+    errors.append("QCMS non-overlapping profile/action header grid is missing")
 
-# QCMS 4.11.7 staged collapsible complaint workflow.
+# QCMS 4.11.8 global A→H staged-section design system.
 for token in (
-    'st.expander("A - COMPLAINT DETAILS", expanded=True)',
-    'st.expander("B - RESPONSIBILITY", expanded=False)',
-    'st.expander("C - PHOTOGRAPHS & MULTIPLE ATTACHMENTS", expanded=False)',
-    'st.expander("D - CONTAINMENT / ROOT CAUSE / CORRECTIVE ACTION", expanded=False)',
-    'st.expander("E - DEBIT NOTE / COMMERCIAL SETTLEMENT", expanded=False)',
+    "def stage_section(",
+    'with st.expander(f"{letter} - {title}", expanded=False)',
+    'st-key-fsi_stage_a_', 'st-key-fsi_stage_b_', 'st-key-fsi_stage_c_', 'st-key-fsi_stage_d_', 'st-key-fsi_stage_e_',
     'font-size:26px!important', 'font-weight:900!important', 'min-height:64px!important',
+    '4118-GLOBAL-STAGED-SECTIONS',
 ):
-    if token not in complaints_text:
-        errors.append(f"QCMS 4.11.7 complaint stage token missing: {token}")
-if "4117-COMPLAINT-STAGE-EXPANDERS" not in ui_text or "4117-COMPLAINT-STAGE-EXPANDERS" not in auth_text:
-    errors.append("QCMS 4.11.7 build fingerprint is missing")
+    if token not in ui_text:
+        errors.append(f"QCMS 4.11.8 staged-section token missing: {token}")
+if "4118-GLOBAL-STAGED-SECTIONS" not in auth_text:
+    errors.append("QCMS 4.11.8 login build fingerprint is missing")
+
+staged_module_contract = {
+    "app_pages/complaints.py": ("_complaint_details", "complaints_render_analysis_h"),
+    "app_pages/part_master.py": ("part_master_render_entry_a", "part_master_render_entry_h"),
+    "app_pages/material_grade.py": ("material_grade_render_entry_a", "material_grade_render_entry_b"),
+    "app_pages/process_master.py": ("process_master_render_entry_a", "process_master_render_entry_b"),
+    "app_pages/material_inward.py": ("material_inward_render_entry_a", "material_inward_render_entry_c"),
+    "app_pages/rmtc_pages.py": ("rmtc_pages_render_entry_a", "rmtc_pages_render_part_f"),
+    "app_pages/dimensional_report.py": ("dimensional_report_render_entry_a", "dimensional_report_render_entry_b"),
+    "app_pages/metlab_report.py": ("metlab_report_render_entry_a", "metlab_report_render_entry_e"),
+    "app_pages/osp_inspections.py": ("osp_inspections__render_a", "osp_inspections__render_c"),
+    "app_pages/npd_apqp.py": ("npd_apqp_render_process_flow_a", "npd_status_detail_e", "npd_apqp_render_apqp_b"),
+    "app_pages/user_access.py": ("user_access_create_a", "user_access_access_c"),
+    "app_pages/my_account.py": ("my_account_render_a", "my_account_render_b"),
+}
+for relpath, tokens in staged_module_contract.items():
+    page_text = (ROOT / relpath).read_text(encoding="utf-8")
+    for token in tokens:
+        if token not in page_text:
+            errors.append(f"QCMS 4.11.8 staged workflow missing {token} in {relpath}")
+
+# QCMS 4.11.8 extends the same staged pattern to multi-section overview/report pages.
+whole_app_stage_contract = {
+    "app_pages/dashboard.py": ("dashboard_render_a", "dashboard_render_d"),
+    "app_pages/inspection_home.py": ("inspection_home_render_a", "inspection_home_render_c"),
+    "app_pages/reports.py": ("reports_heat_transactions_a", "reports_heat_transactions_b", "reports_osp_balance_a", "reports_osp_balance_b"),
+    "app_pages/osp_transactions.py": ("osp_records_a", "osp_records_c"),
+}
+for relpath, tokens in whole_app_stage_contract.items():
+    page_text = (ROOT / relpath).read_text(encoding="utf-8")
+    for token in tokens:
+        if token not in page_text:
+            errors.append(f"QCMS 4.11.8 whole-app staged workflow missing {token} in {relpath}")
 
 report = {
-    "release": "QCMS 4.11.7 collapsible A-to-E complaint stages, drawing history and Export Shipment shell",
+    "release": "QCMS 4.11.8 global collapsed A-to-H workflow stages, drawing history and Export Shipment shell",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -340,6 +370,9 @@ report = {
     "complaint_entry_evidence_visible_before_first_save": True,
     "complaint_section_color_grading": True,
     "complaint_collapsible_stage_sequence": True,
+    "global_staged_sections": True,
+    "stages_collapsed_by_default": True,
+    "single_blue_stage_family": True,
     "complaint_stage_titles_100pct_larger": True,
     "header_profile_action_grid": True,
     "complaint_multiple_attachments": True,

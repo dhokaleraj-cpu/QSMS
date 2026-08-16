@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version_and_build():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.11.3", "4.11.4", "4.11.5", "4.11.6", "4.11.7"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.11.3", "4.11.4", "4.11.5", "4.11.6", "4.11.7", "4.11.8"}
     assert "DRAWING REVISION HISTORY" in (ROOT / "app_pages/part_master.py").read_text()
 
 

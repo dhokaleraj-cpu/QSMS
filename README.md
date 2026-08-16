@@ -1,4 +1,16 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.11.7
+# QUALITY CONTROL MONITORING SYSTEM 4.11.8
+
+## Release 4.11.8 — Global Collapsible A→H Workflow Sections
+- QCMS now uses one reusable staged-section framework across multi-section workflows instead of page-specific section styling.
+- Every staged section is collapsed by default. Users expand only the section they are actively working on.
+- Section order is shown as A, B, C, D... and restarts naturally for each workflow/tab.
+- One coordinated navy/blue color family is used throughout the app; each stage receives a progressively deeper light-blue grade rather than unrelated colors.
+- Stage headings remain 26px, 900-weight bold, preserving the requested 100% title-size increase.
+- The staged framework is applied to Customer/Supplier Complaints, Detailed Complaint Analysis, Part Master, Material Grade, Process Master, Material Inward, RMTC Entry/Part/Approval, Dimensional Inspection, MetLAB, OSP Inspection, NPD Process Flow/Order Status/APQP, Users & Access, and My Account.
+- Dashboard, Inspection Home and multi-section Reports now use the same collapsed A/B/C… stage sequence. Records Centre retains its tab-separated register layout because each tab exposes one register rather than multiple simultaneous sections.
+- Existing titled complaint photographs, multiple attachments, controlled drawing revision history, centralized Records navigation and Export Shipment-style shell are preserved.
+- No database migration or data reset is required.
+- Build: `4118-GLOBAL-STAGED-SECTIONS`.
 
 ## Release 4.11.7 — Collapsible A→E Complaint Stage Workflow
 - Customer Complaint and Supplier Complaint now use five expandable stages: A Complaint Details, B Responsibility, C Photographs & Multiple Attachments, D Containment / Root Cause / Corrective Action, and E Debit Note / Commercial Settlement.

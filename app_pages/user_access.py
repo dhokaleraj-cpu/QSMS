@@ -7,7 +7,7 @@ from core.access import MODULES
 from core.database import get_session_client
 from core.permissions import is_admin
 from core.repository import Repository
-from core.ui import page_header, save_success_popup, section_bar, subpage_navigation
+from core.ui import page_header, save_success_popup, section_bar, stage_section, subpage_navigation
 
 ROLES=['ADMIN','QUALITY_MANAGER','METLAB_APPROVER','QUALITY_ENGINEER','PRODUCTION','SQA','MASTER_DATA','AUDITOR','VIEWER']
 
@@ -30,53 +30,56 @@ def render()->None:
     emp={str(e['id']):f"{e.get('employee_code')} · {e.get('first_name')} {e.get('last_name')}" for e in employees}
     create_tab,access_tab,password_tab=st.tabs(['Create User','Users & Module Permissions','My Password'])
     with create_tab:
-        section_bar('CREATE USER','Supabase Auth user, QCMS role and Employee link.')
-        with st.form('create_user_v430'):
-            c=st.columns(3,gap='small'); full=c[0].text_input('Full Name'); email=c[1].text_input('Company Email'); role=c[2].selectbox('QCMS Role',ROLES)
-            c=st.columns(3,gap='small'); employee=c[0].selectbox('Employee Link',['']+list(emp),format_func=lambda x:emp.get(x,'— Not linked —'));status=c[1].selectbox('Access Status',['ACTIVE','INACTIVE','LOCKED']);password=c[2].text_input('Temporary Password',type='password')
-            submit=st.form_submit_button('Create User',type='primary',width='stretch')
-        if submit:
-            try:
-                result=_invoke({'action':'create_user','email':email,'password':password,'full_name':full,'role':role,'status':status,'employee_id':employee or None})
-                save_success_popup(result.get('message','User created successfully.'))
-            except Exception as exc:st.error(str(exc))
-    with access_tab:
-        try:
-            payload=_invoke({'action':'list_users'}); users=payload.get('users',payload if isinstance(payload,list) else [])
-        except Exception as exc:st.error(str(exc));users=[]
-        if not users:st.info('No users available.');return
-        register=pd.DataFrame([{'Email':u.get('email'),'Name':u.get('full_name'),'Role':u.get('role'),'Status':u.get('status'),'Last Sign In':u.get('last_sign_in_at')} for u in users])
-        st.dataframe(register,hide_index=True,width='stretch',height=300)
-        labels={str(u.get('id')):f"{u.get('email')} · {u.get('role')}" for u in users};uid=st.selectbox('Selected User',list(labels),format_func=lambda x:labels[x])
-        current=next(u for u in users if str(u.get('id'))==uid)
-        c=st.columns(3,gap='small');role=c[0].selectbox('Role',ROLES,index=ROLES.index(current.get('role','VIEWER')));status=c[1].selectbox('Access Status',['ACTIVE','INACTIVE','LOCKED'],index=['ACTIVE','INACTIVE','LOCKED'].index(current.get('status','ACTIVE')));employee=c[2].selectbox('Employee',['']+list(emp),format_func=lambda x:emp.get(x,'— Not linked —'))
-        if st.button('Update User Role / Status',type='primary',width='stretch'):
-            try:_invoke({'action':'update_user','user_id':uid,'role':role,'status':status,'employee_id':employee or None});save_success_popup('User access updated successfully.', queue_for_rerun=True);st.rerun()
-            except Exception as exc:st.error(str(exc))
-
-        section_bar('MODULE PERMISSIONS','Selected users can receive edit rights without being an Administrator.')
-        existing={str(r.get('module_key')):r for r in repo.select('user_module_permissions',eq={'profile_id':uid},limit=100)}
-        rows=[]
-        for key,label in MODULES:
-            row=existing.get(key,{})
-            rows.append({'Module':label,'Module Key':key,'View':bool(row.get('can_view',True)),'Create':bool(row.get('can_create',False)),'Edit':bool(row.get('can_edit',False)),'Delete':bool(row.get('can_archive',False)),'Approve':bool(row.get('can_approve',False))})
-        edited=st.data_editor(pd.DataFrame(rows),hide_index=True,width='stretch',height=300,disabled=['Module','Module Key'])
-        if st.button('Save Module Permissions',type='primary',width='stretch'):
-            try:
-                for _,row in edited.iterrows():
-                    data={'profile_id':uid,'module_key':row['Module Key'],'can_view':bool(row['View']),'can_create':bool(row['Create']),'can_edit':bool(row['Edit']),'can_archive':bool(row['Delete']),'can_approve':bool(row['Approve'])}
-                    repo.upsert_by('user_module_permissions',data,natural_key={'profile_id':uid,'module_key':row['Module Key']})
-                save_success_popup('Module permissions saved successfully.', queue_for_rerun=True);st.rerun()
-            except Exception as exc:st.error(str(exc))
-        temp=st.text_input('New Temporary Password',type='password')
-        if st.button('Reset Selected User Password',width='stretch'):
-            try:_invoke({'action':'reset_password','user_id':uid,'password':temp});save_success_popup('Temporary password updated successfully.')
-            except Exception as exc:st.error(str(exc))
-    with password_tab:
-        p1=st.text_input('New Password',type='password');p2=st.text_input('Confirm New Password',type='password')
-        if st.button('Change My Password',type='primary',width='stretch'):
-            if len(p1)<10:st.error('Use at least 10 characters.')
-            elif p1!=p2:st.error('Passwords do not match.')
-            else:
-                try:get_session_client().auth.update_user({'password':p1});save_success_popup('Password changed successfully.')
+        with stage_section("A", "CREATE USER", "Supabase Auth user, QCMS role and Employee link.", key="user_access_create_a"):
+            with st.form('create_user_v430'):
+                c=st.columns(3,gap='small'); full=c[0].text_input('Full Name'); email=c[1].text_input('Company Email'); role=c[2].selectbox('QCMS Role',ROLES)
+                c=st.columns(3,gap='small'); employee=c[0].selectbox('Employee Link',['']+list(emp),format_func=lambda x:emp.get(x,'— Not linked —'));status=c[1].selectbox('Access Status',['ACTIVE','INACTIVE','LOCKED']);password=c[2].text_input('Temporary Password',type='password')
+                submit=st.form_submit_button('Create User',type='primary',width='stretch')
+            if submit:
+                try:
+                    result=_invoke({'action':'create_user','email':email,'password':password,'full_name':full,'role':role,'status':status,'employee_id':employee or None})
+                    save_success_popup(result.get('message','User created successfully.'))
                 except Exception as exc:st.error(str(exc))
+    with access_tab:
+        with stage_section("A", "USER ACCESS & ROLE", "Select a QCMS user and maintain role, status and Employee linkage.", key="user_access_access_a"):
+            try:
+                payload=_invoke({'action':'list_users'}); users=payload.get('users',payload if isinstance(payload,list) else [])
+            except Exception as exc:st.error(str(exc));users=[]
+            if not users:st.info('No users available.');return
+            register=pd.DataFrame([{'Email':u.get('email'),'Name':u.get('full_name'),'Role':u.get('role'),'Status':u.get('status'),'Last Sign In':u.get('last_sign_in_at')} for u in users])
+            st.dataframe(register,hide_index=True,width='stretch',height=300)
+            labels={str(u.get('id')):f"{u.get('email')} · {u.get('role')}" for u in users};uid=st.selectbox('Selected User',list(labels),format_func=lambda x:labels[x])
+            current=next(u for u in users if str(u.get('id'))==uid)
+            c=st.columns(3,gap='small');role=c[0].selectbox('Role',ROLES,index=ROLES.index(current.get('role','VIEWER')));status=c[1].selectbox('Access Status',['ACTIVE','INACTIVE','LOCKED'],index=['ACTIVE','INACTIVE','LOCKED'].index(current.get('status','ACTIVE')));employee=c[2].selectbox('Employee',['']+list(emp),format_func=lambda x:emp.get(x,'— Not linked —'))
+            if st.button('Update User Role / Status',type='primary',width='stretch'):
+                try:_invoke({'action':'update_user','user_id':uid,'role':role,'status':status,'employee_id':employee or None});save_success_popup('User access updated successfully.', queue_for_rerun=True);st.rerun()
+                except Exception as exc:st.error(str(exc))
+
+        with stage_section("B", "MODULE PERMISSIONS", "Selected users can receive edit rights without being an Administrator.", key="user_access_access_b"):
+            existing={str(r.get('module_key')):r for r in repo.select('user_module_permissions',eq={'profile_id':uid},limit=100)}
+            rows=[]
+            for key,label in MODULES:
+                row=existing.get(key,{})
+                rows.append({'Module':label,'Module Key':key,'View':bool(row.get('can_view',True)),'Create':bool(row.get('can_create',False)),'Edit':bool(row.get('can_edit',False)),'Delete':bool(row.get('can_archive',False)),'Approve':bool(row.get('can_approve',False))})
+            edited=st.data_editor(pd.DataFrame(rows),hide_index=True,width='stretch',height=300,disabled=['Module','Module Key'])
+            if st.button('Save Module Permissions',type='primary',width='stretch'):
+                try:
+                    for _,row in edited.iterrows():
+                        data={'profile_id':uid,'module_key':row['Module Key'],'can_view':bool(row['View']),'can_create':bool(row['Create']),'can_edit':bool(row['Edit']),'can_archive':bool(row['Delete']),'can_approve':bool(row['Approve'])}
+                        repo.upsert_by('user_module_permissions',data,natural_key={'profile_id':uid,'module_key':row['Module Key']})
+                    save_success_popup('Module permissions saved successfully.', queue_for_rerun=True);st.rerun()
+                except Exception as exc:st.error(str(exc))
+        with stage_section("C", "RESET SELECTED USER PASSWORD", key="user_access_access_c"):
+            temp=st.text_input('New Temporary Password',type='password')
+            if st.button('Reset Selected User Password',width='stretch'):
+                try:_invoke({'action':'reset_password','user_id':uid,'password':temp});save_success_popup('Temporary password updated successfully.')
+                except Exception as exc:st.error(str(exc))
+    with password_tab:
+        with stage_section("A", "CHANGE MY PASSWORD", key="user_access_password_a"):
+            p1=st.text_input('New Password',type='password');p2=st.text_input('Confirm New Password',type='password')
+            if st.button('Change My Password',type='primary',width='stretch'):
+                if len(p1)<10:st.error('Use at least 10 characters.')
+                elif p1!=p2:st.error('Passwords do not match.')
+                else:
+                    try:get_session_client().auth.update_user({'password':p1});save_success_popup('Password changed successfully.')
+                    except Exception as exc:st.error(str(exc))
