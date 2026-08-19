@@ -59,6 +59,57 @@ class InspectionService:
     def material_grades(self) -> list[dict]:
         return self.repo.select("material_grades", eq={"status": "ACTIVE"}, order_by="grade_code", limit=1000)
 
+    def standalone_part_context(self, part_id: str) -> dict[str, Any]:
+        """Master-driven header context for standalone quality reports."""
+        part = self.repo.get("parts", part_id) or {}
+        customer = self.repo.get("parties", str(part.get("customer_id") or "")) or {}
+        grade = self.repo.get("material_grades", str(part.get("material_grade_id") or "")) or {}
+        links = self.repo.select("part_supplier_links", eq={"part_id": part_id, "approved": True}, limit=1000)
+        raw_rows = self.repo.select("part_raw_material_details", eq={"part_id": part_id, "status": "ACTIVE"}, order_by="sequence_no", limit=1000)
+        supplier_ids: list[str] = []
+        for row in [*links, *raw_rows]:
+            value = str(row.get("supplier_id") or "")
+            if value and value not in supplier_ids:
+                supplier_ids.append(value)
+        return {"part": part, "customer": customer, "material_grade": grade, "supplier_ids": supplier_ids, "raw_material_rows": raw_rows}
+
+    def standalone_osp_process_groups(self, part_id: str, layout_type: str) -> list[dict]:
+        flag = "metlab_required" if layout_type.upper() == "METLAB" else "dimensional_required"
+        groups = self.repo.select(
+            "part_process_specifications",
+            eq={"part_id": part_id, "inward_type": "OSP_PROCESS", "status": "ACTIVE"},
+            order_by="sequence_no", limit=1000,
+        )
+        output: list[dict] = []
+        for row in groups:
+            params = self.repo.select(
+                "part_process_parameter_specifications",
+                eq={"process_specification_id": str(row.get("id")), "inspection_type": layout_type.upper(), "status": "ACTIVE"},
+                order_by="sequence_no", limit=5,
+            )
+            if bool(row.get(flag)) or params:
+                output.append(row)
+        return output
+
+    def auto_standalone_plan(self, layout_type: str, part_id: str, scope: str, process_id: str | None = None) -> dict | None:
+        """Select the controlled approved layout from Part/Process master; no manual layout choice in standalone reports."""
+        candidates = self.plans(layout_type.upper(), part_id, approved_only=True)
+        if scope == "OSP_STAGE":
+            candidates = [row for row in candidates if str(row.get("process_id") or "") == str(process_id or "") and str(row.get("inward_type") or "") == "OSP_PROCESS"]
+        elif scope == "FINAL_DISPATCH_STAGE" and layout_type.upper() == "METLAB":
+            final_rows = [row for row in candidates if str(row.get("requirement_scope") or "") == "FINAL_METALLURGICAL"]
+            if final_rows:
+                candidates = final_rows
+            else:
+                candidates = [row for row in candidates if str(row.get("inward_type") or "MATERIAL_INWARD") == "MATERIAL_INWARD"]
+        else:
+            general = [row for row in candidates if str(row.get("inward_type") or "MATERIAL_INWARD") == "MATERIAL_INWARD" and str(row.get("requirement_scope") or "GENERAL") != "FINAL_METALLURGICAL"]
+            if general:
+                candidates = general
+        def sort_key(row: dict) -> tuple[str, str, str]:
+            return (str(row.get("effective_date") or ""), str(row.get("revision") or ""), str(row.get("updated_at") or ""))
+        return sorted(candidates, key=sort_key, reverse=True)[0] if candidates else None
+
     def employees(self, authority: str | None = None) -> list[dict]:
         rows = self.repo.select("employees", eq={"status": "ACTIVE"}, order_by="first_name", limit=3000)
         if authority:
@@ -373,13 +424,14 @@ class InspectionService:
         supplier = self.repo.get("parties", str(record.get("supplier_id") or inward.get("supplier_id") or "")) or {}
         steel_mill = self.repo.get("parties", str(record.get("steel_mill_id") or "")) or {}
         grade = self.repo.get("material_grades", str(record.get("material_grade_id") or part.get("material_grade_id") or "")) or {}
+        customer = self.repo.get("parties", str(record.get("customer_id") or part.get("customer_id") or "")) or {}
         process = self.repo.get("processes", str(record.get("process_id") or "")) or {}
         stage = self.repo.get("inspection_stages", str(record.get("inspection_stage_id") or "")) or {}
         osp_rows = self.repo.select("v_qsms_osp_register", eq={"id": str(record.get("osp_job_id"))}, limit=1) if record.get("osp_job_id") else []
         osp_job = osp_rows[0] if osp_rows else {}
         return {
             "record": record, "part": part, "inward": inward, "supplier": supplier, "steel_mill": steel_mill,
-            "material_grade": grade, "process": process, "stage": stage, "osp_job": osp_job,
+            "customer": customer, "material_grade": grade, "process": process, "stage": stage, "osp_job": osp_job,
             "employees": self._report_employees(record),
             "results": dict(record.get("results") or {}),
             "microstructure_images": self._report_microstructure_images("METLAB_REPORT", report_id, record, 4),
@@ -392,13 +444,15 @@ class InspectionService:
         part = self.repo.get("parts", str(record.get("part_id") or "")) or {}
         inward = self.repo.get("inward_lots", str(record.get("inward_lot_id") or "")) or {}
         supplier = self.repo.get("parties", str(record.get("supplier_id") or inward.get("supplier_id") or "")) or {}
+        customer = self.repo.get("parties", str(record.get("customer_id") or part.get("customer_id") or "")) or {}
+        grade = self.repo.get("material_grades", str(record.get("material_grade_id") or part.get("material_grade_id") or "")) or {}
         process = self.repo.get("processes", str(record.get("process_id") or "")) or {}
         stage = self.repo.get("inspection_stages", str(record.get("inspection_stage_id") or "")) or {}
         osp_rows = self.repo.select("v_qsms_osp_register", eq={"id": str(record.get("osp_job_id"))}, limit=1) if record.get("osp_job_id") else []
         osp_job = osp_rows[0] if osp_rows else {}
         return {
-            "record": record, "part": part, "inward": inward, "supplier": supplier, "process": process, "stage": stage,
-            "osp_job": osp_job, "employees": self._report_employees(record), "results": self.dimensional_results(report_id),
+            "record": record, "part": part, "inward": inward, "supplier": supplier, "customer": customer, "material_grade": grade,
+            "process": process, "stage": stage, "osp_job": osp_job, "employees": self._report_employees(record), "results": self.dimensional_results(report_id),
         }
 
     def finalize_dimensional(self, report_id: str, disposition: str, reason: str, validator: str, approver: str) -> dict:

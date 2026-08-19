@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version_and_supply_chain_files():
-    assert (ROOT / "VERSION").read_text().strip() == "4.12.0"
+    assert tuple(map(int, (ROOT / "VERSION").read_text().strip().split("."))) >= (4, 12, 0)
     for rel in (
         "app_pages/supply_chain.py",
         "core/supply_chain_service.py",

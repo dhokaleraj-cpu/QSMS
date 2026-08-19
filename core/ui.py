@@ -1,4 +1,5 @@
-# QCMS 4.12.0 — SUPPLY-CHAIN-INSPECTION
+# QCMS 4.12.1 — MASTER-DRIVEN-STANDALONE-REPORTS
+# Legacy v4.12.0 build retained: 4120-SUPPLY-CHAIN-INSPECTION
 # Compatibility marker retained for staged-section regression continuity: 4118-GLOBAL-STAGED-SECTIONS
 # Legacy build marker retained for regression compatibility: 4115-COMPLAINT-EVIDENCE-HEADER-GRID
 from __future__ import annotations
@@ -980,7 +981,7 @@ div[data-testid="stAppViewContainer"]:has([class*="st-key-qcms_login_shell"]){
     _apply_v4120_readability_style()
 
 
-# QCMS v4.12.0 final readability / compact-card layer.
+# QCMS v4.12.1 master-driven standalone report layer; v4.12.0 readability rules retained.
 def _apply_v4120_readability_style() -> None:
     st.markdown(r"""
     <style>
@@ -1055,7 +1056,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4120-SUPPLY-CHAIN-INSPECTION</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4121-MASTER-DRIVEN-STANDALONE-REPORTS</div>',
                 unsafe_allow_html=True,
             )
         with c3:

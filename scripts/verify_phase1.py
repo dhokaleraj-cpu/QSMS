@@ -314,8 +314,12 @@ for token in (
         errors.append(f"QCMS 4.11.8 staged-section token missing: {token}")
 if "4118-GLOBAL-STAGED-SECTIONS" not in auth_text:
     errors.append("QCMS 4.11.8 login build fingerprint is missing")
+# Keep the v4.12.0 fingerprint in source comments for regression traceability while
+# requiring the current v4.12.1 build to be visible in both the app shell and login.
 if "4120-SUPPLY-CHAIN-INSPECTION" not in ui_text or "4120-SUPPLY-CHAIN-INSPECTION" not in auth_text:
-    errors.append("QCMS 4.12.0 visible build fingerprint is missing")
+    errors.append("QCMS 4.12.0 legacy build fingerprint is missing")
+if "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in ui_text or "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in auth_text:
+    errors.append("QCMS 4.12.1 visible build fingerprint is missing")
 
 staged_module_contract = {
     "app_pages/complaints.py": ("_complaint_details", "complaints_render_analysis_h"),
@@ -351,7 +355,7 @@ for relpath, tokens in whole_app_stage_contract.items():
             errors.append(f"QCMS 4.11.8 whole-app staged workflow missing {token} in {relpath}")
 
 report = {
-    "release": "QCMS 4.12.0 Supply Chain, flexible inspection stages, interactive NPD cards and readability uplift",
+    "release": "QCMS 4.12.1 Master-driven standalone reports, automatic OSP layouts and controlled report headers",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),

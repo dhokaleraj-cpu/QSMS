@@ -802,6 +802,7 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     supplier = dict(payload.get("supplier") or {})
     steel_mill = dict(payload.get("steel_mill") or {})
     grade = dict(payload.get("material_grade") or {})
+    customer = dict(payload.get("customer") or {})
     process = dict(payload.get("process") or {})
     stage = dict(payload.get("stage") or {})
     osp_job = dict(payload.get("osp_job") or {})
@@ -810,8 +811,12 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     microstructure_images = [dict(row) for row in (payload.get("microstructure_images") or [])]
 
     scope = str(record.get("inspection_scope") or "MATERIAL_INWARD")
-    is_osp = scope.startswith("OSP_") or bool(record.get("osp_job_id"))
-    title = "OSP METALLURGICAL TEST REPORT" if is_osp else "RAW MATERIAL METALLURGICAL TEST REPORT"
+    is_osp = scope.startswith("OSP_") or scope == "OSP_STAGE" or bool(record.get("osp_job_id"))
+    title = (
+        "OSP METALLURGICAL TEST REPORT" if is_osp else
+        "FINAL METALLURGICAL TEST REPORT" if scope == "FINAL_DISPATCH_STAGE" else
+        "RAW MATERIAL METALLURGICAL TEST REPORT"
+    )
     buffer = BytesIO()
     page_width, _ = A4
     edge = 8 * mm
@@ -830,11 +835,14 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     meta = [
         ["Report No.", record.get("report_number"), "Date", record.get("test_date")],
         ["Part Name", part.get("part_name"), "Part No.", part.get("part_number")],
-        ["Supplier / OSP Vendor", vendor_or_supplier, "Material Used", grade.get("grade_code") or grade.get("grade_name")],
-        ["Supply / Process Condition", supply_condition, "Inspection Stage", stage.get("stage_name") or scope.replace("_", " ").title()],
+        ["Customer", customer.get("party_name"), "Supplier / OSP Vendor", vendor_or_supplier],
+        ["Supply / Process Condition", record.get("supply_condition") or supply_condition, "Material Used", grade.get("grade_code") or grade.get("grade_name")],
+        ["Supplier Invoice / Reference", record.get("supplier_reference_number"), "Quantity (pcs)", record.get("production_quantity_pcs") or qty],
         ["Heat Number", record.get("heat_number") or inward.get("heat_number") or osp_job.get("heat_number"), "Heat Code", record.get("heat_code") or inward.get("heat_code")],
-        ["Sample / Inward Reference", record.get("sample_reference") or inward.get("inward_number") or osp_job.get("sample_reference"), "Quantity", qty],
-        ["Specification Reference", record.get("specification_reference"), "Vendor Batch / Steel Mill", osp_job.get("vendor_batch_number") or steel_mill.get("party_name")],
+        ["Supplier / HT / OSP Batch", record.get("vendor_batch_number_snapshot") or osp_job.get("vendor_batch_number"), "Internal / FSI Batch", record.get("batch_number")],
+        ["Inspection Stage", stage.get("stage_name") or scope.replace("_", " ").title(), "Process", process.get("process_name") or record.get("process_specification_snapshot")],
+        ["Drawing / Revision", f"{part.get('drawing_number') or '-'} / {part.get('drawing_revision') or '-'}", "Specification Reference", record.get("specification_reference")],
+        ["Sample / Reference", record.get("reference_text") or record.get("sample_reference") or inward.get("inward_number") or osp_job.get("sample_reference"), "Report Layout", record.get("layout_name_snapshot")],
     ]
     story.append(_rmtc_labeled_grid(meta, [32*mm, 65*mm, 32*mm, 65*mm], sty["label"], sty["cell"], label_columns=(0, 2)))
 
@@ -901,14 +909,20 @@ def dimensional_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     part = dict(payload.get("part") or {})
     inward = dict(payload.get("inward") or {})
     supplier = dict(payload.get("supplier") or {})
+    customer = dict(payload.get("customer") or {})
+    grade = dict(payload.get("material_grade") or {})
     process = dict(payload.get("process") or {})
     stage = dict(payload.get("stage") or {})
     osp_job = dict(payload.get("osp_job") or {})
     employees = dict(payload.get("employees") or {})
     results = [dict(row) for row in (payload.get("results") or [])]
     scope = str(record.get("inspection_scope") or "MATERIAL_INWARD")
-    is_osp = scope.startswith("OSP_") or bool(record.get("osp_job_id"))
-    title = "OSP DIMENSIONAL INSPECTION REPORT" if is_osp else "FINAL INSPECTION / DIMENSIONAL REPORT"
+    is_osp = scope.startswith("OSP_") or scope == "OSP_STAGE" or bool(record.get("osp_job_id"))
+    title = (
+        "OSP DIMENSIONAL INSPECTION REPORT" if is_osp else
+        "RAW MATERIAL DIMENSIONAL INSPECTION REPORT" if scope == "RAW_MATERIAL_STAGE" else
+        "FINAL INSPECTION / DIMENSIONAL REPORT"
+    )
     buffer = BytesIO(); page_width, _ = A4; edge = 8*mm; content_width = page_width - 2*edge
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=edge, rightMargin=edge, topMargin=30*mm, bottomMargin=12*mm, title=title, author="Four Star Industries - Quality Control Monitoring System", allowSplitting=1)
     sty = _controlled_styles(); story: list[object] = []
@@ -916,11 +930,15 @@ def dimensional_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     meta = [
         ["Report No.", record.get("report_number"), "Date", record.get("inspection_date")],
         ["Part Name", part.get("part_name"), "Part No.", part.get("part_number")],
-        ["Supplier / OSP Vendor", osp_job.get("vendor_name") or supplier.get("party_name"), "Heat Number", record.get("heat_number") or inward.get("heat_number") or osp_job.get("heat_number")],
-        ["Process", osp_job.get("process_name") or process.get("process_name"), "Inspection Stage", stage.get("stage_name") or record.get("layout_type_name")],
+        ["Customer", customer.get("party_name"), "Supplier / OSP Vendor", osp_job.get("vendor_name") or supplier.get("party_name")],
+        ["Material Grade", grade.get("grade_code") or grade.get("grade_name"), "Supply / Process Condition", record.get("supply_condition") or osp_job.get("process_name") or process.get("process_name")],
+        ["Heat Number", record.get("heat_number") or inward.get("heat_number") or osp_job.get("heat_number"), "Heat Code", record.get("heat_code") or inward.get("heat_code")],
+        ["Supplier / HT / OSP Batch", record.get("vendor_batch_number_snapshot") or osp_job.get("vendor_batch_number"), "Internal / FSI Batch", record.get("batch_number")],
+        ["Supplier Invoice / Reference", record.get("supplier_reference_number"), "Inspection Stage", stage.get("stage_name") or record.get("layout_type_name")],
         ["Drawing", record.get("drawing_number") or part.get("drawing_number"), "Revision", record.get("drawing_revision") or part.get("drawing_revision")],
-        ["Layout", record.get("layout_name_snapshot"), "Lot / Production Qty", record.get("production_quantity_pcs") or record.get("lot_quantity")],
-        ["Sample Size", record.get("sample_size"), "Vendor Batch / Heat Code", osp_job.get("vendor_batch_number") or record.get("heat_code")],
+        ["Process", osp_job.get("process_name") or process.get("process_name") or record.get("process_specification_snapshot"), "Layout", record.get("layout_name_snapshot")],
+        ["Lot / Production Qty", record.get("production_quantity_pcs") or record.get("lot_quantity"), "Sample Size", record.get("sample_size")],
+        ["Sample / Lot Reference", record.get("reference_text"), "Report Scope", scope.replace("_", " ").title()],
     ]
     story.append(_rmtc_labeled_grid(meta, [32*mm,65*mm,32*mm,65*mm], sty["label"], sty["cell"], label_columns=(0,2)))
     story.append(Spacer(1,1.5*mm)); story.append(_rmtc_section_bar("INSPECTION RESULTS", content_width, sty["section"]))

@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_and_build():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.11.4", "4.11.5", "4.11.6", "4.11.7", "4.11.8","4.12.0"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.11.4", "4.11.5", "4.11.6", "4.11.7", "4.11.8","4.12.0", "4.12.1"}
     assert any(marker in (ROOT / "core/ui.py").read_text() for marker in ("4114-COMPLAINT-MEDIA-HEADER-FIX", "4115-COMPLAINT-EVIDENCE-HEADER-GRID", "4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS", "4118-GLOBAL-STAGED-SECTIONS"))
     assert any(marker in (ROOT / "core/auth.py").read_text() for marker in ("4114-COMPLAINT-MEDIA-HEADER-FIX", "4115-COMPLAINT-EVIDENCE-HEADER-GRID", "4116-COMPLAINT-SECTION-COLORS", "4117-COMPLAINT-STAGE-EXPANDERS", "4118-GLOBAL-STAGED-SECTIONS"))
 

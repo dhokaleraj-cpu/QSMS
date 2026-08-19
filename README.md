@@ -1,4 +1,14 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.12.0
+# QUALITY CONTROL MONITORING SYSTEM 4.12.1
+
+## Release 4.12.1 — Master-Driven Standalone Reports & Automatic OSP Layouts
+- Standalone **MetLAB** and **Dimensional Inspection** reports now use the selected Part Master as the controlling source for Customer, Material Grade, Part Name, Drawing Number/Revision and approved supplier context.
+- Standalone reports capture **Heat Number, Heat Code, Supplier/HT/OSP Batch Number, Internal/FSI Batch Number, Supplier Invoice/Reference, Quantity, Sample/Lot Reference and Supply/Process Condition** in the report header.
+- **OSP Stage** selection loads only OSP processes configured for the selected part and automatically selects the approved OSP inspection layout generated from the Part Master process specification.
+- OSP Process Specification, Process Drawing Number/Revision and OSP Vendor are carried into the transaction/report context.
+- Final-stage MetLAB reports automatically prefer the controlled **Final Metallurgical** layout generated from Part Master metallurgical requirements.
+- Controlled A4 PDF headers follow the supplied laboratory report structure and show Customer, Supplier/OSP Vendor, Material Grade, Heat/Batch traceability, quantity, condition, specification, process and drawing context.
+- Database changes are additive only. Existing QCMS users, permissions, transactions, attachments, report records and IDs are preserved.
+- Build: `4121-MASTER-DRIVEN-STANDALONE-REPORTS`.
 
 ## Release 4.12.0 — Supply Chain, Flexible Inspection Stages & Interactive Status Cards
 - Adds an end-to-end **Supply Chain** module linked by one customer-order Master Reference from customer order/schedule through RM procurement, RM receipt, RM dispatch to forging, forging order/receipt, machining, finished goods and final customer dispatch.

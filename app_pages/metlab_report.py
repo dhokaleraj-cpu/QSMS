@@ -112,42 +112,140 @@ STANDALONE_STAGES = {
 
 
 def _render_standalone_metlab(service: InspectionService, perms: dict, parts: dict[str, dict], parties: dict[str, dict], processes: dict[str, dict], stages: dict[str, dict], employee_map: dict[str, str], existing: dict | None) -> None:
-    existing_id=str((existing or {}).get("id") or "")
-    with stage_section("A","STANDALONE METLAB CONTEXT","Create MetLAB reports without mandatory RMTC, Material Inward or Production linkage.",key="metlab_standalone_context"):
-        keys=list(STANDALONE_STAGES); current_scope=str((existing or {}).get("inspection_scope") or "RAW_MATERIAL_STAGE")
-        scope=st.selectbox("Report Stage",keys,index=keys.index(current_scope) if current_scope in keys else 0,format_func=lambda v:STANDALONE_STAGES[v],disabled=bool(existing))
-        part_map={pid:f"{r.get('part_number')} · {r.get('part_name')}" for pid,r in parts.items()}
-        if not part_map:st.warning("No active Parts are available.");return
-        current_part=str((existing or {}).get("part_id") or next(iter(part_map)));part_id=st.selectbox("Part Number",list(part_map),index=list(part_map).index(current_part) if current_part in part_map else 0,format_func=lambda v:part_map[v],disabled=bool(existing));part=parts.get(part_id) or {}
-        supplier_options=[""]+list(parties);current_supplier=str((existing or {}).get("supplier_id") or "");supplier_id=st.selectbox("Supplier / Source (optional)",supplier_options,index=supplier_options.index(current_supplier) if current_supplier in supplier_options else 0,format_func=lambda v:party_label(parties.get(v) or {}) if v else "— Not linked —")
-        plans=service.plans("METLAB",part_id,approved_only=True)
-        if not plans:st.warning("No Approved MetLAB Layout is configured for this Part Number.");return
-        plan_map={str(r["id"]):f"{r.get('layout_name')} · {r.get('plan_number')} Rev {r.get('revision')}" for r in plans};current_plan=str((existing or {}).get("layout_plan_id") or next(iter(plan_map)));plan_id=st.selectbox("Approved MetLAB Layout",list(plan_map),index=list(plan_map).index(current_plan) if current_plan in plan_map else 0,format_func=lambda v:plan_map[v],disabled=bool(existing));plan=next(r for r in plans if str(r["id"])==plan_id)
-        c1,c2,c3,c4=st.columns(4,gap="small");report_no=c1.text_input("Report Number",value=str((existing or {}).get("report_number") or ""),placeholder="Auto on save");test_date=c2.date_input("Test Date",value=date.fromisoformat(str((existing or {}).get("test_date"))[:10]) if (existing or {}).get("test_date") else date.today(),format="DD-MM-YYYY");heat=c3.text_input("Heat / Lot Number (optional)",value=str((existing or {}).get("heat_number") or ""));sample_ref=c4.text_input("Sample Reference",value=str((existing or {}).get("sample_reference") or ""))
-        spec_ref=st.text_input("Specification Reference",value=str((existing or {}).get("specification_reference") or plan.get("format_number") or part.get("drawing_number") or ""))
-    with stage_section("B","MICROSTRUCTURE PHOTOGRAPHS","Optional stage-specific photographs with titles.",key="metlab_standalone_photos"):
-        micro_cols=st.columns(4,gap="small");micro_files=[];micro_captions=[]
-        for slot,col in enumerate(micro_cols,start=1):
+    existing_id = str((existing or {}).get("id") or "")
+    with stage_section("A", "STANDALONE METLAB CONTEXT", "Master-driven Part / Customer / Material / OSP context. No RMTC or inward transaction linkage is required.", key="metlab_standalone_context"):
+        scope_keys = list(STANDALONE_STAGES)
+        current_scope = str((existing or {}).get("inspection_scope") or "RAW_MATERIAL_STAGE")
+        scope = st.selectbox("Report Stage", scope_keys, index=scope_keys.index(current_scope) if current_scope in scope_keys else 0, format_func=lambda v: STANDALONE_STAGES[v], disabled=bool(existing))
+
+        part_map = {pid: f"{row.get('part_number')} · {row.get('part_name')}" for pid, row in parts.items()}
+        if not part_map:
+            st.warning("No active Parts are available."); return
+        current_part = str((existing or {}).get("part_id") or next(iter(part_map)))
+        part_id = st.selectbox("Part Number", list(part_map), index=list(part_map).index(current_part) if current_part in part_map else 0, format_func=lambda v: part_map[v], disabled=bool(existing))
+        context = service.standalone_part_context(part_id)
+        part = context.get("part") or parts.get(part_id) or {}
+        customer = context.get("customer") or {}
+        grade = context.get("material_grade") or {}
+
+        process_group = None
+        process_id = None
+        if scope == "OSP_STAGE":
+            groups = service.standalone_osp_process_groups(part_id, "METLAB")
+            if not groups:
+                st.warning("No active OSP MetLAB Process requirements are configured in Part Master for this Part Number."); return
+            group_map = {str(row["id"]): f"{(processes.get(str(row.get('process_id'))) or {}).get('process_code') or '-'} · {(processes.get(str(row.get('process_id'))) or {}).get('process_name') or '-'}" for row in groups}
+            existing_process = str((existing or {}).get("process_id") or "")
+            default_group = next((str(row["id"]) for row in groups if str(row.get("process_id")) == existing_process), next(iter(group_map)))
+            group_id = st.selectbox("OSP Process", list(group_map), index=list(group_map).index(default_group), format_func=lambda value: group_map[value], disabled=bool(existing))
+            process_group = next(row for row in groups if str(row["id"]) == group_id)
+            process_id = str(process_group.get("process_id") or "") or None
+
+        plan = service.auto_standalone_plan("METLAB", part_id, scope, process_id)
+        if not plan:
+            if scope == "OSP_STAGE":
+                st.warning("The Part Master OSP MetLAB requirements exist, but the controlled OSP MetLAB layout has not been generated/approved. Use Part Master → OSP Inspection for MetLAB → Create / Update OSP MetLAB Inspection Layout.")
+            elif scope == "FINAL_DISPATCH_STAGE":
+                st.warning("No approved Final Metallurgical layout is available for this Part. Generate it from Part Master → Metallurgical Requirements.")
+            else:
+                st.warning("No approved MetLAB layout is configured for this Part Number.")
+            return
+        plan_id = str(plan["id"])
+        if not process_id:
+            process_id = str(plan.get("process_id") or "") or None
+        process = processes.get(str(process_id or "")) or {}
+
+        supplier_ids = list(context.get("supplier_ids") or [])
+        if scope == "OSP_STAGE":
+            supplier_ids = [pid for pid, row in parties.items() if "OSP_VENDOR" in (row.get("party_types") or []) or "SUPPLIER" in (row.get("party_types") or [])]
+        if not supplier_ids:
+            supplier_ids = [pid for pid, row in parties.items() if "SUPPLIER" in (row.get("party_types") or [])]
+        supplier_ids = [pid for pid in supplier_ids if pid in parties]
+        supplier_options = [""] + supplier_ids
+        current_supplier = str((existing or {}).get("supplier_id") or "")
+        supplier_id = st.selectbox("Supplier / OSP Vendor", supplier_options, index=supplier_options.index(current_supplier) if current_supplier in supplier_options else 0, format_func=lambda v: party_label(parties.get(v) or {}) if v else "— Select from Master —")
+
+        c1, c2, c3, c4 = st.columns(4, gap="small")
+        c1.text_input("Part Name", value=str(part.get("part_name") or ""), disabled=True)
+        c2.text_input("Customer", value=str(customer.get("party_name") or ""), disabled=True)
+        c3.text_input("Material Grade", value=str(grade.get("grade_code") or grade.get("grade_name") or ""), disabled=True)
+        c4.text_input("Drawing / Revision", value=f"{part.get('drawing_number') or '-'} / {part.get('drawing_revision') or '-'}", disabled=True)
+        if scope == "OSP_STAGE":
+            c1, c2, c3, c4 = st.columns(4, gap="small")
+            c1.text_input("OSP Process", value=str(process.get("process_name") or ""), disabled=True)
+            c2.text_input("Process Specification", value=str((process_group or {}).get("process_specification") or ""), disabled=True)
+            c3.text_input("Process Drawing", value=str((process_group or {}).get("drawing_number") or ""), disabled=True)
+            c4.text_input("Process Drawing Rev", value=str((process_group or {}).get("drawing_revision") or ""), disabled=True)
+        st.info(f"Auto Layout from Part Master: {plan.get('layout_name') or plan.get('plan_number')} · Rev {plan.get('revision') or '-'}")
+
+        c1, c2, c3, c4 = st.columns(4, gap="small")
+        report_no = c1.text_input("Report Number", value=str((existing or {}).get("report_number") or ""), placeholder="Auto on save")
+        test_date = c2.date_input("Test Date", value=date.fromisoformat(str((existing or {}).get("test_date"))[:10]) if (existing or {}).get("test_date") else date.today(), format="DD-MM-YYYY")
+        heat = c3.text_input("Heat Number", value=str((existing or {}).get("heat_number") or ""))
+        heat_code = c4.text_input("Heat Code", value=str((existing or {}).get("heat_code") or ""))
+        c1, c2, c3, c4 = st.columns(4, gap="small")
+        vendor_batch_number = c1.text_input("Supplier / HT / OSP Batch Number", value=str((existing or {}).get("vendor_batch_number_snapshot") or ""))
+        batch_number = c2.text_input("Internal / FSI Batch Number", value=str((existing or {}).get("batch_number") or ""))
+        supplier_reference = c3.text_input("Supplier Invoice / Reference", value=str((existing or {}).get("supplier_reference_number") or ""))
+        c1, c2, c3, c4 = st.columns(4, gap="small")
+        quantity_pcs = c1.number_input("Quantity (pcs)", min_value=0.0, value=float((existing or {}).get("production_quantity_pcs") or 0), step=1.0)
+        sample_ref = c2.text_input("Sample / Reference", value=str((existing or {}).get("sample_reference") or ""))
+        default_condition = (process_group or {}).get("process_specification") or process.get("process_name") or STANDALONE_STAGES[scope]
+        supply_condition = st.text_input("Supply / Process Condition", value=str((existing or {}).get("supply_condition") or default_condition or ""))
+        spec_ref = st.text_input("Specification Reference", value=str((existing or {}).get("specification_reference") or plan.get("format_number") or part.get("drawing_number") or ""))
+
+    with stage_section("B", "MICROSTRUCTURE PHOTOGRAPHS", "Up to four report photographs with controlled titles.", key="metlab_standalone_photos"):
+        micro_cols = st.columns(4, gap="small"); micro_files = []; micro_captions = []
+        for slot, col in enumerate(micro_cols, start=1):
             with col:
-                if (existing or {}).get(f"microstructure_image_{slot}_path"):st.caption(f"Photo {slot} already uploaded")
-                micro_files.append(st.file_uploader(f"Photo {slot}",type=["png","jpg","jpeg"],key=f"standalone_metlab_photo_{slot}_{existing_id or 'new'}"));micro_captions.append(st.text_input(f"Photo {slot} Title",value=str((existing or {}).get(f"microstructure_caption_{slot}") or ""),key=f"standalone_metlab_caption_{slot}_{existing_id or 'new'}"))
-    with stage_section("C","METLAB CHARACTERISTICS",key="metlab_standalone_characteristics"):
-        layout_source=_layout_rows(service,plan_id,existing);frame=pd.DataFrame([{"Sr No":r.get("sequence_no"),"Parameter":r.get("parameter"),"Specification":r.get("specification"),"Min":r.get("lower_spec"),"Max":r.get("upper_spec"),"Method / Aid":r.get("checking_method"),"Actual Value":r.get("actual_value"),"Unit":r.get("unit"),"NA":r.get("applicability")=="NOT_APPLICABLE","Result":r.get("result"),"Remark":r.get("remarks"),"_characteristic_id":r.get("inspection_plan_characteristic_id"),"_type":r.get("characteristic_type")} for r in layout_source])
-        edited=st.data_editor(frame,hide_index=True,width="stretch",height=min(620,max(220,80+len(frame)*30)),disabled=["Sr No","Parameter","Specification","Min","Max","Method / Aid","Result","_characteristic_id","_type"],column_config={"NA":st.column_config.CheckboxColumn(),"_characteristic_id":None,"_type":None},key=f"standalone_metlab_grid_{existing_id or 'new'}_{plan_id}")
-        employee_options=[""]+list(employee_map);current_prepared=str((existing or {}).get("prepared_by_employee_id") or "");prepared=st.selectbox("Prepared By",employee_options,index=employee_options.index(current_prepared) if current_prepared in employee_options else 0,format_func=lambda v:employee_map.get(v,"— Select —"));remarks=st.text_input("Report Remarks",value=str((existing or {}).get("remarks") or ""));attachment=st.file_uploader("Attach MetLAB Report",type=["pdf","xlsx","xls","png","jpg","jpeg"],key=f"standalone_metlab_attachment_{existing_id or 'new'}")
-        layout_rows=[]
-        for _,row in edited.iterrows():
-            na=bool(row.get("NA"));result=service.evaluate_characteristic({"characteristic_type":row.get("_type"),"lower_spec":row.get("Min"),"upper_spec":row.get("Max")},[row.get("Actual Value")],na);layout_rows.append({"sequence_no":int(row.get("Sr No") or len(layout_rows)+1),"inspection_plan_characteristic_id":row.get("_characteristic_id"),"parameter":row.get("Parameter"),"specification":row.get("Specification"),"lower_spec":row.get("Min"),"upper_spec":row.get("Max"),"checking_method":row.get("Method / Aid"),"actual_value":row.get("Actual Value"),"unit":row.get("Unit"),"applicability":"NOT_APPLICABLE" if na else "APPLICABLE","result":result,"remarks":row.get("Remark"),"characteristic_type":row.get("_type")})
-        writable=(perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT")!="FINAL"
-        if st.button("Save Standalone MetLAB Report",type="primary",width="stretch",disabled=not writable or not prepared or not sample_ref.strip()):
+                if (existing or {}).get(f"microstructure_image_{slot}_path"):
+                    st.caption(f"Photo {slot} already uploaded")
+                micro_files.append(st.file_uploader(f"Photo {slot}", type=["png", "jpg", "jpeg"], key=f"standalone_metlab_photo_{slot}_{existing_id or 'new'}"))
+                micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or ""), key=f"standalone_metlab_caption_{slot}_{existing_id or 'new'}"))
+
+    with stage_section("C", "METLAB CHARACTERISTICS", "The inspection grid is loaded automatically from the approved Part Master controlled layout.", key="metlab_standalone_characteristics"):
+        layout_source = _layout_rows(service, plan_id, existing)
+        frame = pd.DataFrame([{"Sr No": r.get("sequence_no"), "Parameter": r.get("parameter"), "Specification": r.get("specification"), "Min": r.get("lower_spec"), "Max": r.get("upper_spec"), "Method / Aid": r.get("checking_method"), "Actual Value": r.get("actual_value"), "Unit": r.get("unit"), "NA": r.get("applicability") == "NOT_APPLICABLE", "Result": r.get("result"), "Remark": r.get("remarks"), "_characteristic_id": r.get("inspection_plan_characteristic_id"), "_type": r.get("characteristic_type")} for r in layout_source])
+        edited = st.data_editor(frame, hide_index=True, width="stretch", height=min(620, max(220, 80 + len(frame) * 30)), disabled=["Sr No", "Parameter", "Specification", "Min", "Max", "Method / Aid", "Result", "_characteristic_id", "_type"], column_config={"NA": st.column_config.CheckboxColumn(), "_characteristic_id": None, "_type": None}, key=f"standalone_metlab_grid_{existing_id or 'new'}_{plan_id}")
+        employee_options = [""] + list(employee_map); current_prepared = str((existing or {}).get("prepared_by_employee_id") or "")
+        prepared = st.selectbox("Prepared By", employee_options, index=employee_options.index(current_prepared) if current_prepared in employee_options else 0, format_func=lambda v: employee_map.get(v, "— Select —"))
+        remarks = st.text_input("Report Remarks / Conclusion", value=str((existing or {}).get("remarks") or ""))
+        attachment = st.file_uploader("Attach MetLAB Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"standalone_metlab_attachment_{existing_id or 'new'}")
+        layout_rows = []
+        for _, row in edited.iterrows():
+            na = bool(row.get("NA")); result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, [row.get("Actual Value")], na)
+            layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type")})
+        writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT") != "FINAL"
+        if st.button("Save Standalone MetLAB Report", type="primary", width="stretch", disabled=not writable or not prepared or not sample_ref.strip()):
             try:
-                final_number=report_no.strip() or service.next_number("METLAB");payload={"report_number":final_number,"test_type":"METLAB","layout_plan_id":plan_id,"process_id":plan.get("process_id"),"inspection_stage_id":plan.get("inspection_stage_id"),"part_id":part_id,"inward_lot_id":None,"osp_job_id":None,"batch_id":None,"rmtc_approval_id":None,"supplier_id":supplier_id or None,"test_date":test_date.isoformat(),"sample_reference":sample_ref.strip(),"specification_reference":spec_ref.strip() or None,"overall_result":"NOT_EVALUATED","status":str((existing or {}).get("status") or "DRAFT"),"remarks":remarks.strip() or None,"disposition":str((existing or {}).get("disposition") or "PENDING"),"heat_number":heat.strip() or None,"prepared_by_employee_id":prepared,"layout_name_snapshot":plan.get("layout_name"),"layout_type_name":STANDALONE_STAGES[scope],"steel_quantity_kg":None,"production_quantity_pcs":None,"inspection_scope":scope,**{f"microstructure_caption_{slot}":micro_captions[slot-1].strip() or None for slot in range(1,5)}}
-                saved=service.save_metlab(payload,{"rows":layout_rows},existing_id or None)
-                if attachment is not None:service.upload_attachment("METLAB_REPORT",str(saved["id"]),"REPORT_COPY",attachment,"lab_tests","attachment_path")
-                for slot,image in enumerate(micro_files,start=1):
-                    if image is not None:service.upload_attachment("METLAB_REPORT",str(saved["id"]),f"MICROSTRUCTURE_{slot}",image,"lab_tests",f"microstructure_image_{slot}_path")
-                st.session_state["edit_metlab_id"]=str(saved["id"]);save_success_popup(f"Standalone MetLAB Report {final_number} saved successfully.",queue_for_rerun=True);st.rerun()
-            except Exception as exc:st.error(str(exc))
+                final_number = report_no.strip() or service.next_number("METLAB")
+                payload = {
+                    "report_number": final_number, "test_type": "METLAB", "layout_plan_id": plan_id,
+                    "process_id": process_id, "inspection_stage_id": plan.get("inspection_stage_id"), "part_id": part_id,
+                    "inward_lot_id": None, "osp_job_id": None, "batch_id": None, "rmtc_approval_id": None,
+                    "supplier_id": supplier_id or None, "customer_id": part.get("customer_id"), "material_grade_id": part.get("material_grade_id"),
+                    "test_date": test_date.isoformat(), "sample_reference": sample_ref.strip(), "reference_text": sample_ref.strip(),
+                    "specification_reference": spec_ref.strip() or None, "overall_result": "NOT_EVALUATED",
+                    "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None,
+                    "disposition": str((existing or {}).get("disposition") or "PENDING"), "heat_number": heat.strip() or None,
+                    "heat_code": heat_code.strip() or None, "batch_number": batch_number.strip() or None,
+                    "supplier_reference_number": supplier_reference.strip() or None, "supply_condition": supply_condition.strip() or None,
+                    "prepared_by_employee_id": prepared, "layout_name_snapshot": plan.get("layout_name"),
+                    "layout_type_name": STANDALONE_STAGES[scope], "steel_quantity_kg": None,
+                    "production_quantity_pcs": quantity_pcs or None, "inspection_scope": scope,
+                    "process_specification_snapshot": (process_group or {}).get("process_specification") or plan.get("remarks"),
+                    "vendor_batch_number_snapshot": vendor_batch_number.strip() or None,
+                    **{f"microstructure_caption_{slot}": micro_captions[slot - 1].strip() or None for slot in range(1, 5)},
+                }
+                saved = service.save_metlab(payload, {"rows": layout_rows}, existing_id or None)
+                if attachment is not None:
+                    service.upload_attachment("METLAB_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "lab_tests", "attachment_path")
+                for slot, image in enumerate(micro_files, start=1):
+                    if image is not None:
+                        service.upload_attachment("METLAB_REPORT", str(saved["id"]), f"MICROSTRUCTURE_{slot}", image, "lab_tests", f"microstructure_image_{slot}_path")
+                st.session_state["edit_metlab_id"] = str(saved["id"]); save_success_popup(f"Standalone MetLAB Report {final_number} saved successfully.", queue_for_rerun=True); st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
 
 
 def render_entry() -> None:
@@ -356,9 +454,9 @@ def render_entry() -> None:
 def render_records() -> None:
     subpage_navigation(("inspection-home", "Inspections", ":material/biotech:"), ("metlab-entry", "New / Edit Report", ":material/edit_note:"))
     page_header("MetLAB Report Records", context="Select before action")
-    service = InspectionService(); perms = current_permissions("METLAB_REPORT"); parts, _, _, _, _ = _maps(service)
+    service = InspectionService(); perms = current_permissions("METLAB_REPORT"); parts, parties, _, _, _ = _maps(service); grades = {str(row["id"]): row for row in service.material_grades()}
     rows = service.metlab_reports(); search = st.text_input("Search Report, Part, Heat or Inward")
-    filtered = [row for row in rows if not search or search.casefold() in " ".join(str(row.get(key) or "") for key in ("report_number", "heat_number", "heat_code", "sample_reference", "remarks", "layout_name_snapshot")).casefold()]
+    filtered = [row for row in rows if not search or search.casefold() in " ".join(str(row.get(key) or "") for key in ("report_number", "heat_number", "heat_code", "batch_number", "supplier_reference_number", "sample_reference", "remarks", "layout_name_snapshot")).casefold()]
     if filtered:
         labels = {str(row["id"]): f"{row.get('report_number')} · Heat {row.get('heat_number')} · {row.get('layout_name_snapshot') or 'Layout'} · {disposition_label(row.get('disposition'))}" for row in filtered}
         selected = st.selectbox("Select MetLAB Report", list(labels), format_func=lambda value: labels[value]); selected_row = next(row for row in filtered if str(row["id"]) == selected); st.session_state["edit_metlab_id"] = selected
@@ -374,5 +472,5 @@ def render_records() -> None:
             if password_delete_panel(repo=service.repo, table="lab_tests", rows=[selected_row], labeler=lambda row: row.get("report_number"), key=f"delete_metlab_{selected}", can_delete=perms["can_archive"], title="Delete Selected MetLAB Report"):
                 st.rerun()
     section_bar("METLAB REGISTER")
-    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("test_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "Heat Number": row.get("heat_number"), "Layout": row.get("layout_name_snapshot"), "Section": row.get("layout_type_name"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Steel kg": row.get("steel_quantity_kg"), "Production pcs": row.get("production_quantity_pcs"), "Microstructure Photos": sum(1 for slot in range(1,5) if row.get(f"microstructure_image_{slot}_path")), "Result": row.get("overall_result"), "Decision": row.get("disposition"), "Status": row.get("status")} for row in filtered])
+    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("test_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Microstructure Photos": sum(1 for slot in range(1,5) if row.get(f"microstructure_image_{slot}_path")), "Result": row.get("overall_result"), "Decision": row.get("disposition"), "Status": row.get("status")} for row in filtered])
     st.dataframe(style_status_dataframe(display), hide_index=True, width="stretch", height=520)
