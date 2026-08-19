@@ -314,12 +314,27 @@ for token in (
         errors.append(f"QCMS 4.11.8 staged-section token missing: {token}")
 if "4118-GLOBAL-STAGED-SECTIONS" not in auth_text:
     errors.append("QCMS 4.11.8 login build fingerprint is missing")
-# Keep the v4.12.0 fingerprint in source comments for regression traceability while
-# requiring the current v4.12.1 build to be visible in both the app shell and login.
+# Keep v4.12.0/v4.12.1 fingerprints in comments for regression traceability while
+# requiring the current v4.12.2 build to be visible in both the app shell and login.
 if "4120-SUPPLY-CHAIN-INSPECTION" not in ui_text or "4120-SUPPLY-CHAIN-INSPECTION" not in auth_text:
     errors.append("QCMS 4.12.0 legacy build fingerprint is missing")
 if "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in ui_text or "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in auth_text:
-    errors.append("QCMS 4.12.1 visible build fingerprint is missing")
+    errors.append("QCMS 4.12.1 legacy build fingerprint is missing")
+if "4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY" not in ui_text or "4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY" not in auth_text:
+    errors.append("QCMS 4.12.2 visible build fingerprint is missing")
+
+supply_text = (ROOT / "app_pages/supply_chain.py").read_text(encoding="utf-8")
+supply_service_text = (ROOT / "core/supply_chain_service.py").read_text(encoding="utf-8")
+supply_migration = (ROOT / "supabase/migrations/20260820010000_qcms_supply_chain_master_linked_traceability_v4122.sql").read_text(encoding="utf-8")
+for token in ("Global Search", "st.columns(6", "Customer Order Import", "RMTC Number", "RMTC Date", "PDF Export", "Excel Export", "password_delete_panel"):
+    if token not in supply_text:
+        errors.append(f"QCMS 4.12.2 Supply Chain UI token missing: {token}")
+for token in ("pending_customer_orders_for_rm", "pending_rm_purchase_orders", "pending_rm_receipts_for_dispatch", "pending_sources_for_downstream", "link_inward_to_rm_po", "import_preview", "apply_customer_order_import", "normalize_match"):
+    if token not in supply_service_text:
+        errors.append(f"QCMS 4.12.2 Supply Chain service token missing: {token}")
+for token in ("supply_rm_purchase_order_id", "inward_lot_id", "rmtc_number", "rmtc_date", "heat_number", "source_forging_receipt_id", "source_event_id", "qsms_delete_master_row"):
+    if token not in supply_migration:
+        errors.append(f"QCMS 4.12.2 Supply Chain migration token missing: {token}")
 
 staged_module_contract = {
     "app_pages/complaints.py": ("_complaint_details", "complaints_render_analysis_h"),
@@ -355,7 +370,7 @@ for relpath, tokens in whole_app_stage_contract.items():
             errors.append(f"QCMS 4.11.8 whole-app staged workflow missing {token} in {relpath}")
 
 report = {
-    "release": "QCMS 4.12.1 Master-driven standalone reports, automatic OSP layouts and controlled report headers",
+    "release": "QCMS 4.12.2 Supply Chain master-linked traceability, sequential pending queues, import/export and Material Inward bridge",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -380,6 +395,15 @@ report = {
     "complaint_section_color_grading": True,
     "complaint_collapsible_stage_sequence": True,
     "global_staged_sections": True,
+    "supply_chain_master_linked_traceability": True,
+    "supply_chain_global_search": True,
+    "supply_chain_pdf_excel_exports": True,
+    "supply_chain_password_delete": True,
+    "supply_chain_six_month_schedule": True,
+    "supply_chain_material_inward_bridge": True,
+    "supply_chain_heat_lineage": True,
+    "customer_order_import_a_to_f": True,
+    "customer_order_duplicate_update_confirmation": True,
     "stages_collapsed_by_default": True,
     "single_blue_stage_family": True,
     "complaint_stage_titles_100pct_larger": True,

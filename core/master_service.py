@@ -196,6 +196,16 @@ class MasterService:
             return "|".join(sorted(str(item).strip().casefold() for item in value))
         return re.sub(r"\s+", " ", str(value).strip()).casefold()
 
+    @staticmethod
+    def _matching_words_value(value: Any) -> str:
+        """Punctuation-insensitive signature used for human-readable master names.
+
+        Example: ``Kessler + Co. GmbH`` and ``KESSLER CO GMBH`` resolve to the
+        same signature. Codes/part numbers continue to use their controlled
+        natural-key rules so valid engineering punctuation is not destroyed.
+        """
+        return " ".join(re.findall(r"[a-z0-9]+", str(value or "").casefold()))
+
     def assert_no_duplicate(
         self,
         definition: MasterDef,
@@ -226,17 +236,20 @@ class MasterService:
                     labels = ", ".join(field.replace("_", " ").title() for field in natural_fields)
                     raise ValueError(f"Duplicate {definition.label} is not allowed. The controlled key ({labels}) already exists.")
         for field in extra_unique_fields:
-            expected = self._normalized_key_value(payload.get(field))
+            expected = self._matching_words_value(payload.get(field))
             if not expected:
                 continue
-            current_value = self._normalized_key_value((current or {}).get(field))
+            current_value = self._matching_words_value((current or {}).get(field))
             if current and expected == current_value:
                 continue
             for row in rows:
                 if str(row.get("id") or "") == current_id:
                     continue
-                if self._normalized_key_value(row.get(field)) == expected:
-                    raise ValueError(f"Duplicate {field.replace('_', ' ').title()} is not allowed in {definition.label}.")
+                if self._matching_words_value(row.get(field)) == expected:
+                    raise ValueError(
+                        f"Duplicate {field.replace('_', ' ').title()} is not allowed in {definition.label}. "
+                        "Matching words already exist even though spacing/case/punctuation may differ."
+                    )
 
     def save(self, definition: MasterDef, raw: Mapping[str, Any], *, record_id: str | None = None) -> tuple[dict, str]:
         existing = self.get_record(definition, record_id)
@@ -247,10 +260,14 @@ class MasterService:
         if errors:
             raise ValueError("\n".join(errors))
         extra_unique_fields: tuple[str, ...] = ()
-        if definition.key == "processes":
+        if definition.key in {"customers", "suppliers", "steel_mills", "osp_vendors"}:
+            extra_unique_fields = ("party_name",)
+        elif definition.key == "processes":
             extra_unique_fields = ("process_name",)
         elif definition.key == "inspection_stages":
             extra_unique_fields = ("stage_name",)
+        elif definition.key == "quality_assets":
+            extra_unique_fields = ("asset_name",)
         self.assert_no_duplicate(
             definition,
             payload,

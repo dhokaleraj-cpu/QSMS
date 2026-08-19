@@ -1,6 +1,7 @@
 # QCMS 4.12.1 — MASTER-DRIVEN-STANDALONE-REPORTS
 # Legacy v4.12.0 build retained: 4120-SUPPLY-CHAIN-INSPECTION
 # Compatibility marker retained for staged-section regression continuity: 4118-GLOBAL-STAGED-SECTIONS
+# Legacy v4.12.1 build retained: 4121-MASTER-DRIVEN-STANDALONE-REPORTS
 # Legacy build marker retained for regression compatibility: 4115-COMPLAINT-EVIDENCE-HEADER-GRID
 from __future__ import annotations
 
@@ -63,17 +64,17 @@ def disposition_label(value: Any) -> str:
 
 def status_css(value: Any) -> str:
     key = str(value or "").strip().upper().replace(" ", "_")
-    if key in {"ACCEPTED", "APPROVED", "PASS", "RELEASED", "ACTIVE", "FINAL", "COMPLETED"}:
+    if key in {"ACCEPTED", "APPROVED", "PASS", "RELEASED", "ACTIVE", "FINAL", "COMPLETED", "CLOSED", "POSTED", "RECEIVED", "DISPATCHED"}:
         return "background-color:#DCFCE7;color:#14532D;font-weight:700"
     if key in {"ACCEPTED_UNDER_RESERVE"}:
         return "background-color:#FFEDD5;color:#9A3412;font-weight:700"
     if key in {"ON_HOLD", "HOLD", "HOLD_PENDING_INSPECTION", "HOLD_PENDING_OSP_INSPECTION", "PART_RECEIVED", "APPROVAL_PENDING", "PARTIALLY_APPROVED"}:
         return "background-color:#FEF3C7;color:#92400E;font-weight:700"
-    if key in {"REJECTED", "FAIL", "LOCKED"}:
+    if key in {"REJECTED", "FAIL", "LOCKED", "OVERDUE"}:
         return "background-color:#FEE2E2;color:#991B1B;font-weight:700"
     if key in {"PENDING", "DRAFT", "NOT_EVALUATED", "AT_VENDOR", "AT_OSP"}:
         return "background-color:#DBEAFE;color:#1E3A8A;font-weight:700"
-    if key in {"NOT_APPLICABLE", "INACTIVE", "CLOSED"}:
+    if key in {"NOT_APPLICABLE", "INACTIVE", "CANCELLED"}:
         return "background-color:#E2E8F0;color:#334155;font-weight:700"
     return ""
 
@@ -1021,6 +1022,27 @@ def _apply_v4120_readability_style() -> None:
     .complaint-order-card{flex:0 0 210px;border-radius:9px;padding:8px 10px;background:linear-gradient(135deg,#0B3B68,#0B78B8);color:#fff;min-height:78px;box-shadow:0 2px 5px rgba(11,45,77,.09);}
     .complaint-order-no{font-size:14px;font-weight:950;}.complaint-order-party{font-size:12px;font-weight:850;margin-top:2px}.complaint-order-subject{font-size:11px;margin-top:3px;line-height:1.25}.complaint-order-meta,.complaint-order-remarks{font-size:9.5px;margin-top:4px;opacity:.92;line-height:1.25}
     .complaint-stage-strip{display:flex;gap:7px;min-width:max-content}.complaint-stage-card{flex:0 0 135px;min-height:78px;border-radius:8px;padding:7px 8px;border:1px solid #D8E2EA;background:#F7FAFC;border-left:5px solid #94A3B8}.complaint-stage-label{font-size:11px;font-weight:950;color:#173B57}.complaint-stage-detail{font-size:9.5px;line-height:1.25;color:#66798A;margin-top:5px}.complaint-stage-complete{background:#F0FDF4;border-left-color:#16A34A}.complaint-stage-current{background:#EFF6FF;border-left-color:#2563EB}.complaint-stage-pending{background:#F8FAFC;border-left-color:#94A3B8}.complaint-overdue .complaint-order-card{background:linear-gradient(135deg,#991B1B,#DC2626);animation:qcmsOverduePulse 1.2s ease-in-out infinite}
+
+    /* QCMS v4.12.2 — application-wide type scale and compact section titles.
+       Section title 26px -> 21px (about -20%); normal app text +10% from v4.12.1. */
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] summary p{font-size:21px!important;line-height:1.08!important;}
+    label[data-testid="stWidgetLabel"] p{font-size:13.9px!important;}
+    [data-baseweb="input"] input,[data-baseweb="select"] span,textarea{font-size:16.5px!important;}
+    .stButton>button,.stFormSubmitButton>button,.stDownloadButton>button,.stLinkButton>a{font-size:13.2px!important;}
+    [data-testid="stCaptionContainer"] p,[data-testid="stAlert"] p{font-size:13.8px!important;}
+    div[data-testid="stDataFrame"] *,div[data-testid="stDataEditor"] *{font-size:14.3px!important;}
+    .fsi-section-bar,.fsi-info-strip{font-size:14.3px!important;}
+    .fsi-page-title{font-size:26.4px!important;}
+
+    /* Supply Chain status cards — visually controlled flow and order states. */
+    .supply-order-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:10px;margin:.45rem 0 1rem;}
+    .supply-order-card{border:1px solid #C9D8E4;border-left:7px solid #64748B;border-radius:11px;padding:10px 12px;min-height:112px;background:#F8FAFC;box-shadow:0 2px 7px rgba(10,55,92,.08);overflow:hidden;}
+    .supply-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}.supply-card-icon{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;font-weight:950}.supply-card-status{font-size:11px;font-weight:950;letter-spacing:.035em;text-transform:uppercase}.supply-card-ref{font-size:16px;font-weight:950;color:#0B3558;line-height:1.15}.supply-card-part{font-size:12.5px;font-weight:850;color:#264B68;margin-top:4px;line-height:1.25}.supply-card-meta{font-size:11px;color:#5A7184;margin-top:7px;line-height:1.35;overflow-wrap:anywhere}
+    .supply-card-complete{background:#ECFDF3;border-color:#86EFAC;border-left-color:#16A34A}.supply-card-complete .supply-card-icon{background:#16A34A;color:#FFF}.supply-card-complete .supply-card-status{color:#166534}
+    .supply-card-current{background:#EFF6FF;border-color:#93C5FD;border-left-color:#2563EB}.supply-card-current .supply-card-icon{background:#2563EB;color:#FFF}.supply-card-current .supply-card-status{color:#1D4ED8}
+    .supply-card-pending{background:#FFF7ED;border-color:#FED7AA;border-left-color:#EA580C}.supply-card-pending .supply-card-icon{background:#FFEDD5;color:#C2410C}.supply-card-pending .supply-card-status{color:#C2410C}
+    .supply-card-overdue,.supply-card-rejected{background:#FEF2F2;border-color:#FCA5A5;border-left-color:#DC2626}.supply-card-overdue .supply-card-icon,.supply-card-rejected .supply-card-icon{background:#DC2626;color:#FFF}.supply-card-overdue .supply-card-status,.supply-card-rejected .supply-card-status{color:#B91C1C}
+    .fsi-flow-complete{--flow-color:#15803D!important;--flow-bg:#ECFDF3!important;--flow-border:#86EFAC!important}.fsi-flow-complete .fsi-flow-icon{background:#15803D!important;color:#FFFFFF!important;border-color:#15803D!important}.fsi-flow-complete .fsi-flow-label{color:#14532D!important}
     </style>
     """, unsafe_allow_html=True)
 
@@ -1056,7 +1078,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4121-MASTER-DRIVEN-STANDALONE-REPORTS</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY</div>',
                 unsafe_allow_html=True,
             )
         with c3:

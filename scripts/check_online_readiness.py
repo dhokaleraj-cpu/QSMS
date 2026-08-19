@@ -32,6 +32,12 @@ required = [
     "supabase/migrations/20260819113132_qcms_supply_chain_flexible_inspections_v4120.sql",
     "tests/test_v4120_supply_chain_flexible_reports_cards.py",
     "docs/RELEASE_4_12_0.md",
+    "supabase/migrations/20260819170000_qcms_master_driven_standalone_reports_v4121.sql",
+    "tests/test_v4121_master_driven_standalone_reports.py",
+    "docs/RELEASE_4_12_1.md",
+    "supabase/migrations/20260820010000_qcms_supply_chain_master_linked_traceability_v4122.sql",
+    "tests/test_v4122_supply_chain_master_linked_traceability.py",
+    "docs/RELEASE_4_12_2.md",
     "tests/test_v484_unified_records.py",
     "tests/test_v485_combined_heat_balance.py",
     "supabase/migrations/20260802213000_qsms_heat_supplier_rmtc_ledger_v486.sql",
@@ -105,7 +111,7 @@ required = [
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.12.1 - Master-driven standalone reports and automatic OSP layouts",
+    "phase": "QCMS 4.12.2 - Supply Chain master-linked traceability and sequential flow",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

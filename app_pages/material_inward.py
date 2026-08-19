@@ -11,6 +11,7 @@ from core.attachments import AttachmentService, AttachmentSlot, new_attachment_u
 from core.delete_service import password_delete_panel
 from core.inward_service import InwardService
 from core.reporting import material_inward_record_pdf_bytes
+from core.supply_chain_service import SupplyChainService
 from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
 
 DISPOSITIONS = ["PENDING", "ON_HOLD", "ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"]
@@ -57,6 +58,25 @@ def render_entry() -> None:
     existing = _record_from_state(service)
     writable = perms["can_edit"] if existing else perms["can_create"]
 
+    # QCMS v4.12.2: Material Inward is the single RM Receipt source of truth.
+    # A Supply Chain RM Procurement record may launch this page; the link is
+    # inherited automatically and the linked Part Number becomes a poka-yoke filter.
+    supply_service = SupplyChainService(service.repo)
+    supply_po_id = str(st.session_state.get("supply_rm_po_link_id") or existing.get("supply_rm_purchase_order_id") or "")
+    supply_order_id = str(st.session_state.get("supply_customer_order_link_id") or existing.get("supply_customer_order_id") or "")
+    supply_po = supply_service.repo.get("supply_rm_purchase_orders", supply_po_id) if supply_po_id else None
+    if supply_po and not supply_order_id:
+        supply_order_id = str(supply_po.get("customer_order_id") or "")
+    supply_order = supply_service.order(supply_order_id) if supply_order_id else None
+    if supply_po_id and supply_order:
+        supply_context = supply_service.order_context(supply_order)
+        st.info(
+            "Supply Chain RM Receipt link active · "
+            f"Customer Ref {supply_context.get('Customer Ref') or '-'} · "
+            f"Part {supply_context.get('Part Number') or '-'} · "
+            f"RM PO {(supply_po or {}).get('supplier_order_no') or '-'}"
+        )
+
     recent_rows = service.list()
     if recent_rows:
         with stage_section("A", "CURRENT MATERIAL INWARD STATUS", key="material_inward_render_entry_a"):
@@ -95,6 +115,11 @@ def render_entry() -> None:
 
     accepted_all = service.accepted_rmtc_parts()
     accepted = accepted_all if existing else [row for row in accepted_all if float(row.get("available_steel_quantity_kg") or row.get("available_quantity") or 0) > 0]
+    if supply_order and not existing:
+        linked_part_id = str(supply_order.get("part_id") or "")
+        accepted = [row for row in accepted if str(row.get("part_id") or "") == linked_part_id]
+        if not accepted:
+            st.warning("No accepted RMTC steel source is currently available for the Part Number linked to this RM Procurement record.")
     source_map = {str(row["rmtc_part_approval_id"]): _source_label(row) for row in accepted}
     selected_existing = str(existing.get("rmtc_part_approval_id") or "")
     options = [""] + list(source_map)
@@ -239,9 +264,15 @@ def render_entry() -> None:
                     "reserve_reason": reserve_reason.strip() or None, "prepared_by_employee_id": prepared,
                     "validated_by_employee_id": validator or None, "status": str(existing.get("status") or "HOLD_PENDING_INSPECTION"),
                     "remarks": remarks.strip() or None,
+                    "supply_customer_order_id": supply_order_id or None,
+                    "supply_rm_purchase_order_id": supply_po_id or None,
                 }
                 with st.spinner("Saving steel and production allocation…"):
                     saved = service.save(payload, str(existing["id"]) if existing else None)
+                    # Keep Supply Chain RM Receipt mirror synchronized from this
+                    # Material Inward record, including RMTC / Heat / quantity.
+                    if supply_po_id:
+                        supply_service.link_inward_to_rm_po(supply_po_id, str(saved["id"]))
                     attachment_service = AttachmentService(service.repo)
                     for slot in INWARD_ATTACHMENT_SLOTS:
                         selected_file = new_attachments.get(slot.document_type)
@@ -252,6 +283,8 @@ def render_entry() -> None:
                             )
                 st.session_state["edit_inward_id"] = str(saved["id"])
                 st.session_state["inspection_inward_id"] = str(saved["id"])
+                st.session_state.pop("supply_rm_po_link_id", None)
+                st.session_state.pop("supply_customer_order_link_id", None)
                 save_success_popup(f"Material Inward {saved.get('inward_number')} saved successfully.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
