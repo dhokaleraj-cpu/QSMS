@@ -91,12 +91,78 @@ def _editor_frame(rows: list[dict], sample_size: int) -> pd.DataFrame:
     return pd.DataFrame(output)
 
 
+
+STANDALONE_STAGES = {
+    "RAW_MATERIAL_STAGE": "Raw Material Stage",
+    "OSP_STAGE": "OSP Stage",
+    "FINAL_DISPATCH_STAGE": "Final Dispatch Stage",
+}
+
+
+def _render_standalone_entry(service: InspectionService, perms: dict, parts: dict[str, dict], parties: dict[str, dict], processes: dict[str, dict], stages: dict[str, dict], employee_map: dict[str, str], existing: dict | None) -> None:
+    existing_id = str((existing or {}).get("id") or "")
+    with stage_section("A", "STANDALONE REPORT CONTEXT", "Create Dimensional reports without mandatory RMTC, Material Inward or Production linkage.", key="dimensional_standalone_context"):
+        scope_keys = list(STANDALONE_STAGES)
+        current_scope = str((existing or {}).get("inspection_scope") or "RAW_MATERIAL_STAGE")
+        scope = st.selectbox("Report Stage", scope_keys, index=scope_keys.index(current_scope) if current_scope in scope_keys else 0, format_func=lambda v: STANDALONE_STAGES[v], disabled=bool(existing))
+        part_map = {pid: f"{row.get('part_number')} · {row.get('part_name')}" for pid, row in parts.items()}
+        if not part_map:
+            st.warning("No active Parts are available."); return
+        current_part = str((existing or {}).get("part_id") or next(iter(part_map)))
+        part_id = st.selectbox("Part Number", list(part_map), index=list(part_map).index(current_part) if current_part in part_map else 0, format_func=lambda v: part_map[v], disabled=bool(existing))
+        part = parts.get(part_id) or {}
+        supplier_options = [""] + list(parties)
+        current_supplier = str((existing or {}).get("supplier_id") or "")
+        supplier_id = st.selectbox("Supplier / Source (optional)", supplier_options, index=supplier_options.index(current_supplier) if current_supplier in supplier_options else 0, format_func=lambda v: party_label(parties.get(v) or {}) if v else "— Not linked —")
+        all_plans = service.plans("DIMENSIONAL", part_id, approved_only=True)
+        if not all_plans:
+            st.warning("No Approved Dimensional Layout is configured for this Part Number."); return
+        plan_map = {str(row["id"]): f"{row.get('layout_name')} · {row.get('plan_number')} Rev {row.get('revision')}" for row in all_plans}
+        current_plan = str((existing or {}).get("inspection_plan_id") or next(iter(plan_map)))
+        plan_id = st.selectbox("Approved Dimensional Layout", list(plan_map), index=list(plan_map).index(current_plan) if current_plan in plan_map else 0, format_func=lambda v: plan_map[v], disabled=bool(existing))
+        plan = next(row for row in all_plans if str(row["id"]) == plan_id)
+        section_name = STANDALONE_STAGES[scope]
+        c1,c2,c3,c4 = st.columns(4,gap="small")
+        report_no = c1.text_input("Report Number", value=str((existing or {}).get("report_number") or ""), placeholder="Auto on save")
+        inspection_date = c2.date_input("Inspection Date", value=date.fromisoformat(str((existing or {}).get("inspection_date"))[:10]) if (existing or {}).get("inspection_date") else date.today(), format="DD-MM-YYYY")
+        heat_number = c3.text_input("Heat / Lot Number (optional)", value=str((existing or {}).get("heat_number") or ""))
+        lot_qty = c4.number_input("Lot Quantity pcs", min_value=0.0, value=float((existing or {}).get("lot_quantity") or 0), step=1.0)
+        sample_size = min(max(int((existing or {}).get("sample_size") or plan.get("default_sample_size") or 1),1),10)
+        sample_size = st.number_input("Sample Size", min_value=1, max_value=10, value=int(sample_size), step=1)
+    with stage_section("B", "DIMENSIONAL CHARACTERISTICS", key="dimensional_standalone_characteristics"):
+        rows = _report_rows(service, plan_id, existing_id or None, int(sample_size), section_name)
+        frame = _editor_frame(rows, int(sample_size))
+        edited = st.data_editor(frame, hide_index=True, width="stretch", height=min(620,max(220,80+len(frame)*30)), disabled=["Section","Sr No","Parameter","Specification","Min","Max","Checking Aid","Result","_sequence","_characteristic_id","_type","_unit"], column_config={"NA":st.column_config.CheckboxColumn(),"_sequence":None,"_characteristic_id":None,"_type":None,"_unit":None}, key=f"dimensional_standalone_grid_{existing_id or 'new'}_{plan_id}")
+        c1,c2=st.columns([3,1],gap="small"); remarks=c1.text_area("Report Remarks",value=str((existing or {}).get("remarks") or ""),height=56); attachment=c2.file_uploader("Attach Report",type=["pdf","xlsx","xls","png","jpg","jpeg"],key=f"dim_standalone_attachment_{existing_id or 'new'}")
+        employee_options=[""]+list(employee_map); current_prepared=str((existing or {}).get("prepared_by_employee_id") or ""); prepared=st.selectbox("Inspected / Prepared By",employee_options,index=employee_options.index(current_prepared) if current_prepared in employee_options else 0,format_func=lambda v:employee_map.get(v,"— Select —"))
+        saved_rows=[]
+        for _,row in edited.iterrows():
+            observations=[row.get(f"Actual {i+1}") for i in range(int(sample_size))];na=bool(row.get("NA"));result=service.evaluate_characteristic({"characteristic_type":row.get("_type"),"lower_spec":row.get("Min"),"upper_spec":row.get("Max")},observations,na)
+            saved_rows.append({"sequence_no":int(row.get("_sequence") or len(saved_rows)+1),"inspection_plan_characteristic_id":row.get("_characteristic_id"),"characteristic_no":row.get("Sr No"),"characteristic":row.get("Parameter"),"specification":row.get("Specification"),"lower_spec":row.get("Min"),"upper_spec":row.get("Max"),"unit":row.get("_unit"),"checking_aid":row.get("Checking Aid"),"observations":observations,"result":result,"remarks":row.get("Remark"),"applicability":"NOT_APPLICABLE" if na else "APPLICABLE","report_section":section_name})
+        writable=(perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT")!="FINAL"
+        if st.button("Save Standalone Dimensional Report",type="primary",width="stretch",disabled=not writable or not prepared):
+            try:
+                final_number=report_no.strip() or service.next_number("DIMENSIONAL")
+                payload={"report_number":final_number,"report_type":"DIMENSIONAL","inspection_plan_id":plan_id,"inspection_stage_id":plan.get("inspection_stage_id"),"process_id":plan.get("process_id"),"part_id":part_id,"inward_lot_id":None,"batch_id":None,"osp_job_id":None,"inspection_date":inspection_date.isoformat(),"sample_size":int(sample_size),"accepted_quantity":0,"rejected_quantity":0,"inspector":employee_map.get(prepared),"overall_result":"NOT_EVALUATED","status":str((existing or {}).get("status") or "DRAFT"),"remarks":remarks.strip() or None,"disposition":str((existing or {}).get("disposition") or "PENDING"),"heat_number":heat_number.strip() or None,"lot_quantity":lot_qty or None,"supplier_id":supplier_id or None,"drawing_number":part.get("drawing_number"),"drawing_revision":part.get("drawing_revision"),"prepared_by_employee_id":prepared,"source_layout_revision":plan.get("revision"),"layout_name_snapshot":plan.get("layout_name"),"layout_type_name":section_name,"steel_quantity_kg":None,"production_quantity_pcs":None,"inspection_scope":scope}
+                saved=service.save_dimensional(payload,saved_rows,existing_id or None)
+                if attachment is not None:service.upload_attachment("DIMENSIONAL_REPORT",str(saved["id"]),"REPORT_COPY",attachment,"inspection_reports","attachment_path")
+                st.session_state["edit_dimensional_id"]=str(saved["id"]);save_success_popup(f"Standalone Dimensional Report {final_number} saved successfully.",queue_for_rerun=True);st.rerun()
+            except Exception as exc:st.error(str(exc))
+
+
 def render_entry() -> None:
     subpage_navigation(("inspection-home", "Inspections", ":material/biotech:"), ("inward-records", "Material Inward", ":material/input:"), ("dimensional-records", "Dimensional Records", ":material/table_view:"))
     page_header("Dimensional Inspection Report", context="Automatic part/process/stage layout")
     template_download_row([("Dimensional_Inspection_Report_Template.xlsx", "Download Dimensional Report Template")], key_prefix="dimensional_report")
     service = InspectionService(); perms = current_permissions("DIMENSIONAL_REPORT")
     parts, parties, processes, stages, employee_map = _maps(service)
+    existing_id = str(st.session_state.get("edit_dimensional_id") or "")
+    existing_record = service.get_dimensional(existing_id) if existing_id else None
+    standalone_existing = str((existing_record or {}).get("inspection_scope") or "") in STANDALONE_STAGES
+    report_mode = st.radio("Report Linkage", ["QCMS Linked Flow", "Standalone Stage Report"], index=1 if standalone_existing else 0, horizontal=True, disabled=bool(existing_record), help="Standalone Stage Report does not require RMTC, Material Inward or Production linkage.")
+    if report_mode == "Standalone Stage Report":
+        _render_standalone_entry(service, perms, parts, parties, processes, stages, employee_map, existing_record)
+        return
     pending_queue = [row for row in service.inspection_queue() if row.get("dimensional_pending")]
     with stage_section("A", 'DIMENSIONAL PENDING LIST', key="dimensional_report_render_entry_a"):
         if pending_queue:
@@ -243,5 +309,5 @@ def render_records() -> None:
             if password_delete_panel(repo=service.repo, table="inspection_reports", rows=[selected_row], labeler=lambda row: row.get("report_number"), key=f"delete_dimensional_{selected}", can_delete=perms["can_archive"], title="Delete Selected Dimensional Report"):
                 st.rerun()
     section_bar("DIMENSIONAL REGISTER")
-    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("inspection_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "Heat Number": row.get("heat_number"), "Layout": row.get("layout_name_snapshot"), "Section": row.get("layout_type_name"), "Steel kg": row.get("steel_quantity_kg"), "Production pcs": row.get("production_quantity_pcs"), "Result": row.get("overall_result"), "Decision": row.get("disposition"), "Status": row.get("status")} for row in filtered])
+    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("inspection_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "Heat Number": row.get("heat_number"), "Layout": row.get("layout_name_snapshot"), "Section": row.get("layout_type_name"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Steel kg": row.get("steel_quantity_kg"), "Production pcs": row.get("production_quantity_pcs"), "Result": row.get("overall_result"), "Decision": row.get("disposition"), "Status": row.get("status")} for row in filtered])
     st.dataframe(style_status_dataframe(display), hide_index=True, width="stretch", height=520)

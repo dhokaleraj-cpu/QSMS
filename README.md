@@ -1,4 +1,20 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.11.8
+# QUALITY CONTROL MONITORING SYSTEM 4.12.0
+
+## Release 4.12.0 — Supply Chain, Flexible Inspection Stages & Interactive Status Cards
+- Adds an end-to-end **Supply Chain** module linked by one customer-order Master Reference from customer order/schedule through RM procurement, RM receipt, RM dispatch to forging, forging order/receipt, machining, finished goods and final customer dispatch.
+- Purchase-order and monthly-schedule modes are supported. Monthly schedule references are generated as `PART_MM_YYYY`, and the same Customer + Part + Month cannot be entered twice.
+- Customer-order quantity is converted from pcs to required RM kg using the selected forging supplier **Gross Weight** from Part Master Raw Material Details.
+- Raw-material purchasing is protected by a database-level cumulative **125% maximum** of the customer-order RM requirement. Duplicate RM orders and duplicate forging orders for the same customer reference/supplier are blocked.
+- Forging-supplier RM balance is tracked as material dispatched minus material consumed by forging receipts.
+- The same customer Master Reference remains visible in RM purchase orders, receipts, forging dispatch/order/receipt and downstream machining/FG/customer dispatch records, with search-based traceability.
+- Dimensional and MetLAB reports now support standalone **Raw Material Stage**, **OSP Stage** and **Final Dispatch Stage** entries without mandatory RMTC, inward-lot or production-batch linkage. Existing linked workflows remain available.
+- NPD Status process cards are clickable. Users can update Status, Completed Date and Remarks from the selected card; overdue cards pulse red until resolved.
+- Customer/Supplier Complaint Dashboard now displays NPD-style workflow cards showing complaint progression and overdue state.
+- Part Master **E - Raw Material Details** supports multiple named raw-material sections and shows Supplier Name plus City/State/Country.
+- Application form/UI font sizing is increased approximately 20% for readability while KPI/NPD cards are reduced approximately 20% in height.
+- Existing QCMS data and transaction IDs are preserved; Supply Chain tables are new/additive.
+- Build: `4120-SUPPLY-CHAIN-INSPECTION`.
+
 
 ## Release 4.11.8 — Global Collapsible A→H Workflow Sections
 - QCMS now uses one reusable staged-section framework across multi-section workflows instead of page-specific section styling.
@@ -94,13 +110,14 @@ Visible workspaces:
 3. RMTC
 4. Material Inward
 5. OSP Transactions
-6. NPD / APQP
-7. QC Calculation Tools
-8. Complaints / CAPA
-9. Inspections
-10. Records
-11. Reports
-12. Templates
+6. Supply Chain
+7. NPD / APQP
+8. QC Calculation Tools
+9. Complaints / CAPA
+10. Inspections
+11. Records
+12. Reports
+13. Templates
 
 **QCMS 4.11.0 navigation rule:** every register and records page is centralized under the main **Records** module. Operational modules now focus only on entry, workflow, analysis and approval.
 

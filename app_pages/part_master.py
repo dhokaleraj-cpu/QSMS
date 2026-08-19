@@ -763,18 +763,19 @@ def render_entry() -> None:
         supplier_map = {str(row["id"]): party_label(row) for row in suppliers}
         supplier_by_name = {name: sid for sid, name in supplier_map.items()}
 
-    with stage_section("E", 'RAW MATERIAL DETAILS', 'Supplier forging parameters used for steel-to-production quantity validation.', key="part_master_render_entry_e"):
+    with stage_section("E", 'RAW MATERIAL DETAILS', 'Multiple raw-material sections / forging suppliers are allowed. Supplier name and location are shown for each section.', key="part_master_render_entry_e"):
         raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=200)
         if password_delete_panel(repo=repo, table="part_raw_material_details", rows=raw, labeler=lambda r: f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · {r.get('section_size') or '-'} · {r.get('forging_route') or '-'}", key=f"delete_raw_{part_id}", can_delete=perms["can_archive"], title="Delete Raw Material row"):
             st.rerun()
         raw_df = pd.DataFrame([{
-            "Supplier Name": supplier_map.get(str(r.get("supplier_id")), ""),
+            "Raw Material Section": r.get("material_section_name") or "Primary Raw Material",
+            "Supplier Name / Location": supplier_map.get(str(r.get("supplier_id")), ""),
             "Forging Weight": r.get("forging_weight_kg"),
             "Gross Weight": r.get("gross_weight_kg"),
             "Input Weight kg/part": r.get("input_weight_kg") or r.get("gross_weight_kg") or r.get("forging_weight_kg"),
-            "Section": r.get("section_size"), "Forging Route": r.get("forging_route"),
+            "Section Size": r.get("section_size"), "Forging Route": r.get("forging_route"),
             "Status": r.get("status") or "ACTIVE"
-        } for r in raw], columns=["Supplier Name", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section", "Forging Route", "Status"])
+        } for r in raw], columns=["Raw Material Section", "Supplier Name / Location", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
         section_options = _catalog_options(catalog, "part.rm_section", [r.get("section_size") for r in raw])
         route_options = _catalog_options(catalog, "part.forging_route", [r.get("forging_route") for r in raw])
         with st.expander("Manage reusable Section and Forging Route lists", expanded=False):
@@ -783,11 +784,12 @@ def render_entry() -> None:
         raw_edit = st.data_editor(
             raw_df, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"raw_{part_id}", disabled=not writable,
             column_config={
-                "Supplier Name": st.column_config.SelectboxColumn(options=list(supplier_by_name), required=True),
+                "Raw Material Section": st.column_config.TextColumn(required=True, help="Use separate rows/section names when a Part has multiple raw-material or forging input sections."),
+                "Supplier Name / Location": st.column_config.SelectboxColumn(options=list(supplier_by_name), required=True),
                 "Forging Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
                 "Gross Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
                 "Input Weight kg/part": st.column_config.NumberColumn(min_value=0.001, format="%.3f", required=True, help="Steel input required for one production part."),
-                "Section": st.column_config.SelectboxColumn(options=section_options or [""], required=True),
+                "Section Size": st.column_config.SelectboxColumn(options=section_options or [""], required=True),
                 "Forging Route": st.column_config.SelectboxColumn(options=route_options or [""], required=True),
                 "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
             },
@@ -795,14 +797,15 @@ def render_entry() -> None:
         if st.button("Save Raw Material Details", type="primary", disabled=not writable, width="stretch"):
             try:
                 def mapper(row, index):
-                    name = str(row.get("Supplier Name") or "").strip(); sid = supplier_by_name.get(name)
+                    name = str(row.get("Supplier Name / Location") or "").strip(); sid = supplier_by_name.get(name)
                     if not sid: return {}
-                    catalog.remember_many("part.rm_section", [row.get("Section")]); catalog.remember_many("part.forging_route", [row.get("Forging Route")])
+                    catalog.remember_many("part.rm_section", [row.get("Section Size")]); catalog.remember_many("part.forging_route", [row.get("Forging Route")])
                     input_weight = None if pd.isna(row.get("Input Weight kg/part")) else row.get("Input Weight kg/part")
                     if input_weight is None or float(input_weight) <= 0:
                         raise ValueError(f"Input Weight kg/part is required for {name}.")
-                    return {"supplier_id": sid, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
-                _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id",), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
+                    material_section = str(row.get("Raw Material Section") or "").strip() or "Primary Raw Material"
+                    return {"supplier_id": sid, "material_section_name": material_section, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section Size") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
+                _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id", "material_section_name", "section_size", "forging_route"), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
                 st.error(str(exc))
     with stage_section("F", 'JOMINY REQUIREMENT', 'Controlled 1/16 inch to millimetre conversion and HRC requirement band.', key="part_master_render_entry_f"):

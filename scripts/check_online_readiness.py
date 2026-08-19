@@ -27,6 +27,11 @@ required = [
     "supabase/migrations/20260802193000_qsms_unified_records_v484.sql",
     "supabase/migrations/20260802201500_qsms_combined_heat_balance_v485.sql",
     "app_pages/records_center.py",
+    "app_pages/supply_chain.py",
+    "core/supply_chain_service.py",
+    "supabase/migrations/20260819113132_qcms_supply_chain_flexible_inspections_v4120.sql",
+    "tests/test_v4120_supply_chain_flexible_reports_cards.py",
+    "docs/RELEASE_4_12_0.md",
     "tests/test_v484_unified_records.py",
     "tests/test_v485_combined_heat_balance.py",
     "supabase/migrations/20260802213000_qsms_heat_supplier_rmtc_ledger_v486.sql",
@@ -100,7 +105,7 @@ required = [
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.11.8 - Global collapsed A-to-H workflow section system",
+    "phase": "QCMS 4.12.0 - Supply Chain, flexible inspection stages and interactive NPD cards",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

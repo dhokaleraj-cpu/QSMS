@@ -34,6 +34,9 @@ required = [
     "app_pages/osp_transactions.py",
     "app_pages/osp_inspections.py",
     "app_pages/npd_apqp.py",
+    "app_pages/supply_chain.py",
+    "core/supply_chain_service.py",
+    "supabase/migrations/20260819113132_qcms_supply_chain_flexible_inspections_v4120.sql",
     "app_pages/reports.py",
     "core/osp_service.py",
     "supabase/migrations/20260805084500_qsms_osp_parameter_groups_reports_v491.sql",
@@ -115,7 +118,7 @@ for item in required:
 app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
-    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "inspection-home", "records-center", "heat-ledger",
+    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-rm-procurement", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "inspection-home", "records-center", "heat-ledger",
     "reports-home", "heat-transaction-report", "osp-balance-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
@@ -311,6 +314,8 @@ for token in (
         errors.append(f"QCMS 4.11.8 staged-section token missing: {token}")
 if "4118-GLOBAL-STAGED-SECTIONS" not in auth_text:
     errors.append("QCMS 4.11.8 login build fingerprint is missing")
+if "4120-SUPPLY-CHAIN-INSPECTION" not in ui_text or "4120-SUPPLY-CHAIN-INSPECTION" not in auth_text:
+    errors.append("QCMS 4.12.0 visible build fingerprint is missing")
 
 staged_module_contract = {
     "app_pages/complaints.py": ("_complaint_details", "complaints_render_analysis_h"),
@@ -346,7 +351,7 @@ for relpath, tokens in whole_app_stage_contract.items():
             errors.append(f"QCMS 4.11.8 whole-app staged workflow missing {token} in {relpath}")
 
 report = {
-    "release": "QCMS 4.11.8 global collapsed A-to-H workflow stages, drawing history and Export Shipment shell",
+    "release": "QCMS 4.12.0 Supply Chain, flexible inspection stages, interactive NPD cards and readability uplift",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),

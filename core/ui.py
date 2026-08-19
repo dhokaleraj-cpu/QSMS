@@ -1,4 +1,5 @@
-# QCMS 4.11.8 — GLOBAL-STAGED-SECTIONS
+# QCMS 4.12.0 — SUPPLY-CHAIN-INSPECTION
+# Compatibility marker retained for staged-section regression continuity: 4118-GLOBAL-STAGED-SECTIONS
 # Legacy build marker retained for regression compatibility: 4115-COMPLAINT-EVIDENCE-HEADER-GRID
 from __future__ import annotations
 
@@ -976,6 +977,53 @@ div[data-testid="stAppViewContainer"]:has([class*="st-key-qcms_login_shell"]){
     </style>
     """, unsafe_allow_html=True)
 
+    _apply_v4120_readability_style()
+
+
+# QCMS v4.12.0 final readability / compact-card layer.
+def _apply_v4120_readability_style() -> None:
+    st.markdown(r"""
+    <style>
+    /* +20% application readability without enlarging the shell footprint excessively. */
+    label[data-testid="stWidgetLabel"] p{font-size:12.6px!important;line-height:1.3!important;}
+    [data-baseweb="input"] input,[data-baseweb="select"] span,textarea{font-size:15px!important;}
+    .stButton>button,.stFormSubmitButton>button,.stDownloadButton>button,.stLinkButton>a{font-size:12px!important;}
+    [data-testid="stCaptionContainer"] p,[data-testid="stAlert"] p{font-size:12.5px!important;}
+    div[data-testid="stDataFrame"] *,div[data-testid="stDataEditor"] *{font-size:13px!important;}
+    .fsi-page-title{font-size:24px!important;}
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] div[data-testid="stPageLink"] a,
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_active_"] div[data-testid="stPageLink"] a{font-size:12.5px!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a{font-size:12px!important;}
+    .fsi-section-bar,.fsi-info-strip{font-size:13px!important;}
+
+    /* Cards are 20% shorter than the previous QCMS baseline. */
+    .fsi-status-card,.fsi-kpi{min-height:51px!important;padding:6px 8px!important;}
+    .fsi-status-card .label,.fsi-kpi-label{font-size:10.2px!important;}
+    .fsi-status-card .value,.fsi-kpi-value{font-size:18px!important;margin:2px 0 1px!important;}
+    .fsi-status-card .foot,.fsi-kpi-foot{font-size:10.2px!important;}
+    .npd-process-card{min-height:106px!important;padding:9px 10px!important;}
+    .npd-row-process-card{min-height:93px!important;padding:7px 8px!important;}
+    .npd-process-card .npd-process-name{font-size:16.8px!important;margin:3px 0 5px!important;}
+    .npd-process-card .npd-process-status{font-size:13.2px!important;margin-bottom:3px!important;}
+    .npd-process-card .npd-process-date,.npd-process-card .npd-process-remarks{font-size:12px!important;line-height:1.25!important;}
+
+    /* Clickable NPD cards. */
+    [class*="st-key-npd_click_card_"] .stButton>button{min-height:106px!important;height:auto!important;text-align:left!important;justify-content:flex-start!important;white-space:pre-line!important;padding:9px 10px!important;border-radius:10px!important;border-left:6px solid #7890A4!important;background:#F8FBFD!important;color:#123B5C!important;font-weight:850!important;line-height:1.35!important;}
+    [class*="st-key-npd_click_card_completed_"] .stButton>button{background:#F0FDF4!important;border-left-color:#16A34A!important;}
+    [class*="st-key-npd_click_card_in_progress_"] .stButton>button{background:#EFF6FF!important;border-left-color:#2563EB!important;}
+    [class*="st-key-npd_click_card_hold_"] .stButton>button{background:#FAF5FF!important;border-left-color:#7C3AED!important;}
+    @keyframes qcmsOverduePulse{0%,100%{background:#FEF2F2;box-shadow:0 0 0 rgba(220,38,38,0)}50%{background:#FECACA;box-shadow:0 0 0 4px rgba(220,38,38,.18)}}
+    [class*="st-key-npd_click_card_overdue_"] .stButton>button{border:2px solid #DC2626!important;border-left:7px solid #B91C1C!important;color:#7F1D1D!important;animation:qcmsOverduePulse 1.15s ease-in-out infinite!important;}
+
+    /* Complaint NPD-style status rows. */
+    .complaint-status-row{display:flex;gap:8px;align-items:stretch;margin:7px 0;overflow-x:auto;padding-bottom:3px;}
+    .complaint-order-card{flex:0 0 210px;border-radius:9px;padding:8px 10px;background:linear-gradient(135deg,#0B3B68,#0B78B8);color:#fff;min-height:78px;box-shadow:0 2px 5px rgba(11,45,77,.09);}
+    .complaint-order-no{font-size:14px;font-weight:950;}.complaint-order-party{font-size:12px;font-weight:850;margin-top:2px}.complaint-order-subject{font-size:11px;margin-top:3px;line-height:1.25}.complaint-order-meta,.complaint-order-remarks{font-size:9.5px;margin-top:4px;opacity:.92;line-height:1.25}
+    .complaint-stage-strip{display:flex;gap:7px;min-width:max-content}.complaint-stage-card{flex:0 0 135px;min-height:78px;border-radius:8px;padding:7px 8px;border:1px solid #D8E2EA;background:#F7FAFC;border-left:5px solid #94A3B8}.complaint-stage-label{font-size:11px;font-weight:950;color:#173B57}.complaint-stage-detail{font-size:9.5px;line-height:1.25;color:#66798A;margin-top:5px}.complaint-stage-complete{background:#F0FDF4;border-left-color:#16A34A}.complaint-stage-current{background:#EFF6FF;border-left-color:#2563EB}.complaint-stage-pending{background:#F8FAFC;border-left-color:#94A3B8}.complaint-overdue .complaint-order-card{background:linear-gradient(135deg,#991B1B,#DC2626);animation:qcmsOverduePulse 1.2s ease-in-out infinite}
+    </style>
+    """, unsafe_allow_html=True)
+
+
 def render_public_brand() -> None:
     s = get_settings(); uri = logo_data_uri(); logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
     st.markdown(f'<div style="text-align:center;padding:.5rem">{logo}<div class="fsi-app-title">QUALITY CONTROL MONITORING SYSTEM</div><div class="fsi-user-meta">{safe(s.company_name)} · Plant {safe(s.plant_code)}</div></div>', unsafe_allow_html=True)
@@ -1007,7 +1055,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4118-GLOBAL-STAGED-SECTIONS</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4120-SUPPLY-CHAIN-INSPECTION</div>',
                 unsafe_allow_html=True,
             )
         with c3:

@@ -114,29 +114,38 @@ def _step_realtime_state(step: dict, today: date | None = None) -> tuple[str, st
     return "not_planned", "Target date not set"
 
 
-def _render_process_cards(steps: list[dict], point_progress: dict[str, tuple[int, int]] | None = None) -> None:
+def _render_process_cards(steps: list[dict], point_progress: dict[str, tuple[int, int]] | None = None, *, clickable: bool = False, key_prefix: str = "npd") -> None:
     if not steps:
         st.info("No process sequence is available for this order.")
         return
     point_progress = point_progress or {}
-    cards = []
-    for row in steps:
-        state, detail = _step_realtime_state(row)
-        process_name = str(row.get("process_name") or row.get("process_name_snapshot") or "Process")
-        operation_no = row.get("operation_no")
-        status = str(row.get("status") or "PENDING").replace("_", " ").title()
-        completed_points, total_points = point_progress.get(str(row.get("id")), (0, 0))
-        checkpoint_line = f'<div class="npd-process-date">Checkpoints {completed_points}/{total_points}</div>' if total_points else ''
-        cards.append(
-            f'<div class="npd-process-card npd-{state}">'
-            f'<div class="npd-op">OP {operation_no}</div>'
-            f'<div class="npd-process-name">{process_name}</div>'
-            f'<div class="npd-process-status">{status}</div>'
-            f'<div class="npd-process-date">{detail}</div>'
-            f'{checkpoint_line}'
-            f'</div>'
-        )
-    st.markdown(f'<div class="npd-process-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
+    if not clickable:
+        cards = []
+        for row in steps:
+            state, detail = _step_realtime_state(row)
+            process_name = str(row.get("process_name") or row.get("process_name_snapshot") or "Process")
+            operation_no = row.get("operation_no"); status = str(row.get("status") or "PENDING").replace("_", " ").title()
+            completed_points, total_points = point_progress.get(str(row.get("id")), (0, 0))
+            checkpoint_line = f'<div class="npd-process-date">Checkpoints {completed_points}/{total_points}</div>' if total_points else ''
+            remarks = str(row.get("remarks") or "").strip(); remark_line = f'<div class="npd-process-remarks">{remarks}</div>' if remarks else ''
+            cards.append(f'<div class="npd-process-card npd-{state}"><div class="npd-op">OP {operation_no}</div><div class="npd-process-name">{process_name}</div><div class="npd-process-status">{status}</div><div class="npd-process-date">{detail}</div>{checkpoint_line}{remark_line}</div>')
+        st.markdown(f'<div class="npd-process-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
+        return
+    # Clickable process cards: the whole Streamlit button is the card surface.
+    for row_start in range(0, len(steps), 4):
+        batch = steps[row_start:row_start+4]
+        cols = st.columns(4, gap="small")
+        for col, row in zip(cols, batch):
+            state, detail = _step_realtime_state(row); step_id = str(row.get("id")); process_name = str(row.get("process_name") or "Process")
+            status = str(row.get("status") or "PENDING").replace("_", " ").title(); remarks = str(row.get("remarks") or "").strip()
+            done,total = point_progress.get(step_id,(0,0)); checkpoint = f" · Points {done}/{total}" if total else ""
+            label = f"OP {row.get('operation_no')} · {process_name}\n{status} · {detail}{checkpoint}"
+            if remarks: label += f"\nRemarks: {remarks}"
+            with col:
+                with st.container(key=f"npd_click_card_{state}_{step_id}"):
+                    if st.button(label, key=f"{key_prefix}_card_{step_id}", width="stretch"):
+                        st.session_state["npd_selected_step_id"] = step_id
+
 
 
 def render_process_flow() -> None:
@@ -581,8 +590,24 @@ def render_npd_status() -> None:
                 {"label": "Days to Delivery", "value": days_to_delivery, "foot": due.strftime("%d-%m-%Y"), "color": "#D97706" if days_to_delivery < 7 else "#0F766E", "background": "#FFF7ED" if days_to_delivery < 7 else "#F0FDFA"},
                 {"label": "Real-time Status", "value": overall, "foot": "Date-driven evaluation", "color": "#B91C1C" if overall == "DELAYED" else "#15803D", "background": "#FEF2F2" if overall == "DELAYED" else "#F0FDF4"},
             ])
-        with stage_section("C", "ORDER PROCESS STATUS", key="npd_status_detail_c"):
-            _render_process_cards(steps, point_progress)
+        with stage_section("C", "ORDER PROCESS STATUS", "Click any process card to update its Status, Completed Date and Remarks. Overdue cards pulse red until action is taken.", key="npd_status_detail_c"):
+            _render_process_cards(steps, point_progress, clickable=True, key_prefix=f"npd_order_{order_id}")
+            selected_step_id = str(st.session_state.get("npd_selected_step_id") or "")
+            selected_step = next((row for row in steps if str(row.get("id")) == selected_step_id), None)
+            if selected_step:
+                st.markdown(f"**Update OP {selected_step.get('operation_no')} · {selected_step.get('process_name')}**")
+                e1,e2 = st.columns(2, gap="small")
+                current_status = str(selected_step.get("status") or "PENDING")
+                card_status = e1.selectbox("Status", STEP_STATUSES, index=STEP_STATUSES.index(current_status) if current_status in STEP_STATUSES else 0, key=f"npd_card_status_{selected_step_id}")
+                existing_completed = _parse_date(selected_step.get("completed_date")) if selected_step.get("completed_date") else date.today()
+                card_completed = e2.date_input("Completed Date", value=existing_completed, format="DD-MM-YYYY", disabled=card_status != "COMPLETED", key=f"npd_card_completed_{selected_step_id}")
+                card_remarks = st.text_area("Remarks shown on the card", value=str(selected_step.get("remarks") or ""), height=68, key=f"npd_card_remarks_{selected_step_id}")
+                if st.button("Update Selected NPD Card", type="primary", width="stretch", disabled=not perms["can_edit"], key=f"npd_card_save_{selected_step_id}"):
+                    try:
+                        repo.update("npd_order_steps", selected_step_id, {"status":card_status, "completed_date":card_completed.isoformat() if card_status=="COMPLETED" else None, "remarks":card_remarks.strip() or None})
+                        refreshed=repo.select("npd_order_steps",eq={"npd_order_id":order_id},order_by="operation_no",limit=500);_sync_order_overall_status(repo,order,refreshed)
+                        save_success_popup("NPD process card updated.",queue_for_rerun=True);st.rerun()
+                    except Exception as exc: st.error(str(exc))
 
         with stage_section("D", "UPDATE PROCESS TARGETS & STATUS", key="npd_status_detail_d"):
             legacy_values = [str(row.get("responsible") or "") for row in steps if not row.get("responsible_employee_id")]

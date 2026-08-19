@@ -26,6 +26,7 @@ from app_pages import (
     reports,
     rmtc_pages,
     standards_bank,
+    supply_chain,
     user_access,
     template_center,
 )
@@ -53,6 +54,14 @@ PAGE_ITEMS = (
     ("rmtc-entry", st.Page(rmtc_pages.render_entry, title="RMTC Entry", icon=":material/fact_check:", url_path="rmtc-entry")),
     ("inward-entry", st.Page(material_inward.render_entry, title="Material Inward", icon=":material/input:", url_path="inward-entry")),
     ("osp-home", st.Page(osp_transactions.render_home, title="OSP Transactions", icon=":material/factory:", url_path="osp-home")),
+    ("supply-chain-home", st.Page(supply_chain.render_home, title="Supply Chain", icon=":material/local_shipping:", url_path="supply-chain-home")),
+    ("supply-customer-orders", st.Page(supply_chain.render_customer_orders, title="Supply Customer Orders", icon=":material/receipt_long:", url_path="supply-customer-orders")),
+    ("supply-rm-procurement", st.Page(supply_chain.render_rm_procurement, title="Supply RM Procurement", icon=":material/shopping_cart:", url_path="supply-rm-procurement")),
+    ("supply-rm-receipt", st.Page(supply_chain.render_rm_receipt, title="Supply RM Receipt", icon=":material/inventory:", url_path="supply-rm-receipt")),
+    ("supply-rm-dispatch", st.Page(supply_chain.render_rm_dispatch, title="Supply RM to Forging", icon=":material/local_shipping:", url_path="supply-rm-dispatch")),
+    ("supply-forging", st.Page(supply_chain.render_forging, title="Supply Forging", icon=":material/factory:", url_path="supply-forging")),
+    ("supply-downstream", st.Page(supply_chain.render_downstream, title="Supply Downstream", icon=":material/precision_manufacturing:", url_path="supply-downstream")),
+    ("supply-traceability", st.Page(supply_chain.render_traceability, title="Supply Traceability", icon=":material/account_tree:", url_path="supply-traceability")),
     ("npd-process-flow", st.Page(npd_apqp.render_process_flow, title="Process Flow Designer", icon=":material/account_tree:", url_path="npd-process-flow")),
     ("npd-status", st.Page(npd_apqp.render_npd_status, title="NPD Status", icon=":material/timeline:", url_path="npd-status")),
     ("apqp", st.Page(npd_apqp.render_apqp, title="APQP", icon=":material/assignment_turned_in:", url_path="apqp")),
@@ -143,6 +152,16 @@ MODULE_SUBMENUS = {
         ("osp-metlab", "OSP MetLAB", ":material/science:"),
         ("osp-inward", "OSP Inward", ":material/input:"),
     ),
+    "Supply Chain": (
+        ("supply-chain-home", "Supply Chain Home", ":material/local_shipping:"),
+        ("supply-customer-orders", "Customer Orders", ":material/receipt_long:"),
+        ("supply-rm-procurement", "RM Procurement", ":material/shopping_cart:"),
+        ("supply-rm-receipt", "RM Receipt", ":material/inventory:"),
+        ("supply-rm-dispatch", "RM to Forging", ":material/local_shipping:"),
+        ("supply-forging", "Forging", ":material/factory:"),
+        ("supply-downstream", "Machining / FG / Dispatch", ":material/precision_manufacturing:"),
+        ("supply-traceability", "Traceability", ":material/account_tree:"),
+    ),
     "NPD & APQP": (
         ("npd-process-flow", "Process Flow Designer", ":material/account_tree:"),
         ("npd-status", "NPD Status", ":material/timeline:"),
@@ -208,6 +227,7 @@ ROUTE_MODULE = {
     "inward-entry": "Inward",
     "osp-home": "OSP", "osp-material-out": "OSP", "osp-sample-receipt": "OSP",
     "osp-inward": "OSP", "osp-dimensional": "OSP", "osp-metlab": "OSP",
+    "supply-chain-home": "Supply Chain", "supply-customer-orders": "Supply Chain", "supply-rm-procurement": "Supply Chain", "supply-rm-receipt": "Supply Chain", "supply-rm-dispatch": "Supply Chain", "supply-forging": "Supply Chain", "supply-downstream": "Supply Chain", "supply-traceability": "Supply Chain",
     "npd-process-flow": "NPD & APQP", "npd-status": "NPD & APQP", "apqp": "NPD & APQP",
     "qc-tools": "QC Calculation Tools",
     "complaints-home": "Complaints", "customer-complaint": "Complaints",
@@ -236,6 +256,7 @@ PAGE_TITLE_TO_PATH = {
     "OSP Material Out": "osp-material-out", "OSP Sample Receipt": "osp-sample-receipt",
     "OSP Material Inward": "osp-inward", "OSP Dimensional": "osp-dimensional",
     "OSP MetLAB": "osp-metlab", "OSP Records": "osp-records",
+    "Supply Chain": "supply-chain-home", "Supply Customer Orders": "supply-customer-orders", "Supply RM Procurement": "supply-rm-procurement", "Supply RM Receipt": "supply-rm-receipt", "Supply RM to Forging": "supply-rm-dispatch", "Supply Forging": "supply-forging", "Supply Downstream": "supply-downstream", "Supply Traceability": "supply-traceability",
     "Process Flow Designer": "npd-process-flow", "NPD Status": "npd-status", "APQP": "apqp",
     "QC Calculation Tools": "qc-tools", "QC Calculation Records": "qc-calculation-records",
     "Complaint Management": "complaints-home", "Customer Complaint": "customer-complaint", "Supplier Complaint": "supplier-complaint", "Complaint Analysis & CAPA": "complaint-analysis", "Complaint Records": "complaint-records",
@@ -255,13 +276,14 @@ current_module = ROUTE_MODULE.get(current_path, "Dashboard")
 
 with st.container(border=True, key="fsi_top_nav"):
     st.markdown('<div class="fsi-top-menu-title">MODULES</div>', unsafe_allow_html=True)
-    cols = st.columns(12, gap="small")  # compact 4.11.0 app rail
+    cols = st.columns(13, gap="small")
     labels = (
         ("dashboard", "Dashboard", "Dashboard"),
         ("masters", "Masters", "Masters"),
         ("rmtc-entry", "RMTC", "RMTC"),
         ("inward-entry", "Inward", "Inward"),
         ("osp-home", "OSP", "OSP"),
+        ("supply-chain-home", "Supply Chain", "Supply Chain"),
         ("npd-status", "NPD / APQP", "NPD & APQP"),
         ("qc-tools", "QC Tools", "QC Calculation Tools"),
         ("complaints-home", "Complaints", "Complaints"),

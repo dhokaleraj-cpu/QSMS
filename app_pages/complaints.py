@@ -203,6 +203,40 @@ def _analysis_progress(complaint: Mapping[str, Any], actions: list[Mapping[str, 
     return [{"label": label, "detail": detail, "state": state} for (label, detail), state in zip(labels, states)]
 
 
+def _render_complaint_status_rows(rows: list[dict], actions: list[dict], parties: Mapping[str, Mapping[str, Any]]) -> None:
+    if not rows:
+        st.info("No complaints are available in this category.")
+        return
+    actions_by_complaint: dict[str, list[dict]] = {}
+    for action in actions:
+        actions_by_complaint.setdefault(str(action.get("complaint_id") or ""), []).append(action)
+    for complaint in rows[:40]:
+        cid = str(complaint.get("id") or "")
+        progress = _analysis_progress(complaint, actions_by_complaint.get(cid, []))
+        overdue = _is_overdue(complaint) or any(_action_overdue(a) for a in actions_by_complaint.get(cid, []))
+        party = parties.get(str(complaint.get("party_id"))) or {}
+        header_class = " complaint-overdue" if overdue else ""
+        stage_html = []
+        for step in progress:
+            state = str(step.get("state") or "pending")
+            stage_html.append(
+                f'<div class="complaint-stage-card complaint-stage-{state}">'
+                f'<div class="complaint-stage-label">{step.get("label")}</div>'
+                f'<div class="complaint-stage-detail">{step.get("detail")}</div></div>'
+            )
+        remarks = str(complaint.get("closure_remarks") or complaint.get("corrective_action") or "").strip()
+        st.markdown(
+            f'<div class="complaint-status-row{header_class}"><div class="complaint-order-card">'
+            f'<div class="complaint-order-no">{complaint.get("complaint_number")}</div>'
+            f'<div class="complaint-order-party">{party.get("party_name") or ""}</div>'
+            f'<div class="complaint-order-subject">{complaint.get("subject") or ""}</div>'
+            f'<div class="complaint-order-meta">Target {complaint.get("target_closure_date") or "-"} · {str(complaint.get("severity") or "").title()} · {"OVERDUE" if overdue else str(complaint.get("status") or "").replace("_"," ").title()}</div>'
+            f'{f"<div class=\"complaint-order-remarks\">{remarks}</div>" if remarks else ""}</div>'
+            f'<div class="complaint-stage-strip">{"".join(stage_html)}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+
 def _closure_readiness(complaint: Mapping[str, Any], actions: list[Mapping[str, Any]]) -> tuple[bool, list[str]]:
     gaps: list[str] = []
     if not complaint.get("root_cause_confirmed"):
@@ -630,35 +664,41 @@ def render_home() -> None:
         {"label": "Closed Complaints", "value": closed, "foot": "Complaint closure completed", "color": "#15803D", "background": "#F0FDF4"},
     ])
 
-    section_bar("OPEN COMPLAINT FOLLOW-UP")
-    if not open_rows:
-        st.info("No open Customer or Supplier complaints are recorded.")
-        return
     parties = {str(row["id"]): row for row in repo.select("parties", limit=5000)}
     employees = {str(row["id"]): row for row in repo.select("employees", limit=5000)}
-    open_action_count: dict[str, int] = {}
-    for action in action_rows:
-        if str(action.get("status") or "") not in {"COMPLETED", "CANCELLED"}:
-            cid = str(action.get("complaint_id") or "")
-            open_action_count[cid] = open_action_count.get(cid, 0) + 1
-    frame = pd.DataFrame([
-        {
-            "Complaint No.": row.get("complaint_number"),
-            "Type": str(row.get("complaint_type") or "").title(),
-            "Party": (parties.get(str(row.get("party_id"))) or {}).get("party_name"),
-            "Subject": row.get("subject"),
-            "Severity": row.get("severity"),
-            "Responsible": employee_label(employees.get(str(row.get("fourstar_responsible_employee_id"))) or {}),
-            "Target Closure": row.get("target_closure_date"),
-            "Next Follow-up": (latest_followup.get(str(row.get("id"))) or {}).get("next_followup_date") or "-",
-            "Root Cause": "CONFIRMED" if row.get("root_cause_confirmed") else "PENDING",
-            "Open Actions": open_action_count.get(str(row.get("id")), 0),
-            "Status": "OVERDUE" if _is_overdue(row) else str(row.get("status") or "").replace("_", " ").title(),
-            "Debit Note": str(row.get("debit_note_status") or "").replace("_", " ").title(),
-        }
-        for row in open_rows
-    ])
-    st.dataframe(frame, hide_index=True, width="stretch", height=min(560, 65 + 36 * len(frame)))
+    with stage_section("A", "CUSTOMER & SUPPLIER COMPLAINT STATUS", "NPD-style stage cards show each complaint from registration through closure. Overdue complaints/actions are highlighted in red.", key="complaint_home_status_cards"):
+        customer_rows = [row for row in rows if str(row.get("complaint_type")) == "CUSTOMER"]
+        supplier_rows = [row for row in rows if str(row.get("complaint_type")) == "SUPPLIER"]
+        t1, t2 = st.tabs([f"Customer Complaints ({len(customer_rows)})", f"Supplier Complaints ({len(supplier_rows)})"])
+        with t1: _render_complaint_status_rows(customer_rows, action_rows, parties)
+        with t2: _render_complaint_status_rows(supplier_rows, action_rows, parties)
+    with stage_section("B", "OPEN COMPLAINT FOLLOW-UP REGISTER", key="complaint_home_followup_register"):
+        if not open_rows:
+            st.info("No open Customer or Supplier complaints are recorded.")
+            return
+        open_action_count: dict[str, int] = {}
+        for action in action_rows:
+            if str(action.get("status") or "") not in {"COMPLETED", "CANCELLED"}:
+                cid = str(action.get("complaint_id") or "")
+                open_action_count[cid] = open_action_count.get(cid, 0) + 1
+        frame = pd.DataFrame([
+            {
+                "Complaint No.": row.get("complaint_number"),
+                "Type": str(row.get("complaint_type") or "").title(),
+                "Party": (parties.get(str(row.get("party_id"))) or {}).get("party_name"),
+                "Subject": row.get("subject"),
+                "Severity": row.get("severity"),
+                "Responsible": employee_label(employees.get(str(row.get("fourstar_responsible_employee_id"))) or {}),
+                "Target Closure": row.get("target_closure_date"),
+                "Next Follow-up": (latest_followup.get(str(row.get("id"))) or {}).get("next_followup_date") or "-",
+                "Root Cause": "CONFIRMED" if row.get("root_cause_confirmed") else "PENDING",
+                "Open Actions": open_action_count.get(str(row.get("id")), 0),
+                "Status": "OVERDUE" if _is_overdue(row) else str(row.get("status") or "").replace("_", " ").title(),
+                "Debit Note": str(row.get("debit_note_status") or "").replace("_", " ").title(),
+            }
+            for row in open_rows
+        ])
+        st.dataframe(frame, hide_index=True, width="stretch", height=min(560, 65 + 36 * len(frame)))
 
 
 def render_customer_entry() -> None:

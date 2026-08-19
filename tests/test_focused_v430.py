@@ -8,7 +8,8 @@ def test_five_compact_top_navigation_workspaces():
     text = (ROOT / "streamlit_app.py").read_text()
     for label in ["Dashboard", "Masters", "RMTC", "Inward", "Inspections"]:
         assert f'"{label}"' in text
-    assert "Traceability" not in text
+    assert "supply-traceability" in text
+    assert "Supply Chain" in text
 
 
 def test_record_pages_are_separate():
