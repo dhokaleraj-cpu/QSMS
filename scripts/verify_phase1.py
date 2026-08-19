@@ -315,15 +315,36 @@ for token in (
 if "4118-GLOBAL-STAGED-SECTIONS" not in auth_text:
     errors.append("QCMS 4.11.8 login build fingerprint is missing")
 # Keep v4.12.0/v4.12.1 fingerprints in comments for regression traceability while
-# requiring the current v4.12.2 build to be visible in both the app shell and login.
+# requiring the current v4.12.3 build to be visible in both the app shell and login.
 if "4120-SUPPLY-CHAIN-INSPECTION" not in ui_text or "4120-SUPPLY-CHAIN-INSPECTION" not in auth_text:
     errors.append("QCMS 4.12.0 legacy build fingerprint is missing")
 if "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in ui_text or "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in auth_text:
     errors.append("QCMS 4.12.1 legacy build fingerprint is missing")
 if "4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY" not in ui_text or "4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY" not in auth_text:
-    errors.append("QCMS 4.12.2 visible build fingerprint is missing")
+    errors.append("QCMS 4.12.2 legacy build fingerprint is missing")
+if "4123-SUPPLY-EXPORT-REFERENCE-HOTFIX" not in ui_text or "4123-SUPPLY-EXPORT-REFERENCE-HOTFIX" not in auth_text:
+    errors.append("QCMS 4.12.3 visible build fingerprint is missing")
+
+reporting_text = (ROOT / "core/reporting.py").read_text(encoding="utf-8")
+reference_master_text = (ROOT / "app_pages/reference_master.py").read_text(encoding="utf-8")
+selection_labels_text = (ROOT / "core/selection_labels.py").read_text(encoding="utf-8")
+records_center_text = (ROOT / "app_pages/records_center.py").read_text(encoding="utf-8")
+reports_text = (ROOT / "app_pages/reports.py").read_text(encoding="utf-8")
+for token in ("def safe_excel_sheet_name", r"[\\/*?:\[\]]+", "used_names"):
+    if token not in reporting_text:
+        errors.append(f"QCMS 4.12.3 Excel sheet-name safety token missing: {token}")
+for rel_text, rel_name in ((records_center_text, "Records Centre"), (reports_text, "Reports")):
+    if "safe_excel_sheet_name" not in rel_text:
+        errors.append(f"QCMS 4.12.3 {rel_name} Excel export is not using safe sheet titles")
+for token in ("reference_record_label", "lookup_maps", "field.lookup", "human-readable name"):
+    if token not in selection_labels_text:
+        errors.append(f"QCMS 4.12.3 detailed Reference Master selector token missing: {token}")
+if "reference_record_label" not in reference_master_text or "Select reference record" not in reference_master_text:
+    errors.append("QCMS 4.12.3 Reference Master record selector is not using the detailed label helper")
 
 supply_text = (ROOT / "app_pages/supply_chain.py").read_text(encoding="utf-8")
+if "safe_excel_sheet_name" not in supply_text:
+    errors.append("QCMS 4.12.3 Supply Chain Excel export is not using safe sheet titles")
 supply_service_text = (ROOT / "core/supply_chain_service.py").read_text(encoding="utf-8")
 supply_migration = (ROOT / "supabase/migrations/20260820010000_qcms_supply_chain_master_linked_traceability_v4122.sql").read_text(encoding="utf-8")
 for token in ("Global Search", "st.columns(6", "Customer Order Import", "RMTC Number", "RMTC Date", "PDF Export", "Excel Export", "password_delete_panel"):
@@ -370,7 +391,7 @@ for relpath, tokens in whole_app_stage_contract.items():
             errors.append(f"QCMS 4.11.8 whole-app staged workflow missing {token} in {relpath}")
 
 report = {
-    "release": "QCMS 4.12.2 Supply Chain master-linked traceability, sequential pending queues, import/export and Material Inward bridge",
+    "release": "QCMS 4.12.3 Supply Chain export hotfix and detailed Reference Master selectors",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -496,6 +517,8 @@ report = {
     "complaint_followup_tracking": True,
     "debit_note_settlement_tracking": True,
     "login_css_rebuild": True,
+    "excel_export_sheet_sanitization": "safe_excel_sheet_name" in reporting_text and "safe_excel_sheet_name" in supply_text,
+    "reference_master_detailed_selector": "reference_record_label" in reference_master_text and "reference_record_label" in selection_labels_text,
     "errors": errors,
 }
 print(json.dumps(report, indent=2))

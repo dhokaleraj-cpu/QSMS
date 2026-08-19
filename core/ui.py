@@ -1,4 +1,5 @@
-# QCMS 4.12.1 — MASTER-DRIVEN-STANDALONE-REPORTS
+# QCMS 4.12.3 — SUPPLY-EXPORT-REFERENCE-HOTFIX
+# Legacy v4.12.2 build retained: 4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY
 # Legacy v4.12.0 build retained: 4120-SUPPLY-CHAIN-INSPECTION
 # Compatibility marker retained for staged-section regression continuity: 4118-GLOBAL-STAGED-SECTIONS
 # Legacy v4.12.1 build retained: 4121-MASTER-DRIVEN-STANDALONE-REPORTS
@@ -1078,7 +1079,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4123-SUPPLY-EXPORT-REFERENCE-HOTFIX</div>',
                 unsafe_allow_html=True,
             )
         with c3:

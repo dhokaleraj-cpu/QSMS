@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+import re
 from typing import Mapping
 
 import pandas as pd
@@ -25,6 +26,35 @@ BORDER = colors.HexColor("#AFC3D4")
 TEXT = colors.HexColor("#17212B")
 MUTED = colors.HexColor("#617386")
 WHITE = colors.white
+
+
+def safe_excel_sheet_name(name: object, *, used_names: set[str] | None = None, default: str = "Report") -> str:
+    """Return an Excel-compatible worksheet title.
+
+    Excel/openpyxl rejects backslash, slash, asterisk, question mark, colon and brackets in worksheet titles and limits
+    titles to 31 characters. Supply Chain report titles can legitimately contain
+    slashes (for example ``CUSTOMER ORDER EDIT / DELETE``), so every workbook
+    export must pass through this helper before creating the sheet.
+
+    ``used_names`` may be supplied for multi-sheet workbooks; collisions are
+    resolved deterministically without exceeding Excel's 31-character limit.
+    """
+    value = str(name or "").strip()
+    value = re.sub(r"[\\/*?:\[\]]+", " - ", value)
+    value = re.sub(r"\s+", " ", value).strip(" '\t\r\n")
+    base = (value or default)[:31].strip() or default
+    if used_names is None:
+        return base
+
+    normalized = {str(item).casefold() for item in used_names}
+    candidate = base
+    index = 2
+    while candidate.casefold() in normalized:
+        suffix = f" {index}"
+        candidate = f"{base[:31-len(suffix)].rstrip()}{suffix}"
+        index += 1
+    used_names.add(candidate)
+    return candidate
 
 
 def _logo_path() -> Path:

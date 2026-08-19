@@ -1,4 +1,5 @@
-# QCMS 4.12.2 — SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY
+# QCMS 4.12.3 — SUPPLY-EXPORT-REFERENCE-HOTFIX
+# Legacy v4.12.2 build retained: 4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY
 # Legacy v4.12.0 build retained: 4120-SUPPLY-CHAIN-INSPECTION
 # Compatibility marker retained for staged-section regression continuity: 4118-GLOBAL-STAGED-SECTIONS
 # Legacy v4.12.1 build retained: 4121-MASTER-DRIVEN-STANDALONE-REPORTS
@@ -291,7 +292,7 @@ def render_login() -> None:
           <div class="qcms-login-logo-wrap">{logo}</div>
           <div class="qcms-login-brand-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>
           <div class="qcms-login-brand-sub">Four Star Industries &middot; Controlled Quality Records &middot; Inspection &middot; NPD/APQP &middot; Complaint &amp; CAPA Management</div>
-          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY</span></div>
+          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4123-SUPPLY-EXPORT-REFERENCE-HOTFIX</span></div>
         </div>''',
         unsafe_allow_html=True,
     )
@@ -324,7 +325,7 @@ def render_login() -> None:
         st.markdown('<div class="qcms-login-preview-note">Preview is read-only and never writes to Supabase.</div>', unsafe_allow_html=True)
 
     st.markdown(
-        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY</span></div>''',
+        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4123-SUPPLY-EXPORT-REFERENCE-HOTFIX</span></div>''',
         unsafe_allow_html=True,
     )
 

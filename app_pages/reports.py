@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-from core.reporting import report_pdf_bytes
+from core.reporting import report_pdf_bytes, safe_excel_sheet_name
 from core.config import get_settings
 from core.repository import Repository
 from core.ui import disposition_cards, page_header, section_bar, stage_section, subpage_navigation
@@ -35,9 +35,10 @@ def _excel_bytes(sheets: dict[str, pd.DataFrame], report_title: str = "QUALITY C
     light_blue = "EAF4FB"
     border_color = "AFC3D4"
     thin = Side(style="thin", color=border_color)
+    used_sheet_names: set[str] = set()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         for name, frame in sheets.items():
-            safe_name = name[:31] or "Report"
+            safe_name = safe_excel_sheet_name(name, used_names=used_sheet_names)
             frame.to_excel(writer, sheet_name=safe_name, index=False)
             sheet = writer.sheets[safe_name]
             sheet.freeze_panes = "A2"

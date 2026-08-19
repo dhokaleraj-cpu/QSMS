@@ -11,6 +11,7 @@ from core.catalog import LearnedValueCatalog
 from core.delete_service import password_delete_panel
 from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
+from core.selection_labels import reference_record_label
 from core.reporting import controlled_record_pdf_bytes
 from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
@@ -54,9 +55,17 @@ def _master_selector() -> str:
     return st.selectbox("Reference Master", REFERENCE_KEYS, format_func=lambda key: MASTER_BY_KEY[key].label)
 
 
-def _row_label(definition, row: dict) -> str:
-    values = [str(row.get(k) or "") for k in definition.natural_key]
-    return " · ".join(v for v in values if v) or str(row.get("id"))
+def _record_key_label(definition, row: dict) -> str:
+    primary = definition.auto_code_field or (definition.natural_key[0] if definition.natural_key else "")
+    value = str(row.get(primary) or "").strip() if primary else ""
+    if value:
+        return value
+    values = [str(row.get(k) or "").strip() for k in definition.natural_key]
+    return "_".join(v for v in values if v) or str(row.get("id"))
+
+
+def _row_label(definition, row: dict, lookup_maps: dict[str, dict[str, str]] | None = None) -> str:
+    return reference_record_label(definition, row, lookup_maps)
 
 
 def render_entry() -> None:
@@ -73,7 +82,8 @@ def render_entry() -> None:
         st.session_state["master_import_selected_key"] = key
         st.switch_page(import_page)
     definition = service.definition(key); rows = service.list_records(definition, status="All")
-    labels = {str(row["id"]): _row_label(definition, row) for row in rows}
+    lookup_maps = service.lookup_label_maps()
+    labels = {str(row["id"]): _row_label(definition, row, lookup_maps) for row in rows}
     requested = str(st.session_state.pop("edit_reference_id", "") or ""); requested_key = str(st.session_state.pop("edit_reference_key", "") or "")
     options = ["__new__"] + list(labels); index = options.index(requested) if requested_key == key and requested in options else 0
     selected = st.selectbox("Record", options, index=index, format_func=lambda x: "＋ New record" if x == "__new__" else labels[x])
@@ -111,7 +121,7 @@ def render_entry() -> None:
                 try: service.deactivate(definition, str(record["id"])); save_success_popup("Record deactivated successfully.", queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
         with c2:
-            if password_delete_panel(repo=service.repo, table=definition.table, rows=[record], labeler=lambda r: _row_label(definition, r), key=f"delete_ref_entry_{key}_{record.get('id')}", can_delete=perms["can_archive"], title="Delete selected record", help_text="Permanent deletion requires your current password. Linked records may prevent deletion; use Deactivate in that case."):
+            if password_delete_panel(repo=service.repo, table=definition.table, rows=[record], labeler=lambda r: _row_label(definition, r, lookup_maps), key=f"delete_ref_entry_{key}_{record.get('id')}", can_delete=perms["can_archive"], title="Delete selected record", help_text="Permanent deletion requires your current password. Linked records may prevent deletion; use Deactivate in that case."):
                 st.rerun()
 
 
@@ -129,8 +139,9 @@ def render_records() -> None:
     if definition.status_field == "approved" and status not in ("All", "Approved", "Not approved"): status = "All"
     rows = service.list_records(definition, search=search, status=status)
 
+    lookup_maps = service.lookup_label_maps()
     if rows:
-        labels = {str(row["id"]): _row_label(definition, row) for row in rows}
+        labels = {str(row["id"]): _row_label(definition, row, lookup_maps) for row in rows}
         selected = st.selectbox("Select reference record", list(labels), format_func=lambda x: labels[x])
         selected_row = next(row for row in rows if str(row["id"]) == selected)
         st.session_state["edit_reference_id"] = selected; st.session_state["edit_reference_key"] = key
@@ -142,15 +153,15 @@ def render_records() -> None:
             pdf = controlled_record_pdf_bytes(
                 f"{definition.label.upper()} RECORD",
                 printable,
-                record_number=_row_label(definition, selected_row),
+                record_number=_record_key_label(definition, selected_row),
             )
-            st.download_button("Download Selected PDF", pdf, file_name=f"{definition.key}_{_row_label(definition, selected_row).replace(' · ','_')}.pdf", mime="application/pdf", width="stretch")
+            st.download_button("Download Selected PDF", pdf, file_name=f"{definition.key}_{_record_key_label(definition, selected_row)}.pdf", mime="application/pdf", width="stretch")
         with c3:
             if password_delete_panel(
                 repo=service.repo,
                 table=definition.table,
                 rows=[selected_row],
-                labeler=lambda r: _row_label(definition, r),
+                labeler=lambda r: _row_label(definition, r, lookup_maps),
                 key=f"delete_ref_records_{key}_{selected}",
                 can_delete=perms["can_archive"],
                 title="Delete Selected Record",

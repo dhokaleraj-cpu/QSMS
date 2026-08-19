@@ -2,7 +2,7 @@
 
 ## Release 4.12.2 — Supply Chain Master-Linked Traceability
 
-- Build: `4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY`.
+- Build: `4123-SUPPLY-EXPORT-REFERENCE-HOTFIX`.
 - Sequential Supply Chain pending queues, master-driven inherited context and full Heat/Material Inward genealogy.
 - Customer Order six-month schedule row and A–F Excel import with duplicate/change confirmation.
 - Material Inward is the RM Receipt source of truth; RMTC Number/Date/Qty and Heat carry downstream.

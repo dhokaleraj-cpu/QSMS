@@ -73,3 +73,61 @@ def customer_standard_label(
 ) -> str:
     revision = f"Rev {_clean(row.get('revision_number'))}" if _clean(row.get("revision_number")) else ""
     return _join(row.get("standard_code"), row.get("standard_name"), revision, process_name, customer_name)
+
+
+def reference_record_label(definition: Any, row: Mapping[str, Any], lookup_maps: Mapping[str, Mapping[str, str]] | None = None) -> str:
+    """Detailed Reference Master selector label.
+
+    Keeps the controlled code first, then adds the human-readable name or
+    description and useful context. Lookup fields are resolved to their rich
+    master labels so selectors never force users to interpret UUIDs.
+    """
+    lookup_maps = lookup_maps or {}
+    fields = {field.name: field for field in definition.fields}
+    ordered: list[str] = []
+    for name in (
+        definition.auto_code_field,
+        *definition.natural_key,
+        *definition.columns,
+        "party_name", "stage_name", "asset_name", "description",
+        "approval_reference", "address", "remarks",
+    ):
+        if name and name not in ordered:
+            ordered.append(name)
+
+    pieces: list[str] = []
+    seen_values: set[str] = set()
+    for name in ordered:
+        raw = row.get(name)
+        if raw in (None, "", [], {}):
+            continue
+        field = fields.get(name)
+        if field and field.lookup:
+            value = lookup_maps.get(field.lookup, {}).get(str(raw), str(raw))
+        elif isinstance(raw, bool):
+            value = "Yes" if raw else "No"
+        elif isinstance(raw, (list, tuple, set)):
+            value = ", ".join(str(item) for item in raw if str(item).strip())
+        else:
+            value = str(raw)
+        value = " ".join(value.split())
+        if not value:
+            continue
+        if len(value) > 90:
+            value = value[:87].rstrip() + "..."
+        signature = value.casefold()
+        if signature in seen_values:
+            continue
+        seen_values.add(signature)
+
+        is_code = name == definition.auto_code_field or name in definition.natural_key or name.endswith("_code")
+        is_name = name.endswith("_name") or name in {"party_name", "stage_name", "asset_name", "description"}
+        if is_code or is_name:
+            piece = value
+        else:
+            label = field.label if field else name.replace("_", " ").title()
+            piece = f"{label}: {value}"
+        pieces.append(piece)
+        if len(pieces) >= 7:
+            break
+    return " · ".join(pieces) or str(row.get("id"))

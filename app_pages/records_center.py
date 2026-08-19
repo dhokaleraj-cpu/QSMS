@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from core.repository import Repository
-from core.reporting import controlled_record_pdf_bytes
+from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
 from core.ui import disposition_cards, page_header, section_bar, style_status_dataframe, subpage_navigation
 
 
@@ -38,9 +38,10 @@ def _table(frame: pd.DataFrame, *, height: int = 560, pdf_title: str = "QCMS Rec
 
 def _excel_bytes(frame: pd.DataFrame, sheet_name: str) -> bytes:
     output = BytesIO()
+    safe_name = safe_excel_sheet_name(sheet_name)
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        frame.to_excel(writer, index=False, sheet_name=sheet_name[:31])
-        worksheet = writer.sheets[sheet_name[:31]]
+        frame.to_excel(writer, index=False, sheet_name=safe_name)
+        worksheet = writer.sheets[safe_name]
         worksheet.freeze_panes = "A2"
         worksheet.auto_filter.ref = worksheet.dimensions
         for column_cells in worksheet.columns:

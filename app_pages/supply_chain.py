@@ -9,7 +9,7 @@ import streamlit as st
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
-from core.reporting import controlled_record_pdf_bytes
+from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
 from core.selection_labels import part_label, party_label
 from core.supply_chain_service import (
     MONTHS,
@@ -88,9 +88,10 @@ def _style_supply_dataframe(frame: pd.DataFrame):
 
 def _excel_bytes(frame: pd.DataFrame, sheet_name: str) -> bytes:
     output = BytesIO()
+    safe_name = safe_excel_sheet_name(sheet_name)
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        frame.to_excel(writer, index=False, sheet_name=sheet_name[:31])
-        ws = writer.sheets[sheet_name[:31]]
+        frame.to_excel(writer, index=False, sheet_name=safe_name)
+        ws = writer.sheets[safe_name]
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = ws.dimensions
         for cells in ws.columns:
