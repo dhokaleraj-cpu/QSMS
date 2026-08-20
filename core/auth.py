@@ -1,4 +1,5 @@
-# QCMS 4.12.5 — QUALITY-DECISION-EXPORT-MIS
+# QCMS 4.12.6 — PROCUREMENT-PORTAL-REFERENCE-UI
+# Legacy v4.12.5 build retained: 4125-QUALITY-DECISION-EXPORT-MIS
 # Legacy v4.12.4 build retained: 4124-DUAL-SUPPLY-FLOW-MIS
 # Legacy v4.12.3 build retained: 4123-SUPPLY-EXPORT-REFERENCE-HOTFIX
 # Legacy v4.12.2 build retained: 4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY
@@ -289,12 +290,40 @@ def render_login() -> None:
         unsafe_allow_html=True,
     )
 
+    # QCMS 4.12.6 — login screen uses the same flat red/white procurement-portal reference style.
+    st.markdown(
+        r"""
+        <style>
+        div[data-testid="stAppViewContainer"]{background:#EFEFEF!important;}
+        .qcms-login-brand-card{border-radius:2px!important;border:1px solid #D2D2D2!important;box-shadow:none!important;padding:16px 20px 15px!important;}
+        .qcms-login-brand-card:before{height:5px!important;background:#B20738!important;}
+        .qcms-login-brand-card:after{display:none!important;}
+        .qcms-login-brand-title{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:24px!important;font-weight:700!important;color:#343434!important;letter-spacing:0!important;}
+        .qcms-login-brand-sub{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;color:#6E6E6E!important;font-size:10px!important;font-weight:600!important;}
+        .qcms-login-badges span{border-radius:2px!important;background:#FFF4F7!important;border-color:#DBA7B6!important;color:#B20738!important;font-size:8px!important;}
+        div[data-testid="stForm"]{border-radius:2px!important;border:1px solid #D2D2D2!important;box-shadow:none!important;padding:17px 19px 19px!important;}
+        .qcms-login-form-title{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:16px!important;font-weight:700!important;color:#3A3A3A!important;}
+        .qcms-login-form-sub{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;color:#777!important;}
+        div[data-testid="stForm"] label[data-testid="stWidgetLabel"] p{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:11.5px!important;color:#404040!important;}
+        div[data-testid="stForm"] div[data-baseweb="input"]{min-height:38px!important;background:#FFF!important;border:1px solid #C9CED2!important;border-radius:2px!important;box-shadow:none!important;}
+        div[data-testid="stForm"] div[data-baseweb="input"]:focus-within{border-color:#2E86C1!important;box-shadow:0 0 0 1px rgba(46,134,193,.18)!important;}
+        div[data-testid="stForm"] input{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:12px!important;color:#333!important;font-weight:400!important;}
+        div[data-testid="stForm"] .stFormSubmitButton>button{min-height:38px!important;border-radius:2px!important;background:#2E86C1!important;border:1px solid #2778AE!important;box-shadow:none!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:12px!important;font-weight:700!important;}
+        div[data-testid="stForm"] .stFormSubmitButton>button:hover{transform:none!important;background:#2778AE!important;box-shadow:none!important;}
+        details[data-testid="stExpander"]{border-radius:2px!important;box-shadow:none!important;border-color:#D2D2D2!important;}
+        .qcms-login-version{border-radius:2px!important;background:#FFF4F7!important;border-color:#DBA7B6!important;color:#B20738!important;}
+        .qcms-login-footer{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;color:#666!important;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.markdown(
         f'''<div class="qcms-login-brand-card">
           <div class="qcms-login-logo-wrap">{logo}</div>
           <div class="qcms-login-brand-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>
           <div class="qcms-login-brand-sub">Four Star Industries &middot; Controlled Quality Records &middot; Inspection &middot; NPD/APQP &middot; Complaint &amp; CAPA Management</div>
-          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4125-QUALITY-DECISION-EXPORT-MIS</span></div>
+          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4126-PROCUREMENT-PORTAL-REFERENCE-UI</span></div>
         </div>''',
         unsafe_allow_html=True,
     )
@@ -327,7 +356,7 @@ def render_login() -> None:
         st.markdown('<div class="qcms-login-preview-note">Preview is read-only and never writes to Supabase.</div>', unsafe_allow_html=True)
 
     st.markdown(
-        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4125-QUALITY-DECISION-EXPORT-MIS</span></div>''',
+        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4126-PROCUREMENT-PORTAL-REFERENCE-UI</span></div>''',
         unsafe_allow_html=True,
     )
 

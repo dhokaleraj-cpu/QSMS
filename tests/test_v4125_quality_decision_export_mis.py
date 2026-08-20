@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_and_visible_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() == "4.12.5"
+    assert (ROOT / "VERSION").read_text().strip() in {"4.12.5", "4.12.6"}
     assert "4125-QUALITY-DECISION-EXPORT-MIS" in (ROOT / "core/ui.py").read_text()
     assert "4125-QUALITY-DECISION-EXPORT-MIS" in (ROOT / "core/auth.py").read_text()
 

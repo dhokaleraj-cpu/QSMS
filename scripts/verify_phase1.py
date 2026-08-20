@@ -317,7 +317,7 @@ for token in (
 if "4118-GLOBAL-STAGED-SECTIONS" not in auth_text:
     errors.append("QCMS 4.11.8 login build fingerprint is missing")
 # Keep v4.12.0/v4.12.1 fingerprints in comments for regression traceability while
-# requiring the current v4.12.5 build to be visible in both the app shell and login.
+# requiring the current v4.12.6 build to be visible in both the app shell and login.
 if "4120-SUPPLY-CHAIN-INSPECTION" not in ui_text or "4120-SUPPLY-CHAIN-INSPECTION" not in auth_text:
     errors.append("QCMS 4.12.0 legacy build fingerprint is missing")
 if "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in ui_text or "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in auth_text:
@@ -329,7 +329,22 @@ if "4123-SUPPLY-EXPORT-REFERENCE-HOTFIX" not in ui_text or "4123-SUPPLY-EXPORT-R
 if "4124-DUAL-SUPPLY-FLOW-MIS" not in ui_text or "4124-DUAL-SUPPLY-FLOW-MIS" not in auth_text:
     errors.append("QCMS 4.12.4 legacy build fingerprint is missing")
 if "4125-QUALITY-DECISION-EXPORT-MIS" not in ui_text or "4125-QUALITY-DECISION-EXPORT-MIS" not in auth_text:
-    errors.append("QCMS 4.12.5 visible build fingerprint is missing")
+    errors.append("QCMS 4.12.5 legacy build fingerprint is missing")
+if "4126-PROCUREMENT-PORTAL-REFERENCE-UI" not in ui_text or "4126-PROCUREMENT-PORTAL-REFERENCE-UI" not in auth_text:
+    errors.append("QCMS 4.12.6 visible build fingerprint is missing")
+for token in (
+    "def _apply_v4126_procurement_reference_style",
+    "--qcms-ref-red:#B20738",
+    "--qcms-ref-bg:#EFEFEF",
+    '--qcms-ref-font:Arial,"Helvetica Neue",Helvetica,sans-serif',
+    "border-bottom:2px solid var(--qcms-ref-red)",
+    "border-radius:2px!important",
+):
+    if token not in ui_text:
+        errors.append(f"QCMS 4.12.6 reference UI token missing: {token}")
+for token in ("#B20738", "#EFEFEF", "4126-PROCUREMENT-PORTAL-REFERENCE-UI"):
+    if token not in auth_text:
+        errors.append(f"QCMS 4.12.6 login reference UI token missing: {token}")
 
 reporting_text = (ROOT / "core/reporting.py").read_text(encoding="utf-8")
 reference_master_text = (ROOT / "app_pages/reference_master.py").read_text(encoding="utf-8")
@@ -426,7 +441,7 @@ for relpath, tokens in whole_app_stage_contract.items():
             errors.append(f"QCMS 4.11.8 whole-app staged workflow missing {token} in {relpath}")
 
 report = {
-    "release": "QCMS 4.12.5 quality conclusion/final decision, report exports and customer-part monthly MIS",
+    "release": "QCMS 4.12.6 procurement portal reference UI",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -468,6 +483,10 @@ report = {
     "quality_conclusion_final_decision": True,
     "quality_pdf_excel_print_exports": True,
     "standalone_quality_finalization": True,
+    "procurement_portal_reference_ui": True,
+    "reference_red_white_shell": True,
+    "reference_flat_field_borders": True,
+    "reference_clean_section_titles": True,
     "stages_collapsed_by_default": True,
     "single_blue_stage_family": True,
     "complaint_stage_titles_100pct_larger": True,

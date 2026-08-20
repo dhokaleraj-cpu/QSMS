@@ -1,4 +1,15 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.12.5
+# QUALITY CONTROL MONITORING SYSTEM 4.12.6
+
+## Release 4.12.6 — Procurement Portal Reference UI
+
+- Build: `4126-PROCUREMENT-PORTAL-REFERENCE-UI`.
+- Whole QCMS application restyled to match the supplied enterprise procurement portal reference: flat deep-red header, white/light-grey surfaces, clean neutral field borders, square compact controls and Arial/Helvetica typography.
+- Main and module navigation now use flat white tabs with a deep-red active rule instead of blue rounded buttons.
+- Page titles, A/B/C workflow section titles and normal section bars use clean compact red/grey heading lines consistent with the reference screen.
+- Forms, selectors, text fields, upload controls, data grids, tabs, KPI cards and workflow cards use thinner borders, reduced corner radius and no floating shadows.
+- Existing semantic workflow colours remain for Accepted/Completed, Pending, Overdue/Hold and Rejected statuses.
+- Login screen uses the same visual language while retaining Four Star Industries branding.
+- No database migration or data reset is required.
 
 ## Release 4.12.5 — Quality Conclusion / Final Decision + Report Export + MIS Identity
 

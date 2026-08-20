@@ -1,4 +1,5 @@
-# QCMS 4.12.5 — QUALITY-DECISION-EXPORT-MIS
+# QCMS 4.12.6 — PROCUREMENT-PORTAL-REFERENCE-UI
+# Legacy v4.12.5 build retained: 4125-QUALITY-DECISION-EXPORT-MIS
 # Legacy v4.12.4 build retained: 4124-DUAL-SUPPLY-FLOW-MIS
 # Legacy v4.12.3 build retained: 4123-SUPPLY-EXPORT-REFERENCE-HOTFIX
 # Legacy v4.12.2 build retained: 4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY
@@ -983,6 +984,7 @@ div[data-testid="stAppViewContainer"]:has([class*="st-key-qcms_login_shell"]){
     """, unsafe_allow_html=True)
 
     _apply_v4120_readability_style()
+    _apply_v4126_procurement_reference_style()
 
 
 # QCMS v4.12.1 master-driven standalone report layer; v4.12.0 readability rules retained.
@@ -1050,6 +1052,262 @@ def _apply_v4120_readability_style() -> None:
     """, unsafe_allow_html=True)
 
 
+# QCMS v4.12.6 — procurement portal reference visual system.
+def _apply_v4126_procurement_reference_style() -> None:
+    """Apply the flat red/white enterprise portal design supplied as the visual reference.
+
+    The Four Star/QCMS identity, workflow logic, permissions and semantic status colours stay
+    intact; this layer standardises typography, field borders, tables, navigation and headings.
+    """
+    st.markdown(r"""
+    <style>
+    :root{
+      --qcms-ref-red:#B20738;
+      --qcms-ref-red-dark:#8F052E;
+      --qcms-ref-red-soft:#FFF4F7;
+      --qcms-ref-bg:#EFEFEF;
+      --qcms-ref-surface:#FFFFFF;
+      --qcms-ref-line:#D5D5D5;
+      --qcms-ref-line-strong:#BFC4C8;
+      --qcms-ref-text:#343434;
+      --qcms-ref-muted:#707070;
+      --qcms-ref-blue:#2E86C1;
+      --qcms-ref-green:#63B96C;
+      --qcms-ref-danger:#D9534F;
+      --qcms-ref-font:Arial,"Helvetica Neue",Helvetica,sans-serif;
+    }
+
+    html,body,.stApp,[class*="css"],button,input,textarea,select,
+    [data-baseweb="select"],[data-baseweb="input"]{
+      font-family:var(--qcms-ref-font)!important;
+    }
+    .stApp,div[data-testid="stAppViewContainer"],section.main{
+      background:var(--qcms-ref-bg)!important;color:var(--qcms-ref-text)!important;
+    }
+    .block-container{max-width:1920px!important;padding:.38rem .72rem 1.15rem!important;}
+    p{color:var(--qcms-ref-text)!important;}
+
+    /* Flat compact top banner — Four Star branding in the reference portal colour system. */
+    .st-key-fsi_shell,[class*="st-key-fsi_shell"]{
+      background:var(--qcms-ref-red)!important;border:0!important;border-radius:0!important;
+      box-shadow:none!important;margin:0 -.72rem .18rem!important;overflow:visible!important;
+    }
+    .st-key-fsi_shell>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_shell"]>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_shell"] div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:transparent!important;border:0!important;border-radius:0!important;
+      padding:.40rem .78rem!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-logo-card{
+      height:42px!important;min-width:62px!important;padding:3px 7px!important;border-radius:2px!important;
+      border:1px solid rgba(255,255,255,.76)!important;box-shadow:none!important;background:#fff!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-logo{width:60px!important;max-height:34px!important;}
+    [class*="st-key-fsi_shell"] .fsi-company-name{
+      color:#fff!important;font-family:var(--qcms-ref-font)!important;font-size:13px!important;font-weight:700!important;
+      line-height:1.05!important;text-shadow:none!important;letter-spacing:.005em!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-company-sub{
+      color:#F9DCE5!important;font-size:8.5px!important;font-weight:600!important;letter-spacing:.01em!important;margin-top:3px!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-header-title{
+      color:#fff!important;font-family:var(--qcms-ref-font)!important;font-size:18px!important;font-weight:700!important;
+      line-height:1.02!important;letter-spacing:0!important;text-shadow:none!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-header-page{
+      color:#F8DDE5!important;font-size:8.5px!important;font-weight:600!important;letter-spacing:.035em!important;margin-top:4px!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-user{
+      background:transparent!important;border:0!important;border-radius:0!important;padding:2px 4px!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-user-name{font-size:10px!important;font-weight:700!important;color:#fff!important;}
+    [class*="st-key-fsi_shell"] .fsi-user-meta{font-size:8.5px!important;color:#F8DDE5!important;}
+    [class*="st-key-fsi_shell"] .fsi-user-pill,[class*="st-key-fsi_shell"] .fsi-live{
+      border-radius:2px!important;background:rgba(255,255,255,.12)!important;border:1px solid rgba(255,255,255,.25)!important;
+      color:#fff!important;font-size:7.5px!important;font-weight:700!important;
+    }
+    [class*="st-key-fsi_shell"] .stButton>button,
+    [class*="st-key-fsi_shell"] div[data-testid="stPageLink"] a{
+      min-height:29px!important;border-radius:2px!important;background:rgba(255,255,255,.10)!important;
+      border:1px solid rgba(255,255,255,.32)!important;color:#fff!important;font-size:9px!important;font-weight:700!important;
+    }
+    [class*="st-key-fsi_shell"] .stButton>button:hover,
+    [class*="st-key-fsi_shell"] div[data-testid="stPageLink"] a:hover{background:rgba(255,255,255,.20)!important;}
+
+    /* Main navigation — white, flat, compact, red active rule. */
+    .st-key-fsi_top_nav,[class*="st-key-fsi_top_nav"]{background:#fff!important;border:0!important;box-shadow:none!important;}
+    .st-key-fsi_top_nav>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_top_nav"]>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_top_nav"] div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:#fff!important;border:0!important;border-bottom:1px solid var(--qcms-ref-line)!important;border-radius:0!important;
+      padding:.18rem .30rem!important;margin:.16rem 0 .22rem!important;box-shadow:none!important;
+    }
+    .fsi-top-menu-title{display:none!important;}
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] div[data-testid="stPageLink"] a,
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] .stButton>button{
+      min-height:31px!important;padding:.23rem .24rem!important;border-radius:0!important;border:0!important;border-bottom:3px solid transparent!important;
+      background:#fff!important;color:#414141!important;font-size:10.5px!important;font-weight:600!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] div[data-testid="stPageLink"] a:hover,
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] .stButton>button:hover{
+      background:#F7F7F7!important;color:var(--qcms-ref-red)!important;border-bottom-color:#E5A8B9!important;
+    }
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_active_"] div[data-testid="stPageLink"] a,
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_active_"] .stButton>button{
+      background:#fff!important;color:var(--qcms-ref-red)!important;border-bottom:3px solid var(--qcms-ref-red)!important;
+      box-shadow:none!important;font-weight:700!important;
+    }
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_active_"] div[data-testid="stPageLink"] a *,
+    [class*="st-key-fsi_top_nav"] [class*="st-key-menu_active_"] .stButton>button *{color:var(--qcms-ref-red)!important;fill:var(--qcms-ref-red)!important;}
+
+    /* Second-level menu — same flat bordered controls as the reference screen. */
+    [class*="st-key-fsi_module_subnav_"]>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:#fff!important;border:1px solid var(--qcms-ref-line)!important;border-radius:2px!important;
+      padding:.23rem .30rem!important;box-shadow:none!important;
+    }
+    .fsi-module-subnav-title{font-size:9px!important;font-weight:700!important;color:#555!important;letter-spacing:.04em!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a{
+      min-height:31px!important;padding:.20rem .30rem!important;border-radius:2px!important;background:#fff!important;
+      border:1px solid #D6DADF!important;color:#444!important;font-size:10px!important;font-weight:600!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a:hover{background:#F7F7F7!important;border-color:#C8C8C8!important;color:var(--qcms-ref-red)!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a[aria-current="page"]{
+      background:var(--qcms-ref-red-soft)!important;border-color:#D9A2B2!important;color:var(--qcms-ref-red)!important;
+      box-shadow:inset 3px 0 0 var(--qcms-ref-red)!important;font-weight:700!important;
+    }
+
+    /* Page and section headings: clean red title + rule, matching the supplied portal. */
+    .fsi-page-head{
+      min-height:39px!important;margin:.18rem 0 .38rem!important;padding:.48rem .18rem .40rem!important;
+      background:#fff!important;border:0!important;border-bottom:1px solid #D0D0D0!important;border-left:0!important;
+      border-radius:0!important;box-shadow:none!important;
+    }
+    .fsi-page-title{font-family:var(--qcms-ref-font)!important;font-size:18px!important;line-height:1.15!important;font-weight:700!important;color:#3A3A3A!important;letter-spacing:0!important;}
+    .fsi-section-bar{
+      min-height:31px!important;margin:.62rem 0 .38rem!important;padding:.29rem .12rem .34rem!important;background:#fff!important;
+      border:0!important;border-bottom:2px solid var(--qcms-ref-red)!important;border-radius:0!important;box-shadow:none!important;
+      color:var(--qcms-ref-red)!important;font-family:var(--qcms-ref-font)!important;font-size:14px!important;font-weight:700!important;
+      letter-spacing:0!important;text-transform:none!important;
+    }
+    .fsi-info-strip{background:#fff!important;border:1px solid var(--qcms-ref-line)!important;border-left:3px solid var(--qcms-ref-red)!important;border-radius:2px!important;box-shadow:none!important;}
+
+    /* A/B/C workflow sections stay collapsible but use the same clean heading treatment. */
+    [class*="st-key-fsi_stage_"]{
+      --stage-bg:#fff;--stage-head:#fff;--stage-border:var(--qcms-ref-line);--stage-accent:var(--qcms-ref-red);--stage-text:var(--qcms-ref-red);
+      background:transparent!important;border:0!important;border-left:0!important;border-radius:0!important;
+      padding:0!important;margin:.44rem 0 .60rem!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_stage_"] > div[data-testid="stVerticalBlockBorderWrapper"]{background:transparent!important;border:0!important;padding:0!important;}
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] details{
+      background:#fff!important;border:1px solid var(--qcms-ref-line)!important;border-radius:2px!important;box-shadow:none!important;overflow:hidden!important;
+    }
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] summary{
+      background:#fff!important;color:var(--qcms-ref-red)!important;min-height:38px!important;padding:.43rem .58rem!important;
+      border:0!important;border-bottom:2px solid var(--qcms-ref-red)!important;border-radius:0!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] summary p{
+      color:var(--qcms-ref-red)!important;font-family:var(--qcms-ref-font)!important;font-size:14px!important;font-weight:700!important;
+      line-height:1.15!important;letter-spacing:0!important;text-transform:none!important;
+    }
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] summary svg{color:var(--qcms-ref-red)!important;fill:var(--qcms-ref-red)!important;width:1rem!important;height:1rem!important;}
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] details[open] > summary{box-shadow:none!important;}
+
+    /* Forms and field borders — white inputs, thin neutral lines, compact square geometry. */
+    div[data-testid="stForm"]{
+      background:#fff!important;border:1px solid var(--qcms-ref-line)!important;border-radius:2px!important;
+      padding:.68rem .72rem!important;box-shadow:none!important;margin-bottom:.45rem!important;
+    }
+    label[data-testid="stWidgetLabel"] p{font-family:var(--qcms-ref-font)!important;font-size:12px!important;font-weight:700!important;color:#3D3D3D!important;line-height:1.2!important;}
+    [data-baseweb="input"],[data-baseweb="select"]>div,textarea{
+      background:#fff!important;border:1px solid #C9CED2!important;border-radius:2px!important;min-height:34px!important;box-shadow:none!important;
+    }
+    [data-baseweb="input"] input,[data-baseweb="select"] span,textarea{
+      font-family:var(--qcms-ref-font)!important;font-size:13px!important;color:#333!important;font-weight:400!important;
+    }
+    [data-baseweb="input"]:focus-within,[data-baseweb="select"]>div:focus-within,textarea:focus{
+      border-color:var(--qcms-ref-blue)!important;box-shadow:0 0 0 1px rgba(46,134,193,.18)!important;
+    }
+    textarea{min-height:68px!important;}
+    [data-testid="stFileUploaderDropzone"]{background:#fff!important;border:1px dashed #C8CDD1!important;border-radius:2px!important;box-shadow:none!important;}
+    [data-testid="stFileUploaderDropzone"] *{font-family:var(--qcms-ref-font)!important;}
+
+    /* Buttons — reference screen uses blue action buttons, dark export buttons and red destructive actions. */
+    .stButton>button,.stFormSubmitButton>button,.stDownloadButton>button,.stLinkButton>a{
+      min-height:32px!important;border-radius:2px!important;font-family:var(--qcms-ref-font)!important;font-size:11px!important;font-weight:700!important;box-shadow:none!important;
+      padding:.28rem .62rem!important;
+    }
+    .stButton>button,.stLinkButton>a{background:#fff!important;border:1px solid #C9CED2!important;color:#444!important;}
+    .stButton>button:hover,.stLinkButton>a:hover{background:#F5F5F5!important;border-color:#AEB4B8!important;}
+    .stButton>button[kind="primary"],.stFormSubmitButton>button[kind="primary"]{
+      background:var(--qcms-ref-blue)!important;border:1px solid #2778AE!important;color:#fff!important;
+    }
+    .stButton>button[kind="primary"] *,.stFormSubmitButton>button[kind="primary"] *{color:#fff!important;fill:#fff!important;}
+    .stDownloadButton>button{background:#515151!important;border:1px solid #454545!important;color:#fff!important;}
+    .stDownloadButton>button *{color:#fff!important;fill:#fff!important;}
+    .stDownloadButton>button:hover{background:#444!important;border-color:#3B3B3B!important;}
+    [class*="delete"] .stButton>button,[class*="reject"] .stButton>button,[class*="cancel"] .stButton>button{
+      background:var(--qcms-ref-danger)!important;border-color:#C84440!important;color:#fff!important;
+    }
+    [class*="delete"] .stButton>button *,[class*="reject"] .stButton>button *,[class*="cancel"] .stButton>button *{color:#fff!important;fill:#fff!important;}
+
+    /* Tables / grids — thin neutral borders and light grey headers. */
+    div[data-testid="stDataFrame"],div[data-testid="stDataEditor"]{
+      background:#fff!important;border:1px solid #CFCFCF!important;border-radius:2px!important;box-shadow:none!important;overflow:hidden!important;
+    }
+    div[data-testid="stDataFrame"] *,div[data-testid="stDataEditor"] *{font-family:var(--qcms-ref-font)!important;font-size:12px!important;}
+    div[data-testid="stDataFrame"] [role="columnheader"],div[data-testid="stDataEditor"] [role="columnheader"]{
+      background:#F3F3F3!important;color:#444!important;font-weight:700!important;border-color:#D4D4D4!important;
+    }
+    div[data-testid="stDataFrame"] [role="gridcell"],div[data-testid="stDataEditor"] [role="gridcell"]{border-color:#E0E0E0!important;}
+
+    /* Tabs / quick-filter panels. */
+    div[data-testid="stTabs"] [data-baseweb="tab-list"]{gap:0!important;border-bottom:1px solid var(--qcms-ref-line)!important;}
+    div[data-testid="stTabs"] [data-baseweb="tab"]{border-radius:0!important;color:#444!important;font-size:11px!important;font-weight:700!important;padding:.38rem .72rem!important;}
+    div[data-testid="stTabs"] [aria-selected="true"]{color:var(--qcms-ref-red)!important;border-bottom:3px solid var(--qcms-ref-red)!important;background:#fff!important;}
+    details[data-testid="stExpander"]{border-radius:2px!important;box-shadow:none!important;}
+    [data-testid="stAlert"]{border-radius:2px!important;box-shadow:none!important;}
+
+    /* KPI and status cards keep semantic colours but use the same flat grid geometry. */
+    .fsi-status-grid,.fsi-kpi-grid{gap:7px!important;margin:.20rem 0 .48rem!important;}
+    .fsi-status-card,.fsi-kpi{
+      border-radius:2px!important;border:1px solid #D7D7D7!important;border-top:3px solid var(--card-color,var(--qcms-ref-red))!important;
+      border-left:1px solid #D7D7D7!important;box-shadow:none!important;min-height:58px!important;padding:7px 9px!important;
+    }
+    .fsi-status-card .label,.fsi-kpi-label{font-size:9px!important;font-weight:700!important;letter-spacing:.02em!important;}
+    .fsi-status-card .value,.fsi-kpi-value{font-size:16px!important;font-weight:700!important;margin:3px 0 1px!important;}
+    .fsi-status-card .foot,.fsi-kpi-foot{font-size:9px!important;}
+    .supply-order-card,.fsi-flow-step,.npd-process-card,.npd-row-process-card{
+      border-radius:2px!important;box-shadow:none!important;
+    }
+    .fsi-flow-arrow{color:#777!important;}
+
+    /* Master/dashboard cards become flat bordered tiles, not rounded floating cards. */
+    [class*="st-key-master_card_"]>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-dashboard_card_"]>div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:#fff!important;border:1px solid var(--qcms-ref-line)!important;border-radius:2px!important;box-shadow:none!important;
+    }
+    .fsi-master-card-icon{border-radius:2px!important;}
+    .fsi-master-card-title,.fsi-dashboard-title{color:#3B3B3B!important;font-family:var(--qcms-ref-font)!important;}
+
+    .fsi-footer{font-family:var(--qcms-ref-font)!important;color:#777!important;border-top:1px solid #D5D5D5!important;font-size:9px!important;}
+    .fsi-footer a{color:var(--qcms-ref-red)!important;}
+
+    @media(max-width:980px){
+      [class*="st-key-fsi_shell"] .fsi-header-title{font-size:15px!important;}
+      [class*="st-key-fsi_shell"] .fsi-company-name{font-size:11px!important;}
+      [class*="st-key-fsi_top_nav"] [class*="st-key-menu_"] div[data-testid="stPageLink"] a{font-size:9.5px!important;}
+    }
+    @media(max-width:760px){
+      .block-container{padding:.25rem .35rem .7rem!important;}
+      .st-key-fsi_shell,[class*="st-key-fsi_shell"]{margin:0 -.35rem .15rem!important;}
+      [class*="st-key-fsi_shell"] .fsi-user{display:none!important;}
+      .fsi-page-title{font-size:16px!important;}
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
 def render_public_brand() -> None:
     s = get_settings(); uri = logo_data_uri(); logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
     st.markdown(f'<div style="text-align:center;padding:.5rem">{logo}<div class="fsi-app-title">QUALITY CONTROL MONITORING SYSTEM</div><div class="fsi-user-meta">{safe(s.company_name)} · Plant {safe(s.plant_code)}</div></div>', unsafe_allow_html=True)
@@ -1081,7 +1339,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4125-QUALITY-DECISION-EXPORT-MIS</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4126-PROCUREMENT-PORTAL-REFERENCE-UI</div>',
                 unsafe_allow_html=True,
             )
         with c3:

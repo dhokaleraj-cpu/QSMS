@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_and_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.12.3", "4.12.4", "4.12.5"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.12.3", "4.12.4", "4.12.5", "4.12.6"}
     assert "4123-SUPPLY-EXPORT-REFERENCE-HOTFIX" in (ROOT / "core/ui.py").read_text()
     assert "4123-SUPPLY-EXPORT-REFERENCE-HOTFIX" in (ROOT / "core/auth.py").read_text()
 
