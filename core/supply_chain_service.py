@@ -18,6 +18,24 @@ SUPPLY_TABLES = (
     "supply_downstream_events",
 )
 
+FLOW_FSI_RM = "FSI_RM"
+FLOW_DIRECT_FORGING = "DIRECT_FORGING"
+FLOW_LABELS = {
+    FLOW_FSI_RM: "Flow 1 · RM Responsible FSI",
+    FLOW_DIRECT_FORGING: "Flow 2 · RM Responsible Forger / Supplier",
+}
+_FLOW_RE = re.compile(r"\s*\[\[QCMS_SUPPLY_FLOW=(FSI_RM|DIRECT_FORGING)\]\]\s*", re.I)
+
+
+def clean_flow_remarks(value: Any) -> str:
+    return _FLOW_RE.sub(" ", str(value or "")).strip()
+
+
+def flow_remarks(value: Any, flow: str) -> str:
+    clean = clean_flow_remarks(value)
+    code = flow if flow in FLOW_LABELS else FLOW_FSI_RM
+    return f"{clean} [[QCMS_SUPPLY_FLOW={code}]]".strip()
+
 
 def number(value: Any) -> float:
     try:
@@ -115,7 +133,14 @@ class SupplyChainService:
 
     # ---------------------------------------------------------------- transactions
     def customer_orders(self) -> list[dict]:
-        return self.repo.select("supply_customer_orders", order_by="created_at", desc=True, limit=10000)
+        rows = self.repo.select("supply_customer_orders", order_by="created_at", desc=True, limit=10000)
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["supply_flow"] = self.flow_for_order(row)
+            item["remarks"] = clean_flow_remarks(row.get("remarks"))
+            result.append(item)
+        return result
 
     def rm_purchase_orders(self) -> list[dict]:
         return self.repo.select("supply_rm_purchase_orders", order_by="created_at", desc=True, limit=10000)
@@ -141,6 +166,17 @@ class SupplyChainService:
     def order(self, order_id: str) -> dict | None:
         return self.repo.get("supply_customer_orders", order_id)
 
+    def flow_for_order(self, order: Mapping[str, Any] | str | None) -> str:
+        if isinstance(order, str):
+            order = self.order(order) or {}
+        order = order or {}
+        match = _FLOW_RE.search(str(order.get("remarks") or ""))
+        if match:
+            code = str(match.group(1) or "").upper()
+            return code if code in FLOW_LABELS else FLOW_FSI_RM
+        # Backward compatibility: all pre-v4.12.4 orders are the original FSI-RM flow.
+        return FLOW_FSI_RM
+
     def order_label(self, order: Mapping[str, Any], parts: Mapping[str, Mapping[str, Any]] | None = None, parties: Mapping[str, Mapping[str, Any]] | None = None) -> str:
         parts = parts or {}; parties = parties or {}
         part = parts.get(str(order.get("part_id"))) or {}
@@ -160,6 +196,7 @@ class SupplyChainService:
         grade = grades.get(str(part.get("material_grade_id"))) or {}
         return {
             "Customer Ref": order.get("master_reference_no"),
+            "Supply Flow": FLOW_LABELS.get(self.flow_for_order(order), self.flow_for_order(order)),
             "Customer Order No": order.get("customer_order_no"),
             "Position": order.get("order_position"),
             "Customer": party_label(customer),
@@ -214,10 +251,14 @@ class SupplyChainService:
     # ---------------------------------------------------------------- save/update
     def create_customer_order(self, payload: Mapping[str, Any]) -> dict:
         p = dict(payload)
+        flow = str(p.pop("supply_flow", FLOW_FSI_RM) or FLOW_FSI_RM).upper()
+        if flow not in FLOW_LABELS:
+            raise ValueError("Select a valid Supply Chain Flow.")
         qty = number(p.get("order_qty_pcs")); gross = number(p.get("gross_weight_kg_snapshot"))
         if qty <= 0 or gross <= 0:
             raise ValueError("Order Quantity and Forging Supplier Gross Weight must be greater than zero.")
-        p["required_rm_kg"] = round(qty * gross, 3)
+        p["required_rm_kg"] = round(qty * gross, 3) if flow == FLOW_FSI_RM else 0.0
+        p["remarks"] = flow_remarks(p.get("remarks"), flow)
         if str(p.get("order_type")) == "MONTHLY_SCHEDULE":
             schedule = str(p.get("schedule_month") or "")[:10]
             if not schedule:
@@ -240,11 +281,18 @@ class SupplyChainService:
         if not existing:
             raise ValueError("Customer Order was not found.")
         p = dict(payload)
+        existing_flow = self.flow_for_order(existing)
+        flow = str(p.pop("supply_flow", existing_flow) or existing_flow).upper()
+        if flow not in FLOW_LABELS:
+            raise ValueError("Select a valid Supply Chain Flow.")
+        if flow != existing_flow and any(value > 0 for value in self.totals(record_id).values()):
+            raise ValueError("Supply Chain Flow cannot be changed after linked procurement / forging / production / dispatch transactions have started.")
         merged = dict(existing); merged.update(p)
         qty = number(merged.get("order_qty_pcs")); gross = number(merged.get("gross_weight_kg_snapshot"))
         if qty <= 0 or gross <= 0:
             raise ValueError("Order Quantity and Gross Weight must be greater than zero.")
-        p["required_rm_kg"] = round(qty * gross, 3)
+        p["required_rm_kg"] = round(qty * gross, 3) if flow == FLOW_FSI_RM else 0.0
+        p["remarks"] = flow_remarks(merged.get("remarks"), flow)
         if str(merged.get("order_type")) == "PURCHASE_ORDER":
             ref = str(merged.get("customer_order_no") or "").strip()
             p["master_reference_no"] = ref
@@ -299,6 +347,8 @@ class SupplyChainService:
         for order in self.customer_orders():
             if str(order.get("status")) in {"COMPLETED", "CANCELLED"}:
                 continue
+            if self.flow_for_order(order) != FLOW_FSI_RM:
+                continue
             total = self.totals(str(order["id"]))["rm_ordered_kg"]
             required = number(order.get("required_rm_kg"))
             if total + 0.0001 < required:
@@ -346,6 +396,21 @@ class SupplyChainService:
         linked = {str(r.get("rm_dispatch_id")) for r in self.forging_orders() if r.get("rm_dispatch_id") and str(r.get("status")) != "CANCELLED"}
         return [r for r in self.rm_dispatches() if str(r.get("id")) not in linked]
 
+    def pending_direct_forging_orders(self) -> list[dict]:
+        rows = []
+        for order in self.customer_orders():
+            if self.flow_for_order(order) != FLOW_DIRECT_FORGING or str(order.get("status")) in {"COMPLETED", "CANCELLED"}:
+                continue
+            ordered = self.totals(str(order.get("id")))["forging_ordered_pcs"]
+            target = number(order.get("order_qty_pcs"))
+            if ordered + 0.0001 < target:
+                row = dict(order)
+                row["forging_ordered_pcs"] = ordered
+                row["forging_balance_pcs"] = max(target - ordered, 0)
+                rows.append(row)
+        rows.sort(key=lambda r: (str(r.get("customer_delivery_date") or "9999-12-31"), str(r.get("master_reference_no") or "")))
+        return rows
+
     def pending_forging_orders(self) -> list[dict]:
         receipts=self.forging_receipts(); totals:dict[str,float]={}
         for r in receipts:
@@ -380,6 +445,23 @@ class SupplyChainService:
             if linked_po and linked_po != po_id: continue
             rows.append(inward)
         return rows
+
+    def assert_inward_can_unlink(self, inward_id: str) -> None:
+        mirror=self.repo.find_one("supply_rm_receipts",eq={"inward_lot_id":inward_id})
+        if mirror and self.repo.select("supply_rm_dispatches",eq={"rm_receipt_id":str(mirror.get("id"))},limit=1):
+            raise ValueError("Supply Chain link cannot be disabled because this RM Receipt already has an RM-to-Forger dispatch. Reverse the downstream Supply Chain transaction first.")
+
+    def unlink_inward_supply_chain(self, inward_id: str) -> None:
+        inward=self.repo.get("inward_lots",inward_id) or {}
+        if not inward:
+            return
+        mirror=self.repo.find_one("supply_rm_receipts",eq={"inward_lot_id":inward_id})
+        if mirror:
+            try:
+                self.repo.delete("supply_rm_receipts",str(mirror.get("id")))
+            except Exception as exc:
+                raise ValueError("Supply Chain link cannot be disabled because this RM Receipt is already used by a downstream RM-to-Forger / forging transaction.") from exc
+        self.repo.update("inward_lots",inward_id,{"supply_customer_order_id":None,"supply_rm_purchase_order_id":None})
 
     def link_inward_to_rm_po(self, po_id: str, inward_id: str) -> dict:
         po=self.repo.get("supply_rm_purchase_orders",po_id) or {}
@@ -445,7 +527,7 @@ class SupplyChainService:
             preview.append(result)
         return preview
 
-    def apply_customer_order_import(self, customer_id: str, preview: Sequence[Mapping[str, Any]], *, confirm_updates: bool) -> dict[str,int]:
+    def apply_customer_order_import(self, customer_id: str, preview: Sequence[Mapping[str, Any]], *, confirm_updates: bool, supply_flow: str = FLOW_FSI_RM) -> dict[str,int]:
         result={"created":0,"updated":0,"unchanged":0,"errors":0}
         for row in preview:
             action=str(row.get("Action") or "")
@@ -458,9 +540,66 @@ class SupplyChainService:
                 raise ValueError(f"Part {row.get('Item')} has no active Part Master Raw Material Details.")
             selected_raw=raw[0]; gross=number(selected_raw.get("gross_weight_kg") or selected_raw.get("input_weight_kg") or selected_raw.get("forging_weight_kg"))
             if gross<=0: raise ValueError(f"Part {row.get('Item')} Raw Material gross/input weight is missing in Part Master.")
-            payload={"order_type":"PURCHASE_ORDER","customer_id":customer_id,"part_id":part_id,"customer_order_no":str(row.get("Order no.") or "").strip(),"order_position":str(row.get("PosNr") or "").strip(),"order_date":date.today().isoformat(),"customer_delivery_date":row.get("Delivery date"),"order_qty_pcs":number(row.get("Quantity")),"forging_supplier_id":selected_raw.get("supplier_id"),"raw_material_detail_id":selected_raw.get("id"),"gross_weight_kg_snapshot":gross,"status":"OPEN","remarks":"Imported from Customer Order / Schedule file (Columns A-F)"}
+            payload={"order_type":"PURCHASE_ORDER","customer_id":customer_id,"part_id":part_id,"customer_order_no":str(row.get("Order no.") or "").strip(),"order_position":str(row.get("PosNr") or "").strip(),"order_date":date.today().isoformat(),"customer_delivery_date":row.get("Delivery date"),"order_qty_pcs":number(row.get("Quantity")),"forging_supplier_id":selected_raw.get("supplier_id"),"raw_material_detail_id":selected_raw.get("id"),"gross_weight_kg_snapshot":gross,"status":"OPEN","remarks":"Imported from Customer Order / Schedule file (Columns A-F)","supply_flow":supply_flow}
             if action=="UPDATE": self.update_customer_order(str(row.get("_existing_id")),payload); result["updated"]+=1
             else: self.create_customer_order(payload); result["created"]+=1
+        return result
+
+    # --------------------------------------------------------------- MIS / dispatch reporting
+    def order_mis_rows(self) -> list[dict]:
+        parts, parties, _ = self.master_maps()
+        downstream = self.downstream_events()
+        rows = []
+        for order in self.customer_orders():
+            oid = str(order.get("id") or "")
+            part = parts.get(str(order.get("part_id"))) or {}
+            customer = parties.get(str(order.get("customer_id"))) or {}
+            dispatches = [r for r in downstream if str(r.get("customer_order_id") or "") == oid and r.get("event_type") == "CUSTOMER_DISPATCH"]
+            dispatched = sum(number(r.get("qty_pcs")) for r in dispatches)
+            latest = max(dispatches, key=lambda r: str(r.get("event_date") or ""), default={})
+            qty = number(order.get("order_qty_pcs"))
+            due = str(order.get("customer_delivery_date") or "")[:10]
+            month = str(order.get("schedule_month") or due or order.get("order_date") or "")[:7]
+            rows.append({
+                "Month": month,
+                "Order Type": str(order.get("order_type") or "").replace("_", " ").title(),
+                "Supply Flow": FLOW_LABELS.get(self.flow_for_order(order), self.flow_for_order(order)),
+                "Customer Ref": order.get("master_reference_no"),
+                "Customer Order No": order.get("customer_order_no"),
+                "PosNr": order.get("order_position"),
+                "Customer": party_label(customer),
+                "Part Number": part.get("part_number"),
+                "Part Description": part.get("part_name"),
+                "Order / Schedule Qty pcs": qty,
+                "Dispatched pcs": dispatched,
+                "Pending Dispatch pcs": max(qty - dispatched, 0),
+                "Completion %": round((dispatched / qty * 100.0), 1) if qty else 0.0,
+                "Delivery Date": due,
+                "Latest Dispatch Date": latest.get("event_date"),
+                "Latest Dispatch Ref": latest.get("reference_no"),
+                "Invoice No.": latest.get("invoice_no"),
+                "ASN No.": latest.get("asn_no"),
+                "Status": order.get("status"),
+            })
+        rows.sort(key=lambda r: (str(r.get("Month") or "9999-99"), str(r.get("Delivery Date") or "9999-12-31"), str(r.get("Customer Ref") or "")))
+        return rows
+
+    def monthly_mis_summary(self, rows: Sequence[Mapping[str, Any]] | None = None) -> list[dict]:
+        source = list(rows or self.order_mis_rows())
+        months: dict[str, dict[str, float]] = {}
+        for row in source:
+            key = str(row.get("Month") or "Unscheduled")
+            bucket = months.setdefault(key, {"ordered": 0.0, "dispatched": 0.0})
+            bucket["ordered"] += number(row.get("Order / Schedule Qty pcs"))
+            bucket["dispatched"] += number(row.get("Dispatched pcs"))
+        result = []
+        for key in sorted(months):
+            ordered = months[key]["ordered"]; dispatched = months[key]["dispatched"]
+            result.append({
+                "Month": key, "Order / Schedule Qty pcs": ordered, "Dispatched pcs": dispatched,
+                "Pending Dispatch pcs": max(ordered - dispatched, 0),
+                "Dispatch Achievement %": round((dispatched / ordered * 100.0), 1) if ordered else 0.0,
+            })
         return result
 
     # --------------------------------------------------------------- genealogy
@@ -475,13 +614,16 @@ class SupplyChainService:
             ("supply_forging_receipts","Forging Receipt","receipt_date","receipt_number","received_qty_pcs","pcs"),
         ):
             for r in self.repo.select(table,eq={"customer_order_id":order_id},limit=10000):
-                rows.append({**ctx,"Stage":stage,"Stage Date":r.get(date_key),"Stage Reference":r.get(ref_key),"Stage Qty":f"{number(r.get(qty_key)):,.3f} {unit}","Heat Number":r.get("heat_number"),"Heat Code":r.get("heat_code"),"RMTC Number":r.get("rmtc_number"),"Status":r.get("status") or "POSTED","Remarks":r.get("remarks")})
+                rows.append({**ctx,"Stage":stage,"Stage Date":r.get(date_key),"Stage Reference":r.get(ref_key),"Stage Qty":f"{number(r.get(qty_key)):,.3f} {unit}","Heat Number":r.get("heat_number"),"Heat Code":r.get("heat_code"),"RMTC Number":r.get("rmtc_number"),"Status":r.get("status") or "POSTED","Remarks":clean_flow_remarks(r.get("remarks"))})
         for r in self.repo.select("supply_downstream_events",eq={"customer_order_id":order_id},limit=10000):
-            rows.append({**ctx,"Stage":str(r.get("event_type") or "").replace("_"," ").title(),"Stage Date":r.get("event_date"),"Stage Reference":r.get("reference_no"),"Stage Qty":f"{number(r.get('qty_pcs')):,.0f} pcs","Heat Number":r.get("heat_number"),"Heat Code":r.get("heat_code"),"RMTC Number":None,"Status":"POSTED","Remarks":r.get("remarks")})
+            rows.append({**ctx,"Stage":str(r.get("event_type") or "").replace("_"," ").title(),"Stage Date":r.get("event_date"),"Stage Reference":r.get("reference_no"),"Stage Qty":f"{number(r.get('qty_pcs')):,.0f} pcs","Heat Number":r.get("heat_number"),"Heat Code":r.get("heat_code"),"RMTC Number":None,"Status":"POSTED","Remarks":clean_flow_remarks(r.get("remarks"))})
         return rows
 
     def supplier_balances(self, order_id: str) -> list[dict]:
-        order = self.order(order_id) or {}; suppliers = {str(r["id"]): r for r in self.parties()}
+        order = self.order(order_id) or {}
+        if self.flow_for_order(order) == FLOW_DIRECT_FORGING:
+            return []
+        suppliers = {str(r["id"]): r for r in self.parties()}
         dispatches = self.repo.select("supply_rm_dispatches", eq={"customer_order_id": order_id}, limit=5000)
         receipts = self.repo.select("supply_forging_receipts", eq={"customer_order_id": order_id}, limit=5000)
         ids = sorted({str(r.get("forging_supplier_id") or "") for r in dispatches + receipts if r.get("forging_supplier_id")})
@@ -494,7 +636,7 @@ class SupplyChainService:
 
     def timeline(self, order_id: str) -> list[dict]:
         order = self.order(order_id) or {}
-        events = [{"Date": order.get("order_date"), "Stage": "Customer Order", "Reference": order.get("master_reference_no"), "Quantity": f"{number(order.get('order_qty_pcs')):,.0f} pcs", "Heat Number":"", "Status": order.get("status"), "Remarks": order.get("remarks") or ""}]
+        events = [{"Date": order.get("order_date"), "Stage": "Customer Order", "Reference": order.get("master_reference_no"), "Quantity": f"{number(order.get('order_qty_pcs')):,.0f} pcs", "Heat Number":"", "Status": order.get("status"), "Remarks": clean_flow_remarks(order.get("remarks"))}]
         for row in self.genealogy_context(order_id):
             events.append({"Date":row.get("Stage Date"),"Stage":row.get("Stage"),"Reference":row.get("Stage Reference"),"Quantity":row.get("Stage Qty"),"Heat Number":row.get("Heat Number") or "","Status":row.get("Status"),"Remarks":row.get("Remarks") or ""})
         events.sort(key=lambda r: str(r.get("Date") or ""))

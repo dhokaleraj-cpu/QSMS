@@ -110,6 +110,8 @@ required = [
     "supabase/migrations/20260812165500_qcms_detailed_complaint_analysis_v4107.sql",
     "tests/test_v4108_detailed_complaint_analysis_login.py",
     "docs/RELEASE_4_10_7.md",
+    "tests/test_v4124_dual_supply_flow_mis.py",
+    "docs/RELEASE_4_12_4.md",
 ]
 for item in required:
     if not (ROOT / item).exists():
@@ -118,7 +120,7 @@ for item in required:
 app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
-    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-rm-procurement", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "inspection-home", "records-center", "heat-ledger",
+    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-rm-procurement", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "supply-order-mis", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "inspection-home", "records-center", "heat-ledger",
     "reports-home", "heat-transaction-report", "osp-balance-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
@@ -315,7 +317,7 @@ for token in (
 if "4118-GLOBAL-STAGED-SECTIONS" not in auth_text:
     errors.append("QCMS 4.11.8 login build fingerprint is missing")
 # Keep v4.12.0/v4.12.1 fingerprints in comments for regression traceability while
-# requiring the current v4.12.3 build to be visible in both the app shell and login.
+# requiring the current v4.12.4 build to be visible in both the app shell and login.
 if "4120-SUPPLY-CHAIN-INSPECTION" not in ui_text or "4120-SUPPLY-CHAIN-INSPECTION" not in auth_text:
     errors.append("QCMS 4.12.0 legacy build fingerprint is missing")
 if "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in ui_text or "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in auth_text:
@@ -323,7 +325,9 @@ if "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in ui_text or "4121-MASTER-DRIVEN
 if "4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY" not in ui_text or "4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY" not in auth_text:
     errors.append("QCMS 4.12.2 legacy build fingerprint is missing")
 if "4123-SUPPLY-EXPORT-REFERENCE-HOTFIX" not in ui_text or "4123-SUPPLY-EXPORT-REFERENCE-HOTFIX" not in auth_text:
-    errors.append("QCMS 4.12.3 visible build fingerprint is missing")
+    errors.append("QCMS 4.12.3 legacy build fingerprint is missing")
+if "4124-DUAL-SUPPLY-FLOW-MIS" not in ui_text or "4124-DUAL-SUPPLY-FLOW-MIS" not in auth_text:
+    errors.append("QCMS 4.12.4 visible build fingerprint is missing")
 
 reporting_text = (ROOT / "core/reporting.py").read_text(encoding="utf-8")
 reference_master_text = (ROOT / "app_pages/reference_master.py").read_text(encoding="utf-8")
@@ -356,6 +360,17 @@ for token in ("pending_customer_orders_for_rm", "pending_rm_purchase_orders", "p
 for token in ("supply_rm_purchase_order_id", "inward_lot_id", "rmtc_number", "rmtc_date", "heat_number", "source_forging_receipt_id", "source_event_id", "qsms_delete_master_row"):
     if token not in supply_migration:
         errors.append(f"QCMS 4.12.2 Supply Chain migration token missing: {token}")
+
+material_inward_text = (ROOT / "app_pages/material_inward.py").read_text(encoding="utf-8")
+streamlit_app_text = (ROOT / "streamlit_app.py").read_text(encoding="utf-8")
+for token in ("FLOW_FSI_RM", "FLOW_DIRECT_FORGING", "pending_direct_forging_orders", "Flow 1 · RM Responsible FSI", "Flow 2 · RM Responsible Forger / Supplier", "Part Production", "render_order_mis", "Monthly Schedule / Order MIS"):
+    if token not in supply_text and token not in supply_service_text:
+        errors.append(f"QCMS 4.12.4 dual Supply Chain flow / MIS token missing: {token}")
+for token in ("Enable Supply Chain Link", "pending_rm_purchase_orders", "unlink_inward_supply_chain"):
+    if token not in material_inward_text and token not in supply_service_text:
+        errors.append(f"QCMS 4.12.4 Material Inward Supply Chain link token missing: {token}")
+if "supply-order-mis" not in streamlit_app_text:
+    errors.append("QCMS 4.12.4 Supply Chain Order MIS navigation is missing")
 
 staged_module_contract = {
     "app_pages/complaints.py": ("_complaint_details", "complaints_render_analysis_h"),
@@ -391,7 +406,7 @@ for relpath, tokens in whole_app_stage_contract.items():
             errors.append(f"QCMS 4.11.8 whole-app staged workflow missing {token} in {relpath}")
 
 report = {
-    "release": "QCMS 4.12.3 Supply Chain export hotfix and detailed Reference Master selectors",
+    "release": "QCMS 4.12.4 dual Supply Chain flows, optional Material Inward link and Order/Dispatch MIS",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -425,6 +440,10 @@ report = {
     "supply_chain_heat_lineage": True,
     "customer_order_import_a_to_f": True,
     "customer_order_duplicate_update_confirmation": True,
+    "supply_chain_dual_flow": True,
+    "supply_chain_direct_forging": True,
+    "material_inward_supply_link_toggle": True,
+    "supply_chain_order_dispatch_mis": True,
     "stages_collapsed_by_default": True,
     "single_blue_stage_family": True,
     "complaint_stage_titles_100pct_larger": True,

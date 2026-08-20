@@ -58,24 +58,69 @@ def render_entry() -> None:
     existing = _record_from_state(service)
     writable = perms["can_edit"] if existing else perms["can_create"]
 
-    # QCMS v4.12.2: Material Inward is the single RM Receipt source of truth.
-    # A Supply Chain RM Procurement record may launch this page; the link is
-    # inherited automatically and the linked Part Number becomes a poka-yoke filter.
+    # QCMS v4.12.4: Material Inward remains the single RM Receipt source of truth,
+    # but the operator explicitly controls whether this inward belongs to Supply Chain.
+    # When enabled, only pending RM Procurement records are selectable and the linked
+    # Customer Order / Part becomes the poka-yoke source for the inward transaction.
     supply_service = SupplyChainService(service.repo)
-    supply_po_id = str(st.session_state.get("supply_rm_po_link_id") or existing.get("supply_rm_purchase_order_id") or "")
-    supply_order_id = str(st.session_state.get("supply_customer_order_link_id") or existing.get("supply_customer_order_id") or "")
-    supply_po = supply_service.repo.get("supply_rm_purchase_orders", supply_po_id) if supply_po_id else None
-    if supply_po and not supply_order_id:
-        supply_order_id = str(supply_po.get("customer_order_id") or "")
-    supply_order = supply_service.order(supply_order_id) if supply_order_id else None
-    if supply_po_id and supply_order:
-        supply_context = supply_service.order_context(supply_order)
-        st.info(
-            "Supply Chain RM Receipt link active · "
-            f"Customer Ref {supply_context.get('Customer Ref') or '-'} · "
-            f"Part {supply_context.get('Part Number') or '-'} · "
-            f"RM PO {(supply_po or {}).get('supplier_order_no') or '-'}"
+    launch_po_id = str(st.session_state.get("supply_rm_po_link_id") or "")
+    existing_po_id = str(existing.get("supply_rm_purchase_order_id") or "")
+    default_supply_link = bool(launch_po_id or existing_po_id)
+    with stage_section("S", "SUPPLY CHAIN LINK", "Enable only when this Material Inward is the RM Receipt against a Supply Chain RM Procurement record.", key="material_inward_supply_link"):
+        supply_link_key=f"inward_supply_link_{str(existing.get('id') or 'new')}"
+        if launch_po_id:
+            st.session_state[supply_link_key]=True
+        supply_link_enabled = st.toggle(
+            "Enable Supply Chain Link", value=default_supply_link,
+            key=supply_link_key,
         )
+        supply_po_id = ""
+        supply_order_id = ""
+        supply_po = None
+        supply_order = None
+        if supply_link_enabled:
+            pending = supply_service.pending_rm_purchase_orders()
+            po_rows = {str(r.get("id")): r for r in pending if r.get("id")}
+            if existing_po_id and existing_po_id not in po_rows:
+                current = supply_service.repo.get("supply_rm_purchase_orders", existing_po_id)
+                if current: po_rows[existing_po_id] = current
+            if launch_po_id and launch_po_id not in po_rows:
+                current = supply_service.repo.get("supply_rm_purchase_orders", launch_po_id)
+                if current: po_rows[launch_po_id] = current
+            party_map = {str(r.get("id")): r for r in supply_service.parties()}
+            labels = {}
+            for pid, po in po_rows.items():
+                order = supply_service.order(str(po.get("customer_order_id") or "")) or {}
+                ctx = supply_service.order_context(order)
+                supplier = party_map.get(str(po.get("rm_supplier_id"))) or {}
+                labels[pid] = (
+                    f"{po.get('supplier_order_no') or '-'} · {ctx.get('Customer Ref') or '-'} · "
+                    f"{ctx.get('Part Number') or '-'} · {supplier.get('party_name') or supplier.get('party_code') or '-'} · "
+                    f"Expected {po.get('expected_date') or '-'} · Balance {float(po.get('balance_qty_kg') or po.get('ordered_qty_kg') or 0):,.3f} kg"
+                )
+            preferred = launch_po_id or existing_po_id
+            options = list(labels)
+            index = options.index(preferred) if preferred in options else 0
+            supply_po_id = st.selectbox(
+                "Linked RM Procurement", options, index=index if options else 0,
+                format_func=lambda value: labels.get(value, value), key=f"inward_supply_po_{str(existing.get('id') or 'new')}",
+            ) if options else ""
+            if not supply_po_id:
+                st.warning("No pending RM Procurement is available for Supply Chain linking.")
+            else:
+                supply_po = po_rows.get(supply_po_id) or supply_service.repo.get("supply_rm_purchase_orders", supply_po_id)
+                supply_order_id = str((supply_po or {}).get("customer_order_id") or "")
+                supply_order = supply_service.order(supply_order_id) if supply_order_id else None
+                if supply_order:
+                    supply_context = supply_service.order_context(supply_order)
+                    st.info(
+                        "Supply Chain link enabled · "
+                        f"Customer Ref {supply_context.get('Customer Ref') or '-'} · "
+                        f"Part {supply_context.get('Part Number') or '-'} · "
+                        f"RM PO {(supply_po or {}).get('supplier_order_no') or '-'}"
+                    )
+        else:
+            st.caption("Standalone Material Inward · no Supply Chain customer-order / RM-procurement link will be created.")
 
     recent_rows = service.list()
     if recent_rows:
@@ -267,12 +312,18 @@ def render_entry() -> None:
                     "supply_customer_order_id": supply_order_id or None,
                     "supply_rm_purchase_order_id": supply_po_id or None,
                 }
+                if existing and existing_po_id and not supply_link_enabled:
+                    supply_service.assert_inward_can_unlink(str(existing["id"]))
                 with st.spinner("Saving steel and production allocation…"):
                     saved = service.save(payload, str(existing["id"]) if existing else None)
                     # Keep Supply Chain RM Receipt mirror synchronized from this
                     # Material Inward record, including RMTC / Heat / quantity.
-                    if supply_po_id:
+                    if supply_link_enabled:
+                        if not supply_po_id:
+                            raise ValueError("Supply Chain Link is enabled. Select the linked RM Procurement record before saving.")
                         supply_service.link_inward_to_rm_po(supply_po_id, str(saved["id"]))
+                    elif existing and existing_po_id:
+                        supply_service.unlink_inward_supply_chain(str(saved["id"]))
                     attachment_service = AttachmentService(service.repo)
                     for slot in INWARD_ATTACHMENT_SLOTS:
                         selected_file = new_attachments.get(slot.document_type)
