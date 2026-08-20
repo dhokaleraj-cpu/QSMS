@@ -1,6 +1,8 @@
+# QCMS v4.12.8 — Responsive Enterprise UI + Report Hub
+
 # QCMS v4.12.7 — Exact Preview Enterprise UI
 
-This release deeply rebuilds the QCMS visual shell to match the approved preview: a one-row red header, fixed charcoal navigation rail, breadcrumb title row, compact secondary tabs, rectangular white content panels, thin bordered form fields, ERP-style table grids, flat status cards and consistent red/blue/green action language. All v4.12.6 business logic, Supply Chain traceability, MetLAB/Dimensional decisions and exports are retained.
+This release deeply rebuilds the QCMS visual shell to match the approved preview: a one-row red header, non-overlapping charcoal navigation column, breadcrumb title row, compact secondary tabs, rectangular white content panels, thin bordered form fields, ERP-style table grids, flat status cards and consistent red/blue/green action language. All v4.12.6 business logic, Supply Chain traceability, MetLAB/Dimensional decisions and exports are retained.
 
 # QUALITY CONTROL MONITORING SYSTEM 4.12.6
 

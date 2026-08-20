@@ -1,4 +1,5 @@
-# QCMS 4.12.7 — EXACT-PREVIEW-ENTERPRISE-UI
+# QCMS 4.12.8 — RESPONSIVE-ENTERPRISE-UI-REPORT-HUB
+# Legacy build marker retained: 4127-EXACT-PREVIEW-ENTERPRISE-UI
 # Legacy v4.12.6 build retained: 4126-PROCUREMENT-PORTAL-REFERENCE-UI
 # QCMS 4.12.6 — PROCUREMENT-PORTAL-REFERENCE-UI
 # Legacy v4.12.5 build retained: 4125-QUALITY-DECISION-EXPORT-MIS
@@ -320,7 +321,7 @@ def render_login() -> None:
         unsafe_allow_html=True,
     )
 
-    # QCMS 4.12.7 — exact preview login finish.
+    # QCMS 4.12.8 — responsive enterprise login finish.
     st.markdown(
         r"""
         <style>
@@ -342,7 +343,7 @@ def render_login() -> None:
           <div class="qcms-login-logo-wrap">{logo}</div>
           <div class="qcms-login-brand-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>
           <div class="qcms-login-brand-sub">Four Star Industries &middot; Controlled Quality Records &middot; Inspection &middot; NPD/APQP &middot; Complaint &amp; CAPA Management</div>
-          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4127-EXACT-PREVIEW-ENTERPRISE-UI</span></div>
+          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4128-RESPONSIVE-ENTERPRISE-UI-REPORT-HUB</span></div>
         </div>''',
         unsafe_allow_html=True,
     )
@@ -375,7 +376,7 @@ def render_login() -> None:
         st.markdown('<div class="qcms-login-preview-note">Preview is read-only and never writes to Supabase.</div>', unsafe_allow_html=True)
 
     st.markdown(
-        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4127-EXACT-PREVIEW-ENTERPRISE-UI</span></div>''',
+        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4128-RESPONSIVE-ENTERPRISE-UI-REPORT-HUB</span></div>''',
         unsafe_allow_html=True,
     )
 

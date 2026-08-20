@@ -81,63 +81,95 @@ def _excel_bytes(sheets: dict[str, pd.DataFrame], report_title: str = "QUALITY C
 
 
 def render_home() -> None:
-    subpage_navigation(
-        ("dashboard", "Dashboard", ":material/arrow_back:"),
-        ("heat-transaction-report", "Heat Transactions", ":material/monitoring:"),
-        ("osp-balance-report", "OSP Heat Balance", ":material/factory:"),
-    )
-    page_header("Reports", "Live operational reports with Heat and OSP genealogy", "Reports")
+    """Central report hub for every major QCMS module."""
+    page_header("Reports Centre", "Supply Chain, material, quality and complaint reports", "Reports")
     repo = Repository()
-    heat_rows = repo.select("v_qsms_heat_global_balance_report", limit=5000)
-    osp_rows = repo.select("v_qsms_heat_osp_balance_report", limit=5000)
+    try:
+        heat_rows = repo.select("v_qsms_heat_global_balance_report", limit=5000)
+    except Exception:
+        heat_rows = []
+    try:
+        osp_rows = repo.select("v_qsms_heat_osp_balance_report", limit=5000)
+    except Exception:
+        osp_rows = []
+
     disposition_cards([
         {
             "label": "Heat Numbers",
             "value": len(heat_rows),
             "foot": "Global steel control",
-            "color": "#1D4ED8",
-            "background": "#EFF6FF",
+            "color": "#16A34A",
+            "background": "#FFFFFF",
         },
         {
             "label": "Global Heat Balance kg",
             "value": f"{sum(_number(row.get('available_unallocated_steel_quantity_kg')) for row in heat_rows):,.3f}",
             "foot": "Unallocated steel",
-            "color": "#15803D",
-            "background": "#F0FDF4",
+            "color": "#F59E0B",
+            "background": "#FFFFFF",
         },
         {
             "label": "OSP Out pcs",
             "value": f"{sum(_number(row.get('osp_out_quantity_pcs')) for row in heat_rows):,.0f}",
             "foot": "Material sent",
-            "color": "#C2410C",
-            "background": "#FFF7ED",
+            "color": "#1479CC",
+            "background": "#FFFFFF",
         },
         {
             "label": "Balance to Send OSP pcs",
             "value": f"{sum(_number(row.get('balance_to_send_osp_pcs')) for row in osp_rows):,.0f}",
             "foot": "Released and not dispatched",
-            "color": "#7C3AED",
-            "background": "#F5F3FF",
+            "color": "#DC2626",
+            "background": "#FFFFFF",
         },
     ])
 
-    c1, c2 = st.columns(2, gap="large")
-    with c1:
-        with st.container(border=True):
-            st.markdown("### Heat Number Global Balance")
-            st.caption("Global Heat quantity, RMTC plan, Material Inward and complete transaction history.")
-            st.page_link(
-                st.session_state["_qsms_pages"]["heat-transaction-report"],
-                label="Open Heat Global Balance Report", icon=":material/monitoring:", width="stretch",
-            )
-    with c2:
-        with st.container(border=True):
-            st.markdown("### Heat-wise OSP Movement")
-            st.caption("OSP Material Out, OSP Inward, material at vendor and balance available to send.")
-            st.page_link(
-                st.session_state["_qsms_pages"]["osp-balance-report"],
-                label="Open OSP Inward / Outward Report", icon=":material/factory:", width="stretch",
-            )
+    section_bar("Operational & Supply Chain Reports")
+    operational = (
+        ("supply-chain-report", "Supply Chain Order / Dispatch MIS", "Customer, part, monthly schedule, dispatch, pending quantity and achievement.", ":material/analytics:"),
+        ("heat-transaction-report", "Heat Number Global Balance", "RMTC plan, inward, OSP movement and global steel balance.", ":material/monitoring:"),
+        ("osp-balance-report", "OSP Heat Movement", "OSP outward, inward, material at vendor and balance to send.", ":material/factory:"),
+        ("rmtc-report", "RMTC Register", "RMTC records, heat details, validation and decision history.", ":material/fact_check:"),
+    )
+    cols = st.columns(4, gap="small")
+    for col, (path, title, desc, icon) in zip(cols, operational):
+        with col:
+            with st.container(border=True, key=f"report_card_{path}"):
+                st.markdown(f"#### {title}")
+                st.caption(desc)
+                st.page_link(st.session_state["_qsms_pages"][path], label="Open Report", icon=icon, width="stretch")
+
+    section_bar("Quality & Material Reports")
+    quality = (
+        ("inward-report", "Material Inward", "Material inward, supplier, heat, RMTC and quantity records.", ":material/input:"),
+        ("dimensional-report", "Dimensional Inspection", "Dimensional results, conclusion, final decision and controlled exports.", ":material/straighten:"),
+        ("metlab-report", "MetLAB", "Metallurgical results, conclusion, final decision and controlled exports.", ":material/science:"),
+        ("complaints-report", "Complaint Reports", "Customer/supplier complaints, analysis, RCA and CAPA records.", ":material/support_agent:"),
+    )
+    cols = st.columns(4, gap="small")
+    for col, (path, title, desc, icon) in zip(cols, quality):
+        with col:
+            with st.container(border=True, key=f"report_card_{path}"):
+                st.markdown(f"#### {title}")
+                st.caption(desc)
+                st.page_link(st.session_state["_qsms_pages"][path], label="Open Report", icon=icon, width="stretch")
+
+    section_bar("Management, Traceability & Control Reports")
+    management = (
+        ("traceability-report", "Supply Chain Traceability", "Order-to-dispatch genealogy, linked heat/RMTC lineage and stage status.", ":material/account_tree:"),
+        ("npd-report", "NPD Status", "Part development status, target dates and process completion status.", ":material/timeline:"),
+        ("apqp-report", "APQP Status", "APQP gate status, responsibility and completion tracking.", ":material/assignment_turned_in:"),
+        ("qc-report", "QC Calculations", "Saved quality-tool calculations and controlled result records.", ":material/calculate:"),
+        ("inspection-layout-report", "Inspection Layouts", "Controlled dimensional/MetLAB layout definitions and revisions.", ":material/view_list:"),
+        ("standards-report", "Customer Standards", "Customer standards/specifications bank and linked part/process records.", ":material/menu_book:"),
+    )
+    cols = st.columns(3, gap="small")
+    for index, (path, title, desc, icon) in enumerate(management):
+        with cols[index % 3]:
+            with st.container(border=True, key=f"report_card_{path}"):
+                st.markdown(f"#### {title}")
+                st.caption(desc)
+                st.page_link(st.session_state["_qsms_pages"][path], label="Open Report", icon=icon, width="stretch")
 
 
 def render_heat_transactions() -> None:

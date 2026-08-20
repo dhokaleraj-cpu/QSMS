@@ -114,6 +114,7 @@ required = [
     "docs/RELEASE_4_12_4.md",
     "docs/RELEASE_4_12_7.md",
     "tests/test_v4127_exact_preview_enterprise_ui.py",
+    "tests/test_v4128_responsive_enterprise_ui_report_hub.py",
 ]
 for item in required:
     if not (ROOT / item).exists():
@@ -123,7 +124,7 @@ app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
     "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-rm-procurement", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "supply-order-mis", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "inspection-home", "records-center", "heat-ledger",
-    "reports-home", "heat-transaction-report", "osp-balance-report", "templates",
+    "reports-home", "heat-transaction-report", "osp-balance-report", "supply-chain-report", "rmtc-report", "inward-report", "dimensional-report", "metlab-report", "complaints-report", "traceability-report", "npd-report", "apqp-report", "qc-report", "inspection-layout-report", "standards-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
     "user-access", "master-import", "standards-entry", "standards-records", "my-account", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
@@ -443,21 +444,26 @@ for relpath, tokens in whole_app_stage_contract.items():
             errors.append(f"QCMS 4.11.8 whole-app staged workflow missing {token} in {relpath}")
 
 
-# QCMS 4.12.7 exact approved preview shell contract.
-if "4127-EXACT-PREVIEW-ENTERPRISE-UI" not in ui_text:
-    errors.append("QCMS 4.12.7 exact-preview build fingerprint is missing")
-for token in ("def render_left_navigation", "--preview-red:#C40035", "--preview-charcoal:#232323", "qcms-header-nav", "qcms-rail-caption", "fsi-page-chevron"):
+# QCMS 4.12.8 responsive enterprise shell and report hub contract.
+if "4128-RESPONSIVE-ENTERPRISE-UI-REPORT-HUB" not in ui_text:
+    errors.append("QCMS 4.12.8 responsive-enterprise build fingerprint is missing")
+for token in ("def render_left_navigation", "--qcms-red:#C60035", "--qcms-charcoal:#242424", "fsi-page-chevron", "pointer-events:auto!important"):
     if token not in ui_text:
-        errors.append(f"QCMS 4.12.7 preview UI token missing: {token}")
-if "HEADER_NAV = (" not in app_text or "RAIL_NAV = (" not in app_text:
-    errors.append("QCMS 4.12.7 header/rail navigation structure is missing")
+        errors.append(f"QCMS 4.12.8 responsive UI token missing: {token}")
+for token in ('key="qcms_workspace"', "rail_col, content_col = st.columns", "HEADER_NAV = (", "RAIL_NAV = ("):
+    if token not in app_text:
+        errors.append(f"QCMS 4.12.8 workspace/navigation token missing: {token}")
+for token in ("supply-chain-report", "rmtc-report", "inward-report", "dimensional-report", "metlab-report", "complaints-report"):
+    if token not in app_text:
+        errors.append(f"QCMS 4.12.8 report route missing: {token}")
 
 report = {
-    "release": "4.12.7",
-    "exact_preview_enterprise_ui": True,
-    "fixed_charcoal_navigation_rail": True,
-    "preview_erp_table_grid": True,
-    "release": "QCMS 4.12.7 exact preview enterprise UI",
+    "release": "QCMS 4.12.8 responsive enterprise UI + report hub",
+    "responsive_enterprise_ui": True,
+    "non_overlapping_column_workspace": True,
+    "clickable_header_navigation": True,
+    "enterprise_grid_cards_fields": True,
+    "report_hub_complete": True,
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),

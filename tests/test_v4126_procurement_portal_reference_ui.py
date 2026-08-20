@@ -4,35 +4,31 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_and_reference_ui_build_marker():
-    assert tuple(map(int, (ROOT / "VERSION").read_text().strip().split("."))) >= (4, 12, 6)
+    assert tuple(map(int, (ROOT / "VERSION").read_text().strip().split("."))) >= (4, 12, 8)
     ui = (ROOT / "core/ui.py").read_text()
     auth = (ROOT / "core/auth.py").read_text()
     assert "4126-PROCUREMENT-PORTAL-REFERENCE-UI" in ui
     assert "4126-PROCUREMENT-PORTAL-REFERENCE-UI" in auth
 
 
-def test_whole_app_reference_palette_and_typography_are_last_layer():
+def test_v4128_supersedes_layered_css_with_single_reference_style():
     ui = (ROOT / "core/ui.py").read_text()
     for token in (
-        "def _apply_v4126_procurement_reference_style",
-        "_apply_v4126_procurement_reference_style()",
-        "--qcms-ref-red:#B20738",
-        "--qcms-ref-bg:#EFEFEF",
-        '--qcms-ref-font:Arial,"Helvetica Neue",Helvetica,sans-serif',
-        "border-bottom:2px solid var(--qcms-ref-red)",
+        "def apply_global_style",
+        "--qcms-red:#C60035",
+        "--qcms-bg:#F5F6F7",
+        '--qcms-font:Arial,Helvetica,"Segoe UI",sans-serif',
         "border-radius:2px!important",
-        "background:var(--qcms-ref-red)!important",
-        "background:var(--qcms-ref-blue)!important",
+        "background:linear-gradient(90deg,var(--qcms-red-dark),var(--qcms-red))",
     ):
         assert token in ui
 
 
 def test_stage_titles_and_field_borders_match_reference_contract():
     ui = (ROOT / "core/ui.py").read_text()
-    assert '[class*="st-key-fsi_stage_"] div[data-testid="stExpander"] summary' in ui
-    assert 'color:var(--qcms-ref-red)!important;font-family:var(--qcms-ref-font)!important;font-size:14px!important' in ui
+    assert '[class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary' in ui
     assert '[data-baseweb="input"],[data-baseweb="select"]>div,textarea' in ui
-    assert 'border:1px solid #C9CED2!important' in ui
+    assert 'border:1px solid var(--qcms-line-dark)!important' in ui
     assert 'div[data-testid="stDataFrame"] [role="columnheader"]' in ui
 
 

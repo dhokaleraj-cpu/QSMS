@@ -79,6 +79,18 @@ PAGE_ITEMS = (
     ("reports-home", st.Page(reports.render_home, title="Reports", icon=":material/assessment:", url_path="reports-home")),
     ("heat-transaction-report", st.Page(reports.render_heat_transactions, title="Heat Transaction Report", icon=":material/monitoring:", url_path="heat-transaction-report")),
     ("osp-balance-report", st.Page(reports.render_osp_balance, title="OSP Heat Balance Report", icon=":material/factory:", url_path="osp-balance-report")),
+    ("supply-chain-report", st.Page(supply_chain.render_order_mis, title="Supply Chain Order / Dispatch Report", icon=":material/analytics:", url_path="supply-chain-report")),
+    ("rmtc-report", st.Page(rmtc_pages.render_records, title="RMTC Report Register", icon=":material/fact_check:", url_path="rmtc-report")),
+    ("inward-report", st.Page(material_inward.render_records, title="Material Inward Report Register", icon=":material/input:", url_path="inward-report")),
+    ("dimensional-report", st.Page(dimensional_report.render_records, title="Dimensional Inspection Reports", icon=":material/straighten:", url_path="dimensional-report")),
+    ("metlab-report", st.Page(metlab_report.render_records, title="MetLAB Reports", icon=":material/science:", url_path="metlab-report")),
+    ("complaints-report", st.Page(complaints.render_records, title="Complaint Reports", icon=":material/support_agent:", url_path="complaints-report")),
+    ("traceability-report", st.Page(supply_chain.render_traceability, title="Supply Chain Traceability Report", icon=":material/account_tree:", url_path="traceability-report")),
+    ("npd-report", st.Page(npd_apqp.render_npd_status, title="NPD Status Report", icon=":material/timeline:", url_path="npd-report")),
+    ("apqp-report", st.Page(npd_apqp.render_apqp, title="APQP Status Report", icon=":material/assignment_turned_in:", url_path="apqp-report")),
+    ("qc-report", st.Page(qc_calculation_tools.render_records, title="QC Calculation Reports", icon=":material/calculate:", url_path="qc-report")),
+    ("inspection-layout-report", st.Page(inspection_layouts.render_records, title="Inspection Layout Reports", icon=":material/view_list:", url_path="inspection-layout-report")),
+    ("standards-report", st.Page(standards_bank.render_records, title="Customer Standards Reports", icon=":material/menu_book:", url_path="standards-report")),
     ("templates", st.Page(template_center.render, title="Templates", icon=":material/download:", url_path="templates")),
 
     ("part-entry", st.Page(part_master.render_entry, title="Part Master Entry", icon=":material/edit_note:", url_path="part-entry")),
@@ -204,8 +216,20 @@ MODULE_SUBMENUS = {
     ),
     "Reports": (
         ("reports-home", "Reports Home", ":material/assessment:"),
+        ("supply-chain-report", "Supply Chain MIS", ":material/analytics:"),
         ("heat-transaction-report", "Heat Global Balance", ":material/monitoring:"),
         ("osp-balance-report", "OSP Heat Balance", ":material/factory:"),
+        ("rmtc-report", "RMTC", ":material/fact_check:"),
+        ("inward-report", "Material Inward", ":material/input:"),
+        ("dimensional-report", "Dimensional", ":material/straighten:"),
+        ("metlab-report", "MetLAB", ":material/science:"),
+        ("complaints-report", "Complaints", ":material/support_agent:"),
+        ("traceability-report", "Traceability", ":material/account_tree:"),
+        ("npd-report", "NPD Status", ":material/timeline:"),
+        ("apqp-report", "APQP", ":material/assignment_turned_in:"),
+        ("qc-report", "QC Calculations", ":material/calculate:"),
+        ("inspection-layout-report", "Inspection Layouts", ":material/view_list:"),
+        ("standards-report", "Customer Standards", ":material/menu_book:"),
     ),
     "Templates": (
         ("templates", "Download Templates", ":material/download:"),
@@ -236,7 +260,7 @@ ROUTE_MODULE = {
     "supplier-complaint": "Complaints", "complaint-analysis": "Complaints",
     "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
     "dimensional-entry": "Inspections", "metlab-entry": "Inspections",
-    "reports-home": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports",
+    "reports-home": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports", "supply-chain-report": "Reports", "rmtc-report": "Reports", "inward-report": "Reports", "dimensional-report": "Reports", "metlab-report": "Reports", "complaints-report": "Reports", "traceability-report": "Reports", "npd-report": "Reports", "apqp-report": "Reports", "qc-report": "Reports", "inspection-layout-report": "Reports", "standards-report": "Reports",
     "templates": "Templates",
     **{path: "Records" for path in RECORD_ROUTES},
 }
@@ -246,7 +270,8 @@ PAGE_TITLE_TO_PATH = {
     "Material Inward": "inward-entry", "OSP Transactions": "osp-home", "Inspections": "inspection-home",
     "Records Centre": "records-center", "Heat Steel Ledger": "heat-ledger",
     "Reports": "reports-home", "Heat Transaction Report": "heat-transaction-report",
-    "OSP Heat Balance Report": "osp-balance-report",
+    "OSP Heat Balance Report": "osp-balance-report", "Supply Chain Order / Dispatch Report": "supply-chain-report", "RMTC Report Register": "rmtc-report", "Material Inward Report Register": "inward-report", "Dimensional Inspection Reports": "dimensional-report", "MetLAB Reports": "metlab-report", "Complaint Reports": "complaints-report",
+ "Supply Chain Traceability Report": "traceability-report", "NPD Status Report": "npd-report", "APQP Status Report": "apqp-report", "QC Calculation Reports": "qc-report", "Inspection Layout Reports": "inspection-layout-report", "Customer Standards Reports": "standards-report",
     "Templates": "templates", "Part Master Entry": "part-entry",
     "Part Master Records": "part-records", "Process Master Entry": "process-entry",
     "Process Master Records": "process-records", "Material Grade Entry": "grade-entry",
@@ -280,8 +305,8 @@ nav = st.navigation(PAGES, position="hidden")
 current_path = PAGE_TITLE_TO_PATH.get(nav.title, "dashboard")
 current_module = ROUTE_MODULE.get(current_path, "Dashboard")
 
-# QCMS v4.12.7 — approved preview navigation contract.
-# The red header stays intentionally concise while the fixed charcoal rail preserves
+# QCMS v4.12.8 — responsive enterprise navigation contract.
+# The red header stays intentionally concise while the charcoal rail preserves
 # direct access to every operational module from the previous releases.
 QUALITY_HEADER_MODULES = {"RMTC", "Inward", "OSP", "QC Calculation Tools", "Complaints", "Inspections"}
 quality_active_module = current_module if current_module in QUALITY_HEADER_MODULES else "Inspections"
@@ -313,9 +338,16 @@ RAIL_NAV = (
 
 if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
     logout()
-render_left_navigation(current_module, RAIL_NAV)
 
-module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=8)
-
-nav.run()
-app_footer()
+# v4.12.8 uses a real two-column Streamlit workspace. The charcoal navigation
+# rail occupies its own column instead of being fixed over the application body.
+# This prevents all progressive scaling/overlap issues seen in v4.12.7.
+with st.container(border=False, key="qcms_workspace"):
+    rail_col, content_col = st.columns([1.22, 8.78], gap="small", vertical_alignment="top")
+    with rail_col:
+        render_left_navigation(current_module, RAIL_NAV)
+    with content_col:
+        with st.container(border=False, key="qcms_content"):
+            module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=8)
+            nav.run()
+            app_footer()
