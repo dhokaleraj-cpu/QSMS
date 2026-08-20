@@ -585,18 +585,36 @@ class SupplyChainService:
         return rows
 
     def monthly_mis_summary(self, rows: Sequence[Mapping[str, Any]] | None = None) -> list[dict]:
+        """Management MIS grouped by Month + Customer + Part Number.
+
+        Keeping the customer and part identity in this summary prevents a month-only
+        total from hiding which customer schedule / purchase-order demand actually
+        drives the dispatch balance.
+        """
         source = list(rows or self.order_mis_rows())
-        months: dict[str, dict[str, float]] = {}
+        groups: dict[tuple[str, str, str, str], dict[str, float]] = {}
         for row in source:
-            key = str(row.get("Month") or "Unscheduled")
-            bucket = months.setdefault(key, {"ordered": 0.0, "dispatched": 0.0})
+            key = (
+                str(row.get("Month") or "Unscheduled"),
+                str(row.get("Customer") or "-"),
+                str(row.get("Part Number") or "-"),
+                str(row.get("Part Description") or "-"),
+            )
+            bucket = groups.setdefault(key, {"ordered": 0.0, "dispatched": 0.0})
             bucket["ordered"] += number(row.get("Order / Schedule Qty pcs"))
             bucket["dispatched"] += number(row.get("Dispatched pcs"))
         result = []
-        for key in sorted(months):
-            ordered = months[key]["ordered"]; dispatched = months[key]["dispatched"]
+        for key in sorted(groups):
+            month, customer, part_number, part_description = key
+            ordered = groups[key]["ordered"]
+            dispatched = groups[key]["dispatched"]
             result.append({
-                "Month": key, "Order / Schedule Qty pcs": ordered, "Dispatched pcs": dispatched,
+                "Month": month,
+                "Customer Name": customer,
+                "Part Number": part_number,
+                "Part Description": part_description,
+                "Order / Schedule Qty pcs": ordered,
+                "Dispatched pcs": dispatched,
                 "Pending Dispatch pcs": max(ordered - dispatched, 0),
                 "Dispatch Achievement %": round((dispatched / ordered * 100.0), 1) if ordered else 0.0,
             })

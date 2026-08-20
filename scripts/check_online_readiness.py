@@ -42,6 +42,7 @@ required = [
     "docs/RELEASE_4_12_3.md",
     "tests/test_v4124_dual_supply_flow_mis.py",
     "docs/RELEASE_4_12_4.md",
+    "docs/RELEASE_4_12_5.md",
     "tests/test_v484_unified_records.py",
     "tests/test_v485_combined_heat_balance.py",
     "supabase/migrations/20260802213000_qsms_heat_supplier_rmtc_ledger_v486.sql",
@@ -115,7 +116,7 @@ required = [
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.12.4 - dual Supply Chain flows, optional Material Inward link and Order/Dispatch MIS",
+    "phase": "QCMS 4.12.5 - quality conclusion/final decision, report exports and customer-part monthly MIS",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

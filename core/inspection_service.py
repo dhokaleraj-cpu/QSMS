@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -455,7 +455,35 @@ class InspectionService:
             "process": process, "stage": stage, "osp_job": osp_job, "employees": self._report_employees(record), "results": self.dimensional_results(report_id),
         }
 
+    @staticmethod
+    def _standalone_final_payload(disposition: str, reason: str, validator: str, approver: str) -> dict[str, Any]:
+        decision = _text(disposition).upper().replace(" ", "_")
+        if decision not in FINAL_DISPOSITIONS:
+            raise ValueError("Select On Hold, Accepted, Accepted Under Reserve or Rejected.")
+        if decision in {"ON_HOLD", "ACCEPTED_UNDER_RESERVE", "REJECTED"} and not _text(reason):
+            raise ValueError("A hold, reserve or rejection reason is mandatory.")
+        now = datetime.now(timezone.utc).isoformat()
+        return {
+            "disposition": decision,
+            "disposition_reason": _text(reason) or None,
+            "validated_by_employee_id": validator,
+            "approved_by_employee_id": approver,
+            "validated_at": now,
+            "decision_at": None if decision == "ON_HOLD" else now,
+            "status": "ON_HOLD" if decision == "ON_HOLD" else "FINAL",
+            "overall_result": "FAIL" if decision == "REJECTED" else ("HOLD" if decision in {"ON_HOLD", "ACCEPTED_UNDER_RESERVE"} else "PASS"),
+        }
+
     def finalize_dimensional(self, report_id: str, disposition: str, reason: str, validator: str, approver: str) -> dict:
+        record = self.get_dimensional(report_id) or {}
+        # Standalone reports intentionally have no Material Inward / OSP parent, so
+        # they must not call the linked-flow RPC which refreshes an inward quality gate.
+        if record and not record.get("inward_lot_id") and not record.get("osp_job_id"):
+            payload = self._standalone_final_payload(disposition, reason, validator, approver)
+            bad = sum(1 for row in self.dimensional_results(report_id) if _text(row.get("result")).upper() not in {"PASS", "NOT_APPLICABLE"})
+            if payload["disposition"] == "ACCEPTED" and bad:
+                raise ValueError("Accepted is allowed only when every applicable characteristic passes.")
+            return self.repo.update("inspection_reports", report_id, payload)
         return self.repo.rpc("qsms_finalize_dimensional_report", {
             "p_report_id": report_id,
             "p_disposition": disposition,
@@ -465,6 +493,17 @@ class InspectionService:
         }) or {}
 
     def finalize_metlab(self, report_id: str, disposition: str, reason: str, validator: str, approver: str) -> dict:
+        record = self.get_metlab(report_id) or {}
+        if record and not record.get("inward_lot_id") and not record.get("osp_job_id"):
+            payload = self._standalone_final_payload(disposition, reason, validator, approver)
+            result_map = dict(record.get("results") or {})
+            all_rows: list[dict] = []
+            for key in ("rows", "chemistry_rows", "jominy_rows", "requirement_rows"):
+                all_rows.extend(dict(row) for row in (result_map.get(key) or []))
+            bad = sum(1 for row in all_rows if _text(row.get("result")).upper() not in {"PASS", "NOT_APPLICABLE"})
+            if payload["disposition"] == "ACCEPTED" and bad and not _text(reason):
+                raise ValueError("Manual acceptance reason is mandatory when applicable MetLAB results do not all pass.")
+            return self.repo.update("lab_tests", report_id, payload)
         return self.repo.rpc("qsms_finalize_metlab_report", {
             "p_report_id": report_id,
             "p_disposition": disposition,

@@ -1,4 +1,14 @@
-# QUALITY CONTROL MONITORING SYSTEM 4.12.2
+# QUALITY CONTROL MONITORING SYSTEM 4.12.5
+
+## Release 4.12.5 — Quality Conclusion / Final Decision + Report Export + MIS Identity
+
+- Build: `4125-QUALITY-DECISION-EXPORT-MIS`.
+- MetLAB and Dimensional reports — both QCMS-linked and standalone — now use a controlled **Conclusion**, **Final Decision**, and **Decision Reason** concept.
+- Standalone quality reports can be finalized without requiring a Material Inward / OSP parent quality-gate refresh.
+- MetLAB and Dimensional entry/record screens now provide **Download / Print PDF** and **Download Excel Report** controls.
+- Controlled PDFs and Excel exports show Conclusion, Final Decision and Decision Reason separately with prepared/validated/approved traceability.
+- Supply Chain **B - Monthly Order / Dispatch Summary** now groups by **Month + Customer Name + Part Number + Part Description** and shows order/schedule, dispatch, pending and achievement values.
+- No separate Supabase SQL action is required. Existing data and schemas are preserved.
 
 ## Release 4.12.2 — Supply Chain Master-Linked Traceability
 

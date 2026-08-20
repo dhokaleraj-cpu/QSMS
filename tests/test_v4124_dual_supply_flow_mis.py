@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_and_visible_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() == "4.12.4"
+    assert (ROOT / "VERSION").read_text().strip() in {"4.12.4", "4.12.5"}
     assert "4124-DUAL-SUPPLY-FLOW-MIS" in (ROOT / "core/ui.py").read_text()
     assert "4124-DUAL-SUPPLY-FLOW-MIS" in (ROOT / "core/auth.py").read_text()
 

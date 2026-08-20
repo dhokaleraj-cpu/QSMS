@@ -1,4 +1,5 @@
 from __future__ import annotations
+# Legacy controlled PDF label retained for regression traceability: Download Final / Dimensional PDF
 
 from datetime import date
 
@@ -8,7 +9,7 @@ import streamlit as st
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
 from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
-from core.reporting import dimensional_record_pdf_bytes
+from core.reporting import dimensional_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
 from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
 
@@ -21,6 +22,27 @@ def _maps(service: InspectionService):
     employees = service.employees()
     employee_map = {str(row["id"]): employee_label(row) for row in employees}
     return parts, parties, processes, stages, employee_map
+
+
+def _report_exports(service: InspectionService, report_id: str, report_number: str, *, key: str) -> None:
+    try:
+        payload = service.dimensional_report_payload(report_id)
+        pdf_bytes = dimensional_record_pdf_bytes(payload)
+        excel_bytes = quality_record_excel_bytes(payload, "DIMENSIONAL")
+        c1, c2 = st.columns(2, gap="small")
+        c1.download_button(
+            "Download / Print PDF", data=pdf_bytes,
+            file_name=f"{report_number or 'Dimensional_Report'}.pdf", mime="application/pdf",
+            icon=":material/picture_as_pdf:", key=f"{key}_pdf", width="stretch",
+        )
+        c2.download_button(
+            "Download Excel Report", data=excel_bytes,
+            file_name=f"{report_number or 'Dimensional_Report'}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            icon=":material/download:", key=f"{key}_xlsx", width="stretch",
+        )
+    except Exception as exc:
+        st.error(f"Report export could not be generated: {exc}")
 
 
 def _inward_label(row: dict, parts: dict[str, dict], parties: dict[str, dict]) -> str:
@@ -185,8 +207,17 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
         rows = _report_rows(service, plan_id, existing_id or None, int(sample_size), section_name)
         frame = _editor_frame(rows, int(sample_size))
         edited = st.data_editor(frame, hide_index=True, width="stretch", height=min(620, max(220, 80 + len(frame) * 30)), disabled=["Section", "Sr No", "Parameter", "Specification", "Min", "Max", "Checking Aid", "Result", "_sequence", "_characteristic_id", "_type", "_unit"], column_config={"NA": st.column_config.CheckboxColumn(), "_sequence": None, "_characteristic_id": None, "_type": None, "_unit": None}, key=f"dimensional_standalone_grid_{existing_id or 'new'}_{plan_id}")
-        c1, c2 = st.columns([3, 1], gap="small"); remarks = c1.text_area("Report Remarks / Conclusion", value=str((existing or {}).get("remarks") or ""), height=56); attachment = c2.file_uploader("Attach Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"dim_standalone_attachment_{existing_id or 'new'}")
-        employee_options = [""] + list(employee_map); current_prepared = str((existing or {}).get("prepared_by_employee_id") or ""); prepared = st.selectbox("Inspected / Prepared By", employee_options, index=employee_options.index(current_prepared) if current_prepared in employee_options else 0, format_func=lambda v: employee_map.get(v, "— Select —"))
+        c1, c2 = st.columns([3, 1], gap="small")
+        conclusion = c1.text_area("Conclusion", value=str((existing or {}).get("remarks") or ""), height=76, help="Controlled report conclusion. This prints separately from the Final Decision.")
+        attachment = c2.file_uploader("Attach Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"dim_standalone_attachment_{existing_id or 'new'}")
+        employee_options = [""] + list(employee_map)
+        c1, c2, c3 = st.columns(3, gap="small")
+        current_prepared = str((existing or {}).get("prepared_by_employee_id") or "")
+        prepared = c1.selectbox("Inspected / Prepared By", employee_options, index=employee_options.index(current_prepared) if current_prepared in employee_options else 0, format_func=lambda v: employee_map.get(v, "— Select —"))
+        disposition_options = ["PENDING", *FINAL_DISPOSITIONS]
+        current_decision = str((existing or {}).get("disposition") or "PENDING")
+        disposition = c2.selectbox("Final Decision", disposition_options, index=disposition_options.index(current_decision) if current_decision in disposition_options else 0, format_func=disposition_label)
+        reason = c3.text_input("Decision Reason", value=str((existing or {}).get("disposition_reason") or ""), help="Required for On Hold, Accepted Under Reserve and Rejected decisions.")
         saved_rows = []
         for _, row in edited.iterrows():
             observations = [row.get(f"Actual {i + 1}") for i in range(int(sample_size))]; na = bool(row.get("NA")); result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, observations, na)
@@ -201,8 +232,8 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
                     "inward_lot_id": None, "batch_id": None, "osp_job_id": None, "inspection_date": inspection_date.isoformat(),
                     "sample_size": int(sample_size), "accepted_quantity": 0, "rejected_quantity": 0,
                     "inspector": employee_map.get(prepared), "overall_result": "NOT_EVALUATED",
-                    "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None,
-                    "disposition": str((existing or {}).get("disposition") or "PENDING"), "heat_number": heat_number.strip() or None,
+                    "status": str((existing or {}).get("status") or "DRAFT"), "remarks": conclusion.strip() or None,
+                    "disposition": disposition, "disposition_reason": reason.strip() or None, "heat_number": heat_number.strip() or None,
                     "heat_code": heat_code.strip() or None, "batch_number": batch_number.strip() or None,
                     "supplier_reference_number": supplier_reference.strip() or None, "supply_condition": supply_condition.strip() or None,
                     "reference_text": reference_text.strip() or None, "lot_quantity": lot_qty or None, "production_quantity_pcs": lot_qty or None,
@@ -220,6 +251,27 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
                 st.session_state["edit_dimensional_id"] = str(saved["id"]); save_success_popup(f"Standalone Dimensional Report {final_number} saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
                 st.error(str(exc))
+
+        if existing:
+            disposition_cards([
+                {"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")},
+                {"label": "Final Decision", "value": existing.get("disposition")},
+                {"label": "Conclusion", "value": existing.get("remarks") or "Pending conclusion"},
+            ])
+            c1, c2, c3 = st.columns(3, gap="small")
+            current_validator = str(existing.get("validated_by_employee_id") or "")
+            current_approver = str(existing.get("approved_by_employee_id") or "")
+            validator = c1.selectbox("Validated By", employee_options, index=employee_options.index(current_validator) if current_validator in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"), key=f"dim_standalone_validator_{existing_id}")
+            approver = c2.selectbox("Approved By", employee_options, index=employee_options.index(current_approver) if current_approver in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"), key=f"dim_standalone_approver_{existing_id}")
+            if c3.button("Finalize Dimensional Decision", disabled=not perms["can_approve"] or disposition == "PENDING" or not validator or not approver or str(existing.get("status")) == "FINAL", width="stretch", key=f"dim_standalone_finalize_{existing_id}"):
+                try:
+                    service.finalize_dimensional(existing_id, disposition, reason, validator, approver)
+                    save_success_popup("Standalone Dimensional conclusion and final decision completed successfully.", queue_for_rerun=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
+            section_bar("PDF / EXCEL / PRINT EXPORT")
+            _report_exports(service, existing_id, str(existing.get("report_number") or "Dimensional_Report"), key=f"dim_standalone_export_{existing_id}")
 
 
 def render_entry() -> None:
@@ -304,7 +356,7 @@ def render_entry() -> None:
         edited = st.data_editor(frame, hide_index=True, width="stretch", height=min(620, max(260, 90 + len(frame) * 32)), disabled=["Section", "Sr No", "Parameter", "Specification", "Min", "Max", "Checking Aid", "Result", "_sequence", "_characteristic_id", "_type", "_unit"], column_config={"NA": st.column_config.CheckboxColumn(), "_sequence": None, "_characteristic_id": None, "_type": None, "_unit": None}, key=f"dimensional_grid_{existing_id or 'new'}_{plan_id}")
 
         c1, c2 = st.columns([3, 1], gap="small")
-        remarks = c1.text_area("Report Remarks", value=str((existing or {}).get("remarks") or ""), height=52)
+        remarks = c1.text_area("Conclusion", value=str((existing or {}).get("remarks") or ""), height=72, help="Controlled report conclusion. This is separate from the Final Decision and Decision Reason.")
         attachment = c2.file_uploader("Attach Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"dim_attachment_{existing_id or 'new'}")
 
         employee_options = [""] + list(employee_map)
@@ -312,8 +364,8 @@ def render_entry() -> None:
         prepared_current = str((existing or {}).get("prepared_by_employee_id") or "")
         prepared = c1.selectbox("Inspected / Prepared By", employee_options, index=employee_options.index(prepared_current) if prepared_current in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
         disposition_options = ["PENDING", *FINAL_DISPOSITIONS]
-        disposition = c2.selectbox("Validation Decision", disposition_options, index=disposition_options.index(str((existing or {}).get("disposition") or "PENDING")), format_func=disposition_label)
-        reason = c3.text_input("Hold / Reserve / Rejection Reason", value=str((existing or {}).get("disposition_reason") or ""))
+        disposition = c2.selectbox("Final Decision", disposition_options, index=disposition_options.index(str((existing or {}).get("disposition") or "PENDING")), format_func=disposition_label)
+        reason = c3.text_input("Decision Reason", value=str((existing or {}).get("disposition_reason") or ""))
 
         saved_rows = []
         for _, row in edited.iterrows():
@@ -326,7 +378,7 @@ def render_entry() -> None:
         if st.button("Save Dimensional Report Draft", type="primary", disabled=not writable or not prepared, width="stretch"):
             try:
                 final_number = report_no.strip() or service.next_number("DIMENSIONAL")
-                payload = {"report_number": final_number, "report_type": "DIMENSIONAL", "inspection_plan_id": plan_id, "inspection_stage_id": plan.get("inspection_stage_id"), "process_id": plan.get("process_id"), "part_id": part_id, "inward_lot_id": inward_id, "inspection_date": inspection_date.isoformat(), "sample_size": int(sample_size), "accepted_quantity": 0, "rejected_quantity": 0, "inspector": employee_map.get(prepared), "overall_result": "NOT_EVALUATED", "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None, "disposition": str((existing or {}).get("disposition") or "PENDING"), "heat_number": inward.get("heat_number"), "heat_code": inward.get("heat_code"), "lot_quantity": lot_qty, "supplier_id": inward.get("supplier_id"), "drawing_number": part.get("drawing_number"), "drawing_revision": part.get("drawing_revision"), "prepared_by_employee_id": prepared, "source_layout_revision": plan.get("revision"), "layout_name_snapshot": plan.get("layout_name"), "layout_type_name": section_name, "steel_quantity_kg": inward.get("steel_quantity_kg") or inward.get("quantity_received"), "production_quantity_pcs": inward.get("production_quantity_pcs")}
+                payload = {"report_number": final_number, "report_type": "DIMENSIONAL", "inspection_plan_id": plan_id, "inspection_stage_id": plan.get("inspection_stage_id"), "process_id": plan.get("process_id"), "part_id": part_id, "inward_lot_id": inward_id, "inspection_date": inspection_date.isoformat(), "sample_size": int(sample_size), "accepted_quantity": 0, "rejected_quantity": 0, "inspector": employee_map.get(prepared), "overall_result": "NOT_EVALUATED", "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None, "disposition": disposition, "disposition_reason": reason.strip() or None, "heat_number": inward.get("heat_number"), "heat_code": inward.get("heat_code"), "lot_quantity": lot_qty, "supplier_id": inward.get("supplier_id"), "drawing_number": part.get("drawing_number"), "drawing_revision": part.get("drawing_revision"), "prepared_by_employee_id": prepared, "source_layout_revision": plan.get("revision"), "layout_name_snapshot": plan.get("layout_name"), "layout_type_name": section_name, "steel_quantity_kg": inward.get("steel_quantity_kg") or inward.get("quantity_received"), "production_quantity_pcs": inward.get("production_quantity_pcs")}
                 with st.spinner("Saving report and layout characteristics…"):
                     saved = service.save_dimensional(payload, saved_rows, str(existing["id"]) if existing else None)
                     if attachment is not None:
@@ -338,7 +390,7 @@ def render_entry() -> None:
                 st.error(str(exc))
 
         if existing:
-            disposition_cards([{"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")}, {"label": "Decision", "value": existing.get("disposition")}, {"label": "Layout", "value": existing.get("layout_name_snapshot") or plan.get("layout_name")}])
+            disposition_cards([{"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")}, {"label": "Final Decision", "value": existing.get("disposition")}, {"label": "Layout", "value": existing.get("layout_name_snapshot") or plan.get("layout_name")}])
             c1, c2, c3 = st.columns(3, gap="small")
             validator = c1.selectbox("Validated By", employee_options, index=employee_options.index(str(existing.get("validated_by_employee_id") or "")) if str(existing.get("validated_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
             approver = c2.selectbox("Approved By", employee_options, index=employee_options.index(str(existing.get("approved_by_employee_id") or "")) if str(existing.get("approved_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
@@ -349,6 +401,8 @@ def render_entry() -> None:
                     st.rerun()
                 except Exception as exc:
                     st.error(str(exc))
+            section_bar("PDF / EXCEL / PRINT EXPORT")
+            _report_exports(service, str(existing["id"]), str(existing.get("report_number") or "Dimensional_Report"), key=f"dim_linked_export_{existing.get('id')}")
             if password_delete_panel(
                 repo=service.repo, table="inspection_reports", rows=[existing],
                 labeler=lambda row: row.get("report_number"),
@@ -369,17 +423,19 @@ def render_records() -> None:
         labels = {str(row["id"]): f"{row.get('report_number')} · Heat {row.get('heat_number')} · {row.get('layout_name_snapshot') or 'Layout'} · {disposition_label(row.get('disposition'))}" for row in filtered}
         selected = st.selectbox("Select Dimensional Report", list(labels), format_func=lambda value: labels[value])
         selected_row = next(row for row in filtered if str(row["id"]) == selected); st.session_state["edit_dimensional_id"] = selected
-        c1, c2, c3 = st.columns(3, gap="small")
+        c1, c2, c3, c4 = st.columns(4, gap="small")
         with c1: st.page_link(st.session_state["_qsms_pages"]["dimensional-entry"], label="Open Selected Report", icon=":material/edit:", width="stretch")
-        with c2:
-            try:
-                pdf_bytes = dimensional_record_pdf_bytes(service.dimensional_report_payload(selected))
-                st.download_button("Download Final / Dimensional PDF", data=pdf_bytes, file_name=f"{selected_row.get('report_number') or 'Dimensional_Report'}.pdf", mime="application/pdf", key=f"dimensional_pdf_{selected}", width="stretch")
-            except Exception as exc:
-                st.error(f"PDF could not be generated: {exc}")
-        with c3:
+        try:
+            selected_payload = service.dimensional_report_payload(selected)
+            with c2:
+                st.download_button("Download / Print PDF", data=dimensional_record_pdf_bytes(selected_payload), file_name=f"{selected_row.get('report_number') or 'Dimensional_Report'}.pdf", mime="application/pdf", key=f"dimensional_pdf_{selected}", icon=":material/picture_as_pdf:", width="stretch")
+            with c3:
+                st.download_button("Download Excel Report", data=quality_record_excel_bytes(selected_payload, "DIMENSIONAL"), file_name=f"{selected_row.get('report_number') or 'Dimensional_Report'}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"dimensional_xlsx_{selected}", icon=":material/download:", width="stretch")
+        except Exception as exc:
+            st.error(f"Report export could not be generated: {exc}")
+        with c4:
             if password_delete_panel(repo=service.repo, table="inspection_reports", rows=[selected_row], labeler=lambda row: row.get("report_number"), key=f"delete_dimensional_{selected}", can_delete=perms["can_archive"], title="Delete Selected Dimensional Report"):
                 st.rerun()
     section_bar("DIMENSIONAL REGISTER")
-    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("inspection_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Result": row.get("overall_result"), "Decision": row.get("disposition"), "Status": row.get("status")} for row in filtered])
+    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("inspection_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Conclusion": row.get("remarks"), "Result": row.get("overall_result"), "Final Decision": row.get("disposition"), "Decision Reason": row.get("disposition_reason"), "Status": row.get("status")} for row in filtered])
     st.dataframe(style_status_dataframe(display), hide_index=True, width="stretch", height=520)

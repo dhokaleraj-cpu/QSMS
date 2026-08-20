@@ -57,6 +57,92 @@ def safe_excel_sheet_name(name: object, *, used_names: set[str] | None = None, d
     return candidate
 
 
+
+
+def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) -> bytes:
+    """Export one controlled MetLAB / Dimensional record to a readable Excel workbook.
+
+    The workbook mirrors the controlled PDF concept: report/master context,
+    inspection result rows and an explicit Conclusion + Final Decision block.
+    """
+    kind = str(report_kind or "").strip().upper()
+    record = dict(payload.get("record") or {})
+    part = dict(payload.get("part") or {})
+    inward = dict(payload.get("inward") or {})
+    supplier = dict(payload.get("supplier") or {})
+    customer = dict(payload.get("customer") or {})
+    grade = dict(payload.get("material_grade") or {})
+    process = dict(payload.get("process") or {})
+    stage = dict(payload.get("stage") or {})
+    employees = dict(payload.get("employees") or {})
+    is_metlab = kind == "METLAB"
+    report_number = record.get("report_number") or "Quality Report"
+    report_date = record.get("test_date") if is_metlab else record.get("inspection_date")
+    conclusion = record.get("remarks") or f"Overall result: {record.get('overall_result') or 'NOT_EVALUATED'}"
+    final_decision = record.get("disposition") or "PENDING"
+    decision_reason = record.get("disposition_reason") or ""
+
+    summary_rows = [
+        ("Report Number", report_number),
+        ("Report Date", report_date),
+        ("Report Type", "MetLAB" if is_metlab else "Dimensional Inspection"),
+        ("Part Number", part.get("part_number")),
+        ("Part Name", part.get("part_name")),
+        ("Customer Name", customer.get("party_name")),
+        ("Supplier / OSP Vendor", supplier.get("party_name")),
+        ("Material Grade", grade.get("grade_code") or grade.get("grade_name")),
+        ("Heat Number", record.get("heat_number") or inward.get("heat_number")),
+        ("Heat Code", record.get("heat_code") or inward.get("heat_code")),
+        ("Supplier / HT / OSP Batch", record.get("vendor_batch_number_snapshot")),
+        ("Internal / FSI Batch", record.get("batch_number")),
+        ("Process", process.get("process_name") or record.get("process_specification_snapshot")),
+        ("Inspection Stage", stage.get("stage_name") or record.get("layout_type_name") or record.get("inspection_scope")),
+        ("Supply / Process Condition", record.get("supply_condition")),
+        ("Drawing Number", record.get("drawing_number") or part.get("drawing_number")),
+        ("Drawing Revision", record.get("drawing_revision") or part.get("drawing_revision")),
+        ("Report Layout", record.get("layout_name_snapshot")),
+        ("Production / Lot Quantity pcs", record.get("production_quantity_pcs") or record.get("lot_quantity")),
+        ("Conclusion", conclusion),
+        ("Final Decision", final_decision),
+        ("Decision Reason", decision_reason),
+        ("Status", record.get("status")),
+        ("Prepared By", _employee_name(employees.get(str(record.get("prepared_by_employee_id"))))),
+        ("Validated By", _employee_name(employees.get(str(record.get("validated_by_employee_id"))))),
+        ("Approved By", _employee_name(employees.get(str(record.get("approved_by_employee_id"))))),
+    ]
+
+    buffer = BytesIO()
+    used: set[str] = set()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        pd.DataFrame(summary_rows, columns=["Field", "Value"]).to_excel(
+            writer, index=False, sheet_name=safe_excel_sheet_name("Report Summary", used_names=used)
+        )
+        if is_metlab:
+            result_map = dict(payload.get("results") or {})
+            sections = (
+                ("MetLAB Results", list(result_map.get("rows") or [])),
+                ("Chemistry", list(result_map.get("chemistry_rows") or [])),
+                ("Jominy", list(result_map.get("jominy_rows") or [])),
+                ("Requirements", list(result_map.get("requirement_rows") or [])),
+            )
+        else:
+            sections = (("Inspection Results", list(payload.get("results") or [])),)
+        for title, rows in sections:
+            frame = pd.DataFrame([dict(row) for row in rows])
+            if not frame.empty and "observations" in frame.columns:
+                frame["observations"] = frame["observations"].apply(
+                    lambda value: ", ".join(str(item) for item in value if item not in (None, "")) if isinstance(value, list) else value
+                )
+            if frame.empty:
+                frame = pd.DataFrame([{"Information": "No result rows recorded"}])
+            frame.to_excel(writer, index=False, sheet_name=safe_excel_sheet_name(title, used_names=used))
+        decision = pd.DataFrame([
+            {"Conclusion": conclusion, "Final Decision": final_decision, "Decision Reason": decision_reason, "Status": record.get("status")}
+        ])
+        decision.to_excel(writer, index=False, sheet_name=safe_excel_sheet_name("Conclusion and Decision", used_names=used))
+    return buffer.getvalue()
+
+
 def _logo_path() -> Path:
     return Path(__file__).resolve().parents[1] / "assets" / "fsi_logo.png"
 
@@ -921,9 +1007,14 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     validated = _employee_name(employees.get(str(record.get("validated_by_employee_id"))))
     approved = _employee_name(employees.get(str(record.get("approved_by_employee_id"))))
     overall = record.get("disposition") or record.get("overall_result") or "NOT_EVALUATED"
-    conclusion = record.get("disposition_reason") or record.get("remarks") or f"Overall result: {overall}"
+    conclusion = record.get("remarks") or f"Overall result: {record.get('overall_result') or overall}"
+    decision_reason = record.get("disposition_reason") or "-"
     story.append(Spacer(1, 1.5 * mm))
-    story.append(_rmtc_labeled_grid([["Conclusion", conclusion], ["Overall Decision", overall]], [32*mm, 162*mm], sty["label"], sty["cell"], label_columns=(0,)))
+    story.append(_rmtc_labeled_grid([
+        ["Conclusion", conclusion],
+        ["Final Decision", overall],
+        ["Decision Reason", decision_reason],
+    ], [32*mm, 162*mm], sty["label"], sty["cell"], label_columns=(0,)))
     story.append(_rmtc_labeled_grid([
         ["Prepared By", prepared, "Validated By", validated, "Verified & Approved By", approved],
         ["Prepared / Test Date", record.get("test_date"), "Validated At", record.get("validated_at"), "Decision At", record.get("decision_at")],
@@ -983,7 +1074,13 @@ def dimensional_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     if len(rows)==1: rows.append([1,"Inspection characteristic","As approved layout","No results recorded","","NOT_EVALUATED"])
     story.append(_rmtc_grid(rows, [12*mm,54*mm,48*mm,42*mm,22*mm,16*mm], sty["header"], sty["small"], status_columns=(5,)))
     overall = record.get("disposition") or record.get("overall_result") or "NOT_EVALUATED"
-    story.append(Spacer(1,1.5*mm)); story.append(_rmtc_labeled_grid([["Conclusion / Remarks", record.get("disposition_reason") or record.get("remarks") or f"Overall result: {overall}"],["Overall Decision", overall]], [36*mm,158*mm], sty["label"], sty["cell"], label_columns=(0,)))
+    conclusion = record.get("remarks") or f"Overall result: {record.get('overall_result') or overall}"
+    decision_reason = record.get("disposition_reason") or "-"
+    story.append(Spacer(1,1.5*mm)); story.append(_rmtc_labeled_grid([
+        ["Conclusion", conclusion],
+        ["Final Decision", overall],
+        ["Decision Reason", decision_reason],
+    ], [36*mm,158*mm], sty["label"], sty["cell"], label_columns=(0,)))
     story.append(_rmtc_labeled_grid([["Prepared By",_employee_name(employees.get(str(record.get("prepared_by_employee_id")))),"Validated By",_employee_name(employees.get(str(record.get("validated_by_employee_id")))),"Approved By",_employee_name(employees.get(str(record.get("approved_by_employee_id"))))]], [25*mm,39*mm,25*mm,39*mm,25*mm,41*mm], sty["label"], sty["center"], label_columns=(0,2,4)))
     doc.build(story, canvasmaker=lambda *args, **kwargs: _PageNumberCanvas(*args, report_title=title, **kwargs))
     return buffer.getvalue()

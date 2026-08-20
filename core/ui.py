@@ -1,4 +1,5 @@
-# QCMS 4.12.4 — DUAL-SUPPLY-FLOW-MIS
+# QCMS 4.12.5 — QUALITY-DECISION-EXPORT-MIS
+# Legacy v4.12.4 build retained: 4124-DUAL-SUPPLY-FLOW-MIS
 # Legacy v4.12.3 build retained: 4123-SUPPLY-EXPORT-REFERENCE-HOTFIX
 # Legacy v4.12.2 build retained: 4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY
 # Legacy v4.12.0 build retained: 4120-SUPPLY-CHAIN-INSPECTION
@@ -1080,7 +1081,7 @@ def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
         with c2:
             st.markdown(
                 '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4124-DUAL-SUPPLY-FLOW-MIS</div>',
+                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4125-QUALITY-DECISION-EXPORT-MIS</div>',
                 unsafe_allow_html=True,
             )
         with c3:

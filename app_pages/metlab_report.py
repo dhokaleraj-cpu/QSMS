@@ -1,4 +1,5 @@
 from __future__ import annotations
+# Legacy controlled PDF label retained for regression traceability: Download MetLAB Report PDF
 
 import re
 from datetime import date
@@ -10,7 +11,7 @@ import streamlit as st
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
 from core.inspection_service import FINAL_DISPOSITIONS, RESULT_OPTIONS, InspectionService
-from core.reporting import metlab_record_pdf_bytes
+from core.reporting import metlab_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
 from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
 
@@ -22,6 +23,27 @@ def _maps(service: InspectionService):
     stages = {str(row["id"]): row for row in service.stages()}
     employees = {str(row["id"]): employee_label(row) for row in service.employees()}
     return parts, parties, processes, stages, employees
+
+
+def _report_exports(service: InspectionService, report_id: str, report_number: str, *, key: str) -> None:
+    try:
+        payload = service.metlab_report_payload(report_id)
+        pdf_bytes = metlab_record_pdf_bytes(payload)
+        excel_bytes = quality_record_excel_bytes(payload, "METLAB")
+        c1, c2 = st.columns(2, gap="small")
+        c1.download_button(
+            "Download / Print PDF", data=pdf_bytes,
+            file_name=f"{report_number or 'MetLAB_Report'}.pdf", mime="application/pdf",
+            icon=":material/picture_as_pdf:", key=f"{key}_pdf", width="stretch",
+        )
+        c2.download_button(
+            "Download Excel Report", data=excel_bytes,
+            file_name=f"{report_number or 'MetLAB_Report'}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            icon=":material/download:", key=f"{key}_xlsx", width="stretch",
+        )
+    except Exception as exc:
+        st.error(f"Report export could not be generated: {exc}")
 
 
 def _inward_label(row: dict, parts: dict[str, dict], parties: dict[str, dict]) -> str:
@@ -207,9 +229,15 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
         layout_source = _layout_rows(service, plan_id, existing)
         frame = pd.DataFrame([{"Sr No": r.get("sequence_no"), "Parameter": r.get("parameter"), "Specification": r.get("specification"), "Min": r.get("lower_spec"), "Max": r.get("upper_spec"), "Method / Aid": r.get("checking_method"), "Actual Value": r.get("actual_value"), "Unit": r.get("unit"), "NA": r.get("applicability") == "NOT_APPLICABLE", "Result": r.get("result"), "Remark": r.get("remarks"), "_characteristic_id": r.get("inspection_plan_characteristic_id"), "_type": r.get("characteristic_type")} for r in layout_source])
         edited = st.data_editor(frame, hide_index=True, width="stretch", height=min(620, max(220, 80 + len(frame) * 30)), disabled=["Sr No", "Parameter", "Specification", "Min", "Max", "Method / Aid", "Result", "_characteristic_id", "_type"], column_config={"NA": st.column_config.CheckboxColumn(), "_characteristic_id": None, "_type": None}, key=f"standalone_metlab_grid_{existing_id or 'new'}_{plan_id}")
-        employee_options = [""] + list(employee_map); current_prepared = str((existing or {}).get("prepared_by_employee_id") or "")
-        prepared = st.selectbox("Prepared By", employee_options, index=employee_options.index(current_prepared) if current_prepared in employee_options else 0, format_func=lambda v: employee_map.get(v, "— Select —"))
-        remarks = st.text_input("Report Remarks / Conclusion", value=str((existing or {}).get("remarks") or ""))
+        employee_options = [""] + list(employee_map)
+        c1, c2, c3 = st.columns(3, gap="small")
+        current_prepared = str((existing or {}).get("prepared_by_employee_id") or "")
+        prepared = c1.selectbox("Prepared By", employee_options, index=employee_options.index(current_prepared) if current_prepared in employee_options else 0, format_func=lambda v: employee_map.get(v, "— Select —"))
+        disposition_options = ["PENDING", *FINAL_DISPOSITIONS]
+        current_decision = str((existing or {}).get("disposition") or "PENDING")
+        disposition = c2.selectbox("Final Decision", disposition_options, index=disposition_options.index(current_decision) if current_decision in disposition_options else 0, format_func=disposition_label)
+        reason = c3.text_input("Decision Reason", value=str((existing or {}).get("disposition_reason") or ""), help="Required for On Hold, Accepted Under Reserve and Rejected decisions.")
+        conclusion = st.text_area("Conclusion", value=str((existing or {}).get("remarks") or ""), height=76, help="Controlled MetLAB conclusion. This prints separately from the Final Decision.")
         attachment = st.file_uploader("Attach MetLAB Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"standalone_metlab_attachment_{existing_id or 'new'}")
         layout_rows = []
         for _, row in edited.iterrows():
@@ -226,8 +254,8 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                     "supplier_id": supplier_id or None, "customer_id": part.get("customer_id"), "material_grade_id": part.get("material_grade_id"),
                     "test_date": test_date.isoformat(), "sample_reference": sample_ref.strip(), "reference_text": sample_ref.strip(),
                     "specification_reference": spec_ref.strip() or None, "overall_result": "NOT_EVALUATED",
-                    "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None,
-                    "disposition": str((existing or {}).get("disposition") or "PENDING"), "heat_number": heat.strip() or None,
+                    "status": str((existing or {}).get("status") or "DRAFT"), "remarks": conclusion.strip() or None,
+                    "disposition": disposition, "disposition_reason": reason.strip() or None, "heat_number": heat.strip() or None,
                     "heat_code": heat_code.strip() or None, "batch_number": batch_number.strip() or None,
                     "supplier_reference_number": supplier_reference.strip() or None, "supply_condition": supply_condition.strip() or None,
                     "prepared_by_employee_id": prepared, "layout_name_snapshot": plan.get("layout_name"),
@@ -246,6 +274,27 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                 st.session_state["edit_metlab_id"] = str(saved["id"]); save_success_popup(f"Standalone MetLAB Report {final_number} saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
                 st.error(str(exc))
+
+        if existing:
+            disposition_cards([
+                {"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")},
+                {"label": "Final Decision", "value": existing.get("disposition")},
+                {"label": "Conclusion", "value": existing.get("remarks") or "Pending conclusion"},
+            ])
+            c1, c2, c3 = st.columns(3, gap="small")
+            current_validator = str(existing.get("validated_by_employee_id") or "")
+            current_approver = str(existing.get("approved_by_employee_id") or "")
+            validator = c1.selectbox("Validated By", employee_options, index=employee_options.index(current_validator) if current_validator in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"), key=f"met_standalone_validator_{existing_id}")
+            approver = c2.selectbox("Approved By", employee_options, index=employee_options.index(current_approver) if current_approver in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"), key=f"met_standalone_approver_{existing_id}")
+            if c3.button("Finalize MetLAB Decision", disabled=not perms["can_approve"] or disposition == "PENDING" or not validator or not approver or str(existing.get("status")) == "FINAL", width="stretch", key=f"met_standalone_finalize_{existing_id}"):
+                try:
+                    service.finalize_metlab(existing_id, disposition, reason, validator, approver)
+                    save_success_popup("Standalone MetLAB conclusion and final decision completed successfully.", queue_for_rerun=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
+            section_bar("PDF / EXCEL / PRINT EXPORT")
+            _report_exports(service, existing_id, str(existing.get("report_number") or "MetLAB_Report"), key=f"met_standalone_export_{existing_id}")
 
 
 def render_entry() -> None:
@@ -388,9 +437,9 @@ def render_entry() -> None:
         prepared_current = str((existing or {}).get("prepared_by_employee_id") or "")
         prepared = c1.selectbox("Prepared By", employee_options, index=employee_options.index(prepared_current) if prepared_current in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
         decision_options = ["PENDING", *FINAL_DISPOSITIONS]
-        disposition = c2.selectbox("Validation Decision", decision_options, index=decision_options.index(str((existing or {}).get("disposition") or "PENDING")), format_func=disposition_label)
-        reason = c3.text_input("Hold / Reserve / Rejection / Override Reason", value=str((existing or {}).get("disposition_reason") or ""))
-        remarks = c4.text_input("Report Remarks", value=str((existing or {}).get("remarks") or ""))
+        disposition = c2.selectbox("Final Decision", decision_options, index=decision_options.index(str((existing or {}).get("disposition") or "PENDING")), format_func=disposition_label)
+        reason = c3.text_input("Decision Reason", value=str((existing or {}).get("disposition_reason") or ""))
+        remarks = c4.text_input("Conclusion", value=str((existing or {}).get("remarks") or ""), help="Controlled report conclusion. This is separate from the Final Decision and Decision Reason.")
 
         chemistry_rows = []
         for _, row in chem_edit.iterrows():
@@ -414,7 +463,7 @@ def render_entry() -> None:
         if st.button("Save Raw Material MetLAB Draft", type="primary", disabled=not writable or not prepared or not sample_ref.strip(), width="stretch"):
             try:
                 final_number = report_no.strip() or service.next_number("METLAB")
-                payload = {"report_number": final_number, "test_type": "METLAB", "layout_plan_id": plan_id, "process_id": plan.get("process_id"), "inspection_stage_id": plan.get("inspection_stage_id"), "part_id": part_id, "inward_lot_id": inward_id, "rmtc_approval_id": inward.get("rmtc_approval_id"), "supplier_id": inward.get("supplier_id"), "steel_mill_id": rmtc.get("steel_mill_id"), "material_grade_id": part.get("material_grade_id"), "test_date": test_date.isoformat(), "sample_reference": sample_ref.strip(), "specification_reference": spec_ref.strip() or None, "overall_result": "NOT_EVALUATED", "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None, "disposition": str((existing or {}).get("disposition") or "PENDING"), "heat_number": inward.get("heat_number"), "heat_code": inward.get("heat_code"), "prepared_by_employee_id": prepared, "layout_name_snapshot": layout_name, "layout_type_name": layout_type, "steel_quantity_kg": inward.get("steel_quantity_kg") or inward.get("quantity_received"), "production_quantity_pcs": inward.get("production_quantity_pcs"), **{f"microstructure_caption_{slot}": micro_captions[slot-1].strip() or None for slot in range(1,5)}}
+                payload = {"report_number": final_number, "test_type": "METLAB", "layout_plan_id": plan_id, "process_id": plan.get("process_id"), "inspection_stage_id": plan.get("inspection_stage_id"), "part_id": part_id, "inward_lot_id": inward_id, "rmtc_approval_id": inward.get("rmtc_approval_id"), "supplier_id": inward.get("supplier_id"), "steel_mill_id": rmtc.get("steel_mill_id"), "material_grade_id": part.get("material_grade_id"), "test_date": test_date.isoformat(), "sample_reference": sample_ref.strip(), "specification_reference": spec_ref.strip() or None, "overall_result": "NOT_EVALUATED", "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None, "disposition": disposition, "disposition_reason": reason.strip() or None, "heat_number": inward.get("heat_number"), "heat_code": inward.get("heat_code"), "prepared_by_employee_id": prepared, "layout_name_snapshot": layout_name, "layout_type_name": layout_type, "steel_quantity_kg": inward.get("steel_quantity_kg") or inward.get("quantity_received"), "production_quantity_pcs": inward.get("production_quantity_pcs"), **{f"microstructure_caption_{slot}": micro_captions[slot-1].strip() or None for slot in range(1,5)}}
                 results = {"rows": layout_rows, "chemistry_rows": chemistry_rows, "jominy_rows": jominy_rows, "requirement_rows": requirement_rows}
                 with st.spinner("Saving RMTC verification sections…"):
                     saved = service.save_metlab(payload, results, str(existing["id"]) if existing else None)
@@ -430,7 +479,7 @@ def render_entry() -> None:
                 st.error(str(exc))
 
         if existing:
-            disposition_cards([{"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")}, {"label": "Decision", "value": existing.get("disposition")}, {"label": "Layout", "value": existing.get("layout_name_snapshot") or layout_name}])
+            disposition_cards([{"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")}, {"label": "Final Decision", "value": existing.get("disposition")}, {"label": "Layout", "value": existing.get("layout_name_snapshot") or layout_name}])
             c1, c2, c3 = st.columns(3, gap="small")
             validator = c1.selectbox("Validated By", employee_options, index=employee_options.index(str(existing.get("validated_by_employee_id") or "")) if str(existing.get("validated_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
             approver = c2.selectbox("Approved By", employee_options, index=employee_options.index(str(existing.get("approved_by_employee_id") or "")) if str(existing.get("approved_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
@@ -441,6 +490,8 @@ def render_entry() -> None:
                     st.rerun()
                 except Exception as exc:
                     st.error(str(exc))
+            section_bar("PDF / EXCEL / PRINT EXPORT")
+            _report_exports(service, str(existing["id"]), str(existing.get("report_number") or "MetLAB_Report"), key=f"met_linked_export_{existing.get('id')}")
             if password_delete_panel(
                 repo=service.repo, table="lab_tests", rows=[existing],
                 labeler=lambda row: row.get("report_number"),
@@ -460,17 +511,19 @@ def render_records() -> None:
     if filtered:
         labels = {str(row["id"]): f"{row.get('report_number')} · Heat {row.get('heat_number')} · {row.get('layout_name_snapshot') or 'Layout'} · {disposition_label(row.get('disposition'))}" for row in filtered}
         selected = st.selectbox("Select MetLAB Report", list(labels), format_func=lambda value: labels[value]); selected_row = next(row for row in filtered if str(row["id"]) == selected); st.session_state["edit_metlab_id"] = selected
-        c1, c2, c3 = st.columns(3, gap="small")
+        c1, c2, c3, c4 = st.columns(4, gap="small")
         with c1: st.page_link(st.session_state["_qsms_pages"]["metlab-entry"], label="Open Selected Report", icon=":material/edit:", width="stretch")
-        with c2:
-            try:
-                pdf_bytes = metlab_record_pdf_bytes(service.metlab_report_payload(selected))
-                st.download_button("Download MetLAB Report PDF", data=pdf_bytes, file_name=f"{selected_row.get('report_number') or 'MetLAB_Report'}.pdf", mime="application/pdf", key=f"metlab_pdf_{selected}", width="stretch")
-            except Exception as exc:
-                st.error(f"PDF could not be generated: {exc}")
-        with c3:
+        try:
+            selected_payload = service.metlab_report_payload(selected)
+            with c2:
+                st.download_button("Download / Print PDF", data=metlab_record_pdf_bytes(selected_payload), file_name=f"{selected_row.get('report_number') or 'MetLAB_Report'}.pdf", mime="application/pdf", key=f"metlab_pdf_{selected}", icon=":material/picture_as_pdf:", width="stretch")
+            with c3:
+                st.download_button("Download Excel Report", data=quality_record_excel_bytes(selected_payload, "METLAB"), file_name=f"{selected_row.get('report_number') or 'MetLAB_Report'}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"metlab_xlsx_{selected}", icon=":material/download:", width="stretch")
+        except Exception as exc:
+            st.error(f"Report export could not be generated: {exc}")
+        with c4:
             if password_delete_panel(repo=service.repo, table="lab_tests", rows=[selected_row], labeler=lambda row: row.get("report_number"), key=f"delete_metlab_{selected}", can_delete=perms["can_archive"], title="Delete Selected MetLAB Report"):
                 st.rerun()
     section_bar("METLAB REGISTER")
-    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("test_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Microstructure Photos": sum(1 for slot in range(1,5) if row.get(f"microstructure_image_{slot}_path")), "Result": row.get("overall_result"), "Decision": row.get("disposition"), "Status": row.get("status")} for row in filtered])
+    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("test_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Microstructure Photos": sum(1 for slot in range(1,5) if row.get(f"microstructure_image_{slot}_path")), "Conclusion": row.get("remarks"), "Result": row.get("overall_result"), "Final Decision": row.get("disposition"), "Decision Reason": row.get("disposition_reason"), "Status": row.get("status")} for row in filtered])
     st.dataframe(style_status_dataframe(display), hide_index=True, width="stretch", height=520)

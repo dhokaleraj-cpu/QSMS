@@ -317,7 +317,7 @@ for token in (
 if "4118-GLOBAL-STAGED-SECTIONS" not in auth_text:
     errors.append("QCMS 4.11.8 login build fingerprint is missing")
 # Keep v4.12.0/v4.12.1 fingerprints in comments for regression traceability while
-# requiring the current v4.12.4 build to be visible in both the app shell and login.
+# requiring the current v4.12.5 build to be visible in both the app shell and login.
 if "4120-SUPPLY-CHAIN-INSPECTION" not in ui_text or "4120-SUPPLY-CHAIN-INSPECTION" not in auth_text:
     errors.append("QCMS 4.12.0 legacy build fingerprint is missing")
 if "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in ui_text or "4121-MASTER-DRIVEN-STANDALONE-REPORTS" not in auth_text:
@@ -327,7 +327,9 @@ if "4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY" not in ui_text or "4122-SUPPLY
 if "4123-SUPPLY-EXPORT-REFERENCE-HOTFIX" not in ui_text or "4123-SUPPLY-EXPORT-REFERENCE-HOTFIX" not in auth_text:
     errors.append("QCMS 4.12.3 legacy build fingerprint is missing")
 if "4124-DUAL-SUPPLY-FLOW-MIS" not in ui_text or "4124-DUAL-SUPPLY-FLOW-MIS" not in auth_text:
-    errors.append("QCMS 4.12.4 visible build fingerprint is missing")
+    errors.append("QCMS 4.12.4 legacy build fingerprint is missing")
+if "4125-QUALITY-DECISION-EXPORT-MIS" not in ui_text or "4125-QUALITY-DECISION-EXPORT-MIS" not in auth_text:
+    errors.append("QCMS 4.12.5 visible build fingerprint is missing")
 
 reporting_text = (ROOT / "core/reporting.py").read_text(encoding="utf-8")
 reference_master_text = (ROOT / "app_pages/reference_master.py").read_text(encoding="utf-8")
@@ -393,6 +395,24 @@ for relpath, tokens in staged_module_contract.items():
             errors.append(f"QCMS 4.11.8 staged workflow missing {token} in {relpath}")
 
 # QCMS 4.11.8 extends the same staged pattern to multi-section overview/report pages.
+# QCMS 4.12.5 quality-report decision/export and Supply Chain MIS identity.
+metlab_text = (ROOT / "app_pages/metlab_report.py").read_text(encoding="utf-8")
+dimensional_text = (ROOT / "app_pages/dimensional_report.py").read_text(encoding="utf-8")
+inspection_service_text = (ROOT / "core/inspection_service.py").read_text(encoding="utf-8")
+for label, page_text in (("MetLAB", metlab_text), ("Dimensional", dimensional_text)):
+    for token in ("Conclusion", "Final Decision", "Decision Reason", "Download / Print PDF", "Download Excel Report"):
+        if token not in page_text:
+            errors.append(f"QCMS 4.12.5 {label} report token missing: {token}")
+for token in ("def quality_record_excel_bytes", '["Final Decision", overall]', '["Decision Reason", decision_reason]'):
+    if token not in reporting_text:
+        errors.append(f"QCMS 4.12.5 reporting token missing: {token}")
+for token in ('_standalone_final_payload', 'not record.get("inward_lot_id") and not record.get("osp_job_id")'):
+    if token not in inspection_service_text:
+        errors.append(f"QCMS 4.12.5 standalone final-decision token missing: {token}")
+for token in ('"Customer Name": customer', '"Part Number": part_number', '"Part Description": part_description'):
+    if token not in supply_service_text:
+        errors.append(f"QCMS 4.12.5 monthly MIS identity token missing: {token}")
+
 whole_app_stage_contract = {
     "app_pages/dashboard.py": ("dashboard_render_a", "dashboard_render_d"),
     "app_pages/inspection_home.py": ("inspection_home_render_a", "inspection_home_render_c"),
@@ -406,7 +426,7 @@ for relpath, tokens in whole_app_stage_contract.items():
             errors.append(f"QCMS 4.11.8 whole-app staged workflow missing {token} in {relpath}")
 
 report = {
-    "release": "QCMS 4.12.4 dual Supply Chain flows, optional Material Inward link and Order/Dispatch MIS",
+    "release": "QCMS 4.12.5 quality conclusion/final decision, report exports and customer-part monthly MIS",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),
@@ -444,6 +464,10 @@ report = {
     "supply_chain_direct_forging": True,
     "material_inward_supply_link_toggle": True,
     "supply_chain_order_dispatch_mis": True,
+    "supply_chain_monthly_customer_part_identity": True,
+    "quality_conclusion_final_decision": True,
+    "quality_pdf_excel_print_exports": True,
+    "standalone_quality_finalization": True,
     "stages_collapsed_by_default": True,
     "single_blue_stage_family": True,
     "complaint_stage_titles_100pct_larger": True,
