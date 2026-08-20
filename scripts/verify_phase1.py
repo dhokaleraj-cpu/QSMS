@@ -457,8 +457,28 @@ for token in ("supply-chain-report", "rmtc-report", "inward-report", "dimensiona
     if token not in app_text:
         errors.append(f"QCMS 4.12.8 report route missing: {token}")
 
+# QCMS 4.12.9 hardened portal / field / pocket-flow contract.
+if "4129-HARDENED-PORTAL-UI-POCKET-FLOW" not in ui_text:
+    errors.append("QCMS 4.12.9 hardened portal build fingerprint is missing")
+for token in (
+    'div.st-key-fsi_left_rail', 'background:var(--qcms-charcoal)!important',
+    'div[data-testid="stTextInput"] div[data-baseweb="input"]',
+    'border:1.25px solid var(--qcms-line-strong)!important',
+    '.fsi-flow-wrap{display:grid!important', '.fsi-master-card-head{display:flex!important',
+    '.fsi-dashboard-card{min-height:74px!important'
+):
+    if token not in ui_text:
+        errors.append(f"QCMS 4.12.9 hardened UI token missing: {token}")
+for token in ('supply-chain-report', 'rmtc-report', 'inward-report', 'osp-balance-report', 'dimensional-report', 'metlab-report', 'complaints-report', 'npd-report', 'apqp-report', 'qc-report'):
+    if token not in app_text:
+        errors.append(f"QCMS 4.12.9 operational report shortcut missing: {token}")
+
 report = {
-    "release": "QCMS 4.12.8 responsive enterprise UI + report hub",
+    "release": "QCMS 4.12.9 hardened portal UI + pocket flow",
+    "hardened_portal_shell": True,
+    "visible_widget_borders": True,
+    "pocket_flow_layout": True,
+    "operational_report_shortcuts": True,
     "responsive_enterprise_ui": True,
     "non_overlapping_column_workspace": True,
     "clickable_header_navigation": True,

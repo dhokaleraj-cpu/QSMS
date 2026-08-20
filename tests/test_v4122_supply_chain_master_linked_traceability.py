@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_build_and_migration_present():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.12.2", "4.12.3", "4.12.4", "4.12.5", "4.12.6", "4.12.7", "4.12.8"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.12.2", "4.12.3", "4.12.4", "4.12.5", "4.12.6", "4.12.7", "4.12.8", "4.12.9"}
     ui = (ROOT / "core/ui.py").read_text()
     auth = (ROOT / "core/auth.py").read_text()
     assert "4122-SUPPLY-CHAIN-MASTER-LINKED-TRACEABILITY" in ui

@@ -151,11 +151,13 @@ MODULE_SUBMENUS = {
         ("rmtc-entry", "RMTC Entry", ":material/fact_check:"),
         ("rmtc-part", "Part Worksheet", ":material/format_list_bulleted:"),
         ("rmtc-approval", "Validation & Decision", ":material/approval:"),
+        ("rmtc-report", "RMTC Reports", ":material/assessment:"),
     ),
     "Inward": (
         ("inward-entry", "Material Inward Entry", ":material/input:"),
         ("metlab-entry", "MetLAB Report", ":material/science:"),
         ("dimensional-entry", "Dimensional Report", ":material/straighten:"),
+        ("inward-report", "Inward Reports", ":material/assessment:"),
     ),
     "OSP": (
         ("osp-home", "OSP Home", ":material/factory:"),
@@ -164,6 +166,7 @@ MODULE_SUBMENUS = {
         ("osp-dimensional", "OSP Dimensional", ":material/straighten:"),
         ("osp-metlab", "OSP MetLAB", ":material/science:"),
         ("osp-inward", "OSP Inward", ":material/input:"),
+        ("osp-balance-report", "OSP Reports", ":material/assessment:"),
     ),
     "Supply Chain": (
         ("supply-chain-home", "Supply Chain Home", ":material/local_shipping:"),
@@ -175,26 +178,34 @@ MODULE_SUBMENUS = {
         ("supply-downstream", "Machining / FG / Dispatch", ":material/precision_manufacturing:"),
         ("supply-traceability", "Traceability", ":material/account_tree:"),
         ("supply-order-mis", "Monthly Schedule / Order MIS", ":material/analytics:"),
+        ("supply-chain-report", "Reports", ":material/assessment:"),
+        ("traceability-report", "Traceability Report", ":material/account_tree:"),
     ),
     "NPD & APQP": (
         ("npd-process-flow", "Process Flow Designer", ":material/account_tree:"),
         ("npd-status", "NPD Status", ":material/timeline:"),
         ("apqp", "APQP", ":material/assignment_turned_in:"),
+        ("npd-report", "NPD Reports", ":material/assessment:"),
+        ("apqp-report", "APQP Reports", ":material/assessment:"),
     ),
     "QC Calculation Tools": (
         ("qc-tools", "Calculation Tools", ":material/calculate:"),
+        ("qc-report", "QC Reports", ":material/assessment:"),
     ),
     "Complaints": (
         ("complaints-home", "Complaint Dashboard", ":material/support_agent:"),
         ("customer-complaint", "Customer Complaint", ":material/record_voice_over:"),
         ("supplier-complaint", "Supplier Complaint", ":material/feedback:"),
         ("complaint-analysis", "Analysis & CAPA", ":material/troubleshoot:"),
+        ("complaints-report", "Complaint Reports", ":material/assessment:"),
     ),
     "Inspections": (
         ("inspection-home", "Inspection Home", ":material/biotech:"),
         ("inspection-layout-entry", "Layout Entry", ":material/edit_document:"),
         ("dimensional-entry", "Dimensional Entry", ":material/straighten:"),
         ("metlab-entry", "MetLAB Entry", ":material/science:"),
+        ("dimensional-report", "Dimensional Reports", ":material/assessment:"),
+        ("metlab-report", "MetLAB Reports", ":material/assessment:"),
     ),
     "Records": (
         ("records-center", "Records Centre", ":material/table_view:"),
@@ -305,7 +316,8 @@ nav = st.navigation(PAGES, position="hidden")
 current_path = PAGE_TITLE_TO_PATH.get(nav.title, "dashboard")
 current_module = ROUTE_MODULE.get(current_path, "Dashboard")
 
-# QCMS v4.12.8 — responsive enterprise navigation contract.
+# QCMS v4.12.9 — hardened responsive enterprise navigation contract.
+# Legacy v4.12.8 marker: QCMS v4.12.8 — responsive enterprise navigation contract.
 # The red header stays intentionally concise while the charcoal rail preserves
 # direct access to every operational module from the previous releases.
 QUALITY_HEADER_MODULES = {"RMTC", "Inward", "OSP", "QC Calculation Tools", "Complaints", "Inspections"}
@@ -339,6 +351,7 @@ RAIL_NAV = (
 if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
     logout()
 
+# v4.12.9 keeps the real two-column Streamlit workspace and hardens component styling.
 # v4.12.8 uses a real two-column Streamlit workspace. The charcoal navigation
 # rail occupies its own column instead of being fixed over the application body.
 # This prevents all progressive scaling/overlap issues seen in v4.12.7.
