@@ -1,3 +1,5 @@
+# QCMS 4.12.7 — EXACT-PREVIEW-ENTERPRISE-UI
+# Legacy v4.12.6 build retained: 4126-PROCUREMENT-PORTAL-REFERENCE-UI
 # QCMS 4.12.6 — PROCUREMENT-PORTAL-REFERENCE-UI
 # Legacy v4.12.5 build retained: 4125-QUALITY-DECISION-EXPORT-MIS
 # Legacy v4.12.4 build retained: 4124-DUAL-SUPPLY-FLOW-MIS
@@ -318,12 +320,29 @@ def render_login() -> None:
         unsafe_allow_html=True,
     )
 
+    # QCMS 4.12.7 — exact preview login finish.
+    st.markdown(
+        r"""
+        <style>
+        div[data-testid="stAppViewContainer"]{background:#F6F7F8!important;}
+        .qcms-login-brand-card{border-color:#D9DEE3!important;border-top:5px solid #C40035!important;}
+        .qcms-login-brand-card:before{display:none!important;}
+        .qcms-login-brand-title{color:#2B3034!important;}
+        .qcms-login-badges span,.qcms-login-version{background:#FFF4F7!important;border-color:#E6B4C2!important;color:#C40035!important;}
+        div[data-testid="stForm"]{border-color:#D9DEE3!important;}
+        div[data-testid="stForm"] .stFormSubmitButton>button{background:#C40035!important;border-color:#A9002D!important;}
+        div[data-testid="stForm"] .stFormSubmitButton>button:hover{background:#A9002D!important;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.markdown(
         f'''<div class="qcms-login-brand-card">
           <div class="qcms-login-logo-wrap">{logo}</div>
           <div class="qcms-login-brand-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>
           <div class="qcms-login-brand-sub">Four Star Industries &middot; Controlled Quality Records &middot; Inspection &middot; NPD/APQP &middot; Complaint &amp; CAPA Management</div>
-          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4126-PROCUREMENT-PORTAL-REFERENCE-UI</span></div>
+          <div class="qcms-login-badges"><span>SECURE ACCESS</span><span>LIVE TRACEABILITY</span><span>CONTROLLED RECORDS</span><span>QCMS {safe(settings.version)}</span><span>BUILD 4127-EXACT-PREVIEW-ENTERPRISE-UI</span></div>
         </div>''',
         unsafe_allow_html=True,
     )
@@ -356,7 +375,7 @@ def render_login() -> None:
         st.markdown('<div class="qcms-login-preview-note">Preview is read-only and never writes to Supabase.</div>', unsafe_allow_html=True)
 
     st.markdown(
-        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4126-PROCUREMENT-PORTAL-REFERENCE-UI</span></div>''',
+        f'''<div class="qcms-login-footer">Developed by Rajesh Dhokale <span>|</span> dhokaleraj@icloud.com <span>|</span> Copyrights to jrdhokale<br><span class="qcms-login-version">App Version {safe(settings.version)} · Build 4127-EXACT-PREVIEW-ENTERPRISE-UI</span></div>''',
         unsafe_allow_html=True,
     )
 

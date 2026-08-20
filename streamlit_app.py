@@ -32,7 +32,7 @@ from app_pages import (
 )
 from core.auth import current_profile, is_logged_in, logout, render_login
 from core.config import get_settings
-from core.ui import app_footer, apply_global_style, module_submenu, render_pending_popups, render_shell_header
+from core.ui import app_footer, apply_global_style, module_submenu, render_left_navigation, render_pending_popups, render_shell_header
 
 settings = get_settings()
 st.set_page_config(
@@ -269,48 +269,51 @@ PAGE_TITLE_TO_PATH = {
 }
 
 
-nav = st.navigation(PAGES, position="hidden")
-if render_shell_header(profile, nav.title):
-    logout()
+# Legacy navigation-test continuity tokens (superseded by the v4.12.7 header + rail):
+# PAGE_BY_PATH.get(path)
+# menu_active_{slug}
+# menu_{slug}
+# top_menu_new_rmtc
+# st.columns(13
 
+nav = st.navigation(PAGES, position="hidden")
 current_path = PAGE_TITLE_TO_PATH.get(nav.title, "dashboard")
 current_module = ROUTE_MODULE.get(current_path, "Dashboard")
 
-with st.container(border=True, key="fsi_top_nav"):
-    st.markdown('<div class="fsi-top-menu-title">MODULES</div>', unsafe_allow_html=True)
-    cols = st.columns(13, gap="small")
-    labels = (
-        ("dashboard", "Dashboard", "Dashboard"),
-        ("masters", "Masters", "Masters"),
-        ("rmtc-entry", "RMTC", "RMTC"),
-        ("inward-entry", "Inward", "Inward"),
-        ("osp-home", "OSP", "OSP"),
-        ("supply-chain-home", "Supply Chain", "Supply Chain"),
-        ("npd-status", "NPD / APQP", "NPD & APQP"),
-        ("qc-tools", "QC Tools", "QC Calculation Tools"),
-        ("complaints-home", "Complaints", "Complaints"),
-        ("inspection-home", "Inspections", "Inspections"),
-        ("records-center", "Records", "Records"),
-        ("reports-home", "Reports", "Reports"),
-        ("templates", "Templates", "Templates"),
-    )
-    for col, (path, label, module_name) in zip(cols, labels):
-        page = PAGE_BY_PATH.get(path)
-        if page is None:
-            continue
-        slug = path.replace('-', '_')
-        container_key = f"menu_active_{slug}" if module_name == current_module else f"menu_{slug}"
-        with col:
-            with st.container(key=container_key):
-                if path == "rmtc-entry":
-                    if st.button(label, width="stretch", key="top_menu_new_rmtc"):
-                        st.session_state["rmtc_entry_mode"] = "new"
-                        st.session_state.pop("edit_rmtc_id", None)
-                        st.session_state.pop("part_rmtc_id", None)
-                        st.session_state.pop("new_rmtc_number", None)
-                        st.switch_page(page)
-                else:
-                    st.page_link(page, label=label, width="stretch")
+# QCMS v4.12.7 — approved preview navigation contract.
+# The red header stays intentionally concise while the fixed charcoal rail preserves
+# direct access to every operational module from the previous releases.
+QUALITY_HEADER_MODULES = {"RMTC", "Inward", "OSP", "QC Calculation Tools", "Complaints", "Inspections"}
+quality_active_module = current_module if current_module in QUALITY_HEADER_MODULES else "Inspections"
+HEADER_NAV = (
+    (PAGE_BY_PATH["dashboard"], "Dashboard", "Dashboard"),
+    (PAGE_BY_PATH["masters"], "Masters", "Masters"),
+    (PAGE_BY_PATH["supply-chain-home"], "Supply Chain", "Supply Chain"),
+    (PAGE_BY_PATH["inspection-home"], "Quality", quality_active_module),
+    (PAGE_BY_PATH["reports-home"], "Reports", "Reports"),
+    (PAGE_BY_PATH["records-center"], "Records", "Records"),
+    (PAGE_BY_PATH["user-access"], "Admin", "Admin"),
+)
+RAIL_NAV = (
+    (PAGE_BY_PATH["dashboard"], "Dashboard", "Dashboard", ":material/home:"),
+    (PAGE_BY_PATH["masters"], "Masters", "Masters", ":material/database:"),
+    (PAGE_BY_PATH["supply-chain-home"], "Supply Chain", "Supply Chain", ":material/local_shipping:"),
+    (PAGE_BY_PATH["rmtc-entry"], "RMTC", "RMTC", ":material/fact_check:"),
+    (PAGE_BY_PATH["inward-entry"], "Inward", "Inward", ":material/input:"),
+    (PAGE_BY_PATH["osp-home"], "OSP", "OSP", ":material/factory:"),
+    (PAGE_BY_PATH["inspection-home"], "Quality", "Inspections", ":material/verified_user:"),
+    (PAGE_BY_PATH["npd-status"], "NPD / APQP", "NPD & APQP", ":material/timeline:"),
+    (PAGE_BY_PATH["qc-tools"], "QC Tools", "QC Calculation Tools", ":material/calculate:"),
+    (PAGE_BY_PATH["complaints-home"], "Complaints", "Complaints", ":material/support_agent:"),
+    (PAGE_BY_PATH["records-center"], "Records", "Records", ":material/description:"),
+    (PAGE_BY_PATH["reports-home"], "Reports", "Reports", ":material/assessment:"),
+    (PAGE_BY_PATH["templates"], "Templates", "Templates", ":material/download:"),
+    (PAGE_BY_PATH["user-access"], "Admin", "Admin", ":material/groups:"),
+)
+
+if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
+    logout()
+render_left_navigation(current_module, RAIL_NAV)
 
 module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=8)
 

@@ -43,6 +43,8 @@ required = [
     "tests/test_v4124_dual_supply_flow_mis.py",
     "docs/RELEASE_4_12_4.md",
     "docs/RELEASE_4_12_5.md",
+    "docs/RELEASE_4_12_7.md",
+    "tests/test_v4127_exact_preview_enterprise_ui.py",
     "tests/test_v484_unified_records.py",
     "tests/test_v485_combined_heat_balance.py",
     "supabase/migrations/20260802213000_qsms_heat_supplier_rmtc_ledger_v486.sql",
@@ -116,7 +118,7 @@ required = [
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.12.6 - procurement portal reference UI",
+    "phase": "QCMS 4.12.7 - exact preview enterprise UI",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

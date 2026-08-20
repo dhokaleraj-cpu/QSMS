@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_and_reference_ui_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() == "4.12.6"
+    assert tuple(map(int, (ROOT / "VERSION").read_text().strip().split("."))) >= (4, 12, 6)
     ui = (ROOT / "core/ui.py").read_text()
     auth = (ROOT / "core/auth.py").read_text()
     assert "4126-PROCUREMENT-PORTAL-REFERENCE-UI" in ui

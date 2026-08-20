@@ -112,6 +112,8 @@ required = [
     "docs/RELEASE_4_10_7.md",
     "tests/test_v4124_dual_supply_flow_mis.py",
     "docs/RELEASE_4_12_4.md",
+    "docs/RELEASE_4_12_7.md",
+    "tests/test_v4127_exact_preview_enterprise_ui.py",
 ]
 for item in required:
     if not (ROOT / item).exists():
@@ -440,8 +442,22 @@ for relpath, tokens in whole_app_stage_contract.items():
         if token not in page_text:
             errors.append(f"QCMS 4.11.8 whole-app staged workflow missing {token} in {relpath}")
 
+
+# QCMS 4.12.7 exact approved preview shell contract.
+if "4127-EXACT-PREVIEW-ENTERPRISE-UI" not in ui_text:
+    errors.append("QCMS 4.12.7 exact-preview build fingerprint is missing")
+for token in ("def render_left_navigation", "--preview-red:#C40035", "--preview-charcoal:#232323", "qcms-header-nav", "qcms-rail-caption", "fsi-page-chevron"):
+    if token not in ui_text:
+        errors.append(f"QCMS 4.12.7 preview UI token missing: {token}")
+if "HEADER_NAV = (" not in app_text or "RAIL_NAV = (" not in app_text:
+    errors.append("QCMS 4.12.7 header/rail navigation structure is missing")
+
 report = {
-    "release": "QCMS 4.12.6 procurement portal reference UI",
+    "release": "4.12.7",
+    "exact_preview_enterprise_ui": True,
+    "fixed_charcoal_navigation_rail": True,
+    "preview_erp_table_grid": True,
+    "release": "QCMS 4.12.7 exact preview enterprise UI",
     "registered_pages": paths,
     "controlled_reference_definitions": len(DEFINITIONS),
     "controlled_reference_masters": len(DEFINITIONS),

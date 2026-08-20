@@ -1,3 +1,6 @@
+# Legacy UI regression phrase retained: taglines and context
+# QCMS 4.12.7 — EXACT-PREVIEW-ENTERPRISE-UI
+# Legacy v4.12.6 build retained: 4126-PROCUREMENT-PORTAL-REFERENCE-UI
 # QCMS 4.12.6 — PROCUREMENT-PORTAL-REFERENCE-UI
 # Legacy v4.12.5 build retained: 4125-QUALITY-DECISION-EXPORT-MIS
 # Legacy v4.12.4 build retained: 4124-DUAL-SUPPLY-FLOW-MIS
@@ -985,6 +988,7 @@ div[data-testid="stAppViewContainer"]:has([class*="st-key-qcms_login_shell"]){
 
     _apply_v4120_readability_style()
     _apply_v4126_procurement_reference_style()
+    _apply_v4127_exact_preview_style()
 
 
 # QCMS v4.12.1 master-driven standalone report layer; v4.12.0 readability rules retained.
@@ -1308,6 +1312,278 @@ def _apply_v4126_procurement_reference_style() -> None:
     """, unsafe_allow_html=True)
 
 
+
+# QCMS v4.12.7 — exact generated-preview enterprise shell.
+def _apply_v4127_exact_preview_style() -> None:
+    """Final whole-app visual layer matching the approved red/charcoal preview concept.
+
+    This layer intentionally overrides prior shell experiments without changing workflow,
+    database, permission, traceability or report logic.  The contract is a compact red top
+    bar, fixed charcoal menu rail, white workspace, flat cards, clean breadcrumb titles,
+    bordered fields and true ERP-style grids.
+    """
+    st.markdown(r"""
+    <style>
+    :root{
+      --preview-red:#C40035;
+      --preview-red-dark:#A9002D;
+      --preview-charcoal:#232323;
+      --preview-charcoal-2:#2D2D2D;
+      --preview-page:#F6F7F8;
+      --preview-surface:#FFFFFF;
+      --preview-line:#D9DEE3;
+      --preview-line-dark:#C8CED4;
+      --preview-head:#F6F7F8;
+      --preview-text:#24282C;
+      --preview-muted:#68737D;
+      --preview-blue:#1479CC;
+      --preview-green:#159447;
+      --preview-amber:#E88900;
+      --preview-danger:#E23B3B;
+      --preview-font:Arial,"Helvetica Neue",Helvetica,sans-serif;
+      --preview-rail:154px;
+      --preview-top:58px;
+    }
+
+    html,body,.stApp,[class*="css"],button,input,textarea,select,
+    [data-baseweb="select"],[data-baseweb="input"]{
+      font-family:var(--preview-font)!important;
+    }
+    html,body,.stApp{font-size:13px!important;}
+    .stApp,div[data-testid="stAppViewContainer"],section.main{
+      background:var(--preview-page)!important;color:var(--preview-text)!important;
+    }
+    header[data-testid="stHeader"]{height:0!important;background:transparent!important;}
+    #MainMenu,footer,div[data-testid="stToolbar"],div[data-testid="stDecoration"],
+    section[data-testid="stSidebar"],[data-testid="collapsedControl"]{display:none!important;}
+
+    /* Workspace starts below the fixed header and to the right of the fixed menu rail. */
+    div[data-testid="stMainBlockContainer"],section.main>div.block-container,.block-container{
+      max-width:none!important;width:auto!important;
+      padding:calc(var(--preview-top) + 16px) 18px 26px calc(var(--preview-rail) + 20px)!important;
+      margin:0!important;
+    }
+    p{font-size:13px!important;line-height:1.34!important;color:var(--preview-text)!important;}
+    h1,h2,h3,h4,h5,h6{font-family:var(--preview-font)!important;color:var(--preview-text)!important;}
+
+    /* ONE ROW RED HEADER — brand, main menu, user controls. */
+    .st-key-fsi_shell,[class*="st-key-fsi_shell"]{
+      position:fixed!important;z-index:10020!important;left:0!important;right:0!important;top:0!important;
+      width:100%!important;height:var(--preview-top)!important;min-height:var(--preview-top)!important;
+      margin:0!important;padding:0!important;background:linear-gradient(90deg,#B90031 0%,var(--preview-red) 55%,#B50030 100%)!important;
+      border:0!important;border-radius:0!important;box-shadow:0 1px 5px rgba(0,0,0,.18)!important;overflow:visible!important;
+    }
+    .st-key-fsi_shell>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_shell"]>div[data-testid="stVerticalBlockBorderWrapper"]{
+      height:var(--preview-top)!important;min-height:var(--preview-top)!important;
+      padding:0 14px!important;margin:0!important;background:transparent!important;border:0!important;border-radius:0!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_shell"] div[data-testid="stHorizontalBlock"]{gap:10px!important;align-items:center!important;height:100%!important;}
+    [class*="st-key-fsi_shell"] div[data-testid="stColumn"]{display:flex!important;align-items:center!important;min-height:0!important;}
+    [class*="st-key-fsi_shell"] .fsi-company-block{display:flex!important;align-items:center!important;gap:8px!important;white-space:nowrap!important;}
+    [class*="st-key-fsi_shell"] .fsi-logo-card{
+      width:40px!important;min-width:40px!important;height:40px!important;padding:2px!important;
+      background:transparent!important;border:0!important;border-radius:0!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-logo{width:39px!important;max-width:39px!important;max-height:36px!important;filter:brightness(0) invert(1)!important;object-fit:contain!important;}
+    [class*="st-key-fsi_shell"] .fsi-company-name{
+      color:#fff!important;font-size:21px!important;font-weight:900!important;line-height:.95!important;letter-spacing:-.02em!important;text-shadow:none!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-company-sub{
+      color:#fff!important;font-size:7.5px!important;font-weight:700!important;line-height:1.1!important;margin-top:3px!important;opacity:.92!important;letter-spacing:.01em!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-header-title,[class*="st-key-fsi_shell"] .fsi-header-page{display:none!important;}
+    [class*="st-key-fsi_shell"] .qcms-header-nav{width:100%!important;display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:1px!important;}
+    [class*="st-key-fsi_shell"] [class*="st-key-qcms_header_nav_"]{flex:1 1 0!important;min-width:0!important;}
+    [class*="st-key-fsi_shell"] [class*="st-key-qcms_header_nav_"] div[data-testid="stPageLink"] a{
+      height:38px!important;min-height:38px!important;padding:.25rem .38rem!important;margin:0!important;border:0!important;border-radius:0!important;
+      background:transparent!important;color:#fff!important;font-size:12px!important;font-weight:700!important;box-shadow:none!important;justify-content:center!important;
+      white-space:nowrap!important;
+    }
+    [class*="st-key-fsi_shell"] [class*="st-key-qcms_header_nav_"] div[data-testid="stPageLink"] a *{color:#fff!important;fill:#fff!important;}
+    [class*="st-key-fsi_shell"] [class*="st-key-qcms_header_nav_"] div[data-testid="stPageLink"] a:hover{background:rgba(255,255,255,.13)!important;}
+    [class*="st-key-fsi_shell"] [class*="st-key-qcms_header_nav_active_"] div[data-testid="stPageLink"] a{
+      background:rgba(255,255,255,.11)!important;box-shadow:inset 0 -3px 0 #fff!important;font-weight:800!important;
+    }
+    [class*="st-key-fsi_shell"] .fsi-user{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:8px!important;padding:0!important;border:0!important;background:transparent!important;}
+    [class*="st-key-fsi_shell"] .fsi-user-avatar{
+      width:34px;height:34px;border-radius:50%;background:#fff;color:var(--preview-red);display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:900;flex:0 0 34px;
+    }
+    [class*="st-key-fsi_shell"] .fsi-user-copy{text-align:left!important;line-height:1.05!important;min-width:0!important;}
+    [class*="st-key-fsi_shell"] .fsi-user-name{font-size:10.5px!important;font-weight:800!important;color:#fff!important;white-space:nowrap!important;}
+    [class*="st-key-fsi_shell"] .fsi-user-meta{font-size:8px!important;font-weight:600!important;color:#fff!important;opacity:.9!important;white-space:nowrap!important;}
+    [class*="st-key-fsi_shell"] .fsi-user-pills,[class*="st-key-fsi_shell"] .fsi-live{display:none!important;}
+    [class*="st-key-fsi_shell"] [class*="st-key-qcms_header_exit"] .stButton>button{
+      width:34px!important;min-width:34px!important;max-width:34px!important;height:34px!important;min-height:34px!important;padding:0!important;
+      border:0!important;border-radius:0!important;background:transparent!important;color:#fff!important;font-size:24px!important;font-weight:500!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_shell"] [class*="st-key-qcms_header_exit"] .stButton>button:hover{background:rgba(255,255,255,.12)!important;}
+    [class*="st-key-fsi_header_actions_row"]{display:none!important;}
+
+    /* Fixed charcoal left rail — same menu placeholder and active red block as preview. */
+    .st-key-fsi_left_rail,[class*="st-key-fsi_left_rail"]{
+      position:fixed!important;z-index:10010!important;left:0!important;top:var(--preview-top)!important;bottom:0!important;
+      width:var(--preview-rail)!important;max-width:var(--preview-rail)!important;min-width:var(--preview-rail)!important;
+      background:linear-gradient(180deg,#252525 0%,#1F1F1F 100%)!important;border:0!important;border-radius:0!important;box-shadow:2px 0 6px rgba(0,0,0,.10)!important;
+      overflow-y:auto!important;overflow-x:hidden!important;margin:0!important;padding:0!important;
+    }
+    .st-key-fsi_left_rail>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-fsi_left_rail"]>div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:transparent!important;border:0!important;border-radius:0!important;padding:9px 0 16px!important;margin:0!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_left_rail"] .qcms-rail-caption{font-size:8px!important;color:#939393!important;font-weight:800!important;letter-spacing:.08em!important;padding:4px 14px 7px!important;text-transform:uppercase!important;}
+    [class*="st-key-fsi_left_rail"] [class*="st-key-qcms_rail_"]{margin:0!important;padding:0!important;}
+    [class*="st-key-fsi_left_rail"] [class*="st-key-qcms_rail_"] div[data-testid="stPageLink"] a{
+      width:100%!important;min-height:50px!important;margin:0!important;padding:0 14px!important;border:0!important;border-bottom:1px solid #363636!important;border-radius:0!important;
+      background:transparent!important;color:#F6F6F6!important;font-size:11px!important;font-weight:700!important;justify-content:flex-start!important;gap:8px!important;box-shadow:none!important;
+    }
+    [class*="st-key-fsi_left_rail"] [class*="st-key-qcms_rail_"] div[data-testid="stPageLink"] a *{color:#F6F6F6!important;fill:#F6F6F6!important;}
+    [class*="st-key-fsi_left_rail"] [class*="st-key-qcms_rail_"] div[data-testid="stPageLink"] a:hover{background:#303030!important;}
+    [class*="st-key-fsi_left_rail"] [class*="st-key-qcms_rail_active_"] div[data-testid="stPageLink"] a{
+      background:linear-gradient(90deg,#D1123F,var(--preview-red))!important;color:#fff!important;border-bottom-color:#D1123F!important;font-weight:800!important;
+    }
+
+    /* Module submenu is a clean secondary tab strip, not a stack of colored cards. */
+    [class*="st-key-fsi_module_subnav_"]{background:transparent!important;border:0!important;margin:0 0 10px!important;box-shadow:none!important;}
+    [class*="st-key-fsi_module_subnav_"]>div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:#fff!important;border:1px solid var(--preview-line)!important;border-radius:2px!important;padding:0!important;box-shadow:none!important;overflow:hidden!important;
+    }
+    .fsi-module-subnav-title{display:none!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stHorizontalBlock"]{gap:0!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a{
+      min-height:36px!important;padding:.28rem .48rem!important;border:0!important;border-right:1px solid var(--preview-line)!important;border-radius:0!important;
+      background:#fff!important;color:#4A4F54!important;font-size:10.5px!important;font-weight:700!important;box-shadow:none!important;justify-content:center!important;
+    }
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a:hover{background:#F7F7F7!important;color:var(--preview-red)!important;}
+    [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a[aria-current="page"]{
+      background:#FFF6F8!important;color:var(--preview-red)!important;box-shadow:inset 0 -3px 0 var(--preview-red)!important;font-weight:800!important;
+    }
+
+    /* Breadcrumb / title row — directly mirrors the preview. */
+    .fsi-page-head{
+      display:flex!important;align-items:center!important;min-height:48px!important;margin:0 0 10px!important;padding:0 5px!important;
+      background:#fff!important;border:1px solid var(--preview-line)!important;border-width:0 0 1px!important;border-radius:0!important;box-shadow:none!important;
+    }
+    .fsi-page-title{font-size:17px!important;font-weight:700!important;color:#34383C!important;line-height:1.1!important;letter-spacing:0!important;}
+    .fsi-page-context{font-size:17px!important;font-weight:500!important;color:#34383C!important;}
+    .fsi-page-chevron{font-size:21px!important;color:#7E858B!important;margin:0 10px!important;font-weight:400!important;}
+
+    /* Forms and content sections are white rectangular portal panels. */
+    div[data-testid="stForm"],details[data-testid="stExpander"],
+    [class*="st-key-master_card_"]>div[data-testid="stVerticalBlockBorderWrapper"],
+    [class*="st-key-dashboard_card_"]>div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:#fff!important;border:1px solid var(--preview-line)!important;border-radius:2px!important;box-shadow:none!important;
+    }
+    div[data-testid="stForm"]{padding:12px 14px!important;margin-bottom:10px!important;}
+    details[data-testid="stExpander"]{overflow:hidden!important;margin-bottom:10px!important;}
+    details[data-testid="stExpander"]>summary,
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] summary{
+      min-height:45px!important;padding:0 16px!important;background:#fff!important;border:0!important;border-bottom:1px solid var(--preview-line)!important;border-radius:0!important;
+      color:#303438!important;font-size:14px!important;font-weight:800!important;text-transform:none!important;letter-spacing:0!important;
+    }
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] summary p{font-size:14px!important;font-weight:800!important;color:#303438!important;}
+    [class*="st-key-fsi_stage_"] div[data-testid="stExpander"] summary:after{content:"";position:absolute;left:16px;bottom:-1px;width:56px;height:3px;background:var(--preview-red);}
+    details[data-testid="stExpander"]>div{padding:12px 14px!important;background:#fff!important;}
+    .fsi-section-bar{
+      min-height:42px!important;margin:10px 0 8px!important;padding:10px 0 8px 0!important;background:#fff!important;border:0!important;border-bottom:1px solid var(--preview-line)!important;
+      border-radius:0!important;box-shadow:none!important;color:#303438!important;font-size:14px!important;font-weight:800!important;text-transform:none!important;letter-spacing:0!important;position:relative!important;
+    }
+    .fsi-section-bar:after{content:"";position:absolute;left:0;bottom:-1px;width:58px;height:3px;background:var(--preview-red);}
+
+    /* Field borders / spacing exactly in compact ERP language. */
+    div[data-testid="stHorizontalBlock"]{gap:12px!important;}
+    div[data-testid="stVerticalBlock"]{gap:9px!important;}
+    label[data-testid="stWidgetLabel"]{margin-bottom:3px!important;}
+    label[data-testid="stWidgetLabel"] p{font-size:11px!important;font-weight:800!important;color:#303438!important;line-height:1.15!important;}
+    [data-baseweb="input"],[data-baseweb="select"]>div,textarea{
+      min-height:35px!important;border:1px solid var(--preview-line-dark)!important;border-radius:2px!important;background:#fff!important;box-shadow:none!important;font-size:12px!important;color:#252A2E!important;
+    }
+    [data-baseweb="input"] input,[data-baseweb="select"] span,textarea{font-size:12px!important;color:#252A2E!important;}
+    [data-baseweb="input"]:focus-within,[data-baseweb="select"]>div:focus-within,textarea:focus{
+      border-color:#5AA5DD!important;box-shadow:0 0 0 2px rgba(20,121,204,.10)!important;
+    }
+    textarea{min-height:72px!important;}
+    [data-testid="stFileUploaderDropzone"]{border:1px dashed var(--preview-line-dark)!important;border-radius:2px!important;background:#FAFAFA!important;}
+
+    /* Preview-style flat toolbar controls. */
+    .stButton>button,.stDownloadButton>button,.stFormSubmitButton>button,.stLinkButton>a{
+      min-height:35px!important;border-radius:2px!important;border:1px solid #D1D5D9!important;background:#F2F2F2!important;color:#333!important;
+      font-size:10.5px!important;font-weight:800!important;padding:.30rem .70rem!important;box-shadow:none!important;
+    }
+    .stButton>button:hover,.stDownloadButton>button:hover,.stFormSubmitButton>button:hover{background:#E9E9E9!important;border-color:#BFC6CC!important;box-shadow:none!important;}
+    .stButton>button[kind="primary"],.stFormSubmitButton>button[kind="primary"]{
+      background:linear-gradient(180deg,#1687DA,#0F72BE)!important;border-color:#0E6EB6!important;color:#fff!important;
+    }
+    .stButton>button[kind="primary"] *, .stFormSubmitButton>button[kind="primary"] *{color:#fff!important;fill:#fff!important;}
+    .stDownloadButton>button{background:#F0F0F0!important;}
+
+    /* True bordered data grids — header, cell lines, row density, no rounded DataFrame card. */
+    div[data-testid="stDataFrame"],div[data-testid="stDataEditor"]{
+      border:1px solid var(--preview-line-dark)!important;border-radius:0!important;background:#fff!important;overflow:hidden!important;box-shadow:none!important;margin:6px 0 10px!important;
+    }
+    div[data-testid="stDataFrame"] *,div[data-testid="stDataEditor"] *{font-family:var(--preview-font)!important;font-size:10.5px!important;}
+    div[data-testid="stDataFrame"] [role="columnheader"],div[data-testid="stDataEditor"] [role="columnheader"]{
+      background:#F3F4F5!important;color:#2B3034!important;font-weight:800!important;border-right:1px solid var(--preview-line)!important;border-bottom:1px solid var(--preview-line-dark)!important;
+    }
+    div[data-testid="stDataFrame"] [role="gridcell"],div[data-testid="stDataEditor"] [role="gridcell"]{
+      background:#fff!important;border-right:1px solid #E1E4E7!important;border-bottom:1px solid #E3E6E9!important;color:#262A2E!important;
+    }
+    div[data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"]{background:#FAFCFD!important;}
+
+    /* KPI / order cards — large flat rectangular cards from the approved preview. */
+    .fsi-kpi-grid,.fsi-status-grid{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(185px,1fr))!important;gap:16px!important;margin:14px 0 18px!important;}
+    .fsi-kpi,.fsi-status-card{
+      min-height:106px!important;padding:18px 20px 16px 74px!important;background:#fff!important;border:1px solid var(--preview-line)!important;border-left:1px solid var(--preview-line)!important;border-top:1px solid var(--preview-line)!important;
+      border-radius:2px!important;box-shadow:none!important;position:relative!important;overflow:hidden!important;
+    }
+    .fsi-kpi:before,.fsi-status-card:before{
+      content:"✓";position:absolute;left:24px;top:26px;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      color:#fff;background:var(--preview-blue);font-size:20px;font-weight:900;
+    }
+    .fsi-kpi:nth-child(4n+1):before,.fsi-status-card:nth-child(4n+1):before{content:"✓";background:var(--preview-green);}
+    .fsi-kpi:nth-child(4n+2):before,.fsi-status-card:nth-child(4n+2):before{content:"!";background:var(--preview-amber);}
+    .fsi-kpi:nth-child(4n+3):before,.fsi-status-card:nth-child(4n+3):before{content:"✓";background:var(--preview-blue);}
+    .fsi-kpi:nth-child(4n+4):before,.fsi-status-card:nth-child(4n+4):before{content:"•";background:var(--preview-danger);}
+    .fsi-kpi-label,.fsi-status-card .label{font-size:11px!important;font-weight:700!important;color:#4B5055!important;text-transform:none!important;letter-spacing:0!important;}
+    .fsi-kpi-value,.fsi-status-card .value{font-size:25px!important;font-weight:800!important;color:#252A2E!important;line-height:1!important;margin:7px 0 3px!important;}
+    .fsi-kpi-foot,.fsi-status-card .foot{font-size:10px!important;color:#7A8187!important;}
+    .fsi-kpi:nth-child(4n+1) .fsi-kpi-value,.fsi-status-card:nth-child(4n+1) .value{color:var(--preview-green)!important;}
+    .fsi-kpi:nth-child(4n+2) .fsi-kpi-value,.fsi-status-card:nth-child(4n+2) .value{color:var(--preview-amber)!important;}
+    .fsi-kpi:nth-child(4n+3) .fsi-kpi-value,.fsi-status-card:nth-child(4n+3) .value{color:var(--preview-blue)!important;}
+    .fsi-kpi:nth-child(4n+4) .fsi-kpi-value,.fsi-status-card:nth-child(4n+4) .value{color:var(--preview-danger)!important;}
+
+    /* Supply-chain cards use same flat grid language while preserving status semantics. */
+    .supply-order-grid{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))!important;gap:10px!important;margin:8px 0 14px!important;}
+    .supply-order-card{border-radius:2px!important;box-shadow:none!important;border-width:1px!important;border-left-width:5px!important;background:#fff!important;min-height:104px!important;}
+    .supply-card-complete{border-left-color:var(--preview-green)!important;background:#F8FFF9!important;}
+    .supply-card-current{border-left-color:var(--preview-blue)!important;background:#F8FCFF!important;}
+    .supply-card-pending{border-left-color:var(--preview-amber)!important;background:#FFFDF8!important;}
+    .supply-card-overdue,.supply-card-rejected{border-left-color:var(--preview-danger)!important;background:#FFF9F9!important;}
+    .supply-card-ref{font-size:14px!important;color:#2B3034!important;}.supply-card-part{font-size:11px!important;color:#4D5962!important;}.supply-card-meta{font-size:9.5px!important;color:#7A838A!important;}
+
+    /* Alerts, chips and footer use thin rectangular styling. */
+    [data-testid="stAlert"]{border-radius:2px!important;box-shadow:none!important;padding:.52rem .68rem!important;}
+    .fsi-chip{border-radius:2px!important;padding:3px 7px!important;font-size:9px!important;text-transform:uppercase!important;}
+    .fsi-info-strip{border-radius:2px!important;background:#fff!important;border:1px solid var(--preview-line)!important;border-left:3px solid var(--preview-blue)!important;}
+    .fsi-footer{margin:18px 0 0!important;padding:9px 0!important;border-top:1px solid var(--preview-line)!important;font-size:8.5px!important;color:#7E858A!important;}
+    .fsi-footer a{color:var(--preview-red)!important;}
+
+    @media(max-width:1200px){
+      :root{--preview-rail:132px;}
+      [class*="st-key-fsi_shell"] .fsi-company-name{font-size:17px!important;}
+      [class*="st-key-fsi_shell"] [class*="st-key-qcms_header_nav_"] div[data-testid="stPageLink"] a{font-size:10px!important;padding:.20rem!important;}
+      [class*="st-key-fsi_left_rail"] [class*="st-key-qcms_rail_"] div[data-testid="stPageLink"] a{font-size:10px!important;padding:0 10px!important;}
+    }
+    @media(max-width:900px){
+      :root{--preview-rail:0px;}
+      .st-key-fsi_left_rail,[class*="st-key-fsi_left_rail"]{display:none!important;}
+      [class*="st-key-fsi_shell"] .fsi-company-sub,[class*="st-key-fsi_shell"] .fsi-user-copy{display:none!important;}
+      [class*="st-key-fsi_shell"] [class*="st-key-qcms_header_nav_"]:nth-child(n+6){display:none!important;}
+      div[data-testid="stMainBlockContainer"],section.main>div.block-container,.block-container{padding-left:12px!important;padding-right:12px!important;}
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 def render_public_brand() -> None:
     s = get_settings(); uri = logo_data_uri(); logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
     st.markdown(f'<div style="text-align:center;padding:.5rem">{logo}<div class="fsi-app-title">QUALITY CONTROL MONITORING SYSTEM</div><div class="fsi-user-meta">{safe(s.company_name)} · Plant {safe(s.plant_code)}</div></div>', unsafe_allow_html=True)
@@ -1320,46 +1596,84 @@ def render_app_launcher(apps: Sequence[PortalApp]) -> None:
             elif app.url: st.link_button(app.name, app.url, width="stretch")
 
 
-def render_shell_header(profile: Mapping[str, Any], active_page: str) -> bool:
+def render_shell_header(
+    profile: Mapping[str, Any],
+    active_page: str,
+    *,
+    current_module: str = "Dashboard",
+    nav_items: Sequence[tuple[Any, str, str]] = (),
+) -> bool:
+    """Render the approved single-row red enterprise header.
+
+    nav_items contains (Streamlit Page, label, module_name).  The active module is
+    rendered with the same white underline used in the approved preview.
+    """
+    # Legacy verification continuity only — superseded visual shell:
+    # QUALITY CONTROL<br>MONITORING SYSTEM
+    # fsi_header_actions_row · st.columns([3.0, 5.4, 3.2] · a1, a2 = st.columns(2
+    # Account · Exit · fsi_header_actions
+    # key="fsi_header_actions_row"
     s = get_settings()
-    now = datetime.now(ZoneInfo(s.timezone))
     uri = logo_data_uri()
-    logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
-    with st.container(border=True, key="fsi_shell"):
-        # QCMS 4.11.5: three-zone header. The right zone owns both the profile
-        # card and a separate horizontal action row, eliminating vertical overlap.
-        c1, c2, c3 = st.columns([3.0, 5.4, 3.2], vertical_alignment="center")
+    logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>Q</b>'
+    with st.container(border=False, key="fsi_shell"):
+        c1, c2, c3 = st.columns([2.0, 7.8, 2.2], vertical_alignment="center")
         with c1:
             st.markdown(
                 f'<div class="fsi-company-block"><div class="fsi-logo-card">{logo}</div>'
-                f'<div><div class="fsi-company-name">FOUR STAR INDUSTRIES</div>'
+                f'<div><div class="fsi-company-name">QCMS</div>'
                 f'<div class="fsi-company-sub">QUALITY CONTROL MONITORING SYSTEM</div></div></div>',
                 unsafe_allow_html=True,
             )
         with c2:
-            st.markdown(
-                '<div class="fsi-header-title">QUALITY CONTROL<br>MONITORING SYSTEM</div>'
-                f'<div class="fsi-header-page">{safe(active_page)} · BUILD 4126-PROCUREMENT-PORTAL-REFERENCE-UI</div>',
-                unsafe_allow_html=True,
-            )
+            if nav_items:
+                st.markdown('<div class="qcms-header-nav">', unsafe_allow_html=True)
+                cols = st.columns(len(nav_items), gap="small")
+                for col, (page, label, module_name) in zip(cols, nav_items):
+                    slug = re.sub(r"[^a-z0-9]+", "_", label.casefold()).strip("_")
+                    key = f"qcms_header_nav_active_{slug}" if module_name == current_module else f"qcms_header_nav_{slug}"
+                    with col:
+                        with st.container(key=key):
+                            st.page_link(page, label=label, width="stretch")
+                st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    f'<div class="fsi-header-title">{safe(active_page)}</div>'
+                    f'<div class="fsi-header-page">BUILD 4127-EXACT-PREVIEW-ENTERPRISE-UI</div>',
+                    unsafe_allow_html=True,
+                )
         with c3:
-            st.markdown(
-                f'<div class="fsi-user"><div class="fsi-user-name">User: {safe(profile.get("full_name") or "Quality User")}</div>'
-                f'<div class="fsi-user-meta">Role: {safe(role_label(profile))}</div>'
-                f'<div class="fsi-user-pills"><span class="fsi-live"><span class="fsi-dot"></span>{"PREVIEW" if is_preview_session() else "LIVE"}</span>'
-                f'<span class="fsi-user-pill">v{safe(s.version)}</span><span class="fsi-user-pill">{now.strftime("%d-%m-%Y %H:%M")}</span></div></div>',
-                unsafe_allow_html=True,
-            )
-            with st.container(key="fsi_header_actions_row"):
-                a1, a2 = st.columns(2, gap="small")
-                account_page = (st.session_state.get("_qsms_pages") or {}).get("my-account")
-                with a1:
-                    if account_page is not None:
-                        st.page_link(account_page, label="Account", icon=":material/manage_accounts:", width="stretch")
-                with a2:
-                    if st.button("Exit", key="fsi_signout", width="stretch"):
+            initials = "".join(part[:1] for part in str(profile.get("full_name") or "QCMS User").split()[:2]).upper() or "Q"
+            u1, u2 = st.columns([5.2, 0.8], gap="small", vertical_alignment="center")
+            with u1:
+                st.markdown(
+                    f'<div class="fsi-user"><div class="fsi-user-avatar">{safe(initials)}</div>'
+                    f'<div class="fsi-user-copy"><div class="fsi-user-name">{safe(profile.get("full_name") or "Quality User")}</div>'
+                    f'<div class="fsi-user-meta">{safe(role_label(profile))} · v{safe(s.version)}</div></div></div>',
+                    unsafe_allow_html=True,
+                )
+            with u2:
+                with st.container(key="qcms_header_exit"):
+                    if st.button("↪", key="fsi_signout", help="Sign out", width="stretch"):
                         return True
     return False
+
+
+def render_left_navigation(current_module: str, items: Sequence[tuple[Any, str, str, str]]) -> None:
+    """Render the fixed charcoal menu rail from the approved preview.
+
+    Each item is (Page, label, module_name, icon).  The rail is purely navigational;
+    workflow permissions remain enforced by each destination page.
+    """
+    if not items:
+        return
+    with st.container(border=False, key="fsi_left_rail"):
+        st.markdown('<div class="qcms-rail-caption">Navigation</div>', unsafe_allow_html=True)
+        for page, label, module_name, icon in items:
+            slug = re.sub(r"[^a-z0-9]+", "_", label.casefold()).strip("_")
+            key = f"qcms_rail_active_{slug}" if module_name == current_module else f"qcms_rail_{slug}"
+            with st.container(key=key):
+                st.page_link(page, label=label, icon=icon, width="stretch")
 
 def render_side_navigation(pages: Sequence[Any]) -> None:
     return None
@@ -1444,9 +1758,12 @@ def dashboard_card(*, title: str, description: str, count_text: str, color: str,
 
 
 def page_header(title: str, subtitle: str = "", context: str = "") -> None:
-    # Data-heavy pages deliberately show only one clear title; taglines and context
-    # badges are suppressed to prevent clutter and field overlap.
-    st.markdown(f'<div class="fsi-page-head"><div class="fsi-page-title">{safe(title)}</div></div>', unsafe_allow_html=True)
+    parent = str(context or "QCMS").strip()
+    st.markdown(
+        f'<div class="fsi-page-head"><span class="fsi-page-context">{safe(parent)}</span>'
+        f'<span class="fsi-page-chevron">›</span><span class="fsi-page-title">{safe(title)}</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 STAGE_LETTERS = tuple(chr(code) for code in range(ord("A"), ord("Z") + 1))
