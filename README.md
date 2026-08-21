@@ -1,3 +1,11 @@
+# QCMS v4.13.0 — Universal Pocket Card & Field System
+
+- Build: `4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM`
+- Whole-app bordered pocket contract for cards, fields, forms, stages and summary blocks.
+- NPD/APQP order status process cards are now true horizontal pocket cards rather than plain text.
+- Stronger section typography and field borders across all modules.
+- Existing business logic and Supabase data are preserved.
+
 # QCMS v4.12.9 — Hardened Portal UI + Pocket Flow
 
 - Build: `4129-HARDENED-PORTAL-UI-POCKET-FLOW`.

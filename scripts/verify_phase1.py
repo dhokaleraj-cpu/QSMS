@@ -474,7 +474,7 @@ for token in ('supply-chain-report', 'rmtc-report', 'inward-report', 'osp-balanc
         errors.append(f"QCMS 4.12.9 operational report shortcut missing: {token}")
 
 report = {
-    "release": "QCMS 4.12.9 hardened portal UI + pocket flow",
+    "release": "QCMS 4.13.0 universal pocket card + field system",
     "hardened_portal_shell": True,
     "visible_widget_borders": True,
     "pocket_flow_layout": True,
@@ -627,3 +627,12 @@ report = {
 }
 print(json.dumps(report, indent=2))
 raise SystemExit(1 if errors else 0)
+
+# v4.13.0 release marker: 4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM
+
+# QCMS 4.13.0 universal pocket contract.
+if "4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM" not in ui_text:
+    errors.append("QCMS 4.13.0 universal pocket build fingerprint is missing")
+for token in ("npd-order-status-row", "npd-row-process-card", "qcms-pocket-grid", "stVerticalBlockBorderWrapper", "border:1.35px solid #AEB7BF"):
+    if token not in ui_text:
+        errors.append(f"QCMS 4.13.0 universal pocket UI token missing: {token}")

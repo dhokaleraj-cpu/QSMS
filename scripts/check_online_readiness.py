@@ -120,7 +120,7 @@ required = [
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.12.9 - hardened portal UI, field borders and pocket flow",
+    "phase": "QCMS 4.13.0 - universal pocket card and field system",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

@@ -1,6 +1,7 @@
 # Legacy UI regression phrase retained: taglines and context
-# QCMS 4.12.9 — HARDENED-PORTAL-UI-POCKET-FLOW
-# BUILD 4129-HARDENED-PORTAL-UI-POCKET-FLOW
+# QCMS 4.13.0 — UNIVERSAL-POCKET-CARD-FIELD-SYSTEM
+# BUILD 4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM
+# Legacy v4.12.9 build retained: 4129-HARDENED-PORTAL-UI-POCKET-FLOW
 # Legacy v4.12.8 build retained: 4128-RESPONSIVE-ENTERPRISE-UI-REPORT-HUB
 # Legacy v4.12.7 build retained: 4127-EXACT-PREVIEW-ENTERPRISE-UI
 # Legacy v4.12.6 build retained: 4126-PROCUREMENT-PORTAL-REFERENCE-UI
@@ -253,7 +254,7 @@ def template_catalog() -> Sequence[tuple[str, str, str]]:
 
 
 def apply_global_style() -> None:
-    """Apply the hardened v4.12.9 portal UI system.
+    """Apply the hardened v4.13.0 universal portal UI system.
 
     The selectors intentionally target Streamlit's keyed container classes and
     individual widget test IDs instead of relying on fragile wrapper depth. This
@@ -476,8 +477,123 @@ def apply_global_style() -> None:
     .fsi-footer{margin-top:13px!important;padding:9px 3px!important;border-top:1px solid var(--qcms-line)!important;font-size:8.5px!important;color:#777F85!important;}.fsi-footer a{color:var(--qcms-red)!important;}
     div[data-testid="stTabs"] [data-baseweb="tab-list"]{gap:0!important;border-bottom:1px solid var(--qcms-line)!important;}div[data-testid="stTabs"] [data-baseweb="tab"]{border-radius:0!important;color:#454C51!important;font-size:10px!important;font-weight:700!important;padding:7px 10px!important;}div[data-testid="stTabs"] [aria-selected="true"]{color:var(--qcms-red)!important;background:#fff!important;border-bottom:3px solid var(--qcms-red)!important;}
 
+
+    /* v4.13.0 UNIVERSAL POCKET CONTRACT ------------------------------------------------
+       Any Streamlit bordered container is treated as an enterprise pocket.  This is
+       intentionally global so pages cannot fall back to borderless body text. */
+    div[data-testid="stVerticalBlockBorderWrapper"]{
+      border:1.25px solid var(--qcms-line-strong)!important;border-radius:2px!important;
+      background:#fff!important;box-shadow:none!important;overflow:hidden!important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] > div{
+      background:#fff!important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] p{
+      margin-top:0!important;margin-bottom:.28rem!important;
+    }
+
+    /* v4.13.0 FIELD POCKETS — target both current and older BaseWeb DOM variants. */
+    div[data-testid="stTextInput"],div[data-testid="stNumberInput"],div[data-testid="stDateInput"],
+    div[data-testid="stTimeInput"],div[data-testid="stSelectbox"],div[data-testid="stMultiSelect"],
+    div[data-testid="stTextArea"],div[data-testid="stFileUploader"]{margin-bottom:4px!important;}
+    div[data-testid="stTextInput"] [data-baseweb="input"],
+    div[data-testid="stNumberInput"] [data-baseweb="input"],
+    div[data-testid="stDateInput"] [data-baseweb="input"],
+    div[data-testid="stTimeInput"] [data-baseweb="input"],
+    div[data-testid="stSelectbox"] [data-baseweb="select"],
+    div[data-testid="stMultiSelect"] [data-baseweb="select"],
+    div[data-testid="stSelectbox"] [role="combobox"],
+    div[data-testid="stMultiSelect"] [role="combobox"]{
+      background:#fff!important;border:1.35px solid #AEB7BF!important;border-radius:2px!important;
+      box-shadow:none!important;min-height:37px!important;
+    }
+    div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
+    div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
+      border:0!important;background:#fff!important;min-height:35px!important;
+    }
+    div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,
+    div[data-testid="stDateInput"] input,div[data-testid="stTimeInput"] input,
+    div[data-testid="stTextArea"] textarea{
+      border:1.35px solid #AEB7BF!important;border-radius:2px!important;background:#fff!important;
+      color:#252B30!important;box-shadow:none!important;
+    }
+    div[data-testid="stTextInput"] [data-baseweb="input"] input,
+    div[data-testid="stNumberInput"] [data-baseweb="input"] input,
+    div[data-testid="stDateInput"] [data-baseweb="input"] input,
+    div[data-testid="stTimeInput"] [data-baseweb="input"] input{
+      border:0!important;background:transparent!important;
+    }
+    div[data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
+    div[data-testid="stNumberInput"] [data-baseweb="input"]:focus-within,
+    div[data-testid="stDateInput"] [data-baseweb="input"]:focus-within,
+    div[data-testid="stSelectbox"] [data-baseweb="select"]:focus-within,
+    div[data-testid="stMultiSelect"] [data-baseweb="select"]:focus-within,
+    div[data-testid="stTextArea"] textarea:focus{
+      border-color:#167FC7!important;box-shadow:0 0 0 2px rgba(22,127,199,.12)!important;
+    }
+
+    /* v4.13.0 SECTION TYPOGRAPHY — headings must never read like body copy. */
+    .fsi-section-bar{
+      font-size:14.5px!important;font-weight:900!important;letter-spacing:.015em!important;
+      text-transform:uppercase!important;color:#222A30!important;min-height:44px!important;padding:11px 7px 9px!important;
+    }
+    .fsi-page-title{font-size:17.5px!important;font-weight:850!important;color:#222A30!important;}
+    .fsi-page-context{font-size:13px!important;font-weight:800!important;color:#555D63!important;}
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary p{
+      font-size:13.5px!important;font-weight:900!important;letter-spacing:.01em!important;text-transform:uppercase!important;color:#222A30!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"]>div{
+      padding:15px!important;background:#fff!important;
+    }
+
+    /* v4.13.0 NPD / APQP ORDER STATUS POCKETS.  These classes existed in the
+       page renderer but had no CSS before v4.13.0, which made them plain text. */
+    .npd-order-status-row{
+      display:grid!important;grid-template-columns:minmax(205px,250px) minmax(0,1fr)!important;
+      gap:12px!important;align-items:stretch!important;margin:10px 0 14px!important;
+      padding:10px!important;background:#fff!important;border:1.25px solid var(--qcms-line-strong)!important;
+      border-radius:2px!important;box-shadow:none!important;overflow:hidden!important;
+    }
+    .npd-order-summary-card{
+      min-height:142px!important;padding:12px!important;background:#F8FAFB!important;
+      border:1px solid #CED5DA!important;border-left:5px solid var(--qcms-blue)!important;border-radius:2px!important;
+      box-sizing:border-box!important;
+    }
+    .npd-order-part{font-size:15px!important;font-weight:900!important;color:#20282E!important;line-height:1.15!important;}
+    .npd-order-name{font-size:11px!important;font-weight:800!important;color:#4B555C!important;margin:4px 0 9px!important;}
+    .npd-order-meta{font-size:9.8px!important;color:#576168!important;line-height:1.35!important;margin:3px 0!important;}
+    .npd-order-meta b{color:#2B3338!important;font-weight:800!important;}
+    .npd-order-progress{display:inline-block!important;margin-top:9px!important;padding:4px 7px!important;background:#EAF4FC!important;border:1px solid #BFD9EC!important;border-radius:2px!important;font-size:9.5px!important;font-weight:800!important;color:#126AA8!important;}
+    .npd-row-process-strip{
+      display:grid!important;grid-template-columns:repeat(auto-fit,minmax(145px,1fr))!important;
+      gap:9px!important;align-items:stretch!important;min-width:0!important;
+    }
+    .npd-row-process-card{
+      min-height:142px!important;padding:10px!important;background:#fff!important;
+      border:1px solid #CDD4D9!important;border-top:4px solid #A7B0B6!important;border-radius:2px!important;
+      box-sizing:border-box!important;overflow:hidden!important;
+    }
+    .npd-op{font-size:9px!important;font-weight:900!important;color:#69737A!important;text-transform:uppercase!important;letter-spacing:.03em!important;}
+    .npd-process-name{font-size:11.5px!important;font-weight:900!important;color:#293136!important;line-height:1.2!important;margin:6px 0 8px!important;}
+    .npd-process-status{display:inline-block!important;font-size:9px!important;font-weight:900!important;padding:3px 6px!important;border-radius:2px!important;background:#EEF1F3!important;color:#475159!important;margin-bottom:6px!important;}
+    .npd-process-date{font-size:9px!important;color:#687178!important;line-height:1.3!important;margin-top:3px!important;}
+    .npd-completed,.npd-completed_late{border-top-color:var(--qcms-green)!important;background:#F8FFF9!important;}.npd-completed .npd-process-status,.npd-completed_late .npd-process-status{background:#DCFCE7!important;color:#166534!important;}
+    .npd-in_progress{border-top-color:var(--qcms-blue)!important;background:#F7FBFF!important;}.npd-in_progress .npd-process-status{background:#DBEAFE!important;color:#1E40AF!important;}
+    .npd-pending,.npd-not_planned{border-top-color:var(--qcms-amber)!important;background:#FFFCF5!important;}.npd-pending .npd-process-status,.npd-not_planned .npd-process-status{background:#FEF3C7!important;color:#92400E!important;}
+    .npd-overdue{border-top-color:var(--qcms-danger)!important;background:#FFF7F7!important;box-shadow:inset 0 0 0 1px rgba(220,38,38,.08)!important;}.npd-overdue .npd-process-status{background:#FEE2E2!important;color:#991B1B!important;}
+    .npd-hold{border-top-color:#D97706!important;background:#FFF9F0!important;}.npd-hold .npd-process-status{background:#FFEDD5!important;color:#9A3412!important;}
+    .npd-empty-process{display:flex!important;align-items:center!important;justify-content:center!important;min-height:142px!important;border:1px dashed #C5CDD3!important;color:#7A8389!important;background:#FAFBFC!important;font-size:10px!important;}
+
+    /* Generic result / summary panels: keep value blocks as pockets, not free text. */
+    .qcms-pocket-grid{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))!important;gap:10px!important;margin:9px 0 12px!important;}
+    .qcms-pocket{background:#fff!important;border:1.25px solid var(--qcms-line-strong)!important;border-radius:2px!important;padding:11px 12px!important;min-height:72px!important;box-sizing:border-box!important;}
+    .qcms-pocket-label{font-size:9px!important;font-weight:800!important;color:#687178!important;text-transform:uppercase!important;letter-spacing:.03em!important;}
+    .qcms-pocket-value{font-size:13px!important;font-weight:850!important;color:#252D32!important;margin-top:5px!important;line-height:1.25!important;overflow-wrap:anywhere!important;}
+    .qcms-pocket-note{font-size:9px!important;color:#7B858C!important;margin-top:4px!important;line-height:1.25!important;}
+
     @media(max-width:1400px){.fsi-kpi-grid,.fsi-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;}.supply-order-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.fsi-flow-wrap{grid-template-columns:repeat(auto-fit,minmax(135px,1fr))!important;}[class*="st-key-qcms_header_nav_"] div[data-testid="stPageLink"] a{font-size:9.5px!important;padding:4px 2px!important;}.fsi-company-name{font-size:17px!important;}}
-    @media(max-width:980px){.fsi-kpi-grid,.fsi-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.supply-order-grid{grid-template-columns:1fr!important;}.fsi-user-copy,.fsi-company-sub{display:none!important;}.fsi-flow-wrap{grid-template-columns:repeat(2,minmax(0,1fr))!important;}[class*="st-key-qcms_rail_"] div[data-testid="stPageLink"] a{font-size:9px!important;padding:0 7px!important;}}
+    @media(max-width:1100px){.npd-order-status-row{grid-template-columns:1fr!important;}.npd-row-process-strip{grid-template-columns:repeat(3,minmax(0,1fr))!important;} }
+    @media(max-width:980px){.npd-row-process-strip{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.fsi-kpi-grid,.fsi-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.supply-order-grid{grid-template-columns:1fr!important;}.fsi-user-copy,.fsi-company-sub{display:none!important;}.fsi-flow-wrap{grid-template-columns:repeat(2,minmax(0,1fr))!important;}[class*="st-key-qcms_rail_"] div[data-testid="stPageLink"] a{font-size:9px!important;padding:0 7px!important;}}
     </style>
     """, unsafe_allow_html=True)
 
