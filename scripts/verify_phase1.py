@@ -473,8 +473,26 @@ for token in ('supply-chain-report', 'rmtc-report', 'inward-report', 'osp-balanc
     if token not in app_text:
         errors.append(f"QCMS 4.12.9 operational report shortcut missing: {token}")
 
+# QCMS 4.13.0 / 4.13.1 visual release verification.
+if "4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM" not in ui_text:
+    errors.append("QCMS 4.13.0 universal pocket build fingerprint is missing")
+for token in ("npd-order-status-row", "npd-row-process-card", "qcms-pocket-grid", "stVerticalBlockBorderWrapper", "border:1.35px solid #AEB7BF"):
+    if token not in ui_text:
+        errors.append(f"QCMS 4.13.0 universal pocket UI token missing: {token}")
+if "4131-MERITOR-FIELD-SECTION-LOGIN-REFRESH" not in ui_text:
+    errors.append("QCMS 4.13.1 UI build fingerprint is missing")
+for token in ("--qcms-maroon:#B20738", "--qcms-field-bg:#FFFDF2", "border:1.2px solid var(--qcms-field-border)", ".fsi-section-bar", "color:var(--qcms-heading)!important"):
+    if token not in ui_text:
+        errors.append(f"QCMS 4.13.1 field/section token missing: {token}")
+for token in ("IDENTIFICATION", "Login *", "Password *", "background:#FFFDF0!important", "max-width:470px!important"):
+    if token not in auth_text:
+        errors.append(f"QCMS 4.13.1 minimal login token missing: {token}")
+
 report = {
-    "release": "QCMS 4.13.0 universal pocket card + field system",
+    "release": "QCMS 4.13.1 Meritor field + section + minimal login refresh",
+    "meritor_reference_field_system": "--qcms-field-bg:#FFFDF2" in ui_text and "--qcms-maroon:#B20738" in ui_text,
+    "maroon_section_hierarchy": "color:var(--qcms-heading)!important" in ui_text,
+    "minimal_identification_login": "IDENTIFICATION" in auth_text and "Login *" in auth_text and "Password *" in auth_text,
     "hardened_portal_shell": True,
     "visible_widget_borders": True,
     "pocket_flow_layout": True,
@@ -627,12 +645,3 @@ report = {
 }
 print(json.dumps(report, indent=2))
 raise SystemExit(1 if errors else 0)
-
-# v4.13.0 release marker: 4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM
-
-# QCMS 4.13.0 universal pocket contract.
-if "4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM" not in ui_text:
-    errors.append("QCMS 4.13.0 universal pocket build fingerprint is missing")
-for token in ("npd-order-status-row", "npd-row-process-card", "qcms-pocket-grid", "stVerticalBlockBorderWrapper", "border:1.35px solid #AEB7BF"):
-    if token not in ui_text:
-        errors.append(f"QCMS 4.13.0 universal pocket UI token missing: {token}")

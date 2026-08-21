@@ -1,3 +1,13 @@
+# QCMS v4.13.1 — Meritor Field / Section / Login Refresh
+
+- Build: `4131-MERITOR-FIELD-SECTION-LOGIN-REFRESH`
+- Whole-app field labels and value controls now follow the supplied Meritor enterprise portal reference.
+- Section/page/stage titles use a bold maroon hierarchy and clean underline accents.
+- Input, select, date, numeric, textarea and upload controls use visible cream value pockets with strong borders.
+- Login is reduced to a single IDENTIFICATION card containing only Login, Password and Login action.
+- Existing business logic, reports, permissions, traceability and Supabase data are preserved.
+- No new Supabase migration is required.
+
 # QCMS v4.13.0 — Universal Pocket Card & Field System
 
 - Build: `4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM`

@@ -46,6 +46,8 @@ required = [
     "docs/RELEASE_4_12_7.md",
     "tests/test_v4127_exact_preview_enterprise_ui.py",
     "docs/RELEASE_4_12_8.md",
+    "docs/RELEASE_4_13_1.md",
+    "tests/test_v4131_meritor_field_section_login_refresh.py",
     "tests/test_v4128_responsive_enterprise_ui_report_hub.py",
     "tests/test_v484_unified_records.py",
     "tests/test_v485_combined_heat_balance.py",
@@ -120,7 +122,7 @@ required = [
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.13.0 - universal pocket card and field system",
+    "phase": "QCMS 4.13.1 - Meritor field, section and minimal login refresh",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

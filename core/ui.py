@@ -1,5 +1,7 @@
 # Legacy UI regression phrase retained: taglines and context
-# QCMS 4.13.0 — UNIVERSAL-POCKET-CARD-FIELD-SYSTEM
+# QCMS 4.13.1 — MERITOR-FIELD-SECTION-LOGIN-REFRESH
+# BUILD 4131-MERITOR-FIELD-SECTION-LOGIN-REFRESH
+# Legacy v4.13.0 build retained: 4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM
 # BUILD 4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM
 # Legacy v4.12.9 build retained: 4129-HARDENED-PORTAL-UI-POCKET-FLOW
 # Legacy v4.12.8 build retained: 4128-RESPONSIVE-ENTERPRISE-UI-REPORT-HUB
@@ -594,6 +596,136 @@ def apply_global_style() -> None:
     @media(max-width:1400px){.fsi-kpi-grid,.fsi-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;}.supply-order-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.fsi-flow-wrap{grid-template-columns:repeat(auto-fit,minmax(135px,1fr))!important;}[class*="st-key-qcms_header_nav_"] div[data-testid="stPageLink"] a{font-size:9.5px!important;padding:4px 2px!important;}.fsi-company-name{font-size:17px!important;}}
     @media(max-width:1100px){.npd-order-status-row{grid-template-columns:1fr!important;}.npd-row-process-strip{grid-template-columns:repeat(3,minmax(0,1fr))!important;} }
     @media(max-width:980px){.npd-row-process-strip{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.fsi-kpi-grid,.fsi-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.supply-order-grid{grid-template-columns:1fr!important;}.fsi-user-copy,.fsi-company-sub{display:none!important;}.fsi-flow-wrap{grid-template-columns:repeat(2,minmax(0,1fr))!important;}[class*="st-key-qcms_rail_"] div[data-testid="stPageLink"] a{font-size:9px!important;padding:0 7px!important;}}
+    </style>
+    """, unsafe_allow_html=True)
+
+
+    # QCMS 4.13.1 — Meritor-style field / section visual contract.
+    # This final stylesheet intentionally comes LAST so every page receives the
+    # same label, value-field, section-title and pocket-border hierarchy.
+    st.markdown(r"""
+    <style>
+    :root{
+      --qcms-maroon:#B20738;--qcms-maroon-dark:#8F062D;
+      --qcms-field-bg:#FFFDF2;--qcms-field-border:#CFC79F;
+      --qcms-panel-border:#D1D5D8;--qcms-heading:#B20738;
+    }
+
+    /* Whole-app typography hierarchy: headings must never look like body text. */
+    .fsi-page-title,h1,h2,h3,h4,.fsi-section-bar,
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary p{
+      color:var(--qcms-heading)!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;
+      font-weight:800!important;letter-spacing:0!important;
+    }
+    .fsi-page-title{font-size:17px!important;line-height:1.2!important;}
+    h1{font-size:20px!important;}h2{font-size:17px!important;}h3{font-size:14.5px!important;}h4{font-size:13px!important;}
+    .fsi-section-bar{
+      min-height:42px!important;padding:10px 8px 8px!important;margin:13px 0 9px!important;
+      background:#fff!important;border:1px solid var(--qcms-panel-border)!important;border-width:1px 0 1px 0!important;
+      font-size:14px!important;line-height:1.25!important;text-transform:none!important;
+    }
+    .fsi-section-bar:after{left:8px!important;width:64px!important;height:3px!important;background:var(--qcms-maroon)!important;}
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"]{
+      border:1px solid var(--qcms-panel-border)!important;background:#fff!important;border-radius:1px!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary{
+      background:#fff!important;border-bottom:1px solid #E0E2E4!important;min-height:44px!important;padding:10px 12px!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary p{
+      font-size:13.5px!important;text-transform:none!important;line-height:1.2!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary:after{background:var(--qcms-maroon)!important;}
+
+    /* Meritor-style field labels: clear black heading above each value field. */
+    label[data-testid="stWidgetLabel"]{margin:0 0 5px!important;min-height:17px!important;}
+    label[data-testid="stWidgetLabel"] p{
+      font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:11.5px!important;
+      font-weight:700!important;color:#252525!important;line-height:1.15!important;margin:0!important;
+    }
+    label[data-testid="stWidgetLabel"] p strong{font-weight:800!important;color:#252525!important;}
+
+    /* Visible cream value fields copied from the supplied enterprise portal reference. */
+    div[data-testid="stTextInput"] div[data-baseweb="input"],
+    div[data-testid="stNumberInput"] div[data-baseweb="input"],
+    div[data-testid="stDateInput"] div[data-baseweb="input"],
+    div[data-testid="stTimeInput"] div[data-baseweb="input"],
+    div[data-testid="stSelectbox"] div[data-baseweb="select"]>div,
+    div[data-testid="stMultiSelect"] div[data-baseweb="select"]>div,
+    div[data-testid="stTextArea"] textarea,
+    div[data-testid="stTextInput"] [data-baseweb="base-input"],
+    div[data-testid="stNumberInput"] [data-baseweb="base-input"],
+    div[data-testid="stDateInput"] [data-baseweb="base-input"]{
+      min-height:39px!important;background:var(--qcms-field-bg)!important;
+      border:1.2px solid var(--qcms-field-border)!important;border-radius:2px!important;
+      box-shadow:inset 0 1px 1px rgba(0,0,0,.025)!important;color:#252525!important;
+      box-sizing:border-box!important;
+    }
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stDateInput"] input,
+    div[data-testid="stTimeInput"] input,
+    div[data-testid="stTextArea"] textarea,
+    div[data-testid="stSelectbox"] [role="combobox"],
+    div[data-testid="stMultiSelect"] [role="combobox"],
+    [data-baseweb="select"] span{
+      font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:11.8px!important;
+      font-weight:500!important;color:#262626!important;-webkit-text-fill-color:#262626!important;
+    }
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stDateInput"] input,
+    div[data-testid="stTimeInput"] input{
+      background:transparent!important;border:0!important;box-shadow:none!important;
+    }
+    div[data-testid="stTextInput"] div[data-baseweb="input"]:focus-within,
+    div[data-testid="stNumberInput"] div[data-baseweb="input"]:focus-within,
+    div[data-testid="stDateInput"] div[data-baseweb="input"]:focus-within,
+    div[data-testid="stTimeInput"] div[data-baseweb="input"]:focus-within,
+    div[data-testid="stSelectbox"] div[data-baseweb="select"]>div:focus-within,
+    div[data-testid="stMultiSelect"] div[data-baseweb="select"]>div:focus-within,
+    div[data-testid="stTextArea"] textarea:focus{
+      border-color:var(--qcms-maroon)!important;box-shadow:0 0 0 1px rgba(178,7,56,.13)!important;
+    }
+    input::placeholder,textarea::placeholder{color:#969696!important;-webkit-text-fill-color:#969696!important;}
+    input:disabled,textarea:disabled,[aria-disabled="true"]{
+      opacity:1!important;color:#545454!important;-webkit-text-fill-color:#545454!important;
+    }
+    div[data-testid="stTextInput"] div[data-baseweb="input"]:has(input:disabled),
+    div[data-testid="stNumberInput"] div[data-baseweb="input"]:has(input:disabled),
+    div[data-testid="stDateInput"] div[data-baseweb="input"]:has(input:disabled){background:#F7F5EA!important;}
+    div[data-testid="stTextArea"] textarea{min-height:78px!important;}
+    [data-testid="stFileUploaderDropzone"]{
+      background:var(--qcms-field-bg)!important;border:1.2px dashed var(--qcms-field-border)!important;border-radius:2px!important;
+    }
+
+    /* Forms and reusable pockets use the same clean bordered panel language. */
+    div[data-testid="stForm"]{
+      background:#fff!important;border:1px solid var(--qcms-panel-border)!important;border-radius:2px!important;
+      padding:14px!important;box-shadow:none!important;
+    }
+    .qcms-pocket,.fsi-kpi-card,.fsi-status-card,.fsi-master-card,.fsi-dashboard-card,
+    .supply-order-card,.fsi-flow-step,.npd-order-summary-card,.npd-row-process-card{
+      border-color:#C9CDD1!important;background:#fff!important;box-shadow:none!important;border-radius:2px!important;
+    }
+    .qcms-pocket-label,.fsi-kpi-label,.fsi-master-card-title,.fsi-dashboard-title{
+      color:#4A4A4A!important;font-weight:700!important;
+    }
+    .qcms-pocket-value{font-weight:700!important;color:#252525!important;}
+
+    /* Tables follow the same compact framed enterprise grid. */
+    div[data-testid="stDataFrame"],div[data-testid="stDataEditor"]{
+      border:1px solid #BFC4C8!important;background:#fff!important;
+    }
+    div[data-testid="stDataFrame"] [role="columnheader"],div[data-testid="stDataEditor"] [role="columnheader"]{
+      background:#F0F1F2!important;color:#333!important;font-weight:800!important;
+    }
+    div[data-testid="stDataFrame"] [role="gridcell"],div[data-testid="stDataEditor"] [role="gridcell"]{
+      border-right:1px solid #D3D7DA!important;border-bottom:1px solid #D8DCDF!important;
+    }
+
+    /* Tabs/subsection selections use maroon like the reference portal. */
+    button[data-baseweb="tab"]{font-weight:700!important;color:#444!important;}
+    button[data-baseweb="tab"][aria-selected="true"]{color:var(--qcms-maroon)!important;box-shadow:inset 0 -3px 0 var(--qcms-maroon)!important;}
     </style>
     """, unsafe_allow_html=True)
 
