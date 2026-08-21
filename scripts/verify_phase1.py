@@ -540,8 +540,25 @@ if "SKIP_DUPLICATE" not in supply_service_text_v4134:
 if "never update existing records" not in reference_import_text_v4134:
     errors.append("QCMS 4.13.4 reference import insert-only contract is missing")
 
+
+# QCMS 4.13.5 final visual-cascade hotfix.
+v4135_marker = "4135-MAROON-SECTIONS-WHITE-FIELDS-KPI-ICON-FIX"
+if v4135_marker not in ui_text or v4135_marker not in auth_text:
+    errors.append("QCMS 4.13.5 build fingerprint is missing")
+for token in (
+    '--qcms-v4135-field:#FFFFFF',
+    'details[data-testid="stExpander"] summary p',
+    'padding:13px 14px 12px 62px!important',
+    'transform:translateY(-50%)!important',
+):
+    if token not in ui_text:
+        errors.append(f"QCMS 4.13.5 UI cascade token missing: {token}")
+
 report = {
-    "release": "QCMS 4.13.4 priority UI + reusable RMTC balance + duplicate-safe imports",
+    "release": "QCMS 4.13.5 maroon sections + white fields + KPI icon separation",
+    "v4135_maroon_all_expanders": v4135_marker in ui_text and 'details[data-testid="stExpander"] summary p' in ui_text,
+    "v4135_white_field_pockets": "--qcms-v4135-field:#FFFFFF" in ui_text,
+    "v4135_kpi_icon_column": "padding:13px 14px 12px 62px!important" in ui_text,
     "priority_ui_contract": "FINAL PRIORITY UI CONTRACT" in ui_text,
     "deterministic_enterprise_tables": "def portal_table" in ui_text and "qcms-enterprise-table" in ui_text,
     "cropped_company_login": "Welcome to Four Star Industries" in auth_text and (ROOT / "assets" / "login_factory.jpeg").exists(),

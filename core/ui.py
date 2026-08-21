@@ -1,5 +1,6 @@
-# QCMS 4.13.4 — PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT
-# BUILD 4134-PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT
+# QCMS 4.13.5 — MAROON-SECTIONS-WHITE-FIELDS-KPI-ICON-FIX
+# BUILD 4135-MAROON-SECTIONS-WHITE-FIELDS-KPI-ICON-FIX
+# COMPAT BUILD 4134-PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT
 # Legacy UI regression phrase retained: taglines and context
 # QCMS 4.13.3 — LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH
 # BUILD 4133-LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH
@@ -1101,6 +1102,182 @@ def apply_global_style() -> None:
     .stButton>button[kind="primary"],.stFormSubmitButton>button[kind="primary"]{background:var(--qcms-maroon)!important;border:1px solid var(--qcms-maroon-dark)!important;color:#fff!important;border-radius:2px!important;font-weight:800!important;}
     .stButton>button[kind="primary"] *,.stFormSubmitButton>button[kind="primary"] *{color:#fff!important;}
 
+    </style>
+    """, unsafe_allow_html=True)
+
+
+    # QCMS 4.13.5 — LAST CSS CONTRACT.
+    # Fixes KPI icon/value collision, forces every collapsible section title maroon,
+    # and standardises all field pockets to the same white/list-pocket surface.
+    st.markdown(r"""
+    <style>
+    :root{
+      --qcms-v4135-maroon:#B20738;
+      --qcms-v4135-maroon-dark:#8F062D;
+      --qcms-v4135-field:#FFFFFF;
+      --qcms-v4135-field-readonly:#F8F9FA;
+      --qcms-v4135-field-line:#BFC5CA;
+      --qcms-v4135-panel-line:#C9CED2;
+    }
+
+    /* ----------------------------------------------------------------------
+       1. ALL collapsible section titles: maroon heading typography globally.
+       This intentionally targets every Streamlit expander, not only keyed
+       workflow stages, because QCMS uses expanders across all modules.
+       ---------------------------------------------------------------------- */
+    details[data-testid="stExpander"]{
+      background:#fff!important;
+      border:1px solid var(--qcms-v4135-panel-line)!important;
+      border-radius:2px!important;
+      box-shadow:none!important;
+      overflow:hidden!important;
+    }
+    details[data-testid="stExpander"] summary{
+      background:#fff!important;
+      min-height:44px!important;
+      padding:10px 13px!important;
+      border-bottom:1px solid #D6DADF!important;
+      color:var(--qcms-v4135-maroon)!important;
+    }
+    details[data-testid="stExpander"] summary p,
+    details[data-testid="stExpander"] summary span,
+    details[data-testid="stExpander"] summary div,
+    details[data-testid="stExpander"] summary strong{
+      color:var(--qcms-v4135-maroon)!important;
+      font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;
+      font-size:13.5px!important;
+      font-weight:900!important;
+      line-height:1.2!important;
+      letter-spacing:.005em!important;
+    }
+    details[data-testid="stExpander"] summary svg{
+      color:var(--qcms-v4135-maroon)!important;
+      fill:var(--qcms-v4135-maroon)!important;
+      flex:0 0 auto!important;
+    }
+    .fsi-section-bar,.fsi-section-bar *,
+    .fsi-page-title,.fsi-page-title *{
+      color:var(--qcms-v4135-maroon)!important;
+      font-weight:900!important;
+    }
+
+    /* ----------------------------------------------------------------------
+       2. Field pockets: SAME white background as list/select pockets.
+       Remove all cream/yellow value surfaces from prior releases.
+       ---------------------------------------------------------------------- */
+    div[data-testid="stTextInput"] div[data-baseweb="input"],
+    div[data-testid="stTextInput"] [data-baseweb="base-input"],
+    div[data-testid="stNumberInput"] div[data-baseweb="input"],
+    div[data-testid="stNumberInput"] [data-baseweb="base-input"],
+    div[data-testid="stDateInput"] div[data-baseweb="input"],
+    div[data-testid="stDateInput"] [data-baseweb="base-input"],
+    div[data-testid="stTimeInput"] div[data-baseweb="input"],
+    div[data-testid="stTimeInput"] [data-baseweb="base-input"],
+    div[data-testid="stSelectbox"] div[data-baseweb="select"]>div,
+    div[data-testid="stMultiSelect"] div[data-baseweb="select"]>div,
+    div[data-testid="stTextArea"] textarea,
+    [data-testid="stFileUploaderDropzone"]{
+      background:var(--qcms-v4135-field)!important;
+      border:1.25px solid var(--qcms-v4135-field-line)!important;
+      border-radius:2px!important;
+      box-shadow:none!important;
+      color:#252A2E!important;
+    }
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stDateInput"] input,
+    div[data-testid="stTimeInput"] input,
+    div[data-testid="stTextArea"] textarea{
+      background:transparent!important;
+      color:#252A2E!important;
+      -webkit-text-fill-color:#252A2E!important;
+      box-shadow:none!important;
+    }
+    div[data-testid="stTextInput"] div[data-baseweb="input"]:has(input:disabled),
+    div[data-testid="stTextInput"] [data-baseweb="base-input"]:has(input:disabled),
+    div[data-testid="stNumberInput"] div[data-baseweb="input"]:has(input:disabled),
+    div[data-testid="stNumberInput"] [data-baseweb="base-input"]:has(input:disabled),
+    div[data-testid="stDateInput"] div[data-baseweb="input"]:has(input:disabled),
+    div[data-testid="stDateInput"] [data-baseweb="base-input"]:has(input:disabled),
+    div[data-testid="stTimeInput"] div[data-baseweb="input"]:has(input:disabled),
+    div[data-testid="stTimeInput"] [data-baseweb="base-input"]:has(input:disabled),
+    div[data-testid="stTextArea"] textarea:disabled{
+      background:var(--qcms-v4135-field-readonly)!important;
+      color:#394047!important;
+      -webkit-text-fill-color:#394047!important;
+      opacity:1!important;
+    }
+    div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
+    div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
+      min-height:38px!important;
+    }
+    label[data-testid="stWidgetLabel"] p{
+      color:#2A2E31!important;
+      font-weight:800!important;
+    }
+
+    /* ----------------------------------------------------------------------
+       3. KPI/status cards: reserve a real icon column so the pseudo icon can
+       never merge with the label/value text.  Late v4.13.4 CSS had reset
+       padding to 12px, causing the collision visible in Dashboard screenshots.
+       ---------------------------------------------------------------------- */
+    .fsi-kpi,.fsi-status-card{
+      position:relative!important;
+      min-height:92px!important;
+      padding:13px 14px 12px 62px!important;
+      background:#fff!important;
+      border:1px solid var(--qcms-v4135-panel-line)!important;
+      border-radius:2px!important;
+      box-sizing:border-box!important;
+      overflow:hidden!important;
+    }
+    .fsi-kpi:before,.fsi-status-card:before{
+      left:16px!important;
+      top:50%!important;
+      transform:translateY(-50%)!important;
+      width:32px!important;
+      height:32px!important;
+      display:flex!important;
+      align-items:center!important;
+      justify-content:center!important;
+      z-index:1!important;
+      pointer-events:none!important;
+    }
+    .fsi-kpi-label,.fsi-kpi-value,.fsi-kpi-foot,
+    .fsi-status-card .label,.fsi-status-card .value,.fsi-status-card .foot{
+      position:relative!important;
+      z-index:2!important;
+      margin-left:0!important;
+      max-width:100%!important;
+      overflow-wrap:anywhere!important;
+    }
+    .fsi-kpi-label,.fsi-status-card .label{
+      font-size:10px!important;
+      line-height:1.2!important;
+      font-weight:800!important;
+    }
+    .fsi-kpi-value,.fsi-status-card .value{
+      font-size:21px!important;
+      line-height:1.08!important;
+      margin-top:5px!important;
+      margin-bottom:3px!important;
+      font-weight:900!important;
+    }
+    .fsi-kpi-foot,.fsi-status-card .foot{
+      font-size:9.5px!important;
+      line-height:1.2!important;
+    }
+
+    /* Preserve clean white value pockets and grid surfaces everywhere. */
+    .qcms-pocket,.fsi-flow-step,.supply-order-card,.npd-row-process-card,
+    .npd-order-summary-card,.fsi-dashboard-card,[class*="st-key-master_card_"]{
+      background:#fff!important;
+      border-color:var(--qcms-v4135-panel-line)!important;
+    }
+    .qcms-enterprise-table-wrap,div[data-testid="stDataFrame"],div[data-testid="stDataEditor"]{
+      background:#fff!important;
+      border-color:#B8BEC3!important;
+    }
     </style>
     """, unsafe_allow_html=True)
 

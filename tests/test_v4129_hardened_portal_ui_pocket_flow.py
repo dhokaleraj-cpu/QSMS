@@ -3,7 +3,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 def test_v4129_build_and_styles():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5"}
     ui = (ROOT / "core/ui.py").read_text()
     app = (ROOT / "streamlit_app.py").read_text()
     assert "4129-HARDENED-PORTAL-UI-POCKET-FLOW" in ui

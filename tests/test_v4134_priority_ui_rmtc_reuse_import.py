@@ -8,7 +8,7 @@ def text(rel: str) -> str:
 
 
 def test_v4134_release_and_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() == "4.13.4"
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.4", "4.13.5"}
     marker = "4134-PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT"
     assert marker in text("core/ui.py")
     assert marker in text("core/auth.py")

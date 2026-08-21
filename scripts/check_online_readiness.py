@@ -123,11 +123,13 @@ required = [
     "tests/test_v4117_complaint_stage_expanders.py",
     "docs/RELEASE_4_11_8.md",
     "tests/test_v4118_global_staged_sections.py",
+    "docs/RELEASE_4_13_5.md",
+    "tests/test_v4135_maroon_white_fields_kpi_fix.py",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.13.4 - priority UI, reusable RMTC balance and duplicate-safe imports",
+    "phase": "QCMS 4.13.5 - maroon sections, white fields and KPI icon separation",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),
