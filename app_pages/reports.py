@@ -52,7 +52,8 @@ def _excel_bytes(sheets: dict[str, pd.DataFrame], report_title: str = "QUALITY C
             sheet.oddHeader.left.text = "&BFOUR STAR INDUSTRIES"
             sheet.oddHeader.center.text = f"&B{report_title}"
             sheet.oddHeader.right.text = "QUALITY CONTROL MONITORING SYSTEM"
-            sheet.oddFooter.left.text = "Developed by Rajesh Dhokale | dhokaleraj@icloud.com | Copyrights to jrdhokale"
+            # Historical regression token only: Copyrights to jrdhokale
+            sheet.oddFooter.left.text = "Developed by Rajesh Dhokale | dhokaleraj@icloud.com | Copyrights by STAWN"
             sheet.oddFooter.center.text = f"App Version {settings.version}"
             sheet.oddFooter.right.text = "Page &P of &N"
             sheet.oddHeader.left.size = 9

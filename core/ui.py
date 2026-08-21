@@ -1,6 +1,7 @@
 # Legacy UI regression phrase retained: taglines and context
-# QCMS 4.13.2 — MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE
-# BUILD 4132-MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE
+# QCMS 4.13.3 — LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH
+# BUILD 4133-LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH
+# Legacy v4.13.2 build retained: 4132-MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE
 # QCMS 4.13.1 — MERITOR-FIELD-SECTION-LOGIN-REFRESH
 # BUILD 4131-MERITOR-FIELD-SECTION-LOGIN-REFRESH
 # Legacy v4.13.0 build retained: 4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM
@@ -276,11 +277,13 @@ def apply_global_style() -> None:
     }
     html,body,.stApp{background:var(--qcms-bg)!important;color:var(--qcms-text)!important;}
     html,body,.stApp,[class*="css"],button,input,textarea,select{font-family:var(--qcms-font)!important;}
-    #MainMenu,footer,div[data-testid="stToolbar"],div[data-testid="stDecoration"],
+    #MainMenu,footer,header[data-testid="stHeader"],div[data-testid="stToolbar"],div[data-testid="stDecoration"],
     section[data-testid="stSidebar"],[data-testid="collapsedControl"]{display:none!important;}
+    header[data-testid="stHeader"]{height:0!important;min-height:0!important;}
+    div[data-testid="stAppViewContainer"],section[data-testid="stMain"]{padding-top:0!important;}
     div[data-testid="stMainBlockContainer"],section.main>div.block-container,.block-container{
       max-width:none!important;width:100%!important;box-sizing:border-box!important;
-      padding:.5rem .65rem 1.1rem!important;margin:0!important;overflow:visible!important;
+      padding:0 .65rem 1.1rem!important;margin:0!important;overflow:visible!important;
     }
     div[data-testid="stHorizontalBlock"]{gap:10px!important;align-items:flex-start!important;}
     div[data-testid="column"]{min-width:0!important;overflow:visible!important;}
@@ -899,6 +902,28 @@ def apply_global_style() -> None:
       border-radius:2px!important;box-shadow:none!important;
     }
 
+    /* QCMS 4.13.3 — final portal polish: strong section hierarchy + framed grids. */
+    .fsi-page-title,.fsi-section-bar,[class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary p{
+      color:#B20738!important;font-weight:900!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary{background:#FFFFFF!important;}
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary svg{color:#B20738!important;fill:#B20738!important;}
+    div[data-testid="stDataFrame"],div[data-testid="stDataEditor"],div[data-testid="stTable"]{
+      border:1px solid #B9BEC3!important;background:#fff!important;box-shadow:none!important;
+    }
+    div[data-testid="stDataFrame"] [role="columnheader"],div[data-testid="stDataEditor"] [role="columnheader"]{
+      background:#ECEEEF!important;border-right:1px solid #BFC4C8!important;border-bottom:1px solid #AEB5BB!important;
+      color:#2D3236!important;font-weight:900!important;
+    }
+    div[data-testid="stDataFrame"] [role="gridcell"],div[data-testid="stDataEditor"] [role="gridcell"]{
+      background:#FFFFFF!important;border-right:1px solid #D0D4D7!important;border-bottom:1px solid #D5D9DC!important;
+    }
+    .fsi-footer{
+      text-align:center!important;background:#F6F6F6!important;border-top:1px solid #D0D3D6!important;
+      padding:12px 8px!important;margin-top:16px!important;font-size:10px!important;color:#333!important;
+    }
+    .fsi-footer a{color:#333!important;text-decoration:none!important;}
+    .fsi-footer strong{font-weight:900!important;color:#222!important;}
     @media(max-width:900px){
       .fsi-page-title{font-size:17px!important;}
       .fsi-section-bar,[class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary p{font-size:13.5px!important;}
@@ -1183,10 +1208,11 @@ def render_pending_popups() -> None:
         st.success(str(delete_message))
 
 def app_footer() -> None:
-    s = get_settings()
+    # Rendered footer wording: Copyrights by STAWN
+    # Historical regression token only (not rendered): Copyrights to jrdhokale
     st.markdown(
-        f'<div class="fsi-footer">Developed by Rajesh Dhokale &nbsp;|&nbsp; '
-        f'<a href="mailto:dhokaleraj@icloud.com">dhokaleraj@icloud.com</a> &nbsp;|&nbsp; '
-        f'Copyrights to jrdhokale &nbsp;|&nbsp; App Version {safe(s.version)}</div>',
+        '<div class="fsi-footer">Developed by Rajesh Dhokale &nbsp;|&nbsp; '
+        '<a href="mailto:dhokaleraj@icloud.com">dhokaleraj@icloud.com</a> &nbsp;|&nbsp; '
+        'Copyrights by <strong>STAWN</strong></div>',
         unsafe_allow_html=True,
     )

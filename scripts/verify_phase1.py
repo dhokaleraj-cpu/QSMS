@@ -501,8 +501,19 @@ for token in ("login_factory.jpeg", "qcms_login_image_card", "IDENTIFICATION", "
 if not (ROOT / "assets" / "login_factory.jpeg").exists():
     errors.append("QCMS 4.13.2 factory login image is missing")
 
+
+# QCMS 4.13.3 login isolation / STAWN footer / portal-polish verification.
+auth_text = (ROOT / "core" / "auth.py").read_text(encoding="utf-8")
+if "4133-LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH" not in ui_text or "4133-LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH" not in auth_text:
+    errors.append("QCMS 4.13.3 build fingerprint is missing")
+login_no_menu = all(token in auth_text for token in ('div.st-key-fsi_shell','st-key-qcms_workspace','st-key-fsi_left_rail','display:none!important'))
+stawn_footer = 'Copyrights by <strong>STAWN</strong>' in ui_text and 'dhokaleraj@icloud.com' in ui_text
+native_header_removed = 'header[data-testid="stHeader"]' in ui_text and 'display:none!important' in ui_text
 report = {
-    "release": "QCMS 4.13.2 Meritor exact grid + section + factory-image login refresh",
+    "release": "QCMS 4.13.3 login no-menu + STAWN footer + portal polish",
+    "login_no_menu": login_no_menu,
+    "stawn_footer": stawn_footer,
+    "native_header_removed": native_header_removed,
     "meritor_reference_field_system": "--qcms-field-bg:#FFFDF2" in ui_text and "--qcms-maroon:#B20738" in ui_text,
     "maroon_section_hierarchy": "color:var(--qcms-heading)!important" in ui_text,
     "minimal_identification_login": "IDENTIFICATION" in auth_text and "Login *" in auth_text and "Password *" in auth_text,

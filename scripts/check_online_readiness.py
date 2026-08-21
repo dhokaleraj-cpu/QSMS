@@ -47,6 +47,8 @@ required = [
     "tests/test_v4127_exact_preview_enterprise_ui.py",
     "docs/RELEASE_4_12_8.md",
     "docs/RELEASE_4_13_1.md",
+    "docs/RELEASE_4_13_3.md",
+    "tests/test_v4133_login_no_menu_stawn_footer.py",
     "tests/test_v4131_meritor_field_section_login_refresh.py",
     "tests/test_v4128_responsive_enterprise_ui_report_hub.py",
     "tests/test_v484_unified_records.py",
@@ -122,7 +124,7 @@ required = [
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.13.2 - Meritor exact grid, section and factory-image login refresh",
+    "phase": "QCMS 4.13.3 - login no-menu, STAWN footer and portal polish",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

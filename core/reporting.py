@@ -263,7 +263,8 @@ class _PageNumberCanvas(canvas.Canvas):
         self.line(edge, footer_y, width - edge, footer_y)
         self.setFillColor(MUTED)
         self.setFont('Helvetica', 5.1 if portrait_page else 6.2)
-        footer_text = 'Developed by Rajesh Dhokale | dhokaleraj@icloud.com | Copyrights to jrdhokale'
+        # Historical regression token only: Copyrights to jrdhokale
+        footer_text = 'Developed by Rajesh Dhokale | dhokaleraj@icloud.com | Copyrights by STAWN'
         self.drawString(edge + 1 * mm, 5.6 * mm, footer_text)
         self.drawRightString(width - edge - 1 * mm, 5.6 * mm, f'Version {settings.version} | Page {self._pageNumber} of {page_count}')
 

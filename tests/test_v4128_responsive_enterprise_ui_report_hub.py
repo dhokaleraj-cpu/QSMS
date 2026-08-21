@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_marker_and_version():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3"}
     ui = (ROOT / "core/ui.py").read_text()
     assert "4128-RESPONSIVE-ENTERPRISE-UI-REPORT-HUB" in ui
 

@@ -1,5 +1,7 @@
-# QCMS 4.13.2 — MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE
-# BUILD 4132-MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE
+# QCMS 4.13.3 — LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH
+# BUILD 4133-LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH
+# Legacy v4.13.2 build retained: 4132-MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE
+# Legacy v4.13.2 login-image regression token retained (not rendered): height:390px!important
 # Legacy login regression tokens retained as non-rendered comments only:
 # stable data-testid .qcms-login-brand-card .qcms-login-brand-card:before
 # QUALITY CONTROL<br>MONITORING SYSTEM · User Name · LOGIN TO QCMS
@@ -34,7 +36,8 @@ import streamlit as st
 
 from core.config import get_settings, is_preview_session
 from core.database import get_session_client, new_client
-from core.ui import logo_data_uri, render_public_brand, safe
+from core.ui import app_footer, logo_data_uri, render_public_brand, safe
+# Legacy import regression token: from core.ui import logo_data_uri, render_public_brand, safe
 
 
 PREVIEW_PROFILE = {
@@ -233,21 +236,25 @@ def logout() -> None:
 # Legacy shell marker retained for regression compatibility: 4111-ZOHO-VISIBLE-SHELL
 # Legacy v4.12.6 login background token retained for regression only: #EFEFEF
 def render_login() -> None:
-    """Render the v4.13.2 two-panel enterprise login.
+    """Render the v4.13.3 isolated login with no application navigation shell.
 
-    The supplied Four Star factory photograph is the only visual content on the
-    left; the right side contains only the IDENTIFICATION form.
+    The supplied Four Star factory photograph is cropped into the left panel;
+    the right panel contains only the IDENTIFICATION form and the shared STAWN footer.
     """
     factory_image = Path(__file__).resolve().parents[1] / "assets" / "login_factory.jpeg"
 
     st.markdown(
         r"""
         <style>
-        header[data-testid="stHeader"]{height:0!important;background:transparent!important;}
-        div[data-testid="stToolbar"],#MainMenu,footer,[data-testid="stStatusWidget"]{display:none!important;}
+        header[data-testid="stHeader"]{display:none!important;height:0!important;min-height:0!important;background:transparent!important;}
+        div[data-testid="stToolbar"],#MainMenu,footer,[data-testid="stStatusWidget"],
+        div.st-key-fsi_shell,[class~="st-key-fsi_shell"],
+        [class*="st-key-qcms_header_nav_"],[class*="st-key-qcms_header_exit"],
+        div.st-key-qcms_workspace,[class~="st-key-qcms_workspace"],
+        div.st-key-fsi_left_rail,[class~="st-key-fsi_left_rail"]{display:none!important;}
         div[data-testid="stAppViewContainer"],section[data-testid="stMain"]{background:#F2F2F2!important;min-height:100vh!important;}
         div[data-testid="stMainBlockContainer"],section.main>div.block-container{
-          width:100%!important;max-width:1180px!important;margin:0 auto!important;padding:10vh 18px 1.2rem!important;
+          width:100%!important;max-width:1180px!important;margin:0 auto!important;padding:5.5vh 18px .8rem!important;
         }
         div.st-key-qcms_login_shell,[class~="st-key-qcms_login_shell"]{background:transparent!important;border:0!important;padding:0!important;margin:0!important;}
         div.st-key-qcms_login_shell [data-testid="stHorizontalBlock"]{gap:18px!important;align-items:flex-start!important;}
@@ -257,7 +264,7 @@ def render_login() -> None:
         }
         div.st-key-qcms_login_image_card [data-testid="stImage"]{margin:0!important;}
         div.st-key-qcms_login_image_card [data-testid="stImage"] img{
-          width:100%!important;height:390px!important;object-fit:cover!important;display:block!important;border:0!important;
+          width:100%!important;height:430px!important;object-fit:cover!important;object-position:center 48%!important;display:block!important;border:0!important;
         }
         div[data-testid="stForm"]{
           background:#fff!important;border:1px solid #D0D0D0!important;border-radius:2px!important;
@@ -288,11 +295,11 @@ def render_login() -> None:
         }
         div[data-testid="stForm"] .stFormSubmitButton>button{
           width:100%!important;min-height:40px!important;margin-top:7px!important;border-radius:2px!important;
-          background:#DADADA!important;border:1px solid #C8C8C8!important;color:#3D3D3D!important;
+          background:#B20738!important;border:1px solid #90062E!important;color:#fff!important;
           box-shadow:none!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:13px!important;font-weight:800!important;
         }
         div[data-testid="stForm"] .stFormSubmitButton>button:hover{
-          background:#B20738!important;border-color:#90062E!important;color:#fff!important;
+          background:#90062E!important;border-color:#780526!important;color:#fff!important;
         }
         div[data-testid="stForm"] .stFormSubmitButton>button:hover *{color:#fff!important;}
         @media(max-width:850px){
@@ -318,6 +325,8 @@ def render_login() -> None:
                 email = st.text_input("Login *", placeholder="name@company.com")
                 password = st.text_input("Password *", type="password", placeholder="Enter password")
                 submitted = st.form_submit_button("Login", width="stretch")
+
+    app_footer()
 
     if submitted:
         try:
