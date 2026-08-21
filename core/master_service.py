@@ -206,6 +206,65 @@ class MasterService:
         """
         return " ".join(re.findall(r"[a-z0-9]+", str(value or "").casefold()))
 
+    _FUZZY_STOP_WORDS = {
+        "the", "and", "for", "with", "from", "of", "to", "a", "an", "in", "on",
+        "pvt", "private", "ltd", "limited", "inc", "incorporated", "company", "co",
+        "gmbh", "kg", "llc", "llp", "india", "active", "approved", "master",
+    }
+
+    @classmethod
+    def _significant_words(cls, value: Any) -> tuple[str, ...]:
+        words = [w for w in re.findall(r"[a-z0-9]+", str(value or "").casefold()) if len(w) >= 2]
+        return tuple(w for w in words if w not in cls._FUZZY_STOP_WORDS)
+
+    @classmethod
+    def _fuzzy_word_duplicate(cls, left: Any, right: Any) -> bool:
+        """Return True only when 2–3 meaningful words strongly identify the same value.
+
+        This intentionally avoids loose substring matching.  Two-word values must share
+        both meaningful words; values with three or more meaningful words must share at
+        least three words and at least 67% of the shorter value.
+        """
+        a = cls._significant_words(left); b = cls._significant_words(right)
+        if len(a) < 2 or len(b) < 2:
+            return False
+        sa, sb = set(a), set(b)
+        shared = len(sa & sb); shorter = max(1, min(len(sa), len(sb)))
+        needed = 2 if shorter <= 2 else 3
+        return shared >= needed and (shared / shorter) >= 0.67
+
+    def duplicate_match(
+        self, definition: MasterDef, payload: Mapping[str, Any], *,
+        record_id: str | None = None, extra_unique_fields: Sequence[str] = (),
+    ) -> str | None:
+        rows = self.list_records(definition, status="All")
+        natural_fields = tuple(definition.natural_key)
+        expected = tuple(self._normalized_key_value(payload.get(field)) for field in natural_fields)
+        # Human-readable master fields where a 2–3 word near-match is meaningful.
+        fuzzy_fields = list(extra_unique_fields)
+        for field in definition.fields:
+            name = field.name
+            if field.kind not in {"text", "textarea"}:
+                continue
+            if name in fuzzy_fields or name in natural_fields:
+                continue
+            if any(token in name for token in ("name", "description", "standard", "parameter", "designation")):
+                fuzzy_fields.append(name)
+
+        for row in rows:
+            if record_id and str(row.get("id")) == str(record_id):
+                continue
+            if natural_fields and all(expected) and expected == tuple(self._normalized_key_value(row.get(field)) for field in natural_fields):
+                return "matching controlled key " + " + ".join(natural_fields)
+            for field in fuzzy_fields:
+                candidate = payload.get(field)
+                existing = row.get(field)
+                if self._normalized_key_value(candidate) and self._normalized_key_value(candidate) == self._normalized_key_value(existing):
+                    return f"matching {field.replace('_', ' ')}"
+                if self._fuzzy_word_duplicate(candidate, existing):
+                    return f"2–3 matching words in {field.replace('_', ' ')} ({existing})"
+        return None
+
     def assert_no_duplicate(
         self,
         definition: MasterDef,
@@ -214,42 +273,20 @@ class MasterService:
         record_id: str | None = None,
         extra_unique_fields: Sequence[str] = (),
     ) -> None:
-        """Reject duplicate master records case-insensitively on create and edit.
-
-        Natural keys are compared as one controlled key. Extra fields are
-        independently unique for masters such as Process and Inspection Stage,
-        where both Code and Name must remain unique.
-        """
-        rows = self.list_records(definition, status="All")
-        current_id = str(record_id or "")
-        current = next((row for row in rows if str(row.get("id") or "") == current_id), None)
-        natural_fields = tuple(definition.natural_key)
-        expected_key = tuple(self._normalized_key_value(payload.get(field)) for field in natural_fields)
-        current_key = tuple(self._normalized_key_value((current or {}).get(field)) for field in natural_fields)
-        # Existing legacy duplicates remain editable when the controlled key itself is unchanged.
-        if natural_fields and any(expected_key) and (not current or expected_key != current_key):
-            for row in rows:
-                if str(row.get("id") or "") == current_id:
-                    continue
-                row_key = tuple(self._normalized_key_value(row.get(field)) for field in natural_fields)
-                if row_key == expected_key:
-                    labels = ", ".join(field.replace("_", " ").title() for field in natural_fields)
-                    raise ValueError(f"Duplicate {definition.label} is not allowed. The controlled key ({labels}) already exists.")
-        for field in extra_unique_fields:
-            expected = self._matching_words_value(payload.get(field))
-            if not expected:
-                continue
-            current_value = self._matching_words_value((current or {}).get(field))
-            if current and expected == current_value:
-                continue
-            for row in rows:
-                if str(row.get("id") or "") == current_id:
-                    continue
-                if self._matching_words_value(row.get(field)) == expected:
-                    raise ValueError(
-                        f"Duplicate {field.replace('_', ' ').title()} is not allowed in {definition.label}. "
-                        "Matching words already exist even though spacing/case/punctuation may differ."
-                    )
+        current=self.get_record(definition,record_id) if record_id else None
+        natural_fields=tuple(definition.natural_key)
+        expected=tuple(self._normalized_key_value(payload.get(field)) for field in natural_fields)
+        current_key=tuple(self._normalized_key_value((current or {}).get(field)) for field in natural_fields)
+        effective_record_id=record_id
+        # Legacy duplicate records stay editable when their controlled natural key is unchanged.
+        if current and expected==current_key:
+            natural_payload=dict(payload)
+            for field in natural_fields: natural_payload[field]=None
+            reason=self.duplicate_match(definition,natural_payload,record_id=effective_record_id,extra_unique_fields=extra_unique_fields)
+        else:
+            reason=self.duplicate_match(definition,payload,record_id=effective_record_id,extra_unique_fields=extra_unique_fields)
+        if reason:
+            raise ValueError(f"Duplicate {definition.label} is not allowed. Matching words already exist: {reason}.")
 
     def save(self, definition: MasterDef, raw: Mapping[str, Any], *, record_id: str | None = None) -> tuple[dict, str]:
         existing = self.get_record(definition, record_id)

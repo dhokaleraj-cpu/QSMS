@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from difflib import SequenceMatcher
 from datetime import date, datetime
 from typing import Any
 
@@ -56,7 +57,13 @@ def _requirement_result(actual:Any,requirement:Any,applicable:bool=True)->str:
     match=re.search(r'-?\d+(?:\.\d+)?',text); actual_num=_number(match.group(0) if match else None)
     if actual_num is not None and len(nums)>=2:return 'PASS' if min(nums[0],nums[1])<=actual_num<=max(nums[0],nums[1]) else 'FAIL'
     if actual_num is not None and len(nums)==1 and ':' not in req:return 'PASS' if abs(actual_num-nums[0])<1e-9 else 'FAIL'
-    return 'PASS' if text.casefold()==req.casefold() else 'FAIL'
+    def _norm_text(value: Any) -> str:
+        return ' '.join(re.findall(r'[a-z0-9]+', str(value or '').casefold()))
+    expected=_norm_text(req); actual_text=_norm_text(text)
+    expected_tokens=set(expected.split()); actual_tokens=set(actual_text.split())
+    sequence_score=SequenceMatcher(None,expected,actual_text).ratio() if expected and actual_text else 0.0
+    token_score=(len(expected_tokens & actual_tokens)/len(expected_tokens)) if expected_tokens else 0.0
+    return 'PASS' if max(sequence_score,token_score)>=0.75 else 'FAIL'
 
 
 def _employee_map(svc:RMTCService,authority:str)->dict[str,str]:
@@ -239,7 +246,7 @@ def render_entry()->None:
         if existing and st.button('Start New RMTC',icon=':material/add:',width='content'):
             _start_new_rmtc_for_heat(heat_search)
             st.rerun()
-        writable=perms['can_edit'] if existing else perms['can_create']
+        writable=(perms['can_edit'] if existing else perms['can_create']) and (not existing or str(existing.get('status') or 'DRAFT')=='DRAFT')
         parts,part_map=_part_maps(svc)
         if not parts:st.warning('Create an active Part Master first.');return
         existing_parts=[str(row.get('part_id')) for row in existing_parts_rows] if existing else []
@@ -372,6 +379,31 @@ def render_entry()->None:
                 help_text='Permanent deletion requires your current QCMS password and RMTC Delete permission. Linked Material Inward records will prevent deletion.',
             ):
                 _start_new_rmtc_for_heat(''); st.rerun()
+
+
+    if existing and str(existing.get('status') or '') in ('APPROVED','PARTIALLY_APPROVED') and str(existing.get('disposition') or '') in ('ACCEPTED','ACCEPTED_UNDER_RESERVE'):
+        with stage_section("C", 'ADD PART NUMBER TO APPROVED RMTC', 'Add another compatible Part Number to this already-approved RMTC. Existing approved Parts remain available for production while only the new Part goes through worksheet / validation / decision.', key=f"rmtc_add_part_{existing.get('id')}"):
+            covered_ids={str(row.get('part_id')) for row in svc.covered_parts(str(existing['id']))}
+            compatible=[row for row in svc.parts() if str(row.get('id')) not in covered_ids and str(row.get('material_grade_id') or '')==str(existing.get('material_grade_id') or '')]
+            if compatible:
+                compat_map={str(row['id']):part_label(row) for row in compatible}
+                add_part_id=st.selectbox('New Part Number for this RMTC',list(compat_map),format_func=lambda value:compat_map[value],key=f"rmtc_add_part_select_{existing.get('id')}")
+                heat_bal=svc.heat_summary(str(existing.get('heat_number') or '')) or {}
+                portal_table(pd.DataFrame([{
+                    'RMTC':existing.get('rmtc_number'),'Heat Number':existing.get('heat_number'),
+                    'RMTC Steel Qty kg':existing.get('certificate_quantity'),
+                    'Inward Used kg':heat_bal.get('inward_steel_quantity_kg'),
+                    'Available / Unallocated kg':heat_bal.get('available_unallocated_steel_quantity_kg') or heat_bal.get('available_steel_quantity_kg'),
+                }]),hide_index=True,width='stretch',height=105)
+                if st.button('Add Part Number to Approved RMTC',type='primary',width='stretch',disabled=not perms['can_edit'],key=f"rmtc_add_part_button_{existing.get('id')}"):
+                    try:
+                        svc.add_part_to_approved_rmtc(str(existing['id']),add_part_id)
+                        st.session_state['part_rmtc_id']=str(existing['id']); st.session_state['rmtc_part_choice']=add_part_id
+                        save_success_popup('Part Number added to the approved RMTC. Complete the new Part Worksheet and validation; previously accepted Parts remain released.',queue_for_rerun=True)
+                        st.switch_page(st.session_state['_qsms_pages']['rmtc-part'])
+                    except Exception as exc: st.error(str(exc))
+            else:
+                st.info('No additional active Part with the same Material Grade is available to add to this RMTC.')
 
 
 def render_part()->None:

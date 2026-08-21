@@ -17,7 +17,7 @@ from core.reporting import controlled_record_pdf_bytes
 from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 REFERENCE_KEYS = (
-    "customers", "suppliers", "steel_mills", "osp_vendors", "approved_sources",
+    "customers", "suppliers", "steel_mills", "osp_vendors",
     "inspection_stages", "quality_assets",
 )
 

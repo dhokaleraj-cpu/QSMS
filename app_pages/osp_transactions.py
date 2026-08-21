@@ -16,7 +16,8 @@ from core.ui import kpi_grid, page_header, save_success_popup, section_bar, stag
 
 
 def _label(row: dict) -> str:
-    return f"{row.get('osp_job_number')} · {row.get('part_number')} · Heat {row.get('heat_number')} · {row.get('process_name')} · {row.get('vendor_name')}"
+    batch = f" · Vendor Batch {row.get('vendor_batch_number')}" if row.get('vendor_batch_number') else ""
+    return f"{row.get('osp_job_number')} · {row.get('part_number')} · Heat {row.get('heat_number')} · {row.get('process_name')} · {row.get('vendor_name')}{batch}"
 
 
 def _job_selector(rows: list[dict], label: str, key: str) -> dict | None:
@@ -34,8 +35,8 @@ def render_home() -> None:
     kpi_grid([
         {"label": "At OSP Vendor", "value": sum(str(r.get("status")) == "AT_VENDOR" for r in rows), "foot": "Material dispatched", "color": "#2563EB", "background": "#EFF6FF"},
         {"label": "Sample Pending", "value": sum(bool(r.get("sample_received_date")) and str(r.get("sample_gate_status")) in {"PENDING", "ON_HOLD"} for r in rows), "foot": "Dimensional + MetLAB", "color": "#D97706", "background": "#FFF7ED"},
-        {"label": "Full Inward Ready", "value": sum(str(r.get("sample_gate_status")) in {"ACCEPTED", "ACCEPTED_UNDER_RESERVE"} and float(r.get("quantity_received") or 0) == 0 for r in rows), "foot": "Sample gate passed", "color": "#0F766E", "background": "#F0FDFA"},
-        {"label": "Receipt Inspection", "value": sum(float(r.get("quantity_received") or 0) > 0 and str(r.get("receipt_quality_disposition")) in {"PENDING", "ON_HOLD"} for r in rows), "foot": "Production blocked", "color": "#D97706", "background": "#FFF7ED"},
+        {"label": "OSP Inward Ready", "value": sum(str(r.get("sample_gate_status")) in {"ACCEPTED", "ACCEPTED_UNDER_RESERVE"} and float(r.get("quantity_received") or 0) < float(r.get("quantity_dispatched") or 0) for r in rows), "foot": "Sample gate passed · full/partial", "color": "#0F766E", "background": "#F0FDFA"},
+        {"label": "Receipt Inspection", "value": sum(float(r.get("quantity_received") or 0) >= float(r.get("quantity_dispatched") or 0) > 0 and str(r.get("receipt_quality_disposition")) in {"PENDING", "ON_HOLD"} for r in rows), "foot": "Final receipt · production blocked", "color": "#D97706", "background": "#FFF7ED"},
         {"label": "Released to Production", "value": sum(str(r.get("status")) == "COMPLETED" for r in rows), "foot": "Both reports accepted", "color": "#15803D", "background": "#F0FDF4"},
         {"label": "Rejected", "value": sum(str(r.get("status")) == "REJECTED" for r in rows), "foot": "OSP quality rejected", "color": "#B91C1C", "background": "#FEF2F2"},
     ])
@@ -119,7 +120,7 @@ def render_sample_receipt() -> None:
 
 def render_inward() -> None:
     subpage_navigation(("osp-home", "OSP Home", ":material/arrow_back:"), ("osp-records", "OSP Records", ":material/table_view:"))
-    page_header("OSP Material Inward", "Full OSP receipt is enabled only after the pre-inward sample passes Dimensional and MetLAB.", "Controlled receipt")
+    page_header("OSP Material Inward", "OSP receipt is enabled after the pre-inward sample passes Dimensional and MetLAB. Partial vendor receipts are allowed against the remaining dispatched quantity.", "Controlled receipt")
     service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS")
     job = _job_selector(service.jobs_for_full_receipt(), "Sample-approved OSP Batch", "osp_inward_job")
     if not job: return
@@ -133,7 +134,9 @@ def render_inward() -> None:
         tc_number = c[0].text_input("TC Number")
         tc_date = c[1].date_input("TC Date", value=date.today(), format="DD-MM-YYYY")
         vendor_batch = c[2].text_input("OSP Vendor Batch Number", value=str(job.get("vendor_batch_number") or ""))
-        quantity = c[3].number_input("Full Batch Quantity (pcs)", min_value=1.0, value=float(job.get("quantity_dispatched") or 1), step=1.0, disabled=True)
+        dispatched = float(job.get("quantity_dispatched") or 0); already_received = float(job.get("quantity_received") or 0); remaining = max(dispatched - already_received, 0)
+        quantity = c[3].number_input("Receipt Batch Qty (pcs)", min_value=1.0, max_value=max(float(remaining), 1.0), value=max(float(remaining), 1.0), step=1.0, help="Override with the actual partial quantity received from the OSP Vendor. The remaining dispatched quantity stays open for another inward.")
+        portal_table(pd.DataFrame([{"OSP Out Qty pcs": dispatched, "Already Received pcs": already_received, "Balance at Vendor pcs": remaining, "OSP Vendor Batch": job.get("vendor_batch_number") or vendor_batch or "-"}]), hide_index=True, width="stretch", height=105)
         remarks = st.text_area("Receipt Remarks", height=70)
         submitted = st.form_submit_button("Create OSP Material Inward", type="primary", disabled=not perms["can_create"], width="stretch")
     if submitted:
@@ -165,6 +168,14 @@ def render_records() -> None:
         selected_row = next(r for r in filtered if str(r["id"]) == selected)
         inspection = InspectionService()
         metlab_rows = inspection.repo.select("lab_tests", eq={"osp_job_id": selected, "test_type": "METLAB"}, order_by="updated_at", desc=True, limit=20)
+        receipt_rows = service.receipts(selected)
+        if receipt_rows:
+            section_bar("PARTIAL OSP RECEIPT HISTORY")
+            portal_table(style_status_dataframe(pd.DataFrame([{
+                "Receipt No.":r.get("receipt_number"),"Receipt Date":r.get("receipt_date"),"Vendor Challan":r.get("receipt_challan"),
+                "Vendor Invoice":r.get("vendor_invoice_number"),"TC Number":r.get("tc_number"),"OSP Vendor Batch":r.get("vendor_batch_number"),
+                "Receipt Qty pcs":r.get("quantity_received"),"Remarks":r.get("remarks")
+            } for r in receipt_rows])),hide_index=True,width="stretch",height=min(300,80+len(receipt_rows)*35))
         dimensional_rows = inspection.repo.select("inspection_reports", eq={"osp_job_id": selected, "report_type": "DIMENSIONAL"}, order_by="updated_at", desc=True, limit=20)
         with stage_section("A", "OSP CONTROLLED PDF REPORTS", key="osp_records_a"):
             transaction_pdf = controlled_record_pdf_bytes(
@@ -224,5 +235,5 @@ def render_records() -> None:
                     help_text="Deletes the selected OSP transaction. Current QCMS password is required. Linked inspection records must be deleted first.",
                 ):
                     st.rerun()
-    with stage_section("C", "OSP TRANSACTION REGISTER", key="osp_records_c"):
+    with stage_section("D", "OSP TRANSACTION REGISTER", key="osp_records_c"):
         _render_register(filtered)

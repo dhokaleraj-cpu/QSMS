@@ -118,6 +118,9 @@ required = [
     "docs/RELEASE_4_13_4.md",
     "supabase/migrations/20260821142000_qcms_rmtc_reusable_global_balance_v4134.sql",
     "tests/test_v4134_priority_ui_rmtc_reuse_import.py",
+    "supabase/migrations/20260821170000_qcms_rmtc_osp_text_layout_sources_v4136.sql",
+    "tests/test_v4136_rmtc_osp_text_layout_sources.py",
+    "docs/RELEASE_4_13_6.md",
 ]
 for item in required:
     if not (ROOT / item).exists():
@@ -554,8 +557,46 @@ for token in (
     if token not in ui_text:
         errors.append(f"QCMS 4.13.5 UI cascade token missing: {token}")
 
+# QCMS 4.13.6 RMTC/OSP/text-layout/source-control contract.
+v4136_marker = "4136-RMTC-OSP-TEXT-LAYOUT-SOURCES"
+v4136_sql = (ROOT / "supabase" / "migrations" / "20260821170000_qcms_rmtc_osp_text_layout_sources_v4136.sql").read_text(encoding="utf-8")
+rmtc_pages_v4136 = (ROOT / "app_pages" / "rmtc_pages.py").read_text(encoding="utf-8")
+metlab_v4136 = (ROOT / "app_pages" / "metlab_report.py").read_text(encoding="utf-8")
+osp_v4136 = (ROOT / "app_pages" / "osp_transactions.py").read_text(encoding="utf-8")
+layout_v4136 = (ROOT / "app_pages" / "inspection_layouts.py").read_text(encoding="utf-8")
+master_service_v4136 = (ROOT / "core" / "master_service.py").read_text(encoding="utf-8")
+part_master_v4136 = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
+reference_master_v4136 = (ROOT / "app_pages" / "reference_master.py").read_text(encoding="utf-8")
+reports_v4136 = (ROOT / "app_pages" / "reports.py").read_text(encoding="utf-8")
+inspection_service_v4136 = (ROOT / "core" / "inspection_service.py").read_text(encoding="utf-8")
+if v4136_marker not in ui_text or v4136_marker not in auth_text:
+    errors.append("QCMS 4.13.6 build fingerprint is missing")
+for token in ("qsms_add_part_to_approved_rmtc", "osp_vendor_id", "create table if not exists public.osp_receipts", "Receipt Batch Qty (pcs)"):
+    if token not in (v4136_sql + osp_v4136 + rmtc_pages_v4136):
+        errors.append(f"QCMS 4.13.6 RMTC/OSP token missing: {token}")
+if 'selectbox("OSP Vendor"' not in metlab_v4136 or 'selectbox("Supplier"' not in metlab_v4136:
+    errors.append("QCMS 4.13.6 separate Supplier / OSP Vendor MetLAB controls are missing")
+if 'options=["NUMBER", "TEXT"]' not in layout_v4136 or "< 0.75" not in inspection_service_v4136:
+    errors.append("QCMS 4.13.6 NUMBER/TEXT 75-percent inspection validation is incomplete")
+if "Approved Suppliers" not in part_master_v4136 or "Approved Steel Mills" not in part_master_v4136:
+    errors.append("QCMS 4.13.6 approved sources were not moved into Part Master")
+if "approved_sources" in reference_master_v4136.split("REFERENCE_KEYS",1)[1].split(")",1)[0]:
+    errors.append("QCMS 4.13.6 Approved Sources is still exposed as a Reference Master module")
+if "def _fuzzy_word_duplicate" not in master_service_v4136:
+    errors.append("QCMS 4.13.6 2-3 word duplicate master validation is missing")
+if '"Qty kg": "steel_quantity_kg"' not in reports_v4136 or '"Balance kg": "current_heat_balance_kg"' not in reports_v4136:
+    errors.append("QCMS 4.13.6 heat transaction kg quantity/balance columns are missing")
+
 report = {
-    "release": "QCMS 4.13.5 maroon sections + white fields + KPI icon separation",
+    "release": "QCMS 4.13.6 RMTC part extension + OSP partial receipts + NUMBER/TEXT layouts",
+    "rmtc_approved_part_extension": "ADD PART NUMBER TO APPROVED RMTC" in rmtc_pages_v4136,
+    "metlab_separate_osp_vendor": 'selectbox("OSP Vendor"' in metlab_v4136,
+    "osp_partial_receipts": "Receipt Batch Qty (pcs)" in osp_v4136 and "public.osp_receipts" in v4136_sql,
+    "duplicate_word_validation": "def _fuzzy_word_duplicate" in master_service_v4136,
+    "part_master_approved_sources": "Approved Suppliers" in part_master_v4136 and "Approved Steel Mills" in part_master_v4136,
+    "number_text_characteristics": 'options=["NUMBER", "TEXT"]' in layout_v4136,
+    "text_similarity_75": "< 0.75" in inspection_service_v4136,
+    "heat_transaction_kg_balance": '"Qty kg": "steel_quantity_kg"' in reports_v4136 and '"Balance kg": "current_heat_balance_kg"' in reports_v4136,
     "v4135_maroon_all_expanders": v4135_marker in ui_text and 'details[data-testid="stExpander"] summary p' in ui_text,
     "v4135_white_field_pockets": "--qcms-v4135-field:#FFFFFF" in ui_text,
     "v4135_kpi_icon_column": "padding:13px 14px 12px 62px!important" in ui_text,

@@ -35,7 +35,7 @@ def _rows_frame(rows: list[dict], default_sample: int) -> pd.DataFrame:
             "Minimum": row.get("lower_spec"),
             "Maximum": row.get("upper_spec"),
             "Unit": row.get("unit") or "",
-            "Type": row.get("characteristic_type") or "VARIABLE",
+            "Type": "TEXT" if str(row.get("characteristic_type") or "NUMBER").upper() in {"TEXT", "ATTRIBUTE"} else "NUMBER",
             "Checking Aid": row.get("checking_aid_text") or row.get("checking_method") or "",
             "Sample Size": int(row.get("sample_size") or default_sample or 1),
             "Allow NA": bool(row.get("allow_na")),
@@ -165,7 +165,7 @@ def render_entry() -> None:
     if frame.empty:
         frame = pd.DataFrame([{
             "Sequence": 10, "Characteristic No": "1", "Parameter": "", "Specification": "", "Minimum": None,
-            "Maximum": None, "Unit": "", "Type": "VARIABLE", "Checking Aid": "", "Sample Size": int(default_sample),
+            "Maximum": None, "Unit": "", "Type": "NUMBER", "Checking Aid": "", "Sample Size": int(default_sample),
             "Allow NA": False, "Mandatory": True, "Section": layout_type, "Status": "ACTIVE", "_id": None,
         }])
     edited = st.data_editor(
@@ -176,7 +176,7 @@ def render_entry() -> None:
         num_rows="dynamic",
         disabled=["Section"],
         column_config={
-            "Type": st.column_config.SelectboxColumn(options=["VARIABLE", "ATTRIBUTE"], required=True),
+            "Type": st.column_config.SelectboxColumn(options=["NUMBER", "TEXT"], required=True),
             "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"], required=True),
             "Allow NA": st.column_config.CheckboxColumn(),
             "Mandatory": st.column_config.CheckboxColumn(),
@@ -214,11 +214,21 @@ def render_entry() -> None:
             for _, row in edited.iterrows():
                 if not str(row.get("Parameter") or "").strip():
                     continue
+                ctype = str(row.get("Type") or "NUMBER").upper()
+                specification = str(row.get("Specification") or "").strip() or None
+                lower = None if pd.isna(row.get("Minimum")) else row.get("Minimum")
+                upper = None if pd.isna(row.get("Maximum")) else row.get("Maximum")
+                if ctype == "TEXT":
+                    if not specification:
+                        raise ValueError(f"Text Specification is mandatory for {row.get('Parameter')}.")
+                    lower = upper = None
+                elif lower is None and upper is None:
+                    raise ValueError(f"Minimum or Maximum Specification is mandatory for numeric parameter {row.get('Parameter')}.")
                 rows.append({
                     "sequence_no": int(row.get("Sequence") or len(rows) + 1), "characteristic_no": row.get("Characteristic No"),
-                    "characteristic": row.get("Parameter"), "specification": row.get("Specification"),
-                    "lower_spec": row.get("Minimum"), "upper_spec": row.get("Maximum"), "unit": row.get("Unit"),
-                    "characteristic_type": row.get("Type"), "checking_aid_text": row.get("Checking Aid"),
+                    "characteristic": row.get("Parameter"), "specification": specification,
+                    "lower_spec": lower, "upper_spec": upper, "unit": row.get("Unit"),
+                    "characteristic_type": ctype, "checking_aid_text": row.get("Checking Aid"),
                     "sample_size": int(row.get("Sample Size") or default_sample), "allow_na": bool(row.get("Allow NA")),
                     "is_mandatory": bool(row.get("Mandatory")), "report_section": layout_type,
                     "status": row.get("Status") or "ACTIVE", "id": row.get("_id"),

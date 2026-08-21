@@ -1566,3 +1566,5 @@ def app_footer() -> None:
         'Copyrights by <strong>STAWN</strong></div>',
         unsafe_allow_html=True,
     )
+
+# QCMS BUILD 4136-RMTC-OSP-TEXT-LAYOUT-SOURCES

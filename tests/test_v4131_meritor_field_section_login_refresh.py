@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_v4131_version_and_build():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6"}
     ui = (ROOT / "core/ui.py").read_text()
     assert "4131-MERITOR-FIELD-SECTION-LOGIN-REFRESH" in ui
 

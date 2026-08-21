@@ -363,3 +363,5 @@ def render_first_admin_claim() -> None:
                     st.error(_friendly_error(exc, "Administrator activation"))
             if st.button("Sign out", key="claim_sign_out", width="stretch"):
                 logout()
+
+# QCMS BUILD 4136-RMTC-OSP-TEXT-LAYOUT-SOURCES

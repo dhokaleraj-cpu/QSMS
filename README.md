@@ -1,3 +1,9 @@
+# QCMS v4.13.6
+
+Build: 4136-RMTC-OSP-TEXT-LAYOUT-SOURCES
+
+Priority release: approved RMTC part extension, separate MetLAB Supplier/OSP Vendor, partial OSP receipts, duplicate fuzzy validation, Part Master approved sources, kg heat-balance reporting, and NUMBER/TEXT inspection characteristics with 75% text matching.
+
 # QCMS v4.13.3 — Login No-Menu / STAWN Footer / Portal Polish
 
 - Build: `4133-LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH`

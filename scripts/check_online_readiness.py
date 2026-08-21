@@ -125,11 +125,14 @@ required = [
     "tests/test_v4118_global_staged_sections.py",
     "docs/RELEASE_4_13_5.md",
     "tests/test_v4135_maroon_white_fields_kpi_fix.py",
+    "supabase/migrations/20260821170000_qcms_rmtc_osp_text_layout_sources_v4136.sql",
+    "tests/test_v4136_rmtc_osp_text_layout_sources.py",
+    "docs/RELEASE_4_13_6.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.13.5 - maroon sections, white fields and KPI icon separation",
+    "phase": "QCMS 4.13.6 - RMTC part extension, OSP partial receipts and NUMBER/TEXT layouts",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

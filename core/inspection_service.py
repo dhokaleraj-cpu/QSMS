@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import re
+from difflib import SequenceMatcher
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -231,7 +233,7 @@ class InspectionService:
                 "lower_spec": row.get("minimum_spec"),
                 "upper_spec": row.get("maximum_spec"),
                 "unit": row.get("unit"),
-                "characteristic_type": row.get("characteristic_type") or "VARIABLE",
+                "characteristic_type": "TEXT" if str(row.get("characteristic_type") or "NUMBER").upper() in {"TEXT", "ATTRIBUTE"} else "NUMBER",
                 "checking_method": row.get("checking_method"),
                 "checking_aid_text": row.get("checking_method"),
                 "sample_size": row.get("sample_size") or group.get("sample_quantity") or 1,
@@ -264,17 +266,30 @@ class InspectionService:
             if not characteristic:
                 continue
             sequence = int(source.get("sequence_no") or source.get("Sequence") or position)
+            ctype = _text(source.get("characteristic_type") or source.get("Type") or "NUMBER").upper()
+            if ctype in {"VARIABLE"}: ctype = "NUMBER"
+            if ctype in {"ATTRIBUTE"}: ctype = "TEXT"
+            specification = _text(source.get("specification") or source.get("Specification")) or None
+            lower_spec = _number(source.get("lower_spec") if "lower_spec" in source else source.get("Minimum"))
+            upper_spec = _number(source.get("upper_spec") if "upper_spec" in source else source.get("Maximum"))
+            if ctype == "TEXT":
+                if not specification:
+                    raise ValueError(f"Text Specification is required for {characteristic}.")
+                lower_spec = upper_spec = None
+            else:
+                if lower_spec is None and upper_spec is None:
+                    raise ValueError(f"Minimum or Maximum Specification is required for numeric parameter {characteristic}.")
             payload_row = {
                 "id": str((existing.get(sequence) or {}).get("id") or source.get("id") or "") or None,
                 "inspection_plan_id": pid,
                 "sequence_no": sequence,
                 "characteristic_no": _text(source.get("characteristic_no") or source.get("Characteristic No")) or None,
                 "characteristic": characteristic,
-                "specification": _text(source.get("specification") or source.get("Specification")) or None,
-                "lower_spec": _number(source.get("lower_spec") if "lower_spec" in source else source.get("Minimum")),
-                "upper_spec": _number(source.get("upper_spec") if "upper_spec" in source else source.get("Maximum")),
+                "specification": specification,
+                "lower_spec": lower_spec,
+                "upper_spec": upper_spec,
                 "unit": _text(source.get("unit") or source.get("Unit")) or None,
-                "characteristic_type": _text(source.get("characteristic_type") or source.get("Type") or "VARIABLE").upper(),
+                "characteristic_type": ctype,
                 "special_class": _text(source.get("special_class") or source.get("Special Class")) or None,
                 "checking_method": _text(source.get("checking_method") or source.get("Checking Method")) or None,
                 "checking_aid_text": _text(source.get("checking_aid_text") or source.get("Checking Aid")) or None,
@@ -429,8 +444,9 @@ class InspectionService:
         stage = self.repo.get("inspection_stages", str(record.get("inspection_stage_id") or "")) or {}
         osp_rows = self.repo.select("v_qsms_osp_register", eq={"id": str(record.get("osp_job_id"))}, limit=1) if record.get("osp_job_id") else []
         osp_job = osp_rows[0] if osp_rows else {}
+        osp_vendor = self.repo.get("parties", str(record.get("osp_vendor_id") or osp_job.get("vendor_id") or "")) or {}
         return {
-            "record": record, "part": part, "inward": inward, "supplier": supplier, "steel_mill": steel_mill,
+            "record": record, "part": part, "inward": inward, "supplier": supplier, "osp_vendor": osp_vendor, "steel_mill": steel_mill,
             "customer": customer, "material_grade": grade, "process": process, "stage": stage, "osp_job": osp_job,
             "employees": self._report_employees(record),
             "results": dict(record.get("results") or {}),
@@ -519,9 +535,26 @@ class InspectionService:
         values = [value for value in observations if _text(value)]
         if not values:
             return "NOT_EVALUATED"
-        characteristic_type = _text(row.get("characteristic_type") or "VARIABLE").upper()
-        if characteristic_type == "ATTRIBUTE":
-            return "PASS" if all(_attribute_pass(value) for value in values) else "FAIL"
+        characteristic_type = _text(row.get("characteristic_type") or "NUMBER").upper()
+        if characteristic_type in {"TEXT", "ATTRIBUTE"}:
+            specification = _text(row.get("specification"))
+            # Preserve legacy ATTRIBUTE layouts with no controlled text specification.
+            if not specification and characteristic_type == "ATTRIBUTE":
+                return "PASS" if all(_attribute_pass(value) for value in values) else "FAIL"
+            if not specification:
+                return "FAIL"
+            def normalized(value: Any) -> str:
+                return " ".join(re.findall(r"[a-z0-9]+", _text(value).casefold()))
+            expected = normalized(specification)
+            expected_tokens = set(expected.split())
+            for value in values:
+                actual = normalized(value)
+                actual_tokens = set(actual.split())
+                sequence_score = SequenceMatcher(None, expected, actual).ratio() if expected and actual else 0.0
+                token_score = (len(expected_tokens & actual_tokens) / len(expected_tokens)) if expected_tokens else 0.0
+                if max(sequence_score, token_score) < 0.75:
+                    return "FAIL"
+            return "PASS"
         lower = _number(row.get("lower_spec"))
         upper = _number(row.get("upper_spec"))
         numeric = [_number(value) for value in values]

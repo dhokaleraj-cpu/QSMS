@@ -139,9 +139,12 @@ class OSPService:
         return [
             row for row in self.register()
             if str(row.get("sample_gate_status")) in FINAL_ACCEPTED
-            and float(row.get("quantity_received") or 0) <= 0
+            and float(row.get("quantity_received") or 0) < float(row.get("quantity_dispatched") or 0)
             and str(row.get("status")) not in {"REJECTED", "CANCELLED"}
         ]
+
+    def receipts(self, osp_job_id: str) -> list[dict]:
+        return self.repo.select("osp_receipts", eq={"osp_job_id": osp_job_id}, order_by="created_at", desc=True, limit=500)
 
     def jobs_for_inspection(self, scope: str, report_type: str) -> list[dict]:
         disposition_key = (
@@ -156,7 +159,7 @@ class OSPService:
             # A quality queue must include only inspection types selected in the Part + OSP Process group.
             if not bool(row.get(requirement_flag)):
                 continue
-            ready = bool(row.get("sample_received_date")) if scope == "OSP_SAMPLE" else float(row.get("quantity_received") or 0) > 0
+            ready = bool(row.get("sample_received_date")) if scope == "OSP_SAMPLE" else (float(row.get("quantity_received") or 0) >= float(row.get("quantity_dispatched") or 0) and float(row.get("quantity_dispatched") or 0) > 0)
             pending = str(row.get(disposition_key) or "PENDING") not in {"ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"}
             if ready and pending and str(row.get("status")) != "CANCELLED":
                 rows.append(row)

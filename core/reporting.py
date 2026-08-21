@@ -917,6 +917,8 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     part = dict(payload.get("part") or {})
     inward = dict(payload.get("inward") or {})
     supplier = dict(payload.get("supplier") or {})
+    osp_vendor = dict(payload.get("osp_vendor") or {})
+    osp_vendor_name = osp_vendor.get("party_name") or (dict(payload.get("osp_job") or {}).get("vendor_name")) or "-"
     steel_mill = dict(payload.get("steel_mill") or {})
     grade = dict(payload.get("material_grade") or {})
     customer = dict(payload.get("customer") or {})
@@ -952,8 +954,9 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     meta = [
         ["Report No.", record.get("report_number"), "Date", record.get("test_date")],
         ["Part Name", part.get("part_name"), "Part No.", part.get("part_number")],
-        ["Customer", customer.get("party_name"), "Supplier / OSP Vendor", vendor_or_supplier],
-        ["Supply / Process Condition", record.get("supply_condition") or supply_condition, "Material Used", grade.get("grade_code") or grade.get("grade_name")],
+        ["Customer", customer.get("party_name"), "Supplier", supplier.get("party_name")],
+        ["OSP Vendor", osp_vendor_name, "Material Used", grade.get("grade_code") or grade.get("grade_name")],
+        ["Supply / Process Condition", record.get("supply_condition") or supply_condition, "Process", process.get("process_name") or record.get("process_specification_snapshot")],
         ["Supplier Invoice / Reference", record.get("supplier_reference_number"), "Quantity (pcs)", record.get("production_quantity_pcs") or qty],
         ["Heat Number", record.get("heat_number") or inward.get("heat_number") or osp_job.get("heat_number"), "Heat Code", record.get("heat_code") or inward.get("heat_code")],
         ["Supplier / HT / OSP Batch", record.get("vendor_batch_number_snapshot") or osp_job.get("vendor_batch_number"), "Internal / FSI Batch", record.get("batch_number")],

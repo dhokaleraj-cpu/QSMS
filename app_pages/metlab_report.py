@@ -178,15 +178,17 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             process_id = str(plan.get("process_id") or "") or None
         process = processes.get(str(process_id or "")) or {}
 
-        supplier_ids = list(context.get("supplier_ids") or [])
-        if scope == "OSP_STAGE":
-            supplier_ids = [pid for pid, row in parties.items() if "OSP_VENDOR" in (row.get("party_types") or []) or "SUPPLIER" in (row.get("party_types") or [])]
+        supplier_ids = [pid for pid in list(context.get("supplier_ids") or []) if pid in parties and "SUPPLIER" in (parties[pid].get("party_types") or [])]
         if not supplier_ids:
             supplier_ids = [pid for pid, row in parties.items() if "SUPPLIER" in (row.get("party_types") or [])]
-        supplier_ids = [pid for pid in supplier_ids if pid in parties]
+        osp_vendor_ids = [pid for pid, row in parties.items() if "OSP_VENDOR" in (row.get("party_types") or [])]
         supplier_options = [""] + supplier_ids
+        osp_vendor_options = [""] + osp_vendor_ids
         current_supplier = str((existing or {}).get("supplier_id") or "")
-        supplier_id = st.selectbox("Supplier / OSP Vendor", supplier_options, index=supplier_options.index(current_supplier) if current_supplier in supplier_options else 0, format_func=lambda v: party_label(parties.get(v) or {}) if v else "— Select from Master —")
+        current_osp_vendor = str((existing or {}).get("osp_vendor_id") or "")
+        vc1, vc2 = st.columns(2, gap="small")
+        supplier_id = vc1.selectbox("Supplier", supplier_options, index=supplier_options.index(current_supplier) if current_supplier in supplier_options else 0, format_func=lambda v: party_label(parties.get(v) or {}) if v else "— Select Supplier from Master —")
+        osp_vendor_id = vc2.selectbox("OSP Vendor", osp_vendor_options, index=osp_vendor_options.index(current_osp_vendor) if current_osp_vendor in osp_vendor_options else 0, format_func=lambda v: party_label(parties.get(v) or {}) if v else "— Select OSP Vendor from Master —")
 
         c1, c2, c3, c4 = st.columns(4, gap="small")
         c1.text_input("Part Name", value=str(part.get("part_name") or ""), disabled=True)
@@ -242,7 +244,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
         attachment = st.file_uploader("Attach MetLAB Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"standalone_metlab_attachment_{existing_id or 'new'}")
         layout_rows = []
         for _, row in edited.iterrows():
-            na = bool(row.get("NA")); result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, [row.get("Actual Value")], na)
+            na = bool(row.get("NA")); result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, [row.get("Actual Value")], na)
             layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type")})
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT") != "FINAL"
         if st.button("Save Standalone MetLAB Report", type="primary", width="stretch", disabled=not writable or not prepared or not sample_ref.strip()):
@@ -252,7 +254,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                     "report_number": final_number, "test_type": "METLAB", "layout_plan_id": plan_id,
                     "process_id": process_id, "inspection_stage_id": plan.get("inspection_stage_id"), "part_id": part_id,
                     "inward_lot_id": None, "osp_job_id": None, "batch_id": None, "rmtc_approval_id": None,
-                    "supplier_id": supplier_id or None, "customer_id": part.get("customer_id"), "material_grade_id": part.get("material_grade_id"),
+                    "supplier_id": supplier_id or None, "osp_vendor_id": osp_vendor_id or None, "customer_id": part.get("customer_id"), "material_grade_id": part.get("material_grade_id"),
                     "test_date": test_date.isoformat(), "sample_reference": sample_ref.strip(), "reference_text": sample_ref.strip(),
                     "specification_reference": spec_ref.strip() or None, "overall_result": "NOT_EVALUATED",
                     "status": str((existing or {}).get("status") or "DRAFT"), "remarks": conclusion.strip() or None,
@@ -457,7 +459,7 @@ def render_entry() -> None:
             requirement_rows.append({"requirement_name": row.get("Parameter"), "requirement_value": row.get("Requirement"), "rmtc_actual_value": row.get("RMTC Actual"), "actual_value": row.get("MetLAB Actual"), "unit": row.get("Unit"), "result": result, "remarks": row.get("Remark")})
         layout_rows = []
         for _, row in layout_edit.iterrows():
-            na = bool(row.get("NA")); result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, [row.get("Actual Value")], na)
+            na = bool(row.get("NA")); result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, [row.get("Actual Value")], na)
             layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type")})
 
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT") != "FINAL"
@@ -526,5 +528,5 @@ def render_records() -> None:
             if password_delete_panel(repo=service.repo, table="lab_tests", rows=[selected_row], labeler=lambda row: row.get("report_number"), key=f"delete_metlab_{selected}", can_delete=perms["can_archive"], title="Delete Selected MetLAB Report"):
                 st.rerun()
     section_bar("METLAB REGISTER")
-    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("test_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Microstructure Photos": sum(1 for slot in range(1,5) if row.get(f"microstructure_image_{slot}_path")), "Conclusion": row.get("remarks"), "Result": row.get("overall_result"), "Final Decision": row.get("disposition"), "Decision Reason": row.get("disposition_reason"), "Status": row.get("status")} for row in filtered])
+    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("test_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "OSP Vendor": (parties.get(str(row.get("osp_vendor_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Microstructure Photos": sum(1 for slot in range(1,5) if row.get(f"microstructure_image_{slot}_path")), "Conclusion": row.get("remarks"), "Result": row.get("overall_result"), "Final Decision": row.get("disposition"), "Decision Reason": row.get("disposition_reason"), "Status": row.get("status")} for row in filtered])
     portal_table(style_status_dataframe(display), hide_index=True, width="stretch", height=520)

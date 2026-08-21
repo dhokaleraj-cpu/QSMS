@@ -25,7 +25,6 @@ IMPORTABLE = (
     ("suppliers", "Suppliers", "REFERENCE_MASTERS", "Reference_Masters_Template.xlsx"),
     ("steel_mills", "Steel Mills", "REFERENCE_MASTERS", "Reference_Masters_Template.xlsx"),
     ("osp_vendors", "OSP Vendors", "REFERENCE_MASTERS", "Reference_Masters_Template.xlsx"),
-    ("approved_sources", "Approved Sources", "REFERENCE_MASTERS", "Reference_Masters_Template.xlsx"),
     ("processes", "Processes", "REFERENCE_MASTERS", "Reference_Masters_Template.xlsx"),
     ("customer_standards", "Customer Standards & Specifications", "REFERENCE_MASTERS", "Customer_Standards_Template.xlsx"),
     ("inspection_stages", "Inspection Stages", "REFERENCE_MASTERS", "Reference_Masters_Template.xlsx"),
@@ -44,7 +43,6 @@ SHEET_HINTS = {
     "suppliers": ("Suppliers", "Parties", "Vendor Supplier Master"),
     "steel_mills": ("Steel Mills", "Parties"),
     "osp_vendors": ("OSP Vendors", "Parties"),
-    "approved_sources": ("Approved Sources", "Sources"),
     "processes": ("Processes", "Process Master"),
     "customer_standards": ("Customer Standards", "Standards Bank", "Customer Standards & Specifications"),
     "inspection_stages": ("Inspection Stages", "Stages"),
@@ -248,7 +246,17 @@ def _import_definition(service: MasterService, definition: MasterDef, frame: pd.
             normalized = service.normalize_payload(definition, raw)
             existing_id = _existing_id(service, definition, normalized)
             natural_signature = "|".join(str(normalized.get(field) or "").strip().casefold() for field in definition.natural_key)
-            if existing_id or (natural_signature and natural_signature in seen_keys):
+            extra_unique_fields: tuple[str, ...] = ()
+            if definition.key in {"customers", "suppliers", "steel_mills", "osp_vendors"}:
+                extra_unique_fields = ("party_name",)
+            elif definition.key == "processes":
+                extra_unique_fields = ("process_name",)
+            elif definition.key == "inspection_stages":
+                extra_unique_fields = ("stage_name",)
+            elif definition.key == "quality_assets":
+                extra_unique_fields = ("asset_name",)
+            fuzzy_duplicate = service.duplicate_match(definition, normalized, extra_unique_fields=extra_unique_fields)
+            if existing_id or fuzzy_duplicate or (natural_signature and natural_signature in seen_keys):
                 skipped += 1
                 continue
             _saved, action = service.save(definition, raw, record_id=None)

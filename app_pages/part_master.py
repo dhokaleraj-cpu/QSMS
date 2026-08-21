@@ -18,6 +18,8 @@ from core.catalog import LearnedValueCatalog
 from core.database import get_session_client
 from core.delete_service import password_delete_panel
 from core.osp_service import OSPService
+from core.master_service import MasterService
+from core.master_definitions import MASTER_BY_KEY
 from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
 from core.permissions import is_admin
@@ -161,12 +163,14 @@ def _optional_number(value: Any) -> float | None:
     return float(value)
 
 
-def _three_column_frame(rows: list[dict]) -> pd.DataFrame:
+def _requirement_frame(rows: list[dict]) -> pd.DataFrame:
     return pd.DataFrame([{
         "Parameter": row.get("parameter_name") or "",
+        "Type": "TEXT" if str(row.get("characteristic_type") or "NUMBER").upper() in {"TEXT", "ATTRIBUTE"} else "NUMBER",
+        "Text Specification": row.get("specification_text") or "",
         "Minimum Specification": row.get("minimum_spec"),
         "Maximum Specification": row.get("maximum_spec"),
-    } for row in rows], columns=["Parameter", "Minimum Specification", "Maximum Specification"])
+    } for row in rows], columns=["Parameter", "Type", "Text Specification", "Minimum Specification", "Maximum Specification"])
 
 
 def _render_osp_metlab_requirements(
@@ -237,7 +241,7 @@ def _render_osp_metlab_requirements(
         st.rerun()
 
     editor = st.data_editor(
-        _three_column_frame(parameter_rows),
+        _requirement_frame(parameter_rows),
         num_rows="dynamic",
         hide_index=True,
         width="stretch",
@@ -245,6 +249,8 @@ def _render_osp_metlab_requirements(
         disabled=not writable,
         column_config={
             "Parameter": st.column_config.TextColumn(required=True, width="large"),
+            "Type": st.column_config.SelectboxColumn(options=["NUMBER", "TEXT"], required=True, width="small"),
+            "Text Specification": st.column_config.TextColumn(width="large", help="Required for TEXT parameters. Actual text passes at 75% or greater similarity."),
             "Minimum Specification": st.column_config.NumberColumn(format="%.4f", width="medium"),
             "Maximum Specification": st.column_config.NumberColumn(format="%.4f", width="medium"),
         },
@@ -289,12 +295,19 @@ def _render_osp_metlab_requirements(
                 if key in seen:
                     raise ValueError(f"Duplicate OSP MetLAB Parameter: {parameter}")
                 seen.add(key)
+                ctype = str(row.get("Type") or "NUMBER").upper()
+                text_spec = str(row.get("Text Specification") or "").strip()
                 minimum = _optional_number(row.get("Minimum Specification"))
                 maximum = _optional_number(row.get("Maximum Specification"))
-                if minimum is None and maximum is None:
-                    raise ValueError(f"Enter Minimum or Maximum Specification for {parameter}.")
-                if minimum is not None and maximum is not None and minimum > maximum:
-                    raise ValueError(f"{parameter}: Minimum Specification exceeds Maximum Specification.")
+                if ctype == "TEXT":
+                    if not text_spec:
+                        raise ValueError(f"Enter Text Specification for {parameter}.")
+                    minimum = maximum = None
+                else:
+                    if minimum is None and maximum is None:
+                        raise ValueError(f"Enter Minimum or Maximum Specification for {parameter}.")
+                    if minimum is not None and maximum is not None and minimum > maximum:
+                        raise ValueError(f"{parameter}: Minimum Specification exceeds Maximum Specification.")
                 payload = {
                     "process_specification_id": str(group["id"]),
                     "part_id": part_id,
@@ -304,9 +317,9 @@ def _render_osp_metlab_requirements(
                     "parameter_name": parameter,
                     "minimum_spec": minimum,
                     "maximum_spec": maximum,
-                    "specification_text": None,
+                    "specification_text": text_spec or None,
                     "unit": None,
-                    "characteristic_type": "VARIABLE",
+                    "characteristic_type": ctype,
                     "checking_method": None,
                     "sample_size": 1,
                     "is_mandatory": True,
@@ -387,7 +400,7 @@ def _render_metallurgical_requirements(
         st.rerun()
 
     editor = st.data_editor(
-        _three_column_frame(rows),
+        _requirement_frame(rows),
         num_rows="dynamic",
         hide_index=True,
         width="stretch",
@@ -395,6 +408,8 @@ def _render_metallurgical_requirements(
         disabled=not writable,
         column_config={
             "Parameter": st.column_config.TextColumn(required=True, width="large"),
+            "Type": st.column_config.SelectboxColumn(options=["NUMBER", "TEXT"], required=True, width="small"),
+            "Text Specification": st.column_config.TextColumn(width="large", help="Required for TEXT parameters. Actual text passes at 75% or greater similarity."),
             "Minimum Specification": st.column_config.NumberColumn(format="%.4f", width="medium"),
             "Maximum Specification": st.column_config.NumberColumn(format="%.4f", width="medium"),
         },
@@ -422,15 +437,24 @@ def _render_metallurgical_requirements(
                 if key in seen:
                     raise ValueError(f"Duplicate Metallurgical Parameter: {parameter}")
                 seen.add(key)
+                ctype = str(row.get("Type") or "NUMBER").upper()
+                text_spec = str(row.get("Text Specification") or "").strip()
                 minimum = _optional_number(row.get("Minimum Specification"))
                 maximum = _optional_number(row.get("Maximum Specification"))
-                if minimum is None and maximum is None:
-                    raise ValueError(f"Enter Minimum or Maximum Specification for {parameter}.")
-                if minimum is not None and maximum is not None and minimum > maximum:
-                    raise ValueError(f"{parameter}: Minimum Specification exceeds Maximum Specification.")
+                if ctype == "TEXT":
+                    if not text_spec:
+                        raise ValueError(f"Enter Text Specification for {parameter}.")
+                    minimum = maximum = None
+                else:
+                    if minimum is None and maximum is None:
+                        raise ValueError(f"Enter Minimum or Maximum Specification for {parameter}.")
+                    if minimum is not None and maximum is not None and minimum > maximum:
+                        raise ValueError(f"{parameter}: Minimum Specification exceeds Maximum Specification.")
                 payload = {
                     "part_id": part_id,
                     "parameter_name": parameter,
+                    "characteristic_type": ctype,
+                    "specification_text": text_spec or None,
                     "minimum_spec": minimum,
                     "maximum_spec": maximum,
                     "sequence_no": 10 * (index + 1),
@@ -502,11 +526,16 @@ def render_entry() -> None:
                 if existing:
                     payload["drawing_number"] = existing.get("drawing_number")
                     payload["drawing_revision"] = existing.get("drawing_revision")
+                duplicate_service = MasterService(repo)
                 for row in repo.select("parts", limit=5000):
                     if existing and str(row.get("id")) == str(existing.get("id")):
                         continue
                     if str(row.get("part_number") or "").strip().casefold() == part_number.strip().casefold():
                         raise ValueError("Duplicate Part Number is not allowed.")
+                    if (str(row.get("customer_id") or "") == str(customer_id or "") and
+                        str(row.get("material_grade_id") or "") == str(grade_id or "") and
+                        duplicate_service._fuzzy_word_duplicate(part_name, row.get("part_name"))):
+                        raise ValueError(f"Possible duplicate Part Description: {row.get('part_number')} · {row.get('part_name')} (2–3 matching words).")
                 saved = repo.update("parts", str(existing["id"]), payload) if existing else repo.insert("parts", payload)
                 st.session_state["edit_part_id"] = str(saved["id"]); save_success_popup("Part Master saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
@@ -764,7 +793,46 @@ def render_entry() -> None:
         supplier_map = {str(row["id"]): party_label(row) for row in suppliers}
         supplier_by_name = {name: sid for sid, name in supplier_map.items()}
 
-    with stage_section("E", 'RAW MATERIAL DETAILS', 'Multiple raw-material sections / forging suppliers are allowed. Supplier name and location are shown for each section.', key="part_master_render_entry_e"):
+    with stage_section("E", 'RAW MATERIAL DETAILS & APPROVED SOURCES', 'Approved Supplier / Steel Mill combinations and raw-material forging parameters are controlled directly in Part Master.', key="part_master_render_entry_e"):
+        section_bar('APPROVED SOURCES', 'Select multiple approved Suppliers and Steel Mills for this Part. This replaces the former Reference Master → Approved Sources module.')
+        steel_mills = repo.select('parties', contains={'party_types':['STEEL_MILL']}, eq={'status':'ACTIVE'}, order_by='party_name', limit=1000)
+        steel_map = {str(row['id']): party_label(row) for row in steel_mills}
+        existing_source_links = repo.select('part_supplier_links', eq={'part_id':part_id}, limit=2000)
+        approved_supplier_ids = sorted({str(row.get('supplier_id')) for row in existing_source_links if row.get('supplier_id') and bool(row.get('approved', True))})
+        approved_mill_ids = sorted({str(row.get('steel_mill_id')) for row in existing_source_links if row.get('steel_mill_id') and bool(row.get('approved', True))})
+        sc1,sc2 = st.columns(2,gap='small')
+        selected_suppliers = sc1.multiselect('Approved Suppliers', list(supplier_map), default=[v for v in approved_supplier_ids if v in supplier_map], format_func=lambda v:supplier_map[v], disabled=not writable)
+        selected_mills = sc2.multiselect('Approved Steel Mills', list(steel_map), default=[v for v in approved_mill_ids if v in steel_map], format_func=lambda v:steel_map[v], disabled=not writable)
+        sc1,sc2,sc3,sc4 = st.columns(4,gap='small')
+        supplier_part_number = sc1.text_input('Supplier Part Number', key=f'approved_source_spn_{part_id}')
+        approval_reference = sc2.text_input('Approval Reference', key=f'approved_source_ref_{part_id}')
+        valid_from = sc3.date_input('Valid From', value=date.today(), format='DD-MM-YYYY', key=f'approved_source_from_{part_id}')
+        valid_to = sc4.date_input('Valid To', value=None, format='DD-MM-YYYY', key=f'approved_source_to_{part_id}')
+        if st.button('Save Approved Sources', type='primary', width='stretch', disabled=not writable or not selected_suppliers, key=f'save_approved_sources_{part_id}'):
+            try:
+                wanted={(sid, mid or '') for sid in selected_suppliers for mid in (selected_mills or [''])}
+                existing_by_pair={(str(row.get('supplier_id') or ''),str(row.get('steel_mill_id') or '')):row for row in existing_source_links}
+                for pair,row in existing_by_pair.items():
+                    if pair not in wanted and bool(row.get('approved', True)):
+                        repo.update('part_supplier_links',str(row['id']),{'approved':False})
+                source_def=MASTER_BY_KEY.get('approved_sources')
+                for sid,mid in wanted:
+                    payload={'part_id':part_id,'supplier_id':sid,'steel_mill_id':mid or None,'supplier_part_number':supplier_part_number.strip() or None,'approval_reference':approval_reference.strip() or None,'approved':True,'valid_from':valid_from.isoformat() if valid_from else None,'valid_to':valid_to.isoformat() if valid_to else None}
+                    existing_link=existing_by_pair.get((sid,mid))
+                    if source_def and not existing_link:
+                        payload['source_code']=MasterService(repo).next_master_code(source_def)
+                    if existing_link: repo.update('part_supplier_links',str(existing_link['id']),payload)
+                    else: repo.insert('part_supplier_links',payload)
+                save_success_popup('Approved Part sources saved successfully.', queue_for_rerun=True); st.rerun()
+            except Exception as exc: st.error(str(exc))
+        if existing_source_links:
+            portal_table(pd.DataFrame([{
+                'Supplier':supplier_map.get(str(r.get('supplier_id')),''), 'Steel Mill':steel_map.get(str(r.get('steel_mill_id')),''),
+                'Supplier Part No.':r.get('supplier_part_number'),'Approval Reference':r.get('approval_reference'),
+                'Valid From':r.get('valid_from'),'Valid To':r.get('valid_to'),'Approved':bool(r.get('approved'))
+            } for r in existing_source_links]),hide_index=True,width='stretch',height=min(300,80+len(existing_source_links)*34))
+
+        section_bar('RAW MATERIAL / FORGING PARAMETERS')
         raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=200)
         if password_delete_panel(repo=repo, table="part_raw_material_details", rows=raw, labeler=lambda r: f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · {r.get('section_size') or '-'} · {r.get('forging_route') or '-'}", key=f"delete_raw_{part_id}", can_delete=perms["can_archive"], title="Delete Raw Material row"):
             st.rerun()

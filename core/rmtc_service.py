@@ -76,12 +76,16 @@ class RMTCService:
             for row in rows:
                 lower = row.get('minimum_spec')
                 upper = row.get('maximum_spec')
-                requirement = ' '.join(
-                    value for value in (
-                        f"Min {lower}" if lower is not None else '',
-                        f"Max {upper}" if upper is not None else '',
-                    ) if value
-                )
+                ctype = str(row.get('characteristic_type') or 'NUMBER').upper()
+                if ctype in ('TEXT', 'ATTRIBUTE'):
+                    requirement = str(row.get('specification_text') or '').strip()
+                else:
+                    requirement = ' '.join(
+                        value for value in (
+                            f"Min {lower}" if lower is not None else '',
+                            f"Max {upper}" if upper is not None else '',
+                        ) if value
+                    )
                 prepared.append({
                     **row,
                     'parameter_name': row.get('parameter_name'),
@@ -168,6 +172,23 @@ class RMTCService:
 
     def update_header(self, rmtc_id, payload, part_ids):
         return self.save_header(payload, part_ids, rmtc_id)
+
+    def add_part_to_approved_rmtc(self, rmtc_id: str, part_id: str) -> dict:
+        return self.repo.rpc('qsms_add_part_to_approved_rmtc', {
+            'p_rmtc_id': rmtc_id, 'p_part_id': part_id,
+        }) or {}
+
+    def validate_added_part(self, rmtc_id: str, part_id: str) -> dict:
+        return self.repo.rpc('qsms_validate_added_rmtc_part', {
+            'p_rmtc_id': rmtc_id, 'p_part_id': part_id,
+        }) or {}
+
+    def decide_added_part(self, rmtc_id: str, part_id: str, disposition: str, reason: str | None, approver_id: str) -> dict:
+        return self.repo.rpc('qsms_decide_added_rmtc_part', {
+            'p_rmtc_id': rmtc_id, 'p_part_id': part_id,
+            'p_disposition': disposition, 'p_reason': reason or None,
+            'p_approved_by_employee_id': approver_id,
+        }) or {}
 
 
     def report_payload(self, rmtc_id: str) -> dict:

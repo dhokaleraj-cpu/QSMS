@@ -242,7 +242,8 @@ def render_heat_transactions() -> None:
         "Supplier / OSP Vendor": "party_name",
         "OSP Process": "process_name",
         "Movement": "movement_direction",
-        "Steel Qty kg": "steel_quantity_kg",
+        "Qty kg": "steel_quantity_kg",
+        "Balance kg": "current_heat_balance_kg",
         "Production Qty pcs": "production_quantity_pcs",
         "Status": "transaction_status",
     })

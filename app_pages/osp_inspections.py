@@ -170,7 +170,7 @@ def _render(report_type: str) -> None:
         result_rows: list[dict[str, Any]] = []
         for _, row in edited.iterrows():
             na = bool(row.get("NA")); actual = row.get("Actual Value")
-            result = inspection.evaluate_characteristic({"characteristic_type": row.get("_type"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, [actual], na)
+            result = inspection.evaluate_characteristic({"characteristic_type": row.get("_type"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, [actual], na)
             result_rows.append({
                 "sequence_no": int(row.get("_sequence") or len(result_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"),
                 "characteristic_no": row.get("Sr No"), "characteristic": row.get("Parameter"), "parameter": row.get("Parameter"),
@@ -185,10 +185,11 @@ def _render(report_type: str) -> None:
             try:
                 final_number = report_no.strip() or inspection.next_number(report_type)
                 quantity = float(job.get("sample_quantity") if scope == "OSP_SAMPLE" else job.get("quantity_received") or 0)
+                source_inward = inspection.repo.get("inward_lots", str(job.get("source_inward_lot_id") or "")) or {}
                 common = {
                     "report_number": final_number, "part_id": job.get("part_id"), "osp_job_id": job_id, "batch_id": job.get("osp_batch_id"),
                     "process_id": job.get("process_id"), "inspection_scope": scope, "heat_number": job.get("heat_number"), "heat_code": job.get("heat_code"),
-                    "supplier_id": job.get("vendor_id"), "status": str((existing or {}).get("status") or "DRAFT"), "overall_result": "NOT_EVALUATED",
+                    "supplier_id": source_inward.get("supplier_id"), "status": str((existing or {}).get("status") or "DRAFT"), "overall_result": "NOT_EVALUATED",
                     "disposition": str((existing or {}).get("disposition") or "PENDING"), "remarks": remarks.strip() or None,
                     "prepared_by_employee_id": prepared, "layout_name_snapshot": plan.get("layout_name"), "layout_type_name": report_type,
                     "production_quantity_pcs": quantity, "process_specification_snapshot": job.get("process_specification"),
@@ -201,6 +202,7 @@ def _render(report_type: str) -> None:
                     saved = inspection.save_dimensional(payload, result_rows, report_id or None)
                 else:
                     payload = {**common, "test_type": "METLAB", "layout_plan_id": plan_id, "inspection_stage_id": plan.get("inspection_stage_id"),
+                        "osp_vendor_id": job.get("vendor_id"),
                         "test_date": inspection_date.isoformat(), "sample_reference": f"{job.get('osp_job_number')} / {job.get('vendor_batch_number')}",
                         "specification_reference": job.get("process_specification"),
                         **{f"microstructure_caption_{slot}": (micro_titles[slot - 1].strip() or None) for slot in range(1, 5)}}
