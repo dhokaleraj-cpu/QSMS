@@ -1,3 +1,14 @@
+# QCMS v4.13.2 — Meritor Exact Grid / Section / Login Image Refresh
+
+- Build: `4132-MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE`
+- Whole-app collapsible and normal section titles use the bold maroon enterprise title bar with a clean lower rule.
+- All fields retain bold black labels and pale cream value pockets with visible gold-grey borders.
+- Dataframes, data editors and normal tables use the same framed grey-header/white-row grid contract.
+- Login uses the supplied Four Star factory photograph on the left and only the IDENTIFICATION form on the right.
+- App background/surfaces are normalized to the supplied light-grey/white enterprise portal reference.
+- Existing business logic, reports, permissions, traceability and Supabase data are preserved.
+- No new Supabase migration is required.
+
 # QCMS v4.13.1 — Meritor Field / Section / Login Refresh
 
 - Build: `4131-MERITOR-FIELD-SECTION-LOGIN-REFRESH`

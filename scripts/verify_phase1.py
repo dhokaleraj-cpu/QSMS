@@ -488,11 +488,27 @@ for token in ("IDENTIFICATION", "Login *", "Password *", "background:#FFFDF0!imp
     if token not in auth_text:
         errors.append(f"QCMS 4.13.1 minimal login token missing: {token}")
 
+
+# QCMS 4.13.2 exact Meritor grid / section / login-image verification.
+if "4132-MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE" not in ui_text:
+    errors.append("QCMS 4.13.2 UI build fingerprint is missing")
+for token in ("--qcms-portal-maroon:#B20738", "--qcms-portal-field:#FFFDF0", "Exact enterprise table/grid contract", "details[data-testid=\"stExpander\"] summary p", "border:1.2px solid var(--qcms-portal-field-line)"):
+    if token not in ui_text:
+        errors.append(f"QCMS 4.13.2 exact portal token missing: {token}")
+for token in ("login_factory.jpeg", "qcms_login_image_card", "IDENTIFICATION", "st.columns([1.85, 1.0]", "height:390px!important"):
+    if token not in auth_text:
+        errors.append(f"QCMS 4.13.2 login-image token missing: {token}")
+if not (ROOT / "assets" / "login_factory.jpeg").exists():
+    errors.append("QCMS 4.13.2 factory login image is missing")
+
 report = {
-    "release": "QCMS 4.13.1 Meritor field + section + minimal login refresh",
+    "release": "QCMS 4.13.2 Meritor exact grid + section + factory-image login refresh",
     "meritor_reference_field_system": "--qcms-field-bg:#FFFDF2" in ui_text and "--qcms-maroon:#B20738" in ui_text,
     "maroon_section_hierarchy": "color:var(--qcms-heading)!important" in ui_text,
     "minimal_identification_login": "IDENTIFICATION" in auth_text and "Login *" in auth_text and "Password *" in auth_text,
+    "factory_image_login": "login_factory.jpeg" in auth_text and (ROOT / "assets" / "login_factory.jpeg").exists(),
+    "exact_enterprise_grid": "Exact enterprise table/grid contract" in ui_text,
+    "meritor_collapsible_sections": "--qcms-portal-maroon:#B20738" in ui_text and "stExpander" in ui_text,
     "hardened_portal_shell": True,
     "visible_widget_borders": True,
     "pocket_flow_layout": True,

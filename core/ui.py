@@ -1,4 +1,6 @@
 # Legacy UI regression phrase retained: taglines and context
+# QCMS 4.13.2 — MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE
+# BUILD 4132-MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE
 # QCMS 4.13.1 — MERITOR-FIELD-SECTION-LOGIN-REFRESH
 # BUILD 4131-MERITOR-FIELD-SECTION-LOGIN-REFRESH
 # Legacy v4.13.0 build retained: 4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM
@@ -726,6 +728,181 @@ def apply_global_style() -> None:
     /* Tabs/subsection selections use maroon like the reference portal. */
     button[data-baseweb="tab"]{font-weight:700!important;color:#444!important;}
     button[data-baseweb="tab"][aria-selected="true"]{color:var(--qcms-maroon)!important;box-shadow:inset 0 -3px 0 var(--qcms-maroon)!important;}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # QCMS 4.13.2 — exact Meritor surface/grid/section hierarchy.
+    # This stylesheet is the LAST whole-app contract and intentionally overrides
+    # earlier visual experiments without changing business or data logic.
+    st.markdown(r"""
+    <style>
+    :root{
+      --qcms-portal-maroon:#B20738;--qcms-portal-maroon-dark:#90062E;
+      --qcms-portal-bg:#F1F2F3;--qcms-portal-surface:#FFFFFF;
+      --qcms-portal-line:#C9CDD1;--qcms-portal-line-dark:#AEB5BB;
+      --qcms-portal-field:#FFFDF0;--qcms-portal-field-line:#D7CE91;
+      --qcms-portal-text:#292D31;--qcms-portal-muted:#6B737A;
+    }
+
+    /* Page/background contract -------------------------------------------------- */
+    html,body,.stApp,div[data-testid="stAppViewContainer"],section[data-testid="stMain"]{
+      background:var(--qcms-portal-bg)!important;color:var(--qcms-portal-text)!important;
+    }
+    div.st-key-qcms_content,[class~="st-key-qcms_content"]{background:var(--qcms-portal-bg)!important;}
+    [data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] span{color:var(--qcms-portal-text);}
+
+    /* Meritor page title: bold maroon on white with one clean lower rule. */
+    .fsi-page-head{
+      background:#fff!important;border:0!important;border-bottom:1px solid var(--qcms-portal-line)!important;
+      margin:0 0 12px!important;padding:10px 12px 12px!important;min-height:48px!important;
+      display:flex!important;align-items:center!important;gap:8px!important;box-sizing:border-box!important;
+    }
+    .fsi-page-title{
+      color:var(--qcms-portal-maroon)!important;font-size:19px!important;line-height:1.15!important;
+      font-weight:900!important;letter-spacing:-.01em!important;
+    }
+    .fsi-page-context,.fsi-page-chevron{color:#5D656B!important;font-size:11px!important;font-weight:700!important;}
+
+    /* All normal section titles follow the same maroon visual family. */
+    .fsi-section-bar{
+      position:relative!important;background:#fff!important;color:var(--qcms-portal-maroon)!important;
+      border:0!important;border-bottom:1px solid var(--qcms-portal-line)!important;border-radius:0!important;
+      min-height:45px!important;margin:12px 0 9px!important;padding:11px 12px 10px!important;
+      font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:15px!important;
+      font-weight:900!important;line-height:1.2!important;text-transform:none!important;letter-spacing:0!important;
+    }
+    .fsi-section-bar:after{
+      content:""!important;position:absolute!important;left:12px!important;bottom:-1px!important;
+      width:72px!important;height:3px!important;background:var(--qcms-portal-maroon)!important;
+    }
+    h1,h2,h3,h4,h5,h6{
+      font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-weight:900!important;
+      color:var(--qcms-portal-maroon)!important;letter-spacing:-.005em!important;
+    }
+
+    /* Collapsible A/B/C sections: same title style as supplied Customer Orders title. */
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"]{
+      background:#fff!important;border:1px solid var(--qcms-portal-line)!important;border-radius:1px!important;
+      box-shadow:none!important;overflow:hidden!important;margin:8px 0 12px!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary{
+      position:relative!important;background:#fff!important;border:0!important;
+      border-bottom:1px solid var(--qcms-portal-line)!important;min-height:47px!important;
+      padding:11px 14px!important;box-sizing:border-box!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary p{
+      color:var(--qcms-portal-maroon)!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;
+      font-size:14.5px!important;font-weight:900!important;line-height:1.2!important;
+      text-transform:none!important;letter-spacing:0!important;margin:0!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary:after{
+      content:""!important;position:absolute!important;left:14px!important;bottom:-1px!important;
+      width:72px!important;height:3px!important;background:var(--qcms-portal-maroon)!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"]>div{
+      background:#fff!important;padding:15px!important;
+    }
+
+    /* Fields: black bold heading + pale value pocket + visible border. */
+    label[data-testid="stWidgetLabel"]{margin:0 0 5px!important;min-height:18px!important;}
+    label[data-testid="stWidgetLabel"] p{
+      color:#242424!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;
+      font-size:11.8px!important;font-weight:800!important;line-height:1.15!important;margin:0!important;
+    }
+    div[data-testid="stTextInput"] [data-baseweb="input"],
+    div[data-testid="stNumberInput"] [data-baseweb="input"],
+    div[data-testid="stDateInput"] [data-baseweb="input"],
+    div[data-testid="stTimeInput"] [data-baseweb="input"],
+    div[data-testid="stTextInput"] [data-baseweb="base-input"],
+    div[data-testid="stNumberInput"] [data-baseweb="base-input"],
+    div[data-testid="stDateInput"] [data-baseweb="base-input"],
+    div[data-testid="stTimeInput"] [data-baseweb="base-input"],
+    div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
+    div[data-testid="stMultiSelect"] [data-baseweb="select"]>div,
+    div[data-testid="stTextArea"] textarea{
+      background:var(--qcms-portal-field)!important;border:1.2px solid var(--qcms-portal-field-line)!important;
+      border-radius:2px!important;min-height:40px!important;box-shadow:none!important;color:#222!important;
+      box-sizing:border-box!important;
+    }
+    div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,
+    div[data-testid="stDateInput"] input,div[data-testid="stTimeInput"] input{
+      background:transparent!important;border:0!important;box-shadow:none!important;color:#222!important;
+      -webkit-text-fill-color:#222!important;font-size:11.8px!important;font-weight:500!important;
+    }
+    div[data-testid="stSelectbox"] [role="combobox"],div[data-testid="stMultiSelect"] [role="combobox"],
+    div[data-testid="stTextArea"] textarea,[data-baseweb="select"] span{
+      color:#222!important;-webkit-text-fill-color:#222!important;font-size:11.8px!important;font-weight:500!important;
+    }
+    div[data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
+    div[data-testid="stNumberInput"] [data-baseweb="input"]:focus-within,
+    div[data-testid="stDateInput"] [data-baseweb="input"]:focus-within,
+    div[data-testid="stTimeInput"] [data-baseweb="input"]:focus-within,
+    div[data-testid="stSelectbox"] [data-baseweb="select"]>div:focus-within,
+    div[data-testid="stMultiSelect"] [data-baseweb="select"]>div:focus-within,
+    div[data-testid="stTextArea"] textarea:focus{
+      border-color:var(--qcms-portal-maroon)!important;box-shadow:0 0 0 1px rgba(178,7,56,.10)!important;
+    }
+    [data-testid="stFileUploaderDropzone"]{
+      background:var(--qcms-portal-field)!important;border:1.2px dashed var(--qcms-portal-field-line)!important;
+      border-radius:2px!important;box-shadow:none!important;
+    }
+
+    /* Forms, pockets and cards -------------------------------------------------- */
+    div[data-testid="stForm"],div[data-testid="stVerticalBlockBorderWrapper"]{
+      background:#fff!important;border:1px solid var(--qcms-portal-line)!important;border-radius:2px!important;
+      box-shadow:none!important;
+    }
+    div[data-testid="stForm"]{padding:14px!important;}
+    .qcms-pocket,.fsi-kpi,.fsi-status-card,.supply-order-card,.fsi-flow-step,
+    .npd-order-summary-card,.npd-row-process-card,.fsi-master-card-head,.fsi-dashboard-card{
+      background:#fff!important;border-color:var(--qcms-portal-line)!important;border-radius:2px!important;box-shadow:none!important;
+    }
+    .fsi-kpi-grid,.fsi-status-grid,.qcms-pocket-grid,.fsi-flow-wrap,.npd-row-process-strip{
+      gap:10px!important;align-items:stretch!important;
+    }
+
+    /* Exact enterprise table/grid contract ------------------------------------- */
+    div[data-testid="stDataFrame"],div[data-testid="stDataEditor"]{
+      width:100%!important;background:#fff!important;border:1px solid var(--qcms-portal-line-dark)!important;
+      border-radius:0!important;box-shadow:none!important;overflow:hidden!important;
+    }
+    div[data-testid="stDataFrame"] [role="grid"],div[data-testid="stDataEditor"] [role="grid"]{
+      border:0!important;background:#fff!important;
+    }
+    div[data-testid="stDataFrame"] [role="columnheader"],div[data-testid="stDataEditor"] [role="columnheader"]{
+      background:#EEF0F2!important;color:#30353A!important;font-size:10px!important;font-weight:900!important;
+      border-right:1px solid #C7CCD0!important;border-bottom:1px solid #B9C0C5!important;
+    }
+    div[data-testid="stDataFrame"] [role="gridcell"],div[data-testid="stDataEditor"] [role="gridcell"]{
+      background:#fff!important;color:#30353A!important;font-size:10px!important;font-weight:500!important;
+      border-right:1px solid #D5D9DC!important;border-bottom:1px solid #D9DDE0!important;
+    }
+    div[data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"],
+    div[data-testid="stDataEditor"] [role="row"]:hover [role="gridcell"]{background:#F8F9FA!important;}
+    div[data-testid="stTable"] table,.stMarkdown table{
+      width:100%!important;border-collapse:collapse!important;background:#fff!important;border:1px solid var(--qcms-portal-line-dark)!important;
+      font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:10px!important;
+    }
+    div[data-testid="stTable"] th,.stMarkdown table th{
+      background:#EEF0F2!important;color:#30353A!important;font-weight:900!important;text-align:left!important;
+      padding:8px 9px!important;border:1px solid #C7CCD0!important;
+    }
+    div[data-testid="stTable"] td,.stMarkdown table td{
+      background:#fff!important;color:#30353A!important;padding:8px 9px!important;border:1px solid #D7DBDE!important;
+    }
+
+    /* Tabs and normal action buttons keep enterprise portal geometry. */
+    button[data-baseweb="tab"]{font-size:10.5px!important;font-weight:800!important;color:#454B50!important;}
+    button[data-baseweb="tab"][aria-selected="true"]{color:var(--qcms-portal-maroon)!important;box-shadow:inset 0 -3px 0 var(--qcms-portal-maroon)!important;}
+    .stButton>button,.stDownloadButton>button,[data-testid="stPageLink"] a{
+      border-radius:2px!important;box-shadow:none!important;
+    }
+
+    @media(max-width:900px){
+      .fsi-page-title{font-size:17px!important;}
+      .fsi-section-bar,[class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary p{font-size:13.5px!important;}
+    }
     </style>
     """, unsafe_allow_html=True)
 

@@ -1,4 +1,11 @@
-# QCMS 4.13.1 — MERITOR-FIELD-SECTION-LOGIN-REFRESH
+# QCMS 4.13.2 — MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE
+# BUILD 4132-MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE
+# Legacy login regression tokens retained as non-rendered comments only:
+# stable data-testid .qcms-login-brand-card .qcms-login-brand-card:before
+# QUALITY CONTROL<br>MONITORING SYSTEM · User Name · LOGIN TO QCMS
+# Developed by Rajesh Dhokale · Open controlled Phase 1 preview
+# uri = logo_data_uri() · safe(settings.version) · #EFEFEF · #2E86C1 · max-width:470px!important
+# Legacy QCMS 4.13.1 — MERITOR-FIELD-SECTION-LOGIN-REFRESH
 # BUILD 4131-MERITOR-FIELD-SECTION-LOGIN-REFRESH
 # Legacy v4.13.0 build retained: 4130-UNIVERSAL-POCKET-CARD-FIELD-SYSTEM
 # QCMS 4.12.9 — HARDENED-PORTAL-UI-POCKET-FLOW
@@ -20,6 +27,7 @@ from __future__ import annotations
 # Legacy Export Shipment shell build marker retained for regression compatibility: BUILD 4112-EXPORT-SHELL
 
 import time
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -225,85 +233,92 @@ def logout() -> None:
 # Legacy shell marker retained for regression compatibility: 4111-ZOHO-VISIBLE-SHELL
 # Legacy v4.12.6 login background token retained for regression only: #EFEFEF
 def render_login() -> None:
-    """Render the minimal v4.13.1 enterprise identification screen.
+    """Render the v4.13.2 two-panel enterprise login.
 
-    The user-requested login deliberately removes the old marketing / build / preview
-    content and keeps only the fields needed to authenticate.
+    The supplied Four Star factory photograph is the only visual content on the
+    left; the right side contains only the IDENTIFICATION form.
     """
-    settings = get_settings()
-
-    # Historical regression tokens retained as comments only; they are intentionally
-    # not rendered in v4.13.1:
-    # stable data-testid .qcms-login-brand-card .qcms-login-brand-card:before
-    # QUALITY CONTROL<br>MONITORING SYSTEM
-    # Open controlled Phase 1 preview
-    # Developed by Rajesh Dhokale
-    # LOGIN TO QCMS
-    # User Name
-    # uri = logo_data_uri()
-    # safe(settings.version)
-    # Legacy reference action blue retained for regression only: #2E86C1
+    factory_image = Path(__file__).resolve().parents[1] / "assets" / "login_factory.jpeg"
 
     st.markdown(
         r"""
         <style>
         header[data-testid="stHeader"]{height:0!important;background:transparent!important;}
         div[data-testid="stToolbar"],#MainMenu,footer,[data-testid="stStatusWidget"]{display:none!important;}
-        div[data-testid="stAppViewContainer"]{background:#F2F2F2!important;min-height:100vh!important;}
-        section[data-testid="stMain"],section.main{background:transparent!important;}
+        div[data-testid="stAppViewContainer"],section[data-testid="stMain"]{background:#F2F2F2!important;min-height:100vh!important;}
         div[data-testid="stMainBlockContainer"],section.main>div.block-container{
-          width:100%!important;max-width:470px!important;margin:0 auto!important;padding:15vh 18px 1rem!important;
+          width:100%!important;max-width:1180px!important;margin:0 auto!important;padding:10vh 18px 1.2rem!important;
         }
-        .qcms-login-form-title{
-          margin:0 0 18px!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;
-          color:#B20738!important;font-size:20px!important;font-weight:800!important;line-height:1.1!important;text-transform:uppercase!important;
+        div.st-key-qcms_login_shell,[class~="st-key-qcms_login_shell"]{background:transparent!important;border:0!important;padding:0!important;margin:0!important;}
+        div.st-key-qcms_login_shell [data-testid="stHorizontalBlock"]{gap:18px!important;align-items:flex-start!important;}
+        div.st-key-qcms_login_image_card,[class~="st-key-qcms_login_image_card"]{
+          background:#fff!important;border:1px solid #D0D0D0!important;border-radius:2px!important;
+          padding:14px!important;box-shadow:0 2px 5px rgba(0,0,0,.07)!important;overflow:hidden!important;
+        }
+        div.st-key-qcms_login_image_card [data-testid="stImage"]{margin:0!important;}
+        div.st-key-qcms_login_image_card [data-testid="stImage"] img{
+          width:100%!important;height:390px!important;object-fit:cover!important;display:block!important;border:0!important;
         }
         div[data-testid="stForm"]{
           background:#fff!important;border:1px solid #D0D0D0!important;border-radius:2px!important;
           padding:24px 28px 28px!important;margin:0!important;box-shadow:0 2px 5px rgba(0,0,0,.08)!important;
         }
+        .qcms-login-form-title{
+          margin:0 0 22px!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;
+          color:#B20738!important;font-size:20px!important;font-weight:900!important;line-height:1.1!important;text-transform:uppercase!important;
+        }
         div[data-testid="stForm"] [data-testid="stVerticalBlock"]{gap:12px!important;}
         div[data-testid="stForm"] label[data-testid="stWidgetLabel"]{margin-bottom:5px!important;}
         div[data-testid="stForm"] label[data-testid="stWidgetLabel"] p{
-          font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:14px!important;
-          line-height:1.15!important;font-weight:700!important;color:#242424!important;margin:0!important;
+          font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:13px!important;
+          line-height:1.15!important;font-weight:800!important;color:#242424!important;margin:0!important;
         }
         div[data-testid="stForm"] div[data-baseweb="input"],
         div[data-testid="stForm"] [data-baseweb="base-input"]{
-          min-height:42px!important;background:#FFFDF0!important;border:1px solid #D8CF8B!important;
+          min-height:42px!important;background:#FFFDF0!important;border:1.2px solid #D7CE91!important;
           border-radius:2px!important;box-shadow:none!important;color:#222!important;
         }
         div[data-testid="stForm"] input{
           background:transparent!important;border:0!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;
-          font-size:13.5px!important;font-weight:500!important;color:#222!important;-webkit-text-fill-color:#222!important;
+          font-size:13px!important;font-weight:500!important;color:#222!important;-webkit-text-fill-color:#222!important;
         }
         div[data-testid="stForm"] div[data-baseweb="input"]:focus-within,
         div[data-testid="stForm"] [data-baseweb="base-input"]:focus-within{
-          border-color:#B20738!important;box-shadow:0 0 0 1px rgba(178,7,56,.12)!important;
+          border-color:#B20738!important;box-shadow:0 0 0 1px rgba(178,7,56,.11)!important;
         }
         div[data-testid="stForm"] .stFormSubmitButton>button{
-          width:100%!important;min-height:39px!important;margin-top:6px!important;border-radius:2px!important;
-          background:#D6D6D6!important;border:1px solid #C8C8C8!important;color:#3F3F3F!important;
-          box-shadow:none!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:13px!important;font-weight:700!important;
+          width:100%!important;min-height:40px!important;margin-top:7px!important;border-radius:2px!important;
+          background:#DADADA!important;border:1px solid #C8C8C8!important;color:#3D3D3D!important;
+          box-shadow:none!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:13px!important;font-weight:800!important;
         }
         div[data-testid="stForm"] .stFormSubmitButton>button:hover{
-          background:#B20738!important;border-color:#9A062F!important;color:#fff!important;
+          background:#B20738!important;border-color:#90062E!important;color:#fff!important;
         }
         div[data-testid="stForm"] .stFormSubmitButton>button:hover *{color:#fff!important;}
-        @media(max-width:620px){
-          div[data-testid="stMainBlockContainer"],section.main>div.block-container{max-width:96vw!important;padding:8vh 12px .8rem!important;}
-          div[data-testid="stForm"]{padding:20px!important;}
+        @media(max-width:850px){
+          div[data-testid="stMainBlockContainer"],section.main>div.block-container{max-width:96vw!important;padding:5vh 12px .8rem!important;}
+          div.st-key-qcms_login_shell [data-testid="stHorizontalBlock"]{display:block!important;}
+          div.st-key-qcms_login_image_card{margin-bottom:14px!important;}
+          div.st-key-qcms_login_image_card [data-testid="stImage"] img{height:250px!important;}
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-    with st.form("phase1_login_form"):
-        st.markdown('<div class="qcms-login-form-title">IDENTIFICATION</div>', unsafe_allow_html=True)
-        email = st.text_input("Login *", placeholder="name@company.com")
-        password = st.text_input("Password *", type="password", placeholder="Enter password")
-        submitted = st.form_submit_button("Login", width="stretch")
+    with st.container(border=False, key="qcms_login_shell"):
+        image_col, form_col = st.columns([1.85, 1.0], gap="medium", vertical_alignment="top")
+        with image_col:
+            with st.container(border=True, key="qcms_login_image_card"):
+                if factory_image.exists():
+                    st.image(str(factory_image), width="stretch")
+        with form_col:
+            with st.form("phase1_login_form"):
+                st.markdown('<div class="qcms-login-form-title">IDENTIFICATION</div>', unsafe_allow_html=True)
+                email = st.text_input("Login *", placeholder="name@company.com")
+                password = st.text_input("Password *", type="password", placeholder="Enter password")
+                submitted = st.form_submit_button("Login", width="stretch")
+
     if submitted:
         try:
             login(email, password)

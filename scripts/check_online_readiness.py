@@ -122,7 +122,7 @@ required = [
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.13.1 - Meritor field, section and minimal login refresh",
+    "phase": "QCMS 4.13.2 - Meritor exact grid, section and factory-image login refresh",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),
