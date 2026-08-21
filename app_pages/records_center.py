@@ -4,6 +4,7 @@ from io import BytesIO
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
@@ -26,7 +27,7 @@ def _table(frame: pd.DataFrame, *, height: int = 560, pdf_title: str = "QCMS Rec
     if frame.empty:
         st.info("No records are available for this register.")
         return
-    st.dataframe(style_status_dataframe(frame), hide_index=True, width="stretch", height=height)
+    portal_table(style_status_dataframe(frame), hide_index=True, width="stretch", height=height)
     # PDF print is intentionally available to every user who can view the register.
     pdf_bytes = controlled_record_pdf_bytes(pdf_title, {"Record Count": len(frame)}, {pdf_title: frame})
     st.download_button(

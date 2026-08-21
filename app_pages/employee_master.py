@@ -4,6 +4,7 @@ from datetime import date
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.catalog import LearnedValueCatalog
@@ -126,4 +127,4 @@ def render_records()->None:
 
     section_bar('EMPLOYEE REGISTER','The selected employee and actions are positioned above the table.')
     df=pd.DataFrame([{'Employee Code':r.get('employee_code'),'Employee':f"{r.get('first_name')} {r.get('last_name')}",'Email':r.get('email'),'Department':r.get('department'),'Designation':r.get('designation'),'Plant':r.get('plant'),'Mobile':r.get('mobile_number'),'Reports To':manager.get(str(r.get('reports_to_employee_id')),''),'Experience Years':svc.years(r.get('experience_start_date')),'Approval Authorities':', '.join(r.get('approval_authorities') or []),'Status':r.get('status')} for r in filtered])
-    st.dataframe(df,hide_index=True,width='stretch',height=620)
+    portal_table(df,hide_index=True,width='stretch',height=620)

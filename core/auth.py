@@ -1,3 +1,5 @@
+# QCMS 4.13.4 — PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT
+# BUILD 4134-PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT
 # QCMS 4.13.3 — LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH
 # BUILD 4133-LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH
 # Legacy v4.13.2 build retained: 4132-MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE
@@ -236,10 +238,10 @@ def logout() -> None:
 # Legacy shell marker retained for regression compatibility: 4111-ZOHO-VISIBLE-SHELL
 # Legacy v4.12.6 login background token retained for regression only: #EFEFEF
 def render_login() -> None:
-    """Render the v4.13.3 isolated login with no application navigation shell.
+    """Render the v4.13.4 reference-matched isolated login.
 
-    The supplied Four Star factory photograph is cropped into the left panel;
-    the right panel contains only the IDENTIFICATION form and the shared STAWN footer.
+    No authenticated menu is rendered. The left card uses the cropped Four Star
+    factory image and the right card contains only the IDENTIFICATION form.
     """
     factory_image = Path(__file__).resolve().parents[1] / "assets" / "login_factory.jpeg"
 
@@ -262,9 +264,13 @@ def render_login() -> None:
           background:#fff!important;border:1px solid #D0D0D0!important;border-radius:2px!important;
           padding:14px!important;box-shadow:0 2px 5px rgba(0,0,0,.07)!important;overflow:hidden!important;
         }
+        .qcms-login-welcome{
+          margin:2px 0 20px 2px!important;color:#B20738!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;
+          font-size:18px!important;line-height:1.15!important;font-weight:900!important;
+        }
         div.st-key-qcms_login_image_card [data-testid="stImage"]{margin:0!important;}
         div.st-key-qcms_login_image_card [data-testid="stImage"] img{
-          width:100%!important;height:430px!important;object-fit:cover!important;object-position:center 48%!important;display:block!important;border:0!important;
+          width:100%!important;height:410px!important;object-fit:cover!important;object-position:center center!important;display:block!important;border:0!important;
         }
         div[data-testid="stForm"]{
           background:#fff!important;border:1px solid #D0D0D0!important;border-radius:2px!important;
@@ -317,6 +323,7 @@ def render_login() -> None:
         image_col, form_col = st.columns([1.85, 1.0], gap="medium", vertical_alignment="top")
         with image_col:
             with st.container(border=True, key="qcms_login_image_card"):
+                st.markdown('<div class="qcms-login-welcome">Welcome to Four Star Industries</div>', unsafe_allow_html=True)
                 if factory_image.exists():
                     st.image(str(factory_image), width="stretch")
         with form_col:

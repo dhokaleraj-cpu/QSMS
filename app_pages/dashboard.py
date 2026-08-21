@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from core.ui import portal_table
 
 from core.inspection_queue import build_inspection_queue, pending_count
 from core.repository import Repository
@@ -170,4 +171,4 @@ def render() -> None:
                 "MetLAB": row.get("metallurgical_status"), "Dimensional": row.get("dimensional_status"),
                 "Quality Decision": row.get("quality_disposition"), "Status": row.get("status"),
             })
-        st.dataframe(style_status_dataframe(pd.DataFrame(recent_heat_rows)), hide_index=True, width="stretch", height=230)
+        portal_table(style_status_dataframe(pd.DataFrame(recent_heat_rows)), hide_index=True, width="stretch", height=230)

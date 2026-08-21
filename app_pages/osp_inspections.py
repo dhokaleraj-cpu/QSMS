@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
@@ -67,7 +68,7 @@ def _pending_table(rows: list[dict], report_type: str, scope: str) -> None:
         "Quantity pcs": r.get("sample_quantity") if scope == "OSP_SAMPLE" else r.get("quantity_received"),
         "Decision": r.get(disposition_key) or "PENDING", "Status": r.get("status"),
     } for r in rows])
-    st.dataframe(style_status_dataframe(frame), hide_index=True, width="stretch", height=min(320, 86 + max(len(frame), 1) * 36))
+    portal_table(style_status_dataframe(frame), hide_index=True, width="stretch", height=min(320, 86 + max(len(frame), 1) * 36))
 
 
 def _existing_report(service: InspectionService, report_type: str, job_id: str, scope: str) -> dict | None:

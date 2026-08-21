@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
@@ -550,7 +551,7 @@ def render_npd_status() -> None:
                     "Customer": (customer_by_id.get(str(row.get("customer_id"))) or {}).get("party_name"), "Order Qty": row.get("order_qty"),
                     "Start Date": row.get("start_date"), "Delivery Date": row.get("delivery_date"), "Status": str(row.get("status") or "").replace("_", " ").title(),
                 } for row in orders])
-                st.dataframe(frame, hide_index=True, width="stretch", height=330)
+                portal_table(frame, hide_index=True, width="stretch", height=330)
 
     with tab2:
         if not orders:

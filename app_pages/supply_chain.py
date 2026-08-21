@@ -6,6 +6,7 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
@@ -125,7 +126,7 @@ def _searchable_grid(frame: pd.DataFrame, *, title: str, key: str, height: int =
     if filtered.empty:
         st.info("No records match the global search." if search else "No records are available.")
     else:
-        st.dataframe(_style_supply_dataframe(filtered), hide_index=True, width="stretch", height=min(height, 82 + 36 * max(len(filtered), 1)))
+        portal_table(_style_supply_dataframe(filtered), hide_index=True, width="stretch", height=min(height, 82 + 36 * max(len(filtered), 1)))
         _exports(filtered, title, key, header=header)
     return filtered
 
@@ -194,7 +195,7 @@ def _order_progress(service: SupplyChainService, order: dict) -> list[dict]:
 
 def _show_order_context(service: SupplyChainService, order_id: str, *, key: str, export: bool = False) -> dict:
     order=service.order(order_id) or {}; ctx=service.order_context(order); frame=pd.DataFrame([ctx])
-    st.dataframe(_style_supply_dataframe(frame),hide_index=True,width="stretch")
+    portal_table(_style_supply_dataframe(frame),hide_index=True,width="stretch")
     if export: _exports(frame,"Selected Supply Chain Entry",f"{key}_selected",header={"Customer Reference":ctx.get("Customer Ref")})
     return order
 
@@ -312,7 +313,7 @@ def render_customer_orders() -> None:
                     if not created: raise ValueError("Enter quantity for at least one of the six months.")
                     save_success_popup(f"{len(created)} monthly schedule record(s) created.",queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
-    with stage_section("B","CUSTOMER ORDER IMPORT · COLUMNS A TO F","Reads rows after the detected header. Item, Order no. and PosNr are duplicate keys; existing changes update only after confirmation.",key="supply_customer_import"):
+    with stage_section("B","CUSTOMER ORDER IMPORT · COLUMNS A TO F","Reads rows after the detected header. Existing Item / Order No. / PosNr combinations are skipped; only database-missing orders are imported.",key="supply_customer_import"):
         c_import=st.columns(2,gap="small")
         import_customer=c_import[0].selectbox("Import Customer",list(customer_map),format_func=lambda v:customer_map[v],key="supply_import_customer") if customer_map else None
         import_flow=c_import[1].selectbox("Imported Order Supply Flow",[FLOW_FSI_RM,FLOW_DIRECT_FORGING],format_func=lambda v:FLOW_LABELS[v],key="supply_import_flow")
@@ -324,10 +325,12 @@ def render_customer_orders() -> None:
                 if header_index is None: raise ValueError("Could not find the header row containing Item / Description / Order no. / PosNr / Quantity / Delivery date in columns A-F.")
                 data=raw.iloc[header_index+1:,:6].copy(); data.columns=["Item","Description","Order no.","PosNr","Quantity","Delivery date"]; data=data.dropna(how="all")
                 preview=service.import_preview(str(import_customer),data.to_dict("records")); visible=pd.DataFrame([{k:v for k,v in r.items() if not k.startswith("_")} for r in preview])
-                st.dataframe(_style_supply_dataframe(visible.rename(columns={"Action":"Status"})),hide_index=True,width="stretch",height=min(520,90+34*len(visible))); _exports(visible,"Customer Order Import Preview","supply_customer_import_preview")
-                update_count=sum(str(r.get("Action"))=="UPDATE" for r in preview); confirm=st.checkbox(f"Confirm update of {update_count} existing matching Order No. + PosNr record(s)",disabled=update_count==0,key="supply_import_confirm_updates") if update_count else True
-                if st.button("Import New / Confirmed Changed Orders",type="primary",width="stretch",disabled=not perms["can_create"] or any(str(r.get("Action"))=="ERROR" for r in preview) or (update_count>0 and not confirm)):
-                    result=service.apply_customer_order_import(str(import_customer),preview,confirm_updates=bool(confirm),supply_flow=import_flow); save_success_popup(f"Import complete · New {result['created']} · Updated {result['updated']} · Unchanged {result['unchanged']}",queue_for_rerun=True); st.rerun()
+                portal_table(_style_supply_dataframe(visible.rename(columns={"Action":"Status"})),hide_index=True,width="stretch",height=min(520,90+34*len(visible))); _exports(visible,"Customer Order Import Preview","supply_customer_import_preview")
+                duplicate_count=sum(str(r.get("Action"))=="SKIP_DUPLICATE" for r in preview)
+                if duplicate_count:
+                    st.info(f"{duplicate_count} existing Order No. + PosNr row(s) will be skipped. Import never changes existing database orders.")
+                if st.button("Import New Orders Only",type="primary",width="stretch",disabled=not perms["can_create"] or any(str(r.get("Action"))=="ERROR" for r in preview)):
+                    result=service.apply_customer_order_import(str(import_customer),preview,confirm_updates=False,supply_flow=import_flow); save_success_popup(f"Import complete · New {result['created']} · Duplicates skipped {result['skipped']}",queue_for_rerun=True); st.rerun()
             except Exception as exc: st.error(str(exc))
     with stage_section("C","CUSTOMER ORDER REGISTER","Global search covers all displayed fields.",key="supply_customer_order_register"):
         rows=service.customer_orders(); frame=_order_display_rows(service,rows); _searchable_grid(frame.drop(columns=["_id"],errors="ignore"),title="Customer Order Register",key="supply_customer_order_register_grid",height=520); _order_cards(frame,key="customer_register_cards")
@@ -385,7 +388,7 @@ def render_rm_receipt() -> None:
             if c2.button("Open New Material Inward",icon=":material/input:",width="stretch"):
                 st.session_state["supply_rm_po_link_id"]=po_id; st.session_state["supply_customer_order_link_id"]=order_id; st.session_state.pop("edit_inward_id",None); st.switch_page(st.session_state["_qsms_pages"]["inward-entry"])
             if inward_id:
-                selected_inward=next(r for r in eligible if str(r["id"])==inward_id); detail=pd.DataFrame([{k:selected_inward.get(k) for k in ("inward_number","inward_date","grn_number","supplier_name","part_number","material_grade","heat_number","heat_code","rmtc_number","rmtc_date","rmtc_steel_quantity_kg","steel_quantity_kg","quality_disposition","status") if k in selected_inward}]); st.dataframe(_style_supply_dataframe(detail.rename(columns={"rmtc_date":"RMTC Date","rmtc_steel_quantity_kg":"RMTC Qty kg"})),hide_index=True,width="stretch")
+                selected_inward=next(r for r in eligible if str(r["id"])==inward_id); detail=pd.DataFrame([{k:selected_inward.get(k) for k in ("inward_number","inward_date","grn_number","supplier_name","part_number","material_grade","heat_number","heat_code","rmtc_number","rmtc_date","rmtc_steel_quantity_kg","steel_quantity_kg","quality_disposition","status") if k in selected_inward}]); portal_table(_style_supply_dataframe(detail.rename(columns={"rmtc_date":"RMTC Date","rmtc_steel_quantity_kg":"RMTC Qty kg"})),hide_index=True,width="stretch")
                 if st.button("Link Selected Material Inward to RM Procurement",type="primary",width="stretch",disabled=not perms["can_edit"]):
                     try: service.link_inward_to_rm_po(po_id,inward_id); save_success_popup("Material Inward linked to RM Procurement; RM Receipt genealogy updated.",queue_for_rerun=True); st.rerun()
                     except Exception as exc: st.error(str(exc))

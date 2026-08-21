@@ -4,6 +4,7 @@ from datetime import date
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, AttachmentSlot, render_attachment_manager
@@ -301,4 +302,4 @@ def render_records() -> None:
         }
         for r in rows
     ])
-    st.dataframe(frame, hide_index=True, width="stretch", height=620)
+    portal_table(frame, hide_index=True, width="stretch", height=620)

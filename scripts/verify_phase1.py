@@ -115,6 +115,9 @@ required = [
     "docs/RELEASE_4_12_7.md",
     "tests/test_v4127_exact_preview_enterprise_ui.py",
     "tests/test_v4128_responsive_enterprise_ui_report_hub.py",
+    "docs/RELEASE_4_13_4.md",
+    "supabase/migrations/20260821142000_qcms_rmtc_reusable_global_balance_v4134.sql",
+    "tests/test_v4134_priority_ui_rmtc_reuse_import.py",
 ]
 for item in required:
     if not (ROOT / item).exists():
@@ -509,8 +512,42 @@ if "4133-LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH" not in ui_text or "4133-LOGIN
 login_no_menu = all(token in auth_text for token in ('div.st-key-fsi_shell','st-key-qcms_workspace','st-key-fsi_left_rail','display:none!important'))
 stawn_footer = 'Copyrights by <strong>STAWN</strong>' in ui_text and 'dhokaleraj@icloud.com' in ui_text
 native_header_removed = 'header[data-testid="stHeader"]' in ui_text and 'display:none!important' in ui_text
+
+# QCMS 4.13.4 priority UI / RMTC reusable balance / duplicate-safe imports.
+material_inward_text = (ROOT / "app_pages" / "material_inward.py").read_text(encoding="utf-8")
+master_import_text = (ROOT / "app_pages" / "master_import.py").read_text(encoding="utf-8")
+supply_service_text_v4134 = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+reference_import_text_v4134 = (ROOT / "core" / "reference_import.py").read_text(encoding="utf-8")
+rmtc_reuse_sql = (ROOT / "supabase" / "migrations" / "20260821142000_qcms_rmtc_reusable_global_balance_v4134.sql").read_text(encoding="utf-8")
+if "4134-PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT" not in ui_text or "4134-PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT" not in auth_text:
+    errors.append("QCMS 4.13.4 build fingerprint is missing")
+for token in ("def portal_table", "qcms-enterprise-table", "FINAL PRIORITY UI CONTRACT", "--qcms-field:#FFFDF0", "text-transform:uppercase!important"):
+    if token not in ui_text:
+        errors.append(f"QCMS 4.13.4 priority UI token missing: {token}")
+if "Welcome to Four Star Industries" not in auth_text or "height:410px!important" not in auth_text:
+    errors.append("QCMS 4.13.4 cropped company-image login contract is missing")
+for token in ("Reusable Production", "RMTC Balance", "Available Production from RMTC Balance"):
+    if token not in material_inward_text:
+        errors.append(f"QCMS 4.13.4 reusable RMTC UI token missing: {token}")
+if "global rmtc certificate quantity is the only cumulative consumption ceiling" not in rmtc_reuse_sql.casefold():
+    errors.append("QCMS 4.13.4 RMTC reusable global-balance migration contract is missing")
+if "cumulative production % pieces exceeds rmtc planned production" in rmtc_reuse_sql.casefold():
+    errors.append("QCMS 4.13.4 migration still contains the obsolete per-part planned-production hard cap")
+if "duplicate/existing row(s) skipped" not in master_import_text:
+    errors.append("QCMS 4.13.4 master import duplicate-skip contract is missing")
+if "SKIP_DUPLICATE" not in supply_service_text_v4134:
+    errors.append("QCMS 4.13.4 supply-chain duplicate-skip contract is missing")
+if "never update existing records" not in reference_import_text_v4134:
+    errors.append("QCMS 4.13.4 reference import insert-only contract is missing")
+
 report = {
-    "release": "QCMS 4.13.3 login no-menu + STAWN footer + portal polish",
+    "release": "QCMS 4.13.4 priority UI + reusable RMTC balance + duplicate-safe imports",
+    "priority_ui_contract": "FINAL PRIORITY UI CONTRACT" in ui_text,
+    "deterministic_enterprise_tables": "def portal_table" in ui_text and "qcms-enterprise-table" in ui_text,
+    "cropped_company_login": "Welcome to Four Star Industries" in auth_text and (ROOT / "assets" / "login_factory.jpeg").exists(),
+    "rmtc_reuse_by_global_balance": "global rmtc certificate quantity is the only cumulative consumption ceiling" in rmtc_reuse_sql.casefold(),
+    "duplicate_safe_imports": all(("duplicate/existing row(s) skipped" in master_import_text, "SKIP_DUPLICATE" in supply_service_text_v4134, "never update existing records" in reference_import_text_v4134)),
+    "customer_order_duplicate_skip_only": "SKIP_DUPLICATE" in supply_service_text_v4134,
     "login_no_menu": login_no_menu,
     "stawn_footer": stawn_footer,
     "native_header_removed": native_header_removed,

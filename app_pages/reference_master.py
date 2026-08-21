@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.catalog import LearnedValueCatalog
@@ -174,4 +175,4 @@ def render_records() -> None:
     section_bar("REFERENCE REGISTER", "The selected record and controls are positioned above the table.")
     display = pd.DataFrame(service.display_rows(definition, rows)).drop(columns=["_record_id"], errors="ignore")
     display.columns = [c.replace("_", " ").title() for c in display.columns]
-    st.dataframe(display, hide_index=True, width="stretch", height=620)
+    portal_table(display, hide_index=True, width="stretch", height=620)

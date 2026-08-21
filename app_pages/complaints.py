@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, AttachmentSlot, render_attachment_manager
@@ -698,7 +699,7 @@ def render_home() -> None:
             }
             for row in open_rows
         ])
-        st.dataframe(frame, hide_index=True, width="stretch", height=min(560, 65 + 36 * len(frame)))
+        portal_table(frame, hide_index=True, width="stretch", height=min(560, 65 + 36 * len(frame)))
 
 
 def render_customer_entry() -> None:
@@ -898,7 +899,7 @@ def _render_followups(repo: Repository, complaint: Mapping[str, Any], employees:
         st.caption("No follow-up records yet.")
         return
     emp_map = {str(row["id"]): row for row in employees}
-    st.dataframe(pd.DataFrame([
+    portal_table(pd.DataFrame([
         {"Date": row.get("followup_date"), "Type": str(row.get("followup_type") or "").replace("_", " ").title(), "Remarks / Update": row.get("remarks"), "Next Follow-up": row.get("next_followup_date"), "Responsible": employee_label(emp_map.get(str(row.get("responsible_employee_id"))) or {}), "Status": str(row.get("status_after_followup") or "No Change").replace("_", " ").title()}
         for row in followups
     ]), hide_index=True, width="stretch", height=min(400, 65 + len(followups) * 34))
@@ -955,7 +956,7 @@ def render_analysis() -> None:
     part = parts.get(str(complaint.get("part_id"))) or {}
     party = parties.get(str(complaint.get("party_id"))) or {}
     with stage_section("A", 'COMPLAINT TRACEABILITY', key="complaints_render_analysis_a"):
-        st.dataframe(pd.DataFrame([{
+        portal_table(pd.DataFrame([{
             "Complaint No.": complaint.get("complaint_number"),
             "Type": str(complaint.get("complaint_type") or "").title(),
             "Customer / Supplier": party_label(party),
@@ -1102,7 +1103,7 @@ def render_analysis() -> None:
                 "Target": row.get("target_date"), "Completion": row.get("completion_date") or "-", "Status": "OVERDUE" if _action_overdue(row) else str(row.get("status") or "").replace("_", " ").title(),
                 "Evidence": row.get("evidence") or "-", "Effectiveness": row.get("effectiveness_result") or "-",
             } for row in actions])
-            st.dataframe(action_frame, hide_index=True, width="stretch", height=min(500, 70 + len(action_frame) * 38))
+            portal_table(action_frame, hide_index=True, width="stretch", height=min(500, 70 + len(action_frame) * 38))
             if password_delete_panel(repo=repo, table="quality_complaint_actions", rows=actions, labeler=lambda row: f"A{int(row.get('action_no') or 0):02d} · {str(row.get('action_type') or '').replace('_',' ').title()} · {str(row.get('action_description') or '')[:75]}", key=f"delete_action_{complaint_id}", can_delete=perms["can_archive"], title="Delete Selected Action Plan Item", help_text="Permanent deletion requires your current QCMS password."):
                 st.rerun()
 
@@ -1207,4 +1208,4 @@ def render_records() -> None:
         }
         for row in filtered
     ])
-    st.dataframe(frame, hide_index=True, width="stretch", height=560)
+    portal_table(frame, hide_index=True, width="stretch", height=560)

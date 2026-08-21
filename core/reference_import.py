@@ -195,62 +195,69 @@ def parse_reference_workbook(content: bytes) -> ImportPreview:
 
 
 def apply_reference_import(preview: ImportPreview, service: "MasterService") -> dict[str, int]:
-    result = {"created": 0, "updated": 0}
+    """Duplicate-safe reference import: create missing keys only, never update existing records."""
+    result = {"created": 0, "updated": 0, "skipped": 0}
 
-    def upsert_party(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    def insert_party_if_missing(payload: dict[str, Any]) -> dict[str, Any]:
         existing = service.repo.find_one("parties", eq={"party_code": payload["party_code"]})
         if existing:
-            merged = dict(payload)
-            merged["party_types"] = sorted(set(existing.get("party_types") or []).union(payload.get("party_types") or []))
-            return service.repo.update("parties", str(existing["id"]), merged), "updated"
-        return service.repo.insert("parties", payload), "created"
+            result["skipped"] += 1
+            return existing
+        result["created"] += 1
+        return service.repo.insert("parties", payload)
 
-    customer, action = upsert_party(dict(preview.customer))
-    result[action] += 1
+    customer = insert_party_if_missing(dict(preview.customer))
 
     supplier_rows: list[dict[str, Any]] = []
     for payload in preview.suppliers:
-        row, action = upsert_party(dict(payload))
-        supplier_rows.append(row)
-        result[action] += 1
+        supplier_rows.append(insert_party_if_missing(dict(payload)))
 
-    grade, action = service.repo.upsert_by(
+    grade = service.repo.find_one(
         "material_grades",
-        preview.material_grade,
-        natural_key={"grade_code": preview.material_grade["grade_code"], "revision": preview.material_grade.get("revision")},
+        eq={"grade_code": preview.material_grade["grade_code"], "revision": preview.material_grade.get("revision")},
     )
-    result[action] += 1
+    if grade:
+        result["skipped"] += 1
+    else:
+        grade = service.repo.insert("material_grades", preview.material_grade)
+        result["created"] += 1
 
     part_source = dict(preview.part)
     part_grade_code = str(part_source.pop("material_grade", "") or "")
     part_grade = service.repo.find_one("material_grades", eq={"grade_code": part_grade_code}) if part_grade_code else None
     if not part_grade and part_grade_code:
-        part_grade, action = service.repo.upsert_by(
+        part_grade = service.repo.insert(
             "material_grades",
             {"grade_code": part_grade_code, "revision": "Current", "status": "ACTIVE", "remarks": "Created from Part Master material grade."},
-            natural_key={"grade_code": part_grade_code, "revision": "Current"},
         )
-        result[action] += 1
+        result["created"] += 1
 
     for chemistry in preview.chemistry:
-        payload = {**chemistry, "material_grade_id": grade["id"]}
-        _, action = service.repo.upsert_by(
-            "material_grade_elements",
-            payload,
-            natural_key={"material_grade_id": grade["id"], "element": chemistry["element"]},
-        )
-        result[action] += 1
+        natural = {"material_grade_id": grade["id"], "element": chemistry["element"]}
+        if service.repo.find_one("material_grade_elements", eq=natural):
+            result["skipped"] += 1
+            continue
+        service.repo.insert("material_grade_elements", {**chemistry, "material_grade_id": grade["id"]})
+        result["created"] += 1
 
     part_payload = {
         **part_source,
         "customer_id": customer["id"],
         "material_grade_id": (part_grade or grade)["id"],
     }
-    part, action = service.repo.upsert_by("parts", part_payload, natural_key={"part_number": part_payload["part_number"]})
-    result[action] += 1
+    part = service.repo.find_one("parts", eq={"part_number": part_payload["part_number"]})
+    if part:
+        result["skipped"] += 1
+    else:
+        part = service.repo.insert("parts", part_payload)
+        result["created"] += 1
 
     for supplier in supplier_rows:
-        _, action = service.repo.upsert_by(
+        natural = {"part_id": part["id"], "supplier_id": supplier["id"], "steel_mill_id": None}
+        if service.repo.find_one("part_supplier_links", eq=natural):
+            result["skipped"] += 1
+            continue
+        service.repo.insert(
             "part_supplier_links",
             {
                 "part_id": part["id"],
@@ -260,13 +267,16 @@ def apply_reference_import(preview: ImportPreview, service: "MasterService") -> 
                 "approval_reference": "Imported source; steel mill approval pending",
                 "approved": False,
             },
-            natural_key={"part_id": part["id"], "supplier_id": supplier["id"], "steel_mill_id": None},
         )
-        result[action] += 1
+        result["created"] += 1
 
     for process in preview.processes:
-        _, action = service.repo.upsert_by("processes", process, natural_key={"process_code": process["process_code"]})
-        result[action] += 1
+        if service.repo.find_one("processes", eq={"process_code": process["process_code"]}):
+            result["skipped"] += 1
+            continue
+        service.repo.insert("processes", process)
+        result["created"] += 1
 
     service._lookup_cache.clear()
     return result
+

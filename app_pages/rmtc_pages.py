@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.attachments import AttachmentService, AttachmentSlot, new_attachment_uploaders, render_attachment_manager
@@ -222,7 +223,7 @@ def render_entry()->None:
                     'automated_validation':'Automated Validation','part_disposition':'Part Decision'
                 })
                 show=[c for c in ['RMTC Number','Supplier RMTC Number','RMTC Status','RMTC Disposition','Supplier','Part Number','Part Description','Planned Qty (pcs)','Input Wt (kg)','Planned Steel (kg)','Inward Qty (pcs)','Inward Steel (kg)','Remaining Plan (kg)','Automated Validation','Part Decision'] if c in usage_df.columns]
-                st.dataframe(style_status_dataframe(usage_df[show]),width='stretch',hide_index=True,height=min(360,80+len(usage_df)*36))
+                portal_table(style_status_dataframe(usage_df[show]),width='stretch',hide_index=True,height=min(360,80+len(usage_df)*36))
         elif heat_search:
             st.caption('New Heat Number. The steel quantity entered below becomes the global Heat steel quantity.')
 
@@ -400,7 +401,7 @@ def render_part()->None:
     existing=svc.details(rid,part_id)
     writable=perms['can_edit'] or perms['can_create']
     with stage_section("A", 'PART & MATERIAL', 'Each selected part is a separate controlled worksheet.', key="rmtc_pages_render_part_a"):
-        st.dataframe(pd.DataFrame([{'RMTC':header.get('rmtc_number'),'Heat Number':header.get('heat_number'),'Internal Heat Code':header.get('heat_code'),'Part Number':part.get('part_number'),'Part Description':part.get('part_name'),'Material Grade':grade.get('grade_code'),'Status':header.get('status')}]),hide_index=True,width='stretch')
+        portal_table(pd.DataFrame([{'RMTC':header.get('rmtc_number'),'Heat Number':header.get('heat_number'),'Internal Heat Code':header.get('heat_code'),'Part Number':part.get('part_number'),'Part Description':part.get('part_name'),'Material Grade':grade.get('grade_code'),'Status':header.get('status')}]),hide_index=True,width='stretch')
 
         source_rows=svc.source_details(part_id)
         production_source=next((row for row in source_rows if str(row.get('supplier_id'))==str(header.get('supplier_id'))),{})
@@ -459,7 +460,7 @@ def render_part()->None:
         di_applicable=st.checkbox('DI Applicable',value=str(part_approval.get('calculated_di_status') or '')!='NOT_APPLICABLE')
         actual_di=st.number_input('Actual DI',min_value=0.0,value=float(part_approval.get('actual_di') or 0),step=0.01,disabled=not di_applicable)
         di_calc=calculate_di(chemistry_map,grain) if di_applicable else {'value':None,'error':None,'factors':{}}
-        st.dataframe(pd.DataFrame([{'Grain Size':grain,'Actual DI':actual_di if di_applicable else None,'Calculated DI':di_calc.get('value'),'Calculation Note':di_calc.get('error') or 'DI Hardenability.XLSX factor product'}]),hide_index=True,width='stretch')
+        portal_table(pd.DataFrame([{'Grain Size':grain,'Actual DI':actual_di if di_applicable else None,'Calculated DI':di_calc.get('value'),'Calculation Note':di_calc.get('error') or 'DI Hardenability.XLSX factor product'}]),hide_index=True,width='stretch')
 
     with stage_section("F", 'HEAT TREATMENT & OTHER REQUIREMENTS', 'Not Applicable is available and does not block Draft saving.', key="rmtc_pages_render_part_f"):
         templates=svc.requirements(part_id);existing_req={str(r.get('source_requirement_id')):r for r in existing['requirements']}
@@ -549,7 +550,7 @@ def render_records()->None:
 
     section_bar('RMTC REGISTER','The selected record and actions are placed above this full-width table.')
     df=pd.DataFrame([{'QCMS RMTC':r.get('rmtc_number'),'Supplier RMTC':r.get('certificate_reference'),'RMTC Date':r.get('certificate_date'),'Primary Part':(parts.get(str(r.get('part_id'))) or {}).get('part_number'),'Supplier':(suppliers.get(str(r.get('supplier_id'))) or {}).get('party_name'),'Steel Mill':(mills.get(str(r.get('steel_mill_id'))) or {}).get('party_name'),'Heat Number':r.get('heat_number'),'Internal Heat Code':r.get('heat_code'),'Steel Quantity kg':r.get('certificate_quantity'),'Validation':r.get('validation_result'),'Workflow':r.get('status'),'Disposition':r.get('disposition'),'Decision Date':r.get('decision_at')} for r in filtered])
-    st.dataframe(style_status_dataframe(df),hide_index=True,width='stretch',height=600)
+    portal_table(style_status_dataframe(df),hide_index=True,width='stretch',height=600)
 
 
 def render_approval()->None:
@@ -610,7 +611,7 @@ def render_approval()->None:
                     save_success_popup('RMTC reopened to Approval Pending. The administrator may now change and save the decisions.', queue_for_rerun=True);st.rerun()
                 except Exception as exc: st.error(str(exc))
             if revisions:
-                st.dataframe(pd.DataFrame([{
+                portal_table(pd.DataFrame([{
                     'Reopened At':r.get('reopened_at'),'Reason':r.get('reason'),
                     'Previous Status':r.get('previous_status'),'Previous Disposition':r.get('previous_disposition')
                 } for r in revisions]),hide_index=True,width='stretch',height=min(240,70+len(revisions)*35))

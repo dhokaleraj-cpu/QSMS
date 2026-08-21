@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
@@ -101,7 +102,7 @@ def render_tools() -> None:
         curve = st.session_state.get("qct_jom_result")
         if curve:
             frame = pd.DataFrame([{"Distance (1/16 in.)": distance, "Calculated HRC": value} for distance, value in curve.items()])
-            st.dataframe(frame, hide_index=True, width="stretch")
+            portal_table(frame, hide_index=True, width="stretch")
             if st.button("Save Jominy Calculation Record", width="stretch", key="save_jominy", disabled=not perms["can_create"]):
                 _save_record(repo, perms, calculation_type="JOMINY", part_id=part_id, grade_id=grade_id, heat_number=heat_number, employee_id=employee_id, inputs=dict(st.session_state.get("qct_jom_inputs") or chemistry), results={"curve": curve}, standard="QCMS controlled Jominy calculation logic", remarks=remarks)
 
@@ -120,7 +121,7 @@ def render_tools() -> None:
                 st.error(str(result["error"]))
             else:
                 st.metric("Calculated DI", result.get("value"))
-                st.dataframe(pd.DataFrame([{"Factor": key, "Value": value} for key, value in dict(result.get("factors") or {}).items()]), hide_index=True, width="stretch")
+                portal_table(pd.DataFrame([{"Factor": key, "Value": value} for key, value in dict(result.get("factors") or {}).items()]), hide_index=True, width="stretch")
                 if st.button("Save DI Calculation Record", width="stretch", key="save_di", disabled=not perms["can_create"]):
                     _save_record(repo, perms, calculation_type="DI_VALUE", part_id=part_id, grade_id=grade_id, heat_number=heat_number, employee_id=employee_id, inputs=dict(st.session_state.get("qct_di_inputs") or {}), results=dict(result), standard="QCMS DI Hardenability factor table", result_value=float(result.get("value")), remarks=remarks)
 
@@ -188,7 +189,7 @@ def _render_records(repo: Repository | None = None) -> None:
         "Heat Number": row.get("heat_number"), "Primary": f"{row.get('primary_value') or ''} {row.get('primary_unit') or ''}".strip(),
         "Result": f"{row.get('result_value') or ''} {row.get('conversion_unit') or ''}".strip(), "Standard": row.get("standard_reference"), "Status": row.get("status")
     } for row in filtered])
-    st.dataframe(display, hide_index=True, width="stretch", height=500)
+    portal_table(display, hide_index=True, width="stretch", height=500)
 
 
 def render_records() -> None:

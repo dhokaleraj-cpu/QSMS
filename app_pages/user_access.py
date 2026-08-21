@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import MODULES
 from core.database import get_session_client
@@ -47,7 +48,7 @@ def render()->None:
             except Exception as exc:st.error(str(exc));users=[]
             if not users:st.info('No users available.');return
             register=pd.DataFrame([{'Email':u.get('email'),'Name':u.get('full_name'),'Role':u.get('role'),'Status':u.get('status'),'Last Sign In':u.get('last_sign_in_at')} for u in users])
-            st.dataframe(register,hide_index=True,width='stretch',height=300)
+            portal_table(register,hide_index=True,width='stretch',height=300)
             labels={str(u.get('id')):f"{u.get('email')} · {u.get('role')}" for u in users};uid=st.selectbox('Selected User',list(labels),format_func=lambda x:labels[x])
             current=next(u for u in users if str(u.get('id'))==uid)
             c=st.columns(3,gap='small');role=c[0].selectbox('Role',ROLES,index=ROLES.index(current.get('role','VIEWER')));status=c[1].selectbox('Access Status',['ACTIVE','INACTIVE','LOCKED'],index=['ACTIVE','INACTIVE','LOCKED'].index(current.get('status','ACTIVE')));employee=c[2].selectbox('Employee',['']+list(emp),format_func=lambda x:emp.get(x,'— Not linked —'))

@@ -48,6 +48,9 @@ required = [
     "docs/RELEASE_4_12_8.md",
     "docs/RELEASE_4_13_1.md",
     "docs/RELEASE_4_13_3.md",
+    "docs/RELEASE_4_13_4.md",
+    "supabase/migrations/20260821142000_qcms_rmtc_reusable_global_balance_v4134.sql",
+    "tests/test_v4134_priority_ui_rmtc_reuse_import.py",
     "tests/test_v4133_login_no_menu_stawn_footer.py",
     "tests/test_v4131_meritor_field_section_login_refresh.py",
     "tests/test_v4128_responsive_enterprise_ui_report_hub.py",
@@ -124,7 +127,7 @@ required = [
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.13.3 - login no-menu, STAWN footer and portal polish",
+    "phase": "QCMS 4.13.4 - priority UI, reusable RMTC balance and duplicate-safe imports",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

@@ -4,6 +4,7 @@ from datetime import date
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.catalog import LearnedValueCatalog
@@ -168,7 +169,7 @@ def render_records() -> None:
 
     section_bar("MATERIAL GRADE REGISTER", "Material Grade header records.")
     df = pd.DataFrame([{"Material Grade": g.get("grade_code"), "Material Number": g.get("material_number"), "Standard": g.get("standard"), "Revision": g.get("revision"), "Effective Date": g.get("effective_date"), "Status": g.get("status")} for g in rows])
-    st.dataframe(df, hide_index=True, width="stretch", height=430)
+    portal_table(df, hide_index=True, width="stretch", height=430)
     if selected:
         section_bar("SELECTED GRADE · CHEMICAL COMPOSITION", "Chemical elements remain embedded inside the selected Material Grade Master.")
-        st.dataframe(pd.DataFrame([{"Element": r.get("element"), "Minimum %": r.get("minimum"), "Maximum %": r.get("maximum"), "Unit": r.get("unit"), "Test Method": r.get("test_method")} for r in composition]), hide_index=True, width="stretch", height=300)
+        portal_table(pd.DataFrame([{"Element": r.get("element"), "Minimum %": r.get("minimum"), "Maximum %": r.get("maximum"), "Unit": r.get("unit"), "Test Method": r.get("test_method")} for r in composition]), hide_index=True, width="stretch", height=300)

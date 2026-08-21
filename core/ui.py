@@ -1,3 +1,5 @@
+# QCMS 4.13.4 — PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT
+# BUILD 4134-PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT
 # Legacy UI regression phrase retained: taglines and context
 # QCMS 4.13.3 — LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH
 # BUILD 4133-LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH
@@ -111,7 +113,10 @@ STATUS_STYLE = {
     "LOCKED": ("#991b1b", "#fee2e2"), "HOLD": ("#92400e", "#fef3c7"), "ON_HOLD": ("#92400e", "#fef3c7"),
     "HOLD_PENDING_INSPECTION": ("#92400e", "#fef3c7"), "HOLD_PENDING_OSP_INSPECTION": ("#92400e", "#fef3c7"),
     "AT_VENDOR": ("#1e40af", "#dbeafe"), "AT_OSP": ("#1e40af", "#dbeafe"), "PART_RECEIVED": ("#92400e", "#fef3c7"),
-    "COMPLETED": ("#065f46", "#d1fae5"), "NOT_APPLICABLE": ("#334155", "#e2e8f0"),
+    "COMPLETED": ("#065f46", "#d1fae5"), "CLOSED": ("#065f46", "#d1fae5"),
+    "OPEN": ("#166534", "#DCFCE7"), "IN_PROGRESS": ("#9A3412", "#FFEDD5"),
+    "OVERDUE": ("#991B1B", "#FEE2E2"), "CANCELLED": ("#475569", "#E2E8F0"),
+    "NOT_APPLICABLE": ("#334155", "#e2e8f0"),
 }
 
 
@@ -204,6 +209,71 @@ def logo_data_uri() -> str:
 
 def safe(value: Any) -> str:
     return escape(str(value or ""))
+
+
+def portal_table(data: Any, *, hide_index: bool = True, width: Any = "stretch", height: int | None = None, **_: Any) -> None:
+    """Render a deterministic Meritor-style enterprise grid.
+
+    Streamlit's canvas dataframe renderer changes its internal DOM between
+    releases, which made QCMS table styling inconsistent. Display-only grids
+    use this HTML renderer so header fill, borders, row height and status chips
+    look the same on every module and browser. Interactive data editors remain
+    native Streamlit controls.
+    """
+    import math
+    import pandas as pd
+
+    frame = getattr(data, "data", data)
+    if frame is None:
+        frame = pd.DataFrame()
+    elif not isinstance(frame, pd.DataFrame):
+        frame = pd.DataFrame(frame)
+    else:
+        frame = frame.copy()
+
+    def show_value(value: Any) -> str:
+        try:
+            if value is None or (isinstance(value, float) and math.isnan(value)):
+                return ""
+        except Exception:
+            pass
+        if isinstance(value, float):
+            if abs(value - round(value)) < 1e-9:
+                return f"{int(round(value)):,}"
+            return f"{value:,.3f}".rstrip("0").rstrip(".")
+        return str(value)
+
+    status_tokens = ("status", "result", "decision", "disposition", "validation", "workflow", "recommendation", "action")
+    head = "".join(f'<th>{safe(col)}</th>' for col in frame.columns)
+    rows_html: list[str] = []
+    for row_index, row in frame.iterrows():
+        cells: list[str] = []
+        if not hide_index:
+            cells.append(f'<td class="qcms-index-cell">{safe(row_index)}</td>')
+        for col in frame.columns:
+            raw = show_value(row.get(col))
+            key = str(col).casefold()
+            canonical = str(raw or "").strip().upper().replace(" ", "_")
+            is_status = any(token in key for token in status_tokens) or canonical in STATUS_STYLE
+            if is_status and raw:
+                fg, bg = STATUS_STYLE.get(canonical, ("#334155", "#E2E8F0"))
+                value_html = f'<span class="qcms-table-chip" style="color:{fg};background:{bg}">{safe(raw.replace("_", " ").title())}</span>'
+            else:
+                value_html = safe(raw)
+            numeric = isinstance(row.get(col), (int, float)) and not isinstance(row.get(col), bool)
+            cells.append(f'<td class="{"qcms-number-cell" if numeric else ""}">{value_html}</td>')
+        rows_html.append("<tr>" + "".join(cells) + "</tr>")
+
+    if not hide_index:
+        head = '<th class="qcms-index-cell">#</th>' + head
+    max_height = f"max-height:{int(height)}px;" if height else ""
+    empty = '<div class="qcms-table-empty">No records available.</div>' if frame.empty else ""
+    html = (
+        f'<div class="qcms-enterprise-table-wrap" style="{max_height}">' +
+        (f'<table class="qcms-enterprise-table"><thead><tr>{head}</tr></thead><tbody>{"".join(rows_html)}</tbody></table>' if not frame.empty else empty) +
+        '</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
@@ -928,6 +998,109 @@ def apply_global_style() -> None:
       .fsi-page-title{font-size:17px!important;}
       .fsi-section-bar,[class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary p{font-size:13.5px!important;}
     }
+
+
+    /* QCMS 4.13.4 — FINAL PRIORITY UI CONTRACT -------------------------------- */
+    :root{
+      --qcms-maroon:#B20738!important;
+      --qcms-maroon-dark:#90062E!important;
+      --qcms-page-bg:#F2F2F2!important;
+      --qcms-panel:#FFFFFF!important;
+      --qcms-field:#FFFDF0!important;
+      --qcms-field-line:#C8C9CB!important;
+      --qcms-grid-head:#ECEEEF!important;
+      --qcms-grid-line:#C7CCD0!important;
+    }
+    html,body,.stApp,div[data-testid="stAppViewContainer"],section[data-testid="stMain"]{
+      background:var(--qcms-page-bg)!important;color:#262626!important;
+    }
+    /* Keep the authenticated maroon top menu fully visible; Streamlit native grey chrome stays hidden. */
+    header[data-testid="stHeader"],div[data-testid="stToolbar"],div[data-testid="stDecoration"]{
+      display:none!important;height:0!important;min-height:0!important;background:transparent!important;
+    }
+    div.st-key-fsi_shell,[class~="st-key-fsi_shell"]{
+      background:linear-gradient(90deg,var(--qcms-maroon-dark),#C70036)!important;
+      margin-top:0!important;position:relative!important;z-index:100!important;
+    }
+
+    /* Section hierarchy: unmistakably headings, never body text. */
+    .fsi-page-title{color:var(--qcms-maroon)!important;font-size:20px!important;font-weight:900!important;line-height:1.15!important;}
+    .fsi-section-bar{
+      color:var(--qcms-maroon)!important;background:#fff!important;font-size:15px!important;font-weight:900!important;
+      border:1px solid #D0D3D6!important;border-left:4px solid var(--qcms-maroon)!important;border-radius:1px!important;
+      padding:10px 12px!important;margin:12px 0 9px!important;box-shadow:none!important;
+    }
+    .fsi-section-bar:after{display:none!important;}
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"]{
+      background:#fff!important;border:1px solid #C9CDD1!important;border-radius:2px!important;margin:9px 0 12px!important;overflow:hidden!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary{
+      background:#fff!important;border-bottom:1px solid #D1D4D7!important;min-height:44px!important;padding:10px 13px!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary p{
+      color:var(--qcms-maroon)!important;font-size:13px!important;font-weight:900!important;letter-spacing:.01em!important;line-height:1.2!important;text-transform:uppercase!important;
+    }
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary svg{color:var(--qcms-maroon)!important;fill:var(--qcms-maroon)!important;}
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"] summary:after{display:none!important;}
+    [class*="st-key-fsi_stage_"] details[data-testid="stExpander"]>div{background:#F8F8F8!important;padding:14px!important;}
+
+    /* Every value widget receives the same visible pocket as the approved reference. */
+    label[data-testid="stWidgetLabel"] p{color:#252525!important;font-size:11.5px!important;font-weight:800!important;}
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stDateInput"] input,
+    div[data-testid="stTimeInput"] input,
+    div[data-testid="stTextArea"] textarea{
+      background:var(--qcms-field)!important;border:1.25px solid var(--qcms-field-line)!important;border-radius:2px!important;
+      box-shadow:none!important;color:#222!important;-webkit-text-fill-color:#222!important;min-height:38px!important;padding:8px 10px!important;
+      opacity:1!important;
+    }
+    div[data-testid="stTextInput"] [data-baseweb="input"],
+    div[data-testid="stTextInput"] [data-baseweb="base-input"],
+    div[data-testid="stNumberInput"] [data-baseweb="input"],
+    div[data-testid="stNumberInput"] [data-baseweb="base-input"],
+    div[data-testid="stDateInput"] [data-baseweb="input"],
+    div[data-testid="stDateInput"] [data-baseweb="base-input"],
+    div[data-testid="stTimeInput"] [data-baseweb="input"],
+    div[data-testid="stTimeInput"] [data-baseweb="base-input"]{
+      background:transparent!important;border:0!important;box-shadow:none!important;
+    }
+    div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
+    div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
+      background:var(--qcms-field)!important;border:1.25px solid var(--qcms-field-line)!important;border-radius:2px!important;min-height:38px!important;box-shadow:none!important;color:#222!important;
+    }
+    div[data-testid="stTextInput"] input:disabled,
+    div[data-testid="stNumberInput"] input:disabled,
+    div[data-testid="stDateInput"] input:disabled,
+    div[data-testid="stTimeInput"] input:disabled,
+    div[data-testid="stTextArea"] textarea:disabled{opacity:1!important;background:#FFFDF0!important;color:#333!important;-webkit-text-fill-color:#333!important;}
+    [data-testid="stFileUploaderDropzone"]{background:#FFFDF0!important;border:1.25px dashed #BFC2C4!important;border-radius:2px!important;}
+    div[data-testid="stForm"],div[data-testid="stVerticalBlockBorderWrapper"]{background:#fff!important;border:1px solid #C9CDD1!important;border-radius:2px!important;box-shadow:none!important;}
+
+    /* Deterministic HTML enterprise grids used throughout display-only tables. */
+    .qcms-enterprise-table-wrap{width:100%!important;overflow:auto!important;background:#fff!important;border:1px solid #B9BEC3!important;border-radius:0!important;margin:7px 0 10px!important;}
+    .qcms-enterprise-table{width:100%!important;border-collapse:collapse!important;table-layout:auto!important;background:#fff!important;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif!important;font-size:10.6px!important;color:#282D31!important;}
+    .qcms-enterprise-table th{position:sticky!important;top:0!important;z-index:2!important;background:var(--qcms-grid-head)!important;color:#303438!important;font-weight:900!important;text-align:left!important;white-space:nowrap!important;padding:9px 10px!important;border-right:1px solid #BFC4C8!important;border-bottom:1px solid #AEB5BB!important;}
+    .qcms-enterprise-table td{background:#fff!important;color:#282D31!important;padding:8px 10px!important;border-right:1px solid #D0D4D7!important;border-bottom:1px solid #D5D9DC!important;vertical-align:middle!important;white-space:nowrap!important;}
+    .qcms-enterprise-table tbody tr:nth-child(even) td{background:#FAFAFA!important;}
+    .qcms-enterprise-table tbody tr:hover td{background:#F4F6F7!important;}
+    .qcms-enterprise-table th:last-child,.qcms-enterprise-table td:last-child{border-right:0!important;}
+    .qcms-enterprise-table tbody tr:last-child td{border-bottom:0!important;}
+    .qcms-number-cell{text-align:right!important;font-variant-numeric:tabular-nums!important;}
+    .qcms-table-chip{display:inline-block!important;min-width:58px!important;text-align:center!important;padding:3px 7px!important;border-radius:3px!important;font-size:9.7px!important;font-weight:800!important;line-height:1.2!important;}
+    .qcms-table-empty{padding:18px!important;text-align:center!important;color:#7A8085!important;background:#fff!important;}
+
+    /* Pocket/card consistency. */
+    .fsi-kpi,.fsi-status-card,.supply-order-card,.fsi-flow-step,.npd-order-summary-card,.npd-row-process-card,.fsi-master-card-head,.fsi-dashboard-card,.qcms-pocket{
+      border:1px solid #C9CDD1!important;background:#fff!important;border-radius:2px!important;box-shadow:none!important;padding:12px!important;
+    }
+    .fsi-kpi-label,.fsi-master-card-title,.fsi-dashboard-card-title,.fsi-flow-label{font-weight:800!important;color:#303438!important;}
+    .fsi-kpi-value,.fsi-status-card .value{font-weight:900!important;}
+
+    /* Buttons follow the reference portal: maroon primary, neutral secondary. */
+    .stButton>button[kind="primary"],.stFormSubmitButton>button[kind="primary"]{background:var(--qcms-maroon)!important;border:1px solid var(--qcms-maroon-dark)!important;color:#fff!important;border-radius:2px!important;font-weight:800!important;}
+    .stButton>button[kind="primary"] *,.stFormSubmitButton>button[kind="primary"] *{color:#fff!important;}
+
     </style>
     """, unsafe_allow_html=True)
 

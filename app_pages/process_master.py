@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
@@ -40,7 +41,7 @@ def _render_related_standards(repo, process: dict, *, key_prefix: str, show_head
         "Revision Date": row.get("revision_date"), "Status": row.get("status"),
         "Attachment": (attachments.get(str(row.get("id"))) or {}).get("file_name") or "Not attached",
     } for row in standards]
-    st.dataframe(pd.DataFrame(display), hide_index=True, width="stretch", height=min(280, 72 + len(display) * 36))
+    portal_table(pd.DataFrame(display), hide_index=True, width="stretch", height=min(280, 72 + len(display) * 36))
     service = AttachmentService(repo)
     cols = st.columns(min(3, len(standards)), gap="small")
     for index, row in enumerate(standards):
@@ -223,4 +224,4 @@ def render_records() -> None:
         "Status": row.get("status"),
         "Remarks": row.get("remarks"),
     } for row in rows])
-    st.dataframe(frame, hide_index=True, width="stretch", height=620)
+    portal_table(frame, hide_index=True, width="stretch", height=620)

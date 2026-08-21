@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.employee_service import AUTHORITIES, EmployeeService
@@ -235,8 +236,10 @@ def _row_payload(service: MasterService, definition: MasterDef, source: dict[str
 
 
 def _import_definition(service: MasterService, definition: MasterDef, frame: pd.DataFrame) -> tuple[int, int, list[str]]:
-    created = updated = 0
+    """Insert only database-missing master rows; silently skip duplicate natural keys."""
+    created = skipped = 0
     errors: list[str] = []
+    seen_keys: set[str] = set()
     for row_no, record in enumerate(frame.to_dict("records"), start=2):
         if not any(_clean_value(v) is not None for v in record.values()):
             continue
@@ -244,12 +247,21 @@ def _import_definition(service: MasterService, definition: MasterDef, frame: pd.
             raw = _row_payload(service, definition, record)
             normalized = service.normalize_payload(definition, raw)
             existing_id = _existing_id(service, definition, normalized)
-            _saved, action = service.save(definition, raw, record_id=existing_id)
-            if action == "created": created += 1
-            else: updated += 1
+            natural_signature = "|".join(str(normalized.get(field) or "").strip().casefold() for field in definition.natural_key)
+            if existing_id or (natural_signature and natural_signature in seen_keys):
+                skipped += 1
+                continue
+            _saved, action = service.save(definition, raw, record_id=None)
+            if action == "created":
+                created += 1
+                if natural_signature:
+                    seen_keys.add(natural_signature)
+            else:
+                # Defensive guard: generic service should not update during import-only mode.
+                skipped += 1
         except Exception as exc:
             errors.append(f"Row {row_no}: {exc}")
-    return created, updated, errors
+    return created, skipped, errors
 
 
 def _import_employees(repo: Repository, frame: pd.DataFrame) -> tuple[int, int, list[str]]:
@@ -257,7 +269,7 @@ def _import_employees(repo: Repository, frame: pd.DataFrame) -> tuple[int, int, 
     existing = service.list(False)
     by_code = {_norm(row.get("employee_code")): row for row in existing if row.get("employee_code")}
     by_email = {_norm(row.get("email")): row for row in existing if row.get("email")}
-    created = updated = 0
+    created = skipped = 0
     errors: list[str] = []
     pending_manager: list[tuple[str, str]] = []
     for row_no, source in enumerate(frame.to_dict("records"), start=2):
@@ -279,6 +291,9 @@ def _import_employees(repo: Repository, frame: pd.DataFrame) -> tuple[int, int, 
             authorities = [item for item in authorities if item in AUTHORITIES]
             manager_code = str(values.get("reports to employee code") or "").strip()
             existing_row = by_code.get(_norm(code)) or by_email.get(_norm(email))
+            if existing_row:
+                skipped += 1
+                continue
             payload = {
                 "employee_code": code,
                 "first_name": str(values.get("first name") or "").strip(),
@@ -295,9 +310,8 @@ def _import_employees(repo: Repository, frame: pd.DataFrame) -> tuple[int, int, 
                 "remarks": str(values.get("remarks") or "").strip() or None,
                 "source_system": "QCMS_IMPORT",
             }
-            saved = service.save(payload, str(existing_row.get("id")) if existing_row else None)
-            if existing_row: updated += 1
-            else: created += 1
+            saved = service.save(payload, None)
+            created += 1
             by_code[_norm(saved.get("employee_code"))] = saved
             by_email[_norm(saved.get("email"))] = saved
             if manager_code:
@@ -308,7 +322,7 @@ def _import_employees(repo: Repository, frame: pd.DataFrame) -> tuple[int, int, 
         manager = by_code.get(_norm(manager_code))
         if manager and str(manager.get("id")) != employee_id:
             repo.update("employees", employee_id, {"reports_to_employee_id": str(manager["id"])})
-    return created, updated, errors
+    return created, skipped, errors
 
 
 def _prepare_material_grade_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -317,7 +331,7 @@ def _prepare_material_grade_frame(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def render() -> None:
-    page_header("Master Import", "Upload completed Excel/CSV templates to create or update controlled master records. Duplicate master keys are never created.", "Import")
+    page_header("Master Import", "Upload completed Excel/CSV templates. Existing duplicate natural keys are skipped; only database-missing records are created.", "Import")
     labels = {key: label for key, label, _module, _template in IMPORTABLE}
     keys = [row[0] for row in IMPORTABLE]
     requested = str(st.session_state.pop("master_import_selected_key", "") or "")
@@ -332,7 +346,7 @@ def render() -> None:
     template_download_row([(template_name, f"Download {_label} Template")], key_prefix=f"master_import_{selected_key}")
     uploaded = st.file_uploader("Upload completed master file", type=["xlsx", "xls", "csv"], key=f"master_import_file_{selected_key}")
     if uploaded is None:
-        st.caption("Complete the downloaded template, then upload it here. Existing natural keys are updated; new controlled keys are created only once.")
+        st.caption("Complete the template and upload it here. Existing matching database records are skipped; only new natural keys are imported.")
         return
 
     try:
@@ -361,17 +375,18 @@ def render() -> None:
             frame = frame[frame[party_type_column].map(_party_match)].copy()
 
     st.caption(f"Detected worksheet: {sheet_name} · {len(frame)} applicable data row(s)")
-    st.dataframe(frame.head(30), hide_index=True, width="stretch", height=min(520, 100 + 35 * min(len(frame), 12)))
-    st.warning("Import updates existing matching master keys and creates only missing records. It does not delete master records.")
+    portal_table(frame.head(30), hide_index=True, width="stretch", height=min(520, 100 + 35 * min(len(frame), 12)))
+    st.info("Duplicate-safe import: existing matching master keys and duplicate rows inside the uploaded file are skipped. Only missing database records are created.")
 
     if st.button("Import Selected Master", type="primary", width="stretch", disabled=not (perms["can_create"] or perms["can_edit"])):
         try:
             repo = Repository(); service = MasterService(repo)
             if selected_key == "employees":
-                created, updated, errors = _import_employees(repo, frame)
+                created, skipped, errors = _import_employees(repo, frame)
             else:
                 definition = MASTER_BY_KEY[selected_key]
-                created, updated, errors = _import_definition(service, definition, frame)
+                preexisting_grade_codes = {_norm(r.get("grade_code")) for r in repo.select("material_grades", limit=5000)} if selected_key == "material_grades" else set()
+                created, skipped, errors = _import_definition(service, definition, frame)
                 if selected_key == "material_grades":
                     # Preserve / assign Material Number, which is a controlled field outside the generic MasterDef form.
                     normalized_headers = {_norm(c): c for c in frame.columns}
@@ -380,7 +395,7 @@ def render() -> None:
                     if grade_col:
                         for source in frame.to_dict("records"):
                             grade_code = str(_clean_value(source.get(grade_col)) or "").strip()
-                            if not grade_code:
+                            if not grade_code or _norm(grade_code) in preexisting_grade_codes:
                                 continue
                             grade_row = next((r for r in repo.select("material_grades", order_by="grade_code", limit=3000) if _norm(r.get("grade_code")) == _norm(grade_code)), None)
                             if not grade_row:
@@ -394,9 +409,9 @@ def render() -> None:
                 st.error("Import completed with validation errors:\n\n" + "\n".join(errors[:30]))
                 if len(errors) > 30:
                     st.caption(f"{len(errors)-30} additional row error(s) were not displayed.")
-            if created or updated:
-                save_success_popup(f"Master import completed: {created} created, {updated} updated, {len(errors)} rejected.", queue_for_rerun=False)
+            if created or skipped:
+                save_success_popup(f"Master import completed: {created} created, {skipped} duplicate/existing row(s) skipped, {len(errors)} rejected.", queue_for_rerun=False)
             elif not errors:
-                st.info("No data rows were available to import.")
+                st.info("No new database-missing rows were available to import.")
         except Exception as exc:
             st.error(str(exc))

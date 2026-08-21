@@ -5,6 +5,7 @@ from typing import Any, Iterable
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from core.reporting import report_pdf_bytes, safe_excel_sheet_name
@@ -246,9 +247,9 @@ def render_heat_transactions() -> None:
         "Status": "transaction_status",
     })
     with stage_section("A", "HEAT GLOBAL BALANCE", key="reports_heat_transactions_a"):
-        st.dataframe(summary_frame, hide_index=True, width="stretch", height=min(400, 100 + max(len(summary_frame), 1) * 36))
+        portal_table(summary_frame, hide_index=True, width="stretch", height=min(400, 100 + max(len(summary_frame), 1) * 36))
     with stage_section("B", "HEAT TRANSACTION HISTORY", "Chronological genealogy from RMTC planning through Material Inward and OSP movement.", key="reports_heat_transactions_b"):
-        st.dataframe(transaction_frame, hide_index=True, width="stretch", height=560)
+        portal_table(transaction_frame, hide_index=True, width="stretch", height=560)
         suffix = selected_key or "ALL_HEATS"
         export_sections = {"Heat Balance": summary_frame, "Transactions": transaction_frame}
         c1, c2 = st.columns(2, gap="small")
@@ -367,9 +368,9 @@ def render_osp_balance() -> None:
         "Status": "status",
     })
     with stage_section("A", "HEAT / PART OSP BALANCE", key="reports_osp_balance_a"):
-        st.dataframe(balance_frame, hide_index=True, width="stretch", height=min(480, 100 + max(len(balance_frame), 1) * 36))
+        portal_table(balance_frame, hide_index=True, width="stretch", height=min(480, 100 + max(len(balance_frame), 1) * 36))
     with stage_section("B", "OSP TRANSACTION DETAILS", key="reports_osp_balance_b"):
-        st.dataframe(job_frame, hide_index=True, width="stretch", height=540)
+        portal_table(job_frame, hide_index=True, width="stretch", height=540)
         suffix = (heat_key or "ALL_HEATS") + ("_" + selected_part.replace("/", "-") if selected_part != "All Part Numbers" else "")
         export_sections = {"OSP Balance": balance_frame, "OSP Transactions": job_frame}
         c1, c2 = st.columns(2, gap="small")

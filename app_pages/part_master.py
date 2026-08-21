@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.auth import current_profile
@@ -616,7 +617,7 @@ def render_entry() -> None:
                 }
                 for row in drawing_rows
             ])
-            st.dataframe(history_df, hide_index=True, width="stretch")
+            portal_table(history_df, hide_index=True, width="stretch")
             history_map = {str(row["id"]): _drawing_label(row) for row in drawing_rows}
             selected_drawing_id = st.selectbox(
                 "Select Drawing Revision to Download",
@@ -709,7 +710,7 @@ def render_entry() -> None:
                 "Attachment": (attachment_by_standard.get(str(standard.get("id"))) or {}).get("file_name") or "Not attached",
             })
         if linked_display:
-            st.dataframe(pd.DataFrame(linked_display), hide_index=True, width="stretch", height=min(280, 72 + len(linked_display) * 36))
+            portal_table(pd.DataFrame(linked_display), hide_index=True, width="stretch", height=min(280, 72 + len(linked_display) * 36))
             dl_cols = st.columns(min(3, len(active_link_rows)), gap="small") if active_link_rows else []
             for idx, link in enumerate(active_link_rows):
                 standard = standard_by_id.get(str(link.get("standard_id"))) or {}
@@ -913,4 +914,4 @@ def render_records() -> None:
 
     section_bar("PART MASTER REGISTER", "The selected record and actions are intentionally shown above the register.")
     df = pd.DataFrame([{"Part Number": p.get("part_number"), "Part Description": p.get("part_name"), "Finish Weight kg": p.get("finished_weight_kg"), "Customer": (customers.get(str(p.get("customer_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(p.get("material_grade_id"))) or {}).get("grade_code"), "Drawing": p.get("drawing_number"), "Revision": p.get("drawing_revision"), "Status": p.get("status")} for p in rows])
-    st.dataframe(df, hide_index=True, width="stretch", height=620)
+    portal_table(df, hide_index=True, width="stretch", height=620)

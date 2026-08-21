@@ -517,32 +517,31 @@ class SupplyChainService:
             match=next((r for r in existing if str(r.get("customer_id"))==str(customer_id) and normalize_match(r.get("customer_order_no") or r.get("master_reference_no"))==normalize_match(order_no) and normalize_match(r.get("order_position"))==normalize_match(pos) and str(r.get("status"))!="CANCELLED"),None)
             result["_part_id"]=part.get("id"); result["_existing_id"]=(match or {}).get("id")
             if match:
-                changes=[]
-                if str(match.get("part_id")) != str(part.get("id")):
-                    old_part = self.repo.get("parts", str(match.get("part_id") or "")) or {}
-                    changes.append(f"Part {old_part.get('part_number') or '-'} → {part.get('part_number')}")
-                if abs(number(match.get("order_qty_pcs"))-qty)>.0001: changes.append(f"Qty {number(match.get('order_qty_pcs')):,.0f} → {qty:,.0f}")
-                if str(match.get("customer_delivery_date") or "")[:10] != delivery: changes.append(f"Delivery {match.get('customer_delivery_date')} → {delivery}")
-                result["Action"]="UPDATE" if changes else "UNCHANGED"; result["Changes"]="; ".join(changes)
+                # v4.13.4 import rule: matching Customer + Order No. + PosNr is a duplicate.
+                # Existing database records are never modified by bulk import.
+                result["Action"]="SKIP_DUPLICATE"
+                result["Changes"]="Existing Order No. + PosNr already present; row will be skipped."
             preview.append(result)
         return preview
 
-    def apply_customer_order_import(self, customer_id: str, preview: Sequence[Mapping[str, Any]], *, confirm_updates: bool, supply_flow: str = FLOW_FSI_RM) -> dict[str,int]:
-        result={"created":0,"updated":0,"unchanged":0,"errors":0}
+    def apply_customer_order_import(self, customer_id: str, preview: Sequence[Mapping[str, Any]], *, confirm_updates: bool = False, supply_flow: str = FLOW_FSI_RM) -> dict[str,int]:
+        """Create only missing customer-order keys; never update duplicates during import."""
+        result={"created":0,"skipped":0,"errors":0}
+        seen: set[tuple[str,str]] = set()
         for row in preview:
             action=str(row.get("Action") or "")
             if action=="ERROR": result["errors"]+=1; continue
-            if action=="UNCHANGED": result["unchanged"]+=1; continue
-            if action=="UPDATE" and not confirm_updates:
-                raise ValueError("Existing Customer Order changes require confirmation before update.")
+            key=(normalize_match(row.get("Order no.")), normalize_match(row.get("PosNr")))
+            if action in {"SKIP_DUPLICATE","UNCHANGED","UPDATE"} or key in seen:
+                result["skipped"]+=1; continue
+            seen.add(key)
             part_id=str(row.get("_part_id") or ""); raw=self.raw_material_options(part_id)
             if not raw:
                 raise ValueError(f"Part {row.get('Item')} has no active Part Master Raw Material Details.")
             selected_raw=raw[0]; gross=number(selected_raw.get("gross_weight_kg") or selected_raw.get("input_weight_kg") or selected_raw.get("forging_weight_kg"))
             if gross<=0: raise ValueError(f"Part {row.get('Item')} Raw Material gross/input weight is missing in Part Master.")
             payload={"order_type":"PURCHASE_ORDER","customer_id":customer_id,"part_id":part_id,"customer_order_no":str(row.get("Order no.") or "").strip(),"order_position":str(row.get("PosNr") or "").strip(),"order_date":date.today().isoformat(),"customer_delivery_date":row.get("Delivery date"),"order_qty_pcs":number(row.get("Quantity")),"forging_supplier_id":selected_raw.get("supplier_id"),"raw_material_detail_id":selected_raw.get("id"),"gross_weight_kg_snapshot":gross,"status":"OPEN","remarks":"Imported from Customer Order / Schedule file (Columns A-F)","supply_flow":supply_flow}
-            if action=="UPDATE": self.update_customer_order(str(row.get("_existing_id")),payload); result["updated"]+=1
-            else: self.create_customer_order(payload); result["created"]+=1
+            self.create_customer_order(payload); result["created"]+=1
         return result
 
     # --------------------------------------------------------------- MIS / dispatch reporting

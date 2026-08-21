@@ -4,6 +4,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
@@ -150,7 +151,7 @@ def _render_register(rows: list[dict], height: int = 560) -> None:
         "OSP Inward": r.get("receipt_number"), "Inward Qty pcs": r.get("quantity_received"), "Receipt Decision": r.get("receipt_quality_disposition"),
         "Production Qty Available": r.get("production_available_quantity"), "Status": r.get("status"),
     } for r in rows])
-    st.dataframe(style_status_dataframe(display), hide_index=True, width="stretch", height=height)
+    portal_table(style_status_dataframe(display), hide_index=True, width="stretch", height=height)
 
 
 def render_records() -> None:

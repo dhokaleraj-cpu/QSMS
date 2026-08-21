@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.attachments import AttachmentService
@@ -193,6 +194,12 @@ def render_entry() -> None:
                 raise ValueError("Select the outsourced Process for an OSP Process layout.")
             if inward_type == "OSP_PROCESS" and str((process_rows.get(process_id) or {}).get("process_type")) != "OUTSOURCED":
                 raise ValueError("OSP Process layouts can use only an OUTSOURCED Process Master.")
+            if not existing:
+                duplicate_plan = service.repo.find_one("inspection_plans", eq={
+                    "part_id": part_id, "plan_number": plan_no.strip(), "revision": revision.strip() or "00", "layout_type": layout_type,
+                })
+                if duplicate_plan:
+                    raise ValueError("Duplicate inspection layout was skipped. The same Part + Plan Number + Revision + Layout Type already exists in QCMS.")
             payload = {
                 "part_id": part_id, "process_id": process_id or None, "inspection_stage_id": stage_id or None, "inward_type": inward_type,
                 "plan_number": plan_no.strip(), "revision": revision.strip() or "00", "effective_date": effective.isoformat(),
@@ -282,4 +289,4 @@ def render_records() -> None:
         "Stage": (stages.get(str(row.get("inspection_stage_id"))) or {}).get("stage_name"),
         "Samples": row.get("default_sample_size"), "Format": row.get("format_number"), "Status": row.get("status"),
     } for row in filtered])
-    st.dataframe(display, hide_index=True, width="stretch", height=520)
+    portal_table(display, hide_index=True, width="stretch", height=520)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.inspection_queue import pending_count
 from core.inspection_service import InspectionService
@@ -69,7 +70,7 @@ def render() -> None:
         if not pending:
             st.success("No Material Inward records are pending Dimensional or MetLAB inspection.")
         else:
-            st.dataframe(
+            portal_table(
                 style_status_dataframe(_worklist_frame(pending, parts, parties)),
                 hide_index=True,
                 width="stretch",

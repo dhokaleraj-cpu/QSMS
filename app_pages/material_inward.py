@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+from core.ui import portal_table
 
 from core.access import current_permissions
 from core.attachments import AttachmentService, AttachmentSlot, new_attachment_uploaders, render_attachment_manager
@@ -38,7 +39,7 @@ def _record_from_state(service: InwardService) -> dict:
 def _source_label(row: dict) -> str:
     return (
         f"{row.get('rmtc_number')} · {row.get('part_number')} · {row.get('supplier_name')} · "
-        f"Heat {row.get('heat_number')} · Available {float(row.get('available_production_quantity_pcs') or 0):,.0f} pcs / "
+        f"Heat {row.get('heat_number')} · RMTC balance "
         f"{float(row.get('available_steel_quantity_kg') or row.get('available_quantity') or 0):,.3f} kg"
     )
 
@@ -156,7 +157,7 @@ def render_entry() -> None:
                 "Quality Decision": row.get("quality_disposition"),
                 "Status": row.get("status"),
             } for row in recent_rows[:8]])
-            st.dataframe(style_status_dataframe(recent_frame), hide_index=True, width="stretch", height=min(330, 75 + len(recent_frame) * 36))
+            portal_table(style_status_dataframe(recent_frame), hide_index=True, width="stretch", height=min(330, 75 + len(recent_frame) * 36))
 
     accepted_all = service.accepted_rmtc_parts()
     accepted = accepted_all if existing else [row for row in accepted_all if float(row.get("available_steel_quantity_kg") or row.get("available_quantity") or 0) > 0]
@@ -172,7 +173,7 @@ def render_entry() -> None:
         options.append(selected_existing)
         source_map[selected_existing] = f"Existing linked RMTC Part · {selected_existing}"
 
-    with stage_section("B", 'ACCEPTED RMTC STEEL SOURCE', key="material_inward_render_entry_b"):
+    with stage_section("B", 'ACCEPTED RMTC STEEL SOURCE', "Approved RMTCs remain reusable for the same or another approved covered Part Number until the global RMTC steel balance reaches zero.", key="material_inward_render_entry_b"):
         source_id = st.selectbox(
             "RMTC / Part / Supplier / Available Steel",
             options,
@@ -192,18 +193,21 @@ def render_entry() -> None:
         available_steel = float(source.get("available_steel_for_selected_entry_kg") or source.get("available_steel_quantity_kg") or source.get("available_quantity") or 0)
         existing_steel = float(existing.get("required_steel_quantity_kg") or existing.get("steel_quantity_kg") or existing.get("quantity_received") or 0)
         available_for_entry = available_steel + (existing_steel if existing else 0)
-        available_production = float(source.get("available_production_quantity_pcs") or 0)
+        # v4.13.4: an approved RMTC is reusable for repeated receipts/production
+        # against any already-approved covered Part Number until the GLOBAL RMTC
+        # steel balance is consumed. The worksheet's original planned production
+        # is no longer used as a hard inward cap.
         existing_production = float(existing.get("production_quantity_pcs") or 0)
-        available_production_for_entry = available_production + (existing_production if existing else 0)
+        available_production_for_entry = (available_for_entry / input_weight) if input_weight > 0 else 0.0
 
         if source:
             disposition_cards([
                 {"label": "Supplier", "value": source.get("supplier_name"), "foot": source.get("forging_route")},
                 {"label": "Global Heat Steel", "value": f"{float(source.get('rmtc_steel_quantity_kg') or 0):,.3f} kg", "foot": f"Committed {heat_committed_steel:,.3f} kg"},
-                {"label": "Part Plan Remaining", "value": f"{available_production_for_entry:,.0f} pcs", "foot": f"{part_remaining_steel + (existing_steel if existing else 0):,.3f} kg reserved"},
-                {"label": "Available for Entry", "value": f"{available_for_entry:,.3f} kg", "foot": f"Unallocated Heat {heat_unallocated_balance:,.3f} kg"},
+                {"label": "Reusable Production", "value": f"{available_production_for_entry:,.0f} pcs", "foot": "Calculated from current RMTC heat balance"},
+                {"label": "RMTC Balance", "value": f"{available_for_entry:,.3f} kg", "foot": f"Reusable until global heat balance is consumed"},
             ])
-            st.dataframe(pd.DataFrame([{
+            portal_table(pd.DataFrame([{
                 "Part Number": source.get("part_number"), "Part Description": source.get("part_name"),
                 "Supplier": source.get("supplier_name"), "Steel Mill": source.get("steel_mill_name"),
                 "Material Grade": source.get("material_grade"), "Heat Number": source.get("heat_number"),
@@ -241,14 +245,12 @@ def render_entry() -> None:
 
         c = st.columns(4, gap="small")
         c[0].number_input("Input Weight (kg/part)", min_value=0.0, value=input_weight, step=0.001, format="%.3f", disabled=True)
-        c[1].number_input("Available Part Production (pcs)", min_value=0.0, value=available_production_for_entry, step=1.0, disabled=True)
+        c[1].number_input("Available Production from RMTC Balance (pcs)", min_value=0.0, value=available_production_for_entry, step=1.0, disabled=True)
         c[2].number_input("Heat Steel Available Before Entry (kg)", min_value=0.0, value=available_for_entry, step=0.001, format="%.3f", disabled=True)
         remaining_steel=max(available_for_entry-required_steel,0)
         c[3].number_input("Heat Steel Balance After Entry (kg)", min_value=0.0, value=remaining_steel, step=0.001, format="%.3f", disabled=True)
 
-        if source_id and production_qty > available_production_for_entry + 0.001:
-            st.error(f"Production quantity {production_qty:,.0f} pcs exceeds the available RMTC part plan {available_production_for_entry:,.0f} pcs.")
-        elif source_id and required_steel > available_for_entry + 0.001:
+        if source_id and required_steel > available_for_entry + 0.001:
             st.error(f"Total production steel {required_steel:,.3f} kg exceeds the Heat steel available before this entry {available_for_entry:,.3f} kg. The after-entry balance cannot be negative.")
         elif source_id and production_qty > 0 and input_weight > 0:
             st.success(f"Automatic conversion: {production_qty:,.0f} pcs × {input_weight:,.3f} kg = {required_steel:,.3f} kg. Heat balance after entry: {remaining_steel:,.3f} kg.")
@@ -273,15 +275,13 @@ def render_entry() -> None:
             INWARD_ATTACHMENT_SLOTS, key_prefix='inward_new', title='OPTIONAL MATERIAL INWARD ATTACHMENTS'
         )
 
-        invalid_quantity = production_qty > available_production_for_entry + 0.001 or required_steel > available_for_entry + 0.001
+        invalid_quantity = required_steel > available_for_entry + 0.001
         if st.button("Save Material Inward", type="primary", disabled=not writable or invalid_quantity, width="stretch"):
             try:
                 if not source_id:
                     raise ValueError("Select an Accepted or Accepted Under Reserve RMTC Part Number.")
                 if not grn.strip() or production_qty <= 0 or input_weight <= 0 or not prepared:
                     raise ValueError("GRN, Production Quantity, Input Weight and Prepared By are mandatory.")
-                if production_qty > available_production_for_entry:
-                    raise ValueError("Production quantity cannot exceed the remaining RMTC part production plan.")
                 if required_steel > available_for_entry:
                     raise ValueError("Calculated steel quantity cannot exceed the available RMTC heat balance.")
                 if disposition == "REJECTED" and (accepted_pcs > 0 or hold_pcs > 0 or rejected_pcs <= 0):
@@ -409,4 +409,4 @@ def render_records() -> None:
         "Receipt Decision": row.get("receipt_disposition"), "MetLAB": row.get("metallurgical_status"),
         "Dimensional": row.get("dimensional_status"), "Quality Decision": row.get("quality_disposition"), "Status": row.get("status"),
     } for row in filtered])
-    st.dataframe(style_status_dataframe(df), hide_index=True, width="stretch", height=620)
+    portal_table(style_status_dataframe(df), hide_index=True, width="stretch", height=620)
