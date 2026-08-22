@@ -880,6 +880,93 @@ def render_entry() -> None:
                 _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id", "material_section_name", "section_size", "forging_route"), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
                 st.error(str(exc))
+
+
+        # v4.13.8: supplier-specific technical heading/value data and price history
+        # are controlled from Part Master and pulled automatically into the PO.
+        current_raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=500)
+        raw_labels = {
+            str(r["id"]): f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · {r.get('material_section_name') or 'Raw Material'} · {r.get('section_size') or '-'}"
+            for r in current_raw
+        }
+        section_bar("SUPPLIER TECHNICAL DATA & PRICE HISTORY", "Select the supplier-specific Raw Material record. Heading/value technical rows are copied automatically to the Purchase Order; price history is matched by Supplier + FSI Part Number.")
+        selected_raw_id = st.selectbox("Raw Material / Supplier Record", list(raw_labels), format_func=lambda v: raw_labels[v], key=f"rm_supplier_detail_select_{part_id}") if raw_labels else None
+        if not selected_raw_id:
+            st.info("Save at least one Raw Material Detail row before adding supplier technical data or price history.")
+        else:
+            selected_raw = next(r for r in current_raw if str(r.get("id")) == str(selected_raw_id))
+            selected_supplier_id = str(selected_raw.get("supplier_id") or "")
+
+            tech_rows = repo.select("part_raw_material_technical_data", eq={"raw_material_detail_id": selected_raw_id}, order_by="sequence_no", limit=500)
+            if password_delete_panel(repo=repo, table="part_raw_material_technical_data", rows=tech_rows, labeler=lambda r: f"{r.get('heading') or '-'} · {r.get('value_text') or '-'}", key=f"delete_rm_technical_{selected_raw_id}", can_delete=perms["can_archive"], title="Delete Technical Data row"):
+                st.rerun()
+            tech_df = pd.DataFrame([{
+                "Heading": r.get("heading") or "",
+                "Value": r.get("value_text") or "",
+                "Include on PO": bool(r.get("include_on_po", True)),
+                "Sequence": int(r.get("sequence_no") or 10),
+                "Status": r.get("status") or "ACTIVE",
+            } for r in tech_rows], columns=["Heading", "Value", "Include on PO", "Sequence", "Status"])
+            tech_edit = st.data_editor(
+                tech_df, num_rows="dynamic", hide_index=True, width="stretch", height=250, key=f"rm_technical_data_{selected_raw_id}", disabled=not writable,
+                column_config={
+                    "Heading": st.column_config.TextColumn(required=True, help="Example: RM May'26, Tool Cost, Profit, Rej + ICC, Packaging, Heat Treatment Condition."),
+                    "Value": st.column_config.TextColumn(required=True),
+                    "Include on PO": st.column_config.CheckboxColumn(default=True),
+                    "Sequence": st.column_config.NumberColumn(min_value=1, step=1),
+                    "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
+                },
+            )
+            if st.button("Save Supplier Technical Data", type="primary", width="stretch", disabled=not writable, key=f"save_rm_technical_{selected_raw_id}"):
+                try:
+                    def tech_mapper(row, index):
+                        heading = str(row.get("Heading") or "").strip(); value = str(row.get("Value") or "").strip()
+                        if not heading and not value: return {}
+                        if not heading or not value: raise ValueError("Both Technical Data Heading and Value are required.")
+                        return {"raw_material_detail_id": selected_raw_id, "supplier_id": selected_supplier_id, "heading": heading, "value_text": value, "include_on_po": bool(row.get("Include on PO", True)), "sequence_no": int(row.get("Sequence") or (index + 1) * 10), "status": str(row.get("Status") or "ACTIVE")}
+                    _save_rows(repo, "part_raw_material_technical_data", part_id, tech_edit, ("raw_material_detail_id", "heading"), tech_mapper)
+                    save_success_popup("Supplier technical data saved. Active rows will populate Purchase Orders automatically.", queue_for_rerun=True); st.rerun()
+                except Exception as exc: st.error(str(exc))
+
+            price_rows = repo.select("part_supplier_price_history", eq={"part_id": part_id, "supplier_id": selected_supplier_id}, order_by="start_date", limit=500)
+            if password_delete_panel(repo=repo, table="part_supplier_price_history", rows=price_rows, labeler=lambda r: f"{r.get('start_date')} to {r.get('end_date') or 'Current'} · {r.get('price')} {r.get('currency') or 'INR'}/{r.get('uom') or 'KGS'}", key=f"delete_price_history_{selected_raw_id}", can_delete=perms["can_archive"], title="Delete Price History row"):
+                st.rerun()
+            price_df = pd.DataFrame([{
+                "Start Date": pd.to_datetime(r.get("start_date"), errors="coerce"),
+                "End Date": pd.to_datetime(r.get("end_date"), errors="coerce") if r.get("end_date") else pd.NaT,
+                "Price": r.get("price"), "Currency": r.get("currency") or "INR", "UOM": r.get("uom") or "KGS",
+                "Status": r.get("status") or "ACTIVE",
+            } for r in price_rows], columns=["Start Date", "End Date", "Price", "Currency", "UOM", "Status"])
+            price_edit = st.data_editor(
+                price_df, num_rows="dynamic", hide_index=True, width="stretch", height=240, key=f"price_history_{selected_raw_id}", disabled=not writable,
+                column_config={
+                    "Start Date": st.column_config.DateColumn(required=True, format="DD/MM/YYYY"),
+                    "End Date": st.column_config.DateColumn(format="DD/MM/YYYY", help="Leave blank for the current/open-ended price."),
+                    "Price": st.column_config.NumberColumn(required=True, min_value=0.0, format="%.2f"),
+                    "Currency": st.column_config.SelectboxColumn(options=["INR", "USD", "EUR", "GBP"], required=True),
+                    "UOM": st.column_config.SelectboxColumn(options=["KGS", "NOS", "PCS"], required=True),
+                    "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
+                },
+            )
+            if st.button("Save Supplier / FSI Part Price History", type="primary", width="stretch", disabled=not writable, key=f"save_price_history_{selected_raw_id}"):
+                try:
+                    # Old period rows are saved first so a newly-added current period can pass the non-overlap guard.
+                    frame = price_edit.copy()
+                    if not frame.empty: frame = frame.sort_values("Start Date", na_position="last")
+                    def date_text(value):
+                        if value is None or pd.isna(value): return None
+                        if hasattr(value, "date"): value = value.date()
+                        return value.isoformat() if hasattr(value, "isoformat") else str(value)[:10]
+                    def price_mapper(row, index):
+                        start = date_text(row.get("Start Date")); end = date_text(row.get("End Date"))
+                        if not start and (row.get("Price") is None or pd.isna(row.get("Price"))): return {}
+                        if not start: raise ValueError("Start Date is required for every price-history row.")
+                        if end and end < start: raise ValueError("Price History End Date cannot be earlier than Start Date.")
+                        price = 0 if pd.isna(row.get("Price")) else float(row.get("Price"))
+                        return {"supplier_id": selected_supplier_id, "raw_material_detail_id": selected_raw_id, "start_date": start, "end_date": end, "price": price, "currency": str(row.get("Currency") or "INR"), "uom": str(row.get("UOM") or "KGS"), "status": str(row.get("Status") or "ACTIVE")}
+                    _save_rows(repo, "part_supplier_price_history", part_id, frame, ("part_id", "supplier_id", "uom", "start_date"), price_mapper)
+                    save_success_popup("Supplier / FSI Part price history saved successfully.", queue_for_rerun=True); st.rerun()
+                except Exception as exc: st.error(str(exc))
     with stage_section("F", 'JOMINY REQUIREMENT', 'Controlled 1/16 inch to millimetre conversion and HRC requirement band.', key="part_master_render_entry_f"):
         distances = repo.select("jominy_distances", eq={"status": "ACTIVE"}, order_by="distance_16th", limit=100)
         dmap = {str(d.get("distance_label")): d for d in distances}

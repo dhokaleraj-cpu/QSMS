@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from reportlab.lib.colors import Color, HexColor, black, white
 from reportlab.lib.pagesizes import A4
@@ -130,7 +130,7 @@ def _block(c: canvas.Canvas, x: float, y_top: float, width: float, title: str, l
     return y
 
 
-def _first_page_bytes(header: Mapping[str, Any], item: Mapping[str, Any]) -> bytes:
+def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, Any]]) -> bytes:
     out = BytesIO()
     c = canvas.Canvas(out, pagesize=A4)
     w, h = A4
@@ -142,116 +142,74 @@ def _first_page_bytes(header: Mapping[str, Any], item: Mapping[str, Any]) -> byt
         except Exception:
             pass
 
-    c.setFillColor(black)
-    c.setFont("Helvetica-Bold", 24)
-    c.drawRightString(w - right, h - 34, "PURCHASE ORDER")
-    _draw_text(c, w - 137, h - 51, "DATE", size=7.4)
-    c.rect(w - 91, h - 58, 62, 12, stroke=1, fill=0)
-    _draw_text(c, w - 86, h - 55, _date(header.get("order_date")), size=7.2)
-    _draw_text(c, w - 137, h - 65, "PO #", size=7.4)
-    c.rect(w - 91, h - 72, 62, 12, stroke=1, fill=0)
-    _draw_text(c, w - 86, h - 69, header.get("po_number"), size=7.2)
+    c.setFillColor(black); c.setFont("Helvetica-Bold", 24); c.drawRightString(w - right, h - 34, "PURCHASE ORDER")
+    _draw_text(c, w - 137, h - 51, "DATE", size=7.4); c.rect(w - 91, h - 58, 62, 12, stroke=1, fill=0); _draw_text(c, w - 86, h - 55, _date(header.get("order_date")), size=7.2)
+    _draw_text(c, w - 137, h - 65, "PO #", size=7.4); c.rect(w - 91, h - 72, 62, 12, stroke=1, fill=0); _draw_text(c, w - 86, h - 69, header.get("po_number"), size=7.2)
 
-    col_w = 230
-    left_x = left
-    right_x = w - right - 184
-    y0 = h - 62
+    col_w = 230; left_x = left; right_x = w - right - 184; y0 = h - 62
     _block(c, left_x, y0, col_w, "PLANT", [PLANT["name"], PLANT["address1"], PLANT["address2"], PLANT["address3"], PLANT["tax_identifier"], PLANT["phone"], PLANT["email"]])
-    vendor = dict(header.get("vendor_snapshot") or {})
-    _block(c, left_x, h - 154, col_w, "VENDOR", _party_lines(vendor), max_lines=7)
+    vendor = dict(header.get("vendor_snapshot") or {}); _block(c, left_x, h - 154, col_w, "VENDOR", _party_lines(vendor), max_lines=7)
     _block(c, right_x, h - 86, 184, "REFERENCE DETAILS", [f"QUOTATION DATE: {_date(header.get('quotation_date'))}", _s(header.get("quotation_reference"))], max_lines=3)
     _block(c, right_x, h - 136, 184, "OLD PO DETAILS", [_s(header.get("old_po_reference"))], max_lines=2)
     ship = dict(header.get("ship_to_snapshot") or PLANT)
     _block(c, right_x, h - 174, 184, "SHIP TO", [ship.get("name") or PLANT["name"], ship.get("address1") or PLANT["address1"], ship.get("address2") or PLANT["address2"], ship.get("address3") or PLANT["address3"], ship.get("tax_identifier") or PLANT["tax_identifier"], ship.get("phone") or PLANT["phone"], ship.get("email") or PLANT["email"]], max_lines=7)
 
-    y_strip = h - 284
-    strip_widths = [78, 106, 82, 93, w - left - right - 359]
+    y_strip = h - 284; strip_widths = [78, 106, 82, 93, w - left - right - 359]
     strip_titles = ["REQUISITIONER", "SHIP VIA", "INCOTERM", "DELIVERY DATE", "PAYMENT TERM"]
     strip_values = [header.get("requisitioner"), header.get("ship_via"), header.get("incoterm"), _date(header.get("delivery_date")), header.get("payment_term")]
     x = left
     for sw, title, value in zip(strip_widths, strip_titles, strip_values):
-        _bar(c, x, y_strip, sw, title, height=14)
-        c.rect(x, y_strip - 34, sw, 20, stroke=1, fill=0)
-        _draw_text(c, x + 4, y_strip - 27, value, size=6.6, max_width=sw - 8)
-        x += sw
+        _bar(c, x, y_strip, sw, title, height=14); c.rect(x, y_strip - 34, sw, 20, stroke=1, fill=0); _draw_text(c, x + 4, y_strip - 27, value, size=6.6, max_width=sw - 8); x += sw
 
-    # Item grid
-    y_item_top = y_strip - 45
-    widths = [218, 44, 62, 42, 40, 70, 63]
-    titles = ["ITEM #", "QTY", "UNIT PRICE", "UNIT", "GST%", "GST AMOUNT", "TOTAL"]
+    # Multi-line item grid. One supplier PO may consolidate several Customer Orders / Schedules.
+    y_item_top = y_strip - 45; widths = [218, 44, 62, 42, 40, 70, 63]; titles = ["ITEM #", "QTY", "UNIT PRICE", "UNIT", "GST%", "GST AMOUNT", "TOTAL"]
     x = left
-    for sw, title in zip(widths, titles):
-        _bar(c, x, y_item_top, sw, title, height=14)
-        x += sw
-    y_row_bottom = 245
-    c.rect(left, y_row_bottom, w - left - right, y_item_top - 14 - y_row_bottom, stroke=1, fill=0)
-    x = left
-    item_display = " ".join(v for v in (_s(item.get("item_no")), _s(item.get("item_description"))) if v)
-    vals = [item_display, f"{_n(item.get('quantity')):,.2f}".rstrip("0").rstrip("."), _money(item.get("unit_price")), item.get("uom"), f"{_n(item.get('gst_percent')):g}%", _money(item.get("gst_amount")), _money(item.get("line_total"))]
-    for idx, (sw, value) in enumerate(zip(widths, vals)):
-        if idx:
-            c.line(x, y_row_bottom, x, y_item_top - 14)
-        if idx == 0:
-            _wrap(c, x + 5, y_item_top - 29, value, sw - 10, size=7.0, leading=8.2, max_lines=3)
-        else:
-            _draw_text(c, x + 4, y_item_top - 29, value, size=6.8, max_width=sw - 8)
-        x += sw
+    for sw, title in zip(widths, titles): _bar(c, x, y_item_top, sw, title, height=14); x += sw
+    body_top = y_item_top - 14; body_bottom = 245; c.rect(left, body_bottom, w - left - right, body_top - body_bottom, stroke=1, fill=0)
+    row_h = 24; display_items = list(items)[:6]
+    y = body_top
+    for row_index, item in enumerate(display_items):
+        next_y = y - row_h
+        if row_index: c.line(left, y, w-right, y)
+        x = left
+        item_display = " ".join(v for v in (_s(item.get("item_no")), _s(item.get("item_description"))) if v)
+        vals = [item_display, f"{_n(item.get('quantity')):,.2f}".rstrip("0").rstrip("."), _money(item.get("unit_price")), item.get("uom"), f"{_n(item.get('gst_percent')):g}%", _money(item.get("gst_amount")), _money(item.get("line_total"))]
+        for idx, (sw, value) in enumerate(zip(widths, vals)):
+            if idx: c.line(x, next_y, x, y)
+            if idx == 0: _wrap(c, x+5, y-10, value, sw-10, size=6.6, leading=7.4, max_lines=2)
+            else: _draw_text(c, x+4, y-15, value, size=6.5, max_width=sw-8)
+            x += sw
+        y = next_y
 
-    # Cost / material detail block under the item description, matching the reference page.
-    detail_x = left + 132
-    detail_y = y_item_top - 107
-    details = [
-        ("Forge wt", f"{_n(item.get('forging_weight_kg')):g} Kgs" if item.get("forging_weight_kg") is not None else ""),
-        ("Gross wt", f"{_n(item.get('gross_weight_kg')):g} Kgs" if item.get("gross_weight_kg") is not None else ""),
-        ("RM Rate", f"{_n(item.get('rm_rate_per_kg')):g}/kg" if item.get("rm_rate_per_kg") is not None else ""),
-        ("Tool Cost", item.get("tool_cost_text")),
-        ("Profit", f"{_n(item.get('profit_percent')):g}%" if item.get("profit_percent") is not None else ""),
-        ("Rej+ ICC", item.get("rejection_icc_text")),
-        ("Packaging", item.get("packaging")),
-        ("RM Section", item.get("rm_section")),
-    ]
-    for label, value in details:
-        if _s(value):
-            _draw_text(c, detail_x, detail_y, label, size=6.7)
-            _draw_text(c, detail_x + 52, detail_y, value, size=6.7)
-            detail_y -= 11
+    # Supplier-specific technical data comes from Part Master Raw Material Details.
+    tech_y = y - 10
+    max_tech_lines = max(int((tech_y - body_bottom - 6) // 9), 0); used_lines = 0
+    for item in display_items:
+        if used_lines >= max_tech_lines: break
+        technical = item.get("technical_data_snapshot") or []
+        if not isinstance(technical, list) or not technical: continue
+        _draw_text(c, left + 8, tech_y, f"FSI {item.get('item_no') or '-'} · TECHNICAL DATA", size=6.6, bold=True); tech_y -= 9; used_lines += 1
+        pairs=[]
+        for row in technical:
+            if not isinstance(row, Mapping): continue
+            heading=_s(row.get("heading")); value=_s(row.get("value"))
+            if heading and value: pairs.append((heading,value))
+        for i in range(0,len(pairs),2):
+            if used_lines >= max_tech_lines: break
+            left_pair=pairs[i]; right_pair=pairs[i+1] if i+1<len(pairs) else ("","")
+            _draw_text(c,left+14,tech_y,left_pair[0],size=6.1,bold=True,max_width=72); _draw_text(c,left+88,tech_y,left_pair[1],size=6.1,max_width=122)
+            if right_pair[0]: _draw_text(c,left+225,tech_y,right_pair[0],size=6.1,bold=True,max_width=72); _draw_text(c,left+299,tech_y,right_pair[1],size=6.1,max_width=144)
+            tech_y -= 9; used_lines += 1
 
-    # Remarks highlight
-    _draw_text(c, left + 2, 236, "Remarks:", size=7.6, bold=True)
-    c.setFillColor(YELLOW)
-    c.rect(left, 211, 386, 21, stroke=0, fill=1)
-    _draw_text(c, left + 4, 220, header.get("remarks") or item.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.", size=7.0, bold=True, max_width=378)
+    _draw_text(c, left + 2, 236, "Remarks:", size=7.6, bold=True); c.setFillColor(YELLOW); c.rect(left, 211, 386, 21, stroke=0, fill=1); _draw_text(c, left + 4, 220, header.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.", size=7.0, bold=True, max_width=378)
+    c.setFillColor(LIGHT_GREY); c.rect(left, 192, 386, 14, stroke=0, fill=1); _draw_text(c, left + 3, 196, "Comments or Special Instructions", size=6.8, bold=True); _wrap(c, left + 2, 181, header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS, 374, size=6.2, leading=11.3, max_lines=7)
 
-    # Special instructions and totals
-    c.setFillColor(LIGHT_GREY)
-    c.rect(left, 192, 386, 14, stroke=0, fill=1)
-    _draw_text(c, left + 3, 196, "Comments or Special Instructions", size=6.8, bold=True)
-    _wrap(c, left + 2, 181, header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS, 374, size=6.2, leading=11.3, max_lines=7)
-
-    total_x = 417
-    y = 205
-    totals = [
-        ("SUBTOTAL", header.get("subtotal")),
-        ("CGST 9%", header.get("cgst_amount")),
-        ("SGST 9%", header.get("sgst_amount")),
-        ("IGST", header.get("igst_amount")),
-        ("OTHER", header.get("other_amount")),
-    ]
-    for label, val in totals:
-        _draw_text(c, total_x, y, label, size=6.9)
-        c.rect(total_x + 55, y - 5, 95, 13, stroke=1, fill=0)
-        _draw_text(c, total_x + 61, y - 1, _money(val), size=6.8)
-        y -= 16
-    c.setFont("Helvetica-Bold", 8.0)
-    c.drawString(total_x, y, "TOTAL")
-    c.drawString(total_x + 61, y, f"INR {_money(header.get('grand_total'))}")
-    _draw_text(c, w - 143, 81, "Authorised Signatory", size=7.0, bold=True)
-    _draw_text(c, w - 174, 67, PLANT["name"], size=6.2)
-    _draw_text(c, left + 318, 47, "If you have any questions about this purchase order, please contact", size=6.0)
-    _draw_text(c, left + 375, 36, "FSI, connect@fourstarindustries.com", size=6.0)
-    c.showPage(); c.save()
-    return out.getvalue()
-
+    total_x=417; ytot=205
+    for label,val in [("SUBTOTAL",header.get("subtotal")),("CGST 9%",header.get("cgst_amount")),("SGST 9%",header.get("sgst_amount")),("IGST",header.get("igst_amount")),("OTHER",header.get("other_amount"))]:
+        _draw_text(c,total_x,ytot,label,size=6.9); c.rect(total_x+55,ytot-5,95,13,stroke=1,fill=0); _draw_text(c,total_x+61,ytot-1,_money(val),size=6.8); ytot-=16
+    c.setFont("Helvetica-Bold",8.0); c.drawString(total_x,ytot,"TOTAL"); c.drawString(total_x+61,ytot,f"INR {_money(header.get('grand_total'))}")
+    _draw_text(c,w-143,81,"Authorised Signatory",size=7.0,bold=True); _draw_text(c,w-174,67,PLANT["name"],size=6.2); _draw_text(c,left+318,47,"If you have any questions about this purchase order, please contact",size=6.0); _draw_text(c,left+375,36,"FSI, connect@fourstarindustries.com",size=6.0)
+    c.showPage(); c.save(); return out.getvalue()
 
 def _terms_with_dynamic_header(terms_path: Path, *, po_number: str, order_date: str) -> list[Any]:
     if PdfReader is None:
@@ -283,22 +241,24 @@ def _terms_with_dynamic_header(terms_path: Path, *, po_number: str, order_date: 
     return result
 
 
-def purchase_order_pdf_bytes(header: Mapping[str, Any], item: Mapping[str, Any], *, terms_path: str | Path | None = None) -> bytes:
+def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any] | Sequence[Mapping[str, Any]], *, terms_path: str | Path | None = None) -> bytes:
     """Return the controlled FSI Purchase Order PDF.
 
-    Page 1 is rendered from the saved QCMS PO data. Pages 2-13 use the controlled
-    FSI/703/F04 terms template, with the current PO date/number stamped over the
-    reference cells. External print deliberately uses only FSI Part Number in the
-    item number field; the original/customer part number remains an internal QCMS field.
+    Page 1 supports multiple supplier-facing FSI Part Number lines under one controlled
+    PO and prints supplier-specific technical heading/value snapshots from Part Master.
+    The original/customer part number remains an internal QCMS field and is never printed.
+    Price history stays internal to QCMS and is not exposed on the supplier document.
+    Pages 2-13 remain the controlled FSI/703/F04 terms template.
     """
     if PdfReader is None or PdfWriter is None:
         raise RuntimeError("pypdf is not installed. Add pypdf to requirements.txt.")
-    first = _first_page_bytes(header, item)
-    writer = PdfWriter()
-    writer.add_page(PdfReader(BytesIO(first)).pages[0])
+    normalized = [dict(items)] if isinstance(items, Mapping) else [dict(v) for v in items]
+    if not normalized:
+        raise ValueError("At least one Purchase Order line is required.")
+    first = _first_page_bytes(header, normalized)
+    writer = PdfWriter(); writer.add_page(PdfReader(BytesIO(first)).pages[0])
     path = Path(terms_path) if terms_path else Path(__file__).resolve().parent.parent / "templates" / "FSI_STANDARD_PO_TERMS_2023.pdf"
     if path.exists():
-        for page in _terms_with_dynamic_header(path, po_number=_s(header.get("po_number")), order_date=_s(header.get("order_date"))):
-            writer.add_page(page)
-    out = BytesIO(); writer.write(out)
-    return out.getvalue()
+        for page in _terms_with_dynamic_header(path, po_number=_s(header.get("po_number")), order_date=_s(header.get("order_date"))): writer.add_page(page)
+    out = BytesIO(); writer.write(out); return out.getvalue()
+

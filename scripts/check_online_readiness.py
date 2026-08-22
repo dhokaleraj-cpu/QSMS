@@ -133,11 +133,15 @@ required = [
     "templates/FSI_STANDARD_PO_TERMS_2023.pdf",
     "tests/test_v4137_supply_po_fsi_part_rmtc_worksheet.py",
     "docs/RELEASE_4_13_7.md",
+    "supabase/migrations/20260822213000_qcms_multi_rm_po_price_history_technical_data_v4138.sql",
+    "supabase/migrations/20260822213100_qcms_multi_rm_po_history_backfill_v4138.sql",
+    "tests/test_v4138_multi_rm_po_price_history_technical_data.py",
+    "docs/RELEASE_4_13_8.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.13.7 - Supply PO, FSI Part identity and approved RMTC Part Worksheet",
+    "phase": "QCMS 4.13.8 - Multi RM PO, Supplier/FSI Part Price History and Part Master Technical Data",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

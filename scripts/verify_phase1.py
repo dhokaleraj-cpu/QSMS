@@ -593,7 +593,7 @@ if '"Qty kg": "steel_quantity_kg"' not in reports_v4136 or '"Balance kg": "curre
     errors.append("QCMS 4.13.6 heat transaction kg quantity/balance columns are missing")
 
 # QCMS 4.13.7 Supply PO / FSI Part / approved RMTC worksheet contract.
-v4137_marker = "4137-SUPPLY-PO-FSI-PART-RMTC-WORKSHEET"
+v4137_marker = "4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA"
 v4137_sql_path = ROOT / "supabase" / "migrations" / "20260822193000_qcms_supply_po_fsi_part_rmtc_worksheet_v4137.sql"
 v4137_sql = v4137_sql_path.read_text(encoding="utf-8") if v4137_sql_path.exists() else ""
 v4137_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
@@ -603,7 +603,7 @@ v4137_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
 v4137_po = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
 v4137_streamlit = (ROOT / "streamlit_app.py").read_text(encoding="utf-8")
 if v4137_marker not in ui_text or v4137_marker not in auth_text or v4137_marker not in v4137_streamlit:
-    errors.append("QCMS 4.13.7 build fingerprint is missing")
+    errors.append("QCMS current build fingerprint is missing from the preserved v4.13.7 contract check")
 for token in ("fsi_part_number", "supply_purchase_orders", "supply_purchase_order_items", "rm_procurement_required", "three_month_schedule_pcs_snapshot"):
     if token not in v4137_sql:
         errors.append(f"QCMS 4.13.7 database contract missing: {token}")
@@ -619,8 +619,39 @@ if 'text_input("FSI Part Number"' not in v4137_part:
 if "FSI_STANDARD_PO_TERMS_2023.pdf" not in v4137_po or not (ROOT / "templates" / "FSI_STANDARD_PO_TERMS_2023.pdf").exists():
     errors.append("QCMS 4.13.7 controlled FSI Purchase Order terms template is missing")
 
+# QCMS 4.13.8 multi-source RM PO / supplier-FSI price history / Part Master technical-data contract.
+v4138_marker = "4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA"
+v4138_sql = (ROOT / "supabase" / "migrations" / "20260822213000_qcms_multi_rm_po_price_history_technical_data_v4138.sql").read_text(encoding="utf-8")
+v4138_backfill = (ROOT / "supabase" / "migrations" / "20260822213100_qcms_multi_rm_po_history_backfill_v4138.sql").read_text(encoding="utf-8")
+v4138_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v4138_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v4138_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
+v4138_po = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
+if v4138_marker not in ui_text or v4138_marker not in auth_text or v4138_marker not in v4137_streamlit:
+    errors.append("QCMS 4.13.8 build fingerprint is missing")
+for token in ("part_raw_material_technical_data", "part_supplier_price_history", "supply_purchase_order_sources", "technical_data_snapshot", "price_history_snapshot"):
+    if token not in v4138_sql:
+        errors.append(f"QCMS 4.13.8 database contract missing: {token}")
+for token in ("Select Customer Orders / Schedules for this RM Purchase Order", "PO Allocation kg", "PART MASTER TECHNICAL DATA & PRICE HISTORY"):
+    if token not in v4138_supply:
+        errors.append(f"QCMS 4.13.8 Purchase Order UI token missing: {token}")
+for token in ("def price_history", "def current_price", "def technical_data_snapshot", "supply_purchase_order_sources"):
+    if token not in v4138_service:
+        errors.append(f"QCMS 4.13.8 Supply Chain service token missing: {token}")
+if "Save Supplier Technical Data" not in v4138_part or "Save Supplier / FSI Part Price History" not in v4138_part:
+    errors.append("QCMS 4.13.8 Part Master technical data / price history editors are missing")
+if "display_items = list(items)[:6]" not in v4138_po or "TECHNICAL DATA" not in v4138_po:
+    errors.append("QCMS 4.13.8 multi-line Purchase Order print / technical snapshot rendering is incomplete")
+if "Backfilled from controlled QCMS Purchase Order history" not in v4138_backfill:
+    errors.append("QCMS 4.13.8 historical price/source backfill is missing")
+
 report = {
-    "release": "QCMS 4.13.7 Supply PO + FSI Part identity + approved RMTC Part Worksheet",
+    "release": "QCMS 4.13.8 Multi RM PO + Supplier/FSI Part Price History + Part Master Technical Data",
+    "multi_rm_po_sources": "Select Customer Orders / Schedules for this RM Purchase Order" in v4138_supply and "supply_purchase_order_sources" in v4138_service,
+    "supplier_fsi_price_history": "part_supplier_price_history" in v4138_sql and "def current_price" in v4138_service,
+    "part_master_po_technical_data": "Save Supplier Technical Data" in v4138_part and "technical_data_snapshot" in v4138_service,
+    "multi_line_po_pdf": "display_items = list(items)[:6]" in v4138_po,
+    "historical_po_price_backfill": "Backfilled from controlled QCMS Purchase Order history" in v4138_backfill,
     "supply_purchase_order_module": "def render_purchase_orders" in v4137_supply,
     "supply_po_reference_print": "FSI_STANDARD_PO_TERMS_2023.pdf" in v4137_po,
     "fsi_part_number_identity": 'text_input("FSI Part Number"' in v4137_part,

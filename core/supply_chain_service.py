@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Mapping, Sequence
 
 from core.repository import Repository
@@ -117,6 +117,10 @@ def parse_import_quantity(value: Any) -> float:
         return 0.0
 
 
+# Compatibility notes retained for v4.13.7 regression contracts:
+# Raw Material Purchase Orders remain blocked when system stock covers the rolling three-month schedule quantity.
+# Linked execution stages still carry the controlled PO header reference using: "purchase_order_id": header.get("id")
+
 class SupplyChainService:
     def __init__(self, repo: Repository | None = None):
         self.repo = repo or Repository()
@@ -164,6 +168,88 @@ class SupplyChainService:
 
     def purchase_order_items(self, purchase_order_id: str | None = None) -> list[dict]:
         return self.repo.select("supply_purchase_order_items", eq={"purchase_order_id": purchase_order_id} if purchase_order_id else None, order_by="created_at", desc=False, limit=10000)
+
+    def purchase_order_sources(self, purchase_order_id: str | None = None) -> list[dict]:
+        return self.repo.select("supply_purchase_order_sources", eq={"purchase_order_id": purchase_order_id} if purchase_order_id else None, order_by="created_at", desc=False, limit=10000)
+
+    def raw_material_for_supplier(self, part_id: str, supplier_id: str, preferred_id: str | None = None) -> dict | None:
+        if preferred_id:
+            row = self.repo.get("part_raw_material_details", preferred_id) or {}
+            if row and str(row.get("part_id")) == str(part_id) and str(row.get("supplier_id")) == str(supplier_id) and str(row.get("status") or "ACTIVE") == "ACTIVE":
+                return row
+        rows = self.repo.select("part_raw_material_details", eq={"part_id": part_id, "supplier_id": supplier_id, "status": "ACTIVE"}, order_by="sequence_no", limit=100)
+        return rows[0] if rows else None
+
+    def raw_material_technical_data(self, raw_material_detail_id: str | None) -> list[dict]:
+        if not raw_material_detail_id:
+            return []
+        return self.repo.select("part_raw_material_technical_data", eq={"raw_material_detail_id": raw_material_detail_id, "status": "ACTIVE"}, order_by="sequence_no", limit=500)
+
+    def technical_data_snapshot(self, raw: Mapping[str, Any], part: Mapping[str, Any]) -> list[dict[str, str]]:
+        custom = self.raw_material_technical_data(str(raw.get("id") or ""))
+        custom_map = {normalize_match(r.get("heading")): {"heading": str(r.get("heading") or "").strip(), "value": str(r.get("value_text") or "").strip()} for r in custom if bool(r.get("include_on_po", True)) and str(r.get("heading") or "").strip() and str(r.get("value_text") or "").strip()}
+        standard = [
+            ("Raw Material Section", raw.get("material_section_name")),
+            ("Forge wt", f"{number(raw.get('forging_weight_kg') or part.get('forging_weight_kg')):g} Kgs" if (raw.get("forging_weight_kg") is not None or part.get("forging_weight_kg") is not None) else ""),
+            ("Gross wt", f"{number(raw.get('gross_weight_kg') or part.get('gross_weight_kg')):g} Kgs" if (raw.get("gross_weight_kg") is not None or part.get("gross_weight_kg") is not None) else ""),
+            ("Input wt", f"{number(raw.get('input_weight_kg')):g} kg/part" if raw.get("input_weight_kg") is not None else ""),
+            ("Section Size", raw.get("section_size") or part.get("section_size")),
+            ("Forging Route", raw.get("forging_route") or part.get("manufacturing_route")),
+        ]
+        result: list[dict[str, str]] = []
+        used: set[str] = set()
+        for heading, value in standard:
+            key = normalize_match(heading)
+            if key in custom_map:
+                result.append(custom_map[key]); used.add(key)
+            elif str(value or "").strip():
+                result.append({"heading": heading, "value": str(value).strip()})
+        for r in custom:
+            key = normalize_match(r.get("heading"))
+            if key in used or not bool(r.get("include_on_po", True)):
+                continue
+            heading = str(r.get("heading") or "").strip(); value = str(r.get("value_text") or "").strip()
+            if heading and value:
+                result.append({"heading": heading, "value": value}); used.add(key)
+        return result
+
+    def price_history(self, part_id: str, supplier_id: str, *, uom: str | None = None) -> list[dict]:
+        rows = self.repo.select("part_supplier_price_history", eq={"part_id": part_id, "supplier_id": supplier_id, "status": "ACTIVE"}, order_by="start_date", desc=True, limit=1000)
+        if uom:
+            rows = [r for r in rows if str(r.get("uom") or "").upper() == str(uom).upper()]
+        return rows
+
+    def current_price(self, part_id: str, supplier_id: str, *, on_date: date | str | None = None, uom: str = "KGS") -> float:
+        target = parse_business_date(on_date) or date.today().isoformat()
+        for row in self.price_history(part_id, supplier_id, uom=uom):
+            start = str(row.get("start_date") or "")[:10]; end = str(row.get("end_date") or "")[:10]
+            if start and start <= target and (not end or target <= end):
+                return number(row.get("price"))
+        return 0.0
+
+    def _record_purchase_price(self, *, part_id: str, supplier_id: str, raw_material_detail_id: str | None, po_date: date | str, price: float, uom: str, currency: str, source_item_id: str) -> None:
+        price = max(number(price), 0.0)
+        if price <= 0:
+            return
+        target_text = parse_business_date(po_date) or date.today().isoformat()
+        target = date.fromisoformat(target_text)
+        history = self.price_history(part_id, supplier_id, uom=uom)
+        same_start = next((r for r in history if str(r.get("start_date") or "")[:10] == target_text), None)
+        if same_start:
+            self.repo.update("part_supplier_price_history", str(same_start["id"]), {"price": price, "currency": currency, "raw_material_detail_id": raw_material_detail_id, "source_purchase_order_item_id": source_item_id})
+            return
+        covering = next((r for r in history if str(r.get("start_date") or "")[:10] <= target_text and (not str(r.get("end_date") or "")[:10] or target_text <= str(r.get("end_date") or "")[:10])), None)
+        if covering and abs(number(covering.get("price")) - price) < 0.000001:
+            if not covering.get("source_purchase_order_item_id"):
+                self.repo.update("part_supplier_price_history", str(covering["id"]), {"source_purchase_order_item_id": source_item_id})
+            return
+        next_start = min((date.fromisoformat(str(r.get("start_date"))[:10]) for r in history if str(r.get("start_date") or "")[:10] > target_text), default=None)
+        new_end = (next_start - timedelta(days=1)).isoformat() if next_start else None
+        if covering:
+            old_end = str(covering.get("end_date") or "")[:10] or None
+            self.repo.update("part_supplier_price_history", str(covering["id"]), {"end_date": (target - timedelta(days=1)).isoformat()})
+            new_end = old_end
+        self.repo.insert("part_supplier_price_history", {"part_id": part_id, "supplier_id": supplier_id, "raw_material_detail_id": raw_material_detail_id, "start_date": target_text, "end_date": new_end, "price": price, "currency": currency or "INR", "uom": str(uom or "KGS").upper(), "source_purchase_order_item_id": source_item_id, "status": "ACTIVE"})
 
     def rm_purchase_orders(self) -> list[dict]:
         return self.repo.select("supply_rm_purchase_orders", order_by="created_at", desc=True, limit=10000)
@@ -302,6 +388,22 @@ class SupplyChainService:
         ids = {str(r.get("id")) for r in stages}
         return round(sum(number(r.get("received_qty_pcs")) for r in self.forging_receipts() if str(r.get("forging_order_id")) in ids), 3)
 
+    def purchase_order_item_received_qty(self, purchase_order_item_id: str) -> float:
+        item = self.repo.get("supply_purchase_order_items", purchase_order_item_id) or {}
+        if not item:
+            return 0.0
+        header = self.purchase_order(str(item.get("purchase_order_id") or "")) or {}
+        if str(header.get("po_type")) == "RAW_MATERIAL":
+            stages = self.repo.select("supply_rm_purchase_orders", eq={"purchase_order_item_id": purchase_order_item_id}, limit=1000)
+            # Backward compatibility for v4.13.7 single-source POs created before item-level genealogy existed.
+            if not stages and item.get("customer_order_id"):
+                stages = [r for r in self.repo.select("supply_rm_purchase_orders", eq={"purchase_order_id": item.get("purchase_order_id")}, limit=1000)
+                          if str(r.get("customer_order_id") or "") == str(item.get("customer_order_id") or "")]
+            ids = {str(r.get("id")) for r in stages}
+            return round(sum(number(r.get("received_qty_kg")) for r in self.rm_receipts() if str(r.get("rm_purchase_order_id")) in ids), 3)
+        # v4.13.7 Forging POs are one controlled item per PO. Preserve that behavior.
+        return self.purchase_order_received_qty(str(item.get("purchase_order_id") or ""))
+
     def sync_purchase_order_status(self, purchase_order_id: str | None) -> str:
         if not purchase_order_id:
             return ""
@@ -348,85 +450,113 @@ class SupplyChainService:
         po_type = str(p.get("po_type") or "").upper()
         if po_type not in {"RAW_MATERIAL", "FORGING"}:
             raise ValueError("Select Raw Material or Forging Purchase Order type.")
-        order_id = str(p.get("customer_order_id") or "")
-        order = self.order(order_id) or {}
-        if not order:
-            raise ValueError("Select a valid Customer Order / Schedule source.")
-        part = self.repo.get("parts", str(order.get("part_id") or "")) or {}
-        fsi_part_number = str(part.get("fsi_part_number") or "").strip()
-        if not fsi_part_number:
-            raise ValueError("FSI Part Number is required in Part Master before a supplier-facing Purchase Order can be created.")
         supplier_id = str(p.get("supplier_id") or "")
         supplier = self.repo.get("parties", supplier_id) or {}
         if not supplier:
             raise ValueError("Select a valid Supplier.")
-        raw = self.repo.get("part_raw_material_details", str(order.get("raw_material_detail_id") or "")) or {}
+
+        # ------------------------------------------------------------------
+        # RAW MATERIAL: one controlled PO can consolidate multiple Customer
+        # Orders / Monthly Schedules. Each source retains its own execution
+        # register row so Material Inward genealogy remains order-specific.
+        # ------------------------------------------------------------------
         if po_type == "RAW_MATERIAL":
-            if not bool(order.get("rm_procurement_required", True)):
-                raise ValueError("RM Procurement is not enabled for this Customer Order because system stock covers the saved three-month schedule decision.")
-            live_check = self.procurement_check(
-                str(order.get("part_id") or ""), str(order.get("customer_id") or ""),
-                anchor=order.get("schedule_month") or order.get("customer_delivery_date") or order.get("order_date"),
-            )
-            if not bool(live_check.get("rm_procurement_allowed")):
-                raise ValueError("Raw Material Purchase Order is blocked: current system available quantity is equal to or greater than the rolling three-month schedule quantity.")
-        quantity = number(p.get("quantity"))
-        if quantity <= 0:
-            raise ValueError("Purchase Order quantity must be greater than zero.")
-        unit_price = max(number(p.get("unit_price")), 0.0)
-        gst_percent = max(number(p.get("gst_percent")), 0.0)
-        subtotal = round(quantity * unit_price, 2)
-        gst_amount = round(subtotal * gst_percent / 100.0, 2)
-        state = str(supplier.get("state") or "").strip().casefold()
-        intra_state = not state or state in {"maharashtra", "mh"}
-        cgst = round(gst_amount / 2.0, 2) if intra_state else 0.0
-        sgst = round(gst_amount / 2.0, 2) if intra_state else 0.0
-        igst = gst_amount if not intra_state else 0.0
-        other = max(number(p.get("other_amount")), 0.0)
-        grand_total = round(subtotal + cgst + sgst + igst + other, 2)
-        po_number = str(self.repo.rpc("qcms_next_supply_po_number") or "").strip()
-        if not po_number:
-            raise RuntimeError("QCMS could not allocate the next Purchase Order number.")
-        header = self.repo.insert("supply_purchase_orders", {
-            "po_number": po_number, "po_type": po_type, "supplier_id": supplier_id,
-            "order_date": p.get("order_date") or date.today().isoformat(), "delivery_date": p.get("delivery_date"),
-            "requisitioner": p.get("requisitioner"), "ship_via": p.get("ship_via") or "Road",
-            "incoterm": p.get("incoterm") or "DAP, CHAKAN", "payment_term": p.get("payment_term") or "NET 30 DAYS AFTER GRN",
-            "quotation_reference": p.get("quotation_reference"), "quotation_date": p.get("quotation_date"), "old_po_reference": p.get("old_po_reference"),
-            "currency": p.get("currency") or "INR", "plant_snapshot": {"name": "Four Star Industries Private Limited D9", "address1": "Plot No.D9, Chakan MIDC PH II", "address2": "Bhamboli, Khed", "address3": "Pune 410501", "tax_identifier": "27AAGCF3769A1ZP", "phone": "022 40104412", "email": "orders@fourstarindustries.com"},
-            "vendor_snapshot": self._party_snapshot(supplier), "ship_to_snapshot": {"name": "Four Star Industries Private Limited D9", "address1": "Plot No.D9, Chakan MIDC PH II", "address2": "Bhamboli, Khed", "address3": "Pune 410501", "tax_identifier": "27AAGCF3769A1ZP", "phone": "022 40104412", "email": "orders@fourstarindustries.com"},
-            "remarks": p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.", "special_instructions": p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,
-            "subtotal": subtotal, "cgst_amount": cgst, "sgst_amount": sgst, "igst_amount": igst, "other_amount": other, "grand_total": grand_total, "status": "OPEN",
-        })
-        item_description = str(p.get("item_description") or part.get("part_name") or "").strip()
-        item = self.repo.insert("supply_purchase_order_items", {
-            "purchase_order_id": header.get("id"), "customer_order_id": order_id, "part_id": part.get("id"), "material_grade_id": part.get("material_grade_id"),
-            "item_no": fsi_part_number, "fsi_part_number_snapshot": fsi_part_number, "original_part_number_snapshot": part.get("part_number"), "item_description": item_description,
-            "rm_section": raw.get("section_size") or part.get("section_size"), "quantity": quantity, "uom": p.get("uom") or ("KGS" if po_type == "RAW_MATERIAL" else "NOS"),
-            "unit_price": unit_price, "gst_percent": gst_percent, "gst_amount": gst_amount, "line_total": subtotal,
-            "forging_weight_kg": raw.get("forging_weight_kg") or part.get("forging_weight_kg"), "gross_weight_kg": raw.get("gross_weight_kg") or part.get("gross_weight_kg"),
-            "rm_rate_per_kg": p.get("rm_rate_per_kg"), "tool_cost_text": p.get("tool_cost_text"), "profit_percent": p.get("profit_percent"),
-            "rejection_icc_text": p.get("rejection_icc_text"), "packaging": p.get("packaging"), "remarks": p.get("item_remarks"),
-        })
-        if po_type == "RAW_MATERIAL":
-            stage = self.save_transaction("supply_rm_purchase_orders", {
-                "customer_order_id": order_id, "rm_supplier_id": supplier_id, "supplier_order_no": po_number,
-                "order_date": header.get("order_date"), "ordered_qty_kg": quantity, "expected_date": header.get("delivery_date"), "status": "OPEN",
-                "remarks": "Controlled Purchase Order " + po_number, "purchase_order_id": header.get("id"),
-            })
-        else:
-            dispatch = p.get("rm_dispatch") or {}
-            stage_payload = {
-                "customer_order_id": order_id, "forging_supplier_id": supplier_id, "supplier_order_no": po_number,
-                "order_date": header.get("order_date"), "order_qty_pcs": quantity,
-                "required_rm_kg": round(quantity * number(order.get("gross_weight_kg_snapshot")), 3), "expected_date": header.get("delivery_date"),
-                "status": "OPEN", "remarks": "Controlled Purchase Order " + po_number, "purchase_order_id": header.get("id"),
-            }
-            if dispatch:
-                stage_payload.update({"rm_dispatch_id": dispatch.get("id"), "inward_lot_id": dispatch.get("inward_lot_id"), "heat_number": dispatch.get("heat_number"), "heat_code": dispatch.get("heat_code")})
-            stage = self.save_transaction("supply_forging_orders", stage_payload)
-        self.sync_order_status(order_id)
-        return {"header": header, "item": item, "stage": stage}
+            raw_order_ids = p.get("customer_order_ids") or ([p.get("customer_order_id")] if p.get("customer_order_id") else [])
+            order_ids = list(dict.fromkeys(str(v) for v in raw_order_ids if str(v or "").strip()))
+            if not order_ids:
+                raise ValueError("Select at least one Customer Order / Schedule for the Raw Material Purchase Order.")
+            allocation_map = {str(k): number(v) for k, v in dict(p.get("allocations") or {}).items()}
+            line_prices = {str(k): number(v) for k, v in dict(p.get("line_prices") or {}).items()}
+            prepared: list[dict[str, Any]] = []
+            groups: dict[str, dict[str, Any]] = {}
+            for order_id in order_ids:
+                order = self.order(order_id) or {}
+                if not order:
+                    raise ValueError("One selected Customer Order / Schedule no longer exists.")
+                if self.flow_for_order(order) != FLOW_FSI_RM:
+                    raise ValueError(f"{order.get('master_reference_no')}: Raw Material Purchase Order is not applicable to the Direct Forging flow.")
+                if not bool(order.get("rm_procurement_required", True)):
+                    raise ValueError(f"{order.get('master_reference_no')}: RM Procurement is not enabled because available stock covers the saved three-month decision.")
+                live_check = self.procurement_check(str(order.get("part_id") or ""), str(order.get("customer_id") or ""), anchor=order.get("schedule_month") or order.get("customer_delivery_date") or order.get("order_date"))
+                if not bool(live_check.get("rm_procurement_allowed")):
+                    raise ValueError(f"{order.get('master_reference_no')}: current system stock is sufficient for the rolling three-month schedule.")
+                balance = max(number(order.get("required_rm_kg")) - self.totals(order_id)["rm_ordered_kg"], 0.0)
+                allocation = allocation_map.get(order_id, balance)
+                if allocation <= 0 or allocation > balance + 0.0001:
+                    raise ValueError(f"{order.get('master_reference_no')}: PO allocation must be greater than zero and cannot exceed the pending RM balance of {balance:,.3f} kg.")
+                part = self.repo.get("parts", str(order.get("part_id") or "")) or {}
+                fsi = str(part.get("fsi_part_number") or "").strip()
+                if not fsi:
+                    raise ValueError(f"FSI Part Number is required for {part.get('part_number') or order.get('master_reference_no')} before supplier PO creation.")
+                raw = self.raw_material_for_supplier(str(part.get("id") or ""), supplier_id, str(order.get("raw_material_detail_id") or ""))
+                if not raw:
+                    raise ValueError(f"FSI {fsi}: add an ACTIVE Raw Material Detail for the selected Supplier in Part Master first.")
+                key = f"{part.get('id')}|{raw.get('id')}"
+                prepared.append({"order": order, "part": part, "raw": raw, "allocation": allocation, "key": key})
+                group = groups.setdefault(key, {"part": part, "raw": raw, "quantity": 0.0, "orders": []})
+                group["quantity"] += allocation; group["orders"].append((order, allocation))
+
+            gst_percent = max(number(p.get("gst_percent")), 0.0)
+            order_date_value = p.get("order_date") or date.today().isoformat()
+            currency = str(p.get("currency") or "INR").upper()
+            line_data: list[dict[str, Any]] = []
+            subtotal = 0.0
+            for key, group in groups.items():
+                part, raw = group["part"], group["raw"]
+                price = line_prices.get(key)
+                if price is None or price <= 0:
+                    price = self.current_price(str(part.get("id")), supplier_id, on_date=order_date_value, uom="KGS")
+                price = max(number(price), 0.0)
+                qty = round(number(group["quantity"]), 3)
+                line_total = round(qty * price, 2); subtotal += line_total
+                history = self.price_history(str(part.get("id")), supplier_id, uom="KGS")
+                line_data.append({"key": key, "part": part, "raw": raw, "quantity": qty, "unit_price": price, "line_total": line_total, "gst_amount": round(line_total*gst_percent/100.0,2), "technical": self.technical_data_snapshot(raw, part), "price_history": [{"start_date":h.get("start_date"),"end_date":h.get("end_date"),"price":h.get("price"),"currency":h.get("currency"),"uom":h.get("uom")} for h in history[:50]], "orders": group["orders"]})
+            subtotal = round(subtotal, 2)
+            gst_amount = round(subtotal * gst_percent / 100.0, 2)
+            state = str(supplier.get("state") or "").strip().casefold(); intra_state = not state or state in {"maharashtra", "mh"}
+            cgst = round(gst_amount/2.0,2) if intra_state else 0.0; sgst = round(gst_amount/2.0,2) if intra_state else 0.0; igst = gst_amount if not intra_state else 0.0
+            other = max(number(p.get("other_amount")),0.0); grand_total = round(subtotal+cgst+sgst+igst+other,2)
+            po_number = str(self.repo.rpc("qcms_next_supply_po_number") or "").strip()
+            if not po_number:
+                raise RuntimeError("QCMS could not allocate the next Purchase Order number.")
+            header = self.repo.insert("supply_purchase_orders", {"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date_value,"delivery_date":p.get("delivery_date"),"requisitioner":p.get("requisitioner"),"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":currency,"plant_snapshot":{"name":"Four Star Industries Private Limited D9","address1":"Plot No.D9, Chakan MIDC PH II","address2":"Bhamboli, Khed","address3":"Pune 410501","tax_identifier":"27AAGCF3769A1ZP","phone":"022 40104412","email":"orders@fourstarindustries.com"},"vendor_snapshot":self._party_snapshot(supplier),"ship_to_snapshot":{"name":"Four Star Industries Private Limited D9","address1":"Plot No.D9, Chakan MIDC PH II","address2":"Bhamboli, Khed","address3":"Pune 410501","tax_identifier":"27AAGCF3769A1ZP","phone":"022 40104412","email":"orders@fourstarindustries.com"},"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"OPEN"})
+            items: list[dict] = []; stages: list[dict] = []
+            for line in line_data:
+                part, raw = line["part"], line["raw"]; fsi = str(part.get("fsi_part_number") or "").strip()
+                first_order = line["orders"][0][0]
+                item = self.repo.insert("supply_purchase_order_items", {"purchase_order_id":header.get("id"),"customer_order_id":first_order.get("id"),"part_id":part.get("id"),"material_grade_id":part.get("material_grade_id"),"raw_material_detail_id":raw.get("id"),"item_no":fsi,"fsi_part_number_snapshot":fsi,"original_part_number_snapshot":part.get("part_number"),"item_description":part.get("part_name") or "Raw Material","rm_section":raw.get("section_size") or part.get("section_size"),"quantity":line["quantity"],"uom":"KGS","unit_price":line["unit_price"],"gst_percent":gst_percent,"gst_amount":line["gst_amount"],"line_total":line["line_total"],"forging_weight_kg":raw.get("forging_weight_kg") or part.get("forging_weight_kg"),"gross_weight_kg":raw.get("gross_weight_kg") or part.get("gross_weight_kg"),"technical_data_snapshot":line["technical"],"price_history_snapshot":line["price_history"],"remarks":p.get("item_remarks")})
+                items.append(item)
+                self._record_purchase_price(part_id=str(part.get("id")),supplier_id=supplier_id,raw_material_detail_id=str(raw.get("id")),po_date=order_date_value,price=line["unit_price"],uom="KGS",currency=currency,source_item_id=str(item.get("id")))
+                for order, allocation in line["orders"]:
+                    self.repo.insert("supply_purchase_order_sources", {"purchase_order_id":header.get("id"),"purchase_order_item_id":item.get("id"),"customer_order_id":order.get("id"),"allocated_qty":round(number(allocation),3),"allocation_uom":"KGS"})
+                    stage = self.save_transaction("supply_rm_purchase_orders", {"customer_order_id":order.get("id"),"rm_supplier_id":supplier_id,"supplier_order_no":po_number,"order_date":header.get("order_date"),"ordered_qty_kg":round(number(allocation),3),"expected_date":header.get("delivery_date"),"status":"OPEN","remarks":"Controlled Purchase Order "+po_number,"purchase_order_id":header.get("id"),"purchase_order_item_id":item.get("id")})
+                    stages.append(stage); self.sync_order_status(str(order.get("id")))
+            return {"header":header,"items":items,"stages":stages,"item":items[0] if items else {},"stage":stages[0] if stages else {}}
+
+        # ------------------------------------------------------------------
+        # FORGING: preserve the existing single-source flow. Technical data
+        # is still snapshot from the selected supplier-specific RM row.
+        # ------------------------------------------------------------------
+        order_id = str(p.get("customer_order_id") or ""); order = self.order(order_id) or {}
+        if not order:
+            raise ValueError("Select a valid Customer Order / Schedule source.")
+        part = self.repo.get("parts", str(order.get("part_id") or "")) or {}; fsi = str(part.get("fsi_part_number") or "").strip()
+        if not fsi:
+            raise ValueError("FSI Part Number is required in Part Master before a supplier-facing Purchase Order can be created.")
+        raw = self.raw_material_for_supplier(str(part.get("id") or ""), supplier_id, str(order.get("raw_material_detail_id") or "")) or self.repo.get("part_raw_material_details", str(order.get("raw_material_detail_id") or "")) or {}
+        quantity = number(p.get("quantity"));
+        if quantity <= 0: raise ValueError("Purchase Order quantity must be greater than zero.")
+        unit_price = max(number(p.get("unit_price")),0.0); gst_percent=max(number(p.get("gst_percent")),0.0); subtotal=round(quantity*unit_price,2); gst_amount=round(subtotal*gst_percent/100.0,2)
+        state=str(supplier.get("state") or "").strip().casefold(); intra_state=not state or state in {"maharashtra","mh"}; cgst=round(gst_amount/2,2) if intra_state else 0.0; sgst=round(gst_amount/2,2) if intra_state else 0.0; igst=gst_amount if not intra_state else 0.0; other=max(number(p.get("other_amount")),0.0); grand_total=round(subtotal+cgst+sgst+igst+other,2)
+        po_number=str(self.repo.rpc("qcms_next_supply_po_number") or "").strip();
+        if not po_number: raise RuntimeError("QCMS could not allocate the next Purchase Order number.")
+        header=self.repo.insert("supply_purchase_orders", {"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":p.get("order_date") or date.today().isoformat(),"delivery_date":p.get("delivery_date"),"requisitioner":p.get("requisitioner"),"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":p.get("currency") or "INR","plant_snapshot":{"name":"Four Star Industries Private Limited D9","address1":"Plot No.D9, Chakan MIDC PH II","address2":"Bhamboli, Khed","address3":"Pune 410501","tax_identifier":"27AAGCF3769A1ZP","phone":"022 40104412","email":"orders@fourstarindustries.com"},"vendor_snapshot":self._party_snapshot(supplier),"ship_to_snapshot":{"name":"Four Star Industries Private Limited D9","address1":"Plot No.D9, Chakan MIDC PH II","address2":"Bhamboli, Khed","address3":"Pune 410501","tax_identifier":"27AAGCF3769A1ZP","phone":"022 40104412","email":"orders@fourstarindustries.com"},"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"OPEN"})
+        item=self.repo.insert("supply_purchase_order_items", {"purchase_order_id":header.get("id"),"customer_order_id":order_id,"part_id":part.get("id"),"material_grade_id":part.get("material_grade_id"),"raw_material_detail_id":raw.get("id"),"item_no":fsi,"fsi_part_number_snapshot":fsi,"original_part_number_snapshot":part.get("part_number"),"item_description":part.get("part_name") or "","rm_section":raw.get("section_size") or part.get("section_size"),"quantity":quantity,"uom":p.get("uom") or "NOS","unit_price":unit_price,"gst_percent":gst_percent,"gst_amount":gst_amount,"line_total":subtotal,"forging_weight_kg":raw.get("forging_weight_kg") or part.get("forging_weight_kg"),"gross_weight_kg":raw.get("gross_weight_kg") or part.get("gross_weight_kg"),"technical_data_snapshot":self.technical_data_snapshot(raw,part),"price_history_snapshot":[{"start_date":h.get("start_date"),"end_date":h.get("end_date"),"price":h.get("price"),"currency":h.get("currency"),"uom":h.get("uom")} for h in self.price_history(str(part.get("id")),supplier_id,uom="NOS")[:50]],"remarks":p.get("item_remarks")})
+        self._record_purchase_price(part_id=str(part.get("id")),supplier_id=supplier_id,raw_material_detail_id=str(raw.get("id") or "") or None,po_date=header.get("order_date"),price=unit_price,uom="NOS",currency=str(header.get("currency") or "INR"),source_item_id=str(item.get("id")))
+        dispatch=p.get("rm_dispatch") or {}; stage_payload={"customer_order_id":order_id,"forging_supplier_id":supplier_id,"supplier_order_no":po_number,"order_date":header.get("order_date"),"order_qty_pcs":quantity,"required_rm_kg":round(quantity*number(order.get("gross_weight_kg_snapshot")),3),"expected_date":header.get("delivery_date"),"status":"OPEN","remarks":"Controlled Purchase Order "+po_number,"purchase_order_id":header.get("id")}
+        if dispatch: stage_payload.update({"rm_dispatch_id":dispatch.get("id"),"inward_lot_id":dispatch.get("inward_lot_id"),"heat_number":dispatch.get("heat_number"),"heat_code":dispatch.get("heat_code")})
+        stage=self.save_transaction("supply_forging_orders",stage_payload); self.sync_order_status(order_id)
+        return {"header":header,"item":item,"items":[item],"stage":stage,"stages":[stage]}
 
     def purchase_order_rows(self) -> list[dict]:
         parts, parties, grades = self.master_maps()
@@ -437,15 +567,25 @@ class SupplyChainService:
             part = parts.get(str(item.get("part_id"))) or {}
             supplier = parties.get(str(header.get("supplier_id"))) or {}
             grade = grades.get(str(item.get("material_grade_id"))) or {}
-            received = self.purchase_order_received_qty(str(header.get("id")))
+            received = self.purchase_order_item_received_qty(str(item.get("id")))
             ordered = number(item.get("quantity"))
+            sources = self.repo.select("supply_purchase_order_sources", eq={"purchase_order_item_id": item.get("id")}, limit=1000)
+            source_labels = []
+            for source in sources:
+                src_order = self.order(str(source.get("customer_order_id") or "")) or {}
+                source_labels.append(f"{src_order.get('master_reference_no') or '-'} ({number(source.get('allocated_qty')):,.3f} {source.get('allocation_uom') or item.get('uom')})")
+            if not source_labels and item.get("customer_order_id"):
+                src_order = self.order(str(item.get("customer_order_id") or "")) or {}
+                if src_order:
+                    source_labels.append(str(src_order.get("master_reference_no") or src_order.get("customer_order_no") or "-"))
             rows.append({
                 "PO Number": header.get("po_number"), "PO Type": str(header.get("po_type") or "").replace("_", " ").title(), "PO Date": header.get("order_date"),
                 "Delivery Date": header.get("delivery_date"), "Supplier": party_label(supplier), "Part Number": item.get("original_part_number_snapshot") or part.get("part_number"),
                 "FSI Part Number": item.get("fsi_part_number_snapshot") or part.get("fsi_part_number"), "Part Description": item.get("item_description") or part.get("part_name"),
+                "Customer Orders / Schedules": " · ".join(source_labels) if source_labels else "",
                 "Material Grade": grade.get("grade_code"), "RM Section": item.get("rm_section"), "Ordered Qty": ordered, "UOM": item.get("uom"),
                 "Received Qty": received, "Pending Qty": max(ordered-received, 0), "Unit Price": item.get("unit_price"), "GST %": item.get("gst_percent"),
-                "Total": header.get("grand_total"), "Status": header.get("status"), "_po_id": header.get("id"), "_part_id": item.get("part_id"), "_supplier_id": header.get("supplier_id"),
+                "Total": header.get("grand_total"), "Status": header.get("status"), "_po_id": header.get("id"), "_item_id": item.get("id"), "_part_id": item.get("part_id"), "_supplier_id": header.get("supplier_id"),
             })
         rows.sort(key=lambda r: (str(r.get("Delivery Date") or "9999-12-31"), str(r.get("PO Number") or "")))
         return rows
@@ -467,7 +607,7 @@ class SupplyChainService:
 
     def _assert_transaction_duplicate(self, table: str, payload: Mapping[str, Any], *, record_id: str | None = None) -> None:
         keys: dict[str, tuple[str, ...]] = {
-            "supply_rm_purchase_orders": ("rm_supplier_id", "supplier_order_no"),
+            "supply_rm_purchase_orders": ("rm_supplier_id", "supplier_order_no", "customer_order_id"),
             "supply_rm_receipts": ("rm_purchase_order_id", "receipt_number"),
             "supply_rm_dispatches": ("dispatch_number",),
             "supply_forging_orders": ("forging_supplier_id", "supplier_order_no"),

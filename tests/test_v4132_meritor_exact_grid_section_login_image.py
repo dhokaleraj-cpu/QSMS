@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_v4132_release_and_visual_contract():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8"}
     ui = (ROOT / "core" / "ui.py").read_text()
     auth = (ROOT / "core" / "auth.py").read_text()
     assert "4132-MERITOR-EXACT-GRID-SECTION-LOGIN-IMAGE" in ui
