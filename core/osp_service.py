@@ -14,11 +14,25 @@ class OSPService:
     def __init__(self) -> None:
         self.repo = Repository()
 
+    def _enrich_part_identity(self, rows: list[dict]) -> list[dict]:
+        part_ids = sorted({str(row.get("part_id")) for row in rows if row.get("part_id")})
+        part_rows = self.repo.select("parts", in_={"id": part_ids}, limit=max(len(part_ids), 1) + 10) if part_ids else []
+        parts = {str(row.get("id")): row for row in part_rows}
+        enriched: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            part = parts.get(str(item.get("part_id"))) or {}
+            item["fsi_part_number"] = part.get("fsi_part_number")
+            item["part_number"] = item.get("part_number") or part.get("part_number")
+            item["part_name"] = item.get("part_name") or part.get("part_name")
+            enriched.append(item)
+        return enriched
+
     def register(self) -> list[dict]:
-        return self.repo.select("v_qsms_osp_register", order_by="created_at", desc=True, limit=5000)
+        return self._enrich_part_identity(self.repo.select("v_qsms_osp_register", order_by="created_at", desc=True, limit=5000))
 
     def dispatch_candidates(self) -> list[dict]:
-        rows = self.repo.select("v_qsms_osp_dispatch_candidates", order_by="inward_date", desc=True, limit=5000)
+        rows = self._enrich_part_identity(self.repo.select("v_qsms_osp_dispatch_candidates", order_by="inward_date", desc=True, limit=5000))
         return [row for row in rows if float(row.get("osp_available_quantity_pcs") or 0) > 0]
 
     def vendors(self) -> list[dict]:

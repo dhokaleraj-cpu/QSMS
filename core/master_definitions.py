@@ -103,6 +103,7 @@ DEFINITIONS = (
         description="Customer part, drawing, controlled grade, weights and manufacturing-route definition.",
         fields=(
             FieldDef("part_number", "Part number", required=True, placeholder="71.784.3"),
+            FieldDef("fsi_part_number", "FSI Part Number", placeholder="FSI-000123", help="Secondary FSI identity used on supplier-facing documents to protect the original/customer Part Number."),
             FieldDef("part_name", "Part description", required=True, placeholder="Differential Spider"),
             FieldDef("customer_id", "Customer", kind="lookup", lookup="customers", required=True, allow_none=False),
             FieldDef("material_grade_id", "Material grade", kind="lookup", lookup="material_grades", required=True, allow_none=False),
@@ -117,8 +118,8 @@ DEFINITIONS = (
             FieldDef("status", "Record status", kind="select", options=("ACTIVE", "INACTIVE"), default="ACTIVE", required=True),
             FieldDef("remarks", "Remarks", kind="textarea"),
         ),
-        columns=("part_number", "part_name", "customer_id", "material_grade_id", "drawing_revision", "finished_weight_kg", "status"),
-        search_fields=("part_number", "part_name", "drawing_number", "manufacturing_route"),
+        columns=("part_number", "fsi_part_number", "part_name", "customer_id", "material_grade_id", "drawing_revision", "finished_weight_kg", "status"),
+        search_fields=("part_number", "fsi_part_number", "part_name", "drawing_number", "manufacturing_route"),
         natural_key=("part_number",), order_by="part_number",
     ),
     MasterDef(

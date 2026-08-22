@@ -129,11 +129,12 @@ def render_home() -> None:
     section_bar("Operational & Supply Chain Reports")
     operational = (
         ("supply-chain-report", "Supply Chain Order / Dispatch MIS", "Customer, part, monthly schedule, dispatch, pending quantity and achievement.", ":material/analytics:"),
+        ("supply-purchase-orders", "Purchase Order Reports", "Pending POs, RM orders, RM section, supplier and Part Number procurement reports.", ":material/request_quote:"),
         ("heat-transaction-report", "Heat Number Global Balance", "RMTC plan, inward, OSP movement and global steel balance.", ":material/monitoring:"),
         ("osp-balance-report", "OSP Heat Movement", "OSP outward, inward, material at vendor and balance to send.", ":material/factory:"),
         ("rmtc-report", "RMTC Register", "RMTC records, heat details, validation and decision history.", ":material/fact_check:"),
     )
-    cols = st.columns(4, gap="small")
+    cols = st.columns(5, gap="small")
     for col, (path, title, desc, icon) in zip(cols, operational):
         with col:
             with st.container(border=True, key=f"report_card_{path}"):
@@ -186,13 +187,14 @@ def render_heat_transactions() -> None:
         "Live report",
     )
     repo = Repository()
+    part_fsi = {str(r.get("part_number") or ""): r.get("fsi_part_number") for r in repo.select("parts", limit=5000)}
     summary = repo.select("v_qsms_heat_global_balance_report", order_by="last_activity_at", desc=True, limit=5000)
     transactions = repo.select("v_qsms_heat_transaction_report", order_by="transaction_at", desc=True, limit=20000)
     heats = sorted({str(row.get("heat_number") or "").strip() for row in summary if str(row.get("heat_number") or "").strip()}, key=str.casefold)
     selected = st.selectbox("Heat Number", ["All Heat Numbers"] + heats)
     selected_key = "" if selected == "All Heat Numbers" else _normalize_heat(selected)
     summary_rows = [row for row in summary if not selected_key or str(row.get("normalized_heat_number")) == selected_key]
-    transaction_rows = [row for row in transactions if not selected_key or str(row.get("normalized_heat_number")) == selected_key]
+    transaction_rows = [dict(row, fsi_part_number=part_fsi.get(str(row.get("part_number") or ""))) for row in transactions if not selected_key or str(row.get("normalized_heat_number")) == selected_key]
 
     disposition_cards([
         {
@@ -238,6 +240,7 @@ def render_heat_transactions() -> None:
         "Transaction Number": "transaction_number",
         "Reference": "reference_number",
         "Part Number": "part_number",
+        "FSI Part Number": "fsi_part_number",
         "Part Description": "part_name",
         "Supplier / OSP Vendor": "party_name",
         "OSP Process": "process_name",
@@ -288,8 +291,10 @@ def render_osp_balance() -> None:
         "Live report",
     )
     repo = Repository()
-    balances = repo.select("v_qsms_heat_osp_balance_report", order_by="inward_date", desc=True, limit=10000)
-    jobs = repo.select("v_qsms_osp_register", order_by="created_at", desc=True, limit=10000)
+    part_fsi = {str(r.get("part_number") or ""): r.get("fsi_part_number") for r in repo.select("parts", limit=5000)}
+    balances = [dict(row, fsi_part_number=part_fsi.get(str(row.get("part_number") or ""))) for row in repo.select("v_qsms_heat_osp_balance_report", order_by="inward_date", desc=True, limit=10000)]
+    jobs = [dict(row, fsi_part_number=part_fsi.get(str(row.get("part_number") or ""))) for row in repo.select("v_qsms_osp_register", order_by="created_at", desc=True, limit=10000)]
+    # legacy line replaced
     heats = sorted({str(row.get("heat_number") or "").strip() for row in balances if str(row.get("heat_number") or "").strip()}, key=str.casefold)
     parts = sorted({str(row.get("part_number") or "").strip() for row in balances if str(row.get("part_number") or "").strip()}, key=str.casefold)
     c1, c2 = st.columns(2, gap="small")
@@ -335,6 +340,7 @@ def render_osp_balance() -> None:
     balance_frame = _frame(filtered_balances, {
         "Heat Number": "heat_number",
         "Part Number": "part_number",
+        "FSI Part Number": "fsi_part_number",
         "Part Description": "part_name",
         "Source Inward": "inward_number",
         "Inward Date": "inward_date",
@@ -352,6 +358,7 @@ def render_osp_balance() -> None:
         "OSP Job": "osp_job_number",
         "Heat Number": "heat_number",
         "Part Number": "part_number",
+        "FSI Part Number": "fsi_part_number",
         "OSP Vendor": "vendor_name",
         "OSP Process": "process_name",
         "Material Out Date": "dispatch_date",

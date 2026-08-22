@@ -16,8 +16,9 @@ from core.ui import kpi_grid, page_header, save_success_popup, section_bar, stag
 
 
 def _label(row: dict) -> str:
+    fsi = f" · FSI {row.get('fsi_part_number')}" if row.get("fsi_part_number") else ""
     batch = f" · Vendor Batch {row.get('vendor_batch_number')}" if row.get('vendor_batch_number') else ""
-    return f"{row.get('osp_job_number')} · {row.get('part_number')} · Heat {row.get('heat_number')} · {row.get('process_name')} · {row.get('vendor_name')}{batch}"
+    return f"{row.get('osp_job_number')} · {row.get('part_number')}{fsi} · Heat {row.get('heat_number')} · {row.get('process_name')} · {row.get('vendor_name')}{batch}"
 
 
 def _job_selector(rows: list[dict], label: str, key: str) -> dict | None:
@@ -60,7 +61,7 @@ def render_material_out() -> None:
     if not candidates:
         st.info("No released Material Inward production balance is available for OSP dispatch.")
         return
-    labels = {str(row["inward_lot_id"]): f"{row.get('inward_number')} · {row.get('part_number')} · Heat {row.get('heat_number')} · Available {float(row.get('osp_available_quantity_pcs') or 0):,.0f} pcs" for row in candidates}
+    labels = {str(row["inward_lot_id"]): f"{row.get('inward_number')} · {row.get('part_number')} · FSI {row.get('fsi_part_number') or '-'} · Heat {row.get('heat_number')} · Available {float(row.get('osp_available_quantity_pcs') or 0):,.0f} pcs" for row in candidates}
     inward_id = st.selectbox("Released Material Inward", list(labels), format_func=lambda value: labels[value])
     candidate = next(row for row in candidates if str(row["inward_lot_id"]) == inward_id)
     specifications = service.specifications(str(candidate.get("part_id")))
@@ -149,7 +150,7 @@ def render_inward() -> None:
 def _render_register(rows: list[dict], height: int = 560) -> None:
     display = pd.DataFrame([{
         "OSP Job": r.get("osp_job_number"), "Material Out Date": r.get("dispatch_date"), "Heat Number": r.get("heat_number"),
-        "Part Number": r.get("part_number"), "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"),
+        "Part Number": r.get("part_number"), "FSI Part Number": r.get("fsi_part_number"), "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"),
         "Out Qty pcs": r.get("quantity_dispatched"), "Vendor Batch": r.get("vendor_batch_number"), "Sample Gate": r.get("sample_gate_status"),
         "OSP Inward": r.get("receipt_number"), "Inward Qty pcs": r.get("quantity_received"), "Receipt Decision": r.get("receipt_quality_disposition"),
         "Production Qty Available": r.get("production_available_quantity"), "Status": r.get("status"),
@@ -182,7 +183,7 @@ def render_records() -> None:
                 "OSP TRANSACTION RECORD",
                 {
                     "OSP Job": selected_row.get("osp_job_number"), "Heat Number": selected_row.get("heat_number"),
-                    "Part Number": selected_row.get("part_number"), "OSP Vendor": selected_row.get("vendor_name"),
+                    "Part Number": selected_row.get("part_number"), "FSI Part Number": selected_row.get("fsi_part_number"), "OSP Vendor": selected_row.get("vendor_name"),
                     "Process": selected_row.get("process_name"), "Material Out Date": selected_row.get("dispatch_date"),
                     "Out Qty pcs": selected_row.get("quantity_dispatched"), "Expected Return": selected_row.get("expected_return_date"),
                     "Vendor Batch": selected_row.get("vendor_batch_number"), "Sample Gate": selected_row.get("sample_gate_status"),

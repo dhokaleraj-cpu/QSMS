@@ -164,6 +164,7 @@ def render() -> None:
     parts = _rows(repo, "parts", order_by="part_number")
     parties = _rows(repo, "parties", order_by="party_name")
     part_map = _map(parts, "id", "part_number")
+    fsi_part_map = _map(parts, "id", "fsi_part_number")
     part_name_map = _map(parts, "id", "part_name")
     party_map = _map(parties, "id", "party_name")
 
@@ -183,6 +184,7 @@ def render() -> None:
             "Supplier RMTC": r.get("certificate_reference"),
             "Heat Number": r.get("heat_number"),
             "Primary Part": part_map.get(str(r.get("part_id"))),
+            "FSI Part Number": fsi_part_map.get(str(r.get("part_id"))),
             "Supplier": party_map.get(str(r.get("supplier_id"))),
             "Steel Mill": party_map.get(str(r.get("steel_mill_id"))),
             "Steel Qty kg": r.get("certificate_quantity"),
@@ -206,7 +208,7 @@ def render() -> None:
             "Inward": r.get("inward_number"),
             "Date": r.get("inward_date"),
             "Supplier": r.get("supplier_name"),
-            "Part Number": r.get("part_number"),
+            "Part Number": r.get("part_number"), "FSI Part Number": fsi_part_map.get(str(r.get("part_id"))),
             "Part Description": r.get("part_name"),
             "Heat Number": r.get("heat_number"),
             "Steel kg": r.get("steel_quantity_kg") or r.get("quantity_received"),
@@ -231,7 +233,7 @@ def render() -> None:
         section_bar("OSP TRANSACTION REGISTER")
         _table(pd.DataFrame([{
             "OSP Job": r.get("osp_job_number"), "Material Out Date": r.get("dispatch_date"),
-            "Heat Number": r.get("heat_number"), "Part Number": r.get("part_number"),
+            "Heat Number": r.get("heat_number"), "Part Number": r.get("part_number"), "FSI Part Number": fsi_part_map.get(str(r.get("part_id"))),
             "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"),
             "Out Qty pcs": r.get("quantity_dispatched"), "Vendor Batch": r.get("vendor_batch_number"),
             "Sample Gate": r.get("sample_gate_status"), "OSP Inward": r.get("receipt_number"),
@@ -246,7 +248,7 @@ def render() -> None:
         _table(pd.DataFrame([{
             "Report Number": r.get("report_number"),
             "Date": r.get("inspection_date"),
-            "Part Number": part_map.get(str(r.get("part_id"))),
+            "Part Number": part_map.get(str(r.get("part_id"))), "FSI Part Number": fsi_part_map.get(str(r.get("part_id"))),
             "Heat Number": r.get("heat_number"),
             "Sample Size": r.get("sample_size"),
             "Result": r.get("overall_result"),
@@ -262,7 +264,7 @@ def render() -> None:
         _table(pd.DataFrame([{
             "Report Number": r.get("report_number"),
             "Date": r.get("test_date"),
-            "Part Number": part_map.get(str(r.get("part_id"))),
+            "Part Number": part_map.get(str(r.get("part_id"))), "FSI Part Number": fsi_part_map.get(str(r.get("part_id"))),
             "Heat Number": r.get("heat_number"),
             "Sample Reference": r.get("sample_reference"),
             "Result": r.get("overall_result"),
@@ -280,7 +282,7 @@ def render() -> None:
             "Layout Type": r.get("layout_type"),
             "Plan Number": r.get("plan_number"),
             "Revision": r.get("revision"),
-            "Part Number": part_map.get(str(r.get("part_id"))),
+            "Part Number": part_map.get(str(r.get("part_id"))), "FSI Part Number": fsi_part_map.get(str(r.get("part_id"))),
             "Status": r.get("status"),
             "Effective Date": r.get("effective_date"),
         } for r in rows]), pdf_title="Inspection Layout Register", pdf_key="QCMS_Inspection_Layout_Register")
@@ -292,7 +294,7 @@ def render() -> None:
         reference_rows = parties
         section_bar("MASTER RECORD STATUS")
         _table(pd.DataFrame([
-            {"Module": "Part Master", "Code / Number": r.get("part_number"), "Name": r.get("part_name"), "Status": r.get("status")} for r in parts
+            {"Module": "Part Master", "Code / Number": r.get("part_number"), "FSI Part Number": r.get("fsi_part_number"), "Name": r.get("part_name"), "Status": r.get("status")} for r in parts
         ] + [
             {"Module": "Material Grade", "Code / Number": r.get("grade_code"), "Name": r.get("material_number"), "Status": r.get("status")} for r in grade_rows
         ] + [

@@ -39,7 +39,9 @@ def process_label(row: Mapping[str, Any]) -> str:
 
 def part_label(row: Mapping[str, Any], *, customer_name: str = "", grade_code: str = "") -> str:
     drawing = _join(row.get("drawing_number"), f"Rev {_clean(row.get('drawing_revision'))}" if _clean(row.get("drawing_revision")) else "")
-    return _join(row.get("part_number"), row.get("part_name"), customer_name, grade_code, drawing)
+    fsi = _clean(row.get("fsi_part_number"))
+    fsi_piece = f"FSI {fsi}" if fsi else ""
+    return _join(row.get("part_number"), fsi_piece, row.get("part_name"), customer_name, grade_code, drawing)
 
 
 def material_grade_label(row: Mapping[str, Any]) -> str:

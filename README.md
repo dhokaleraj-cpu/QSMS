@@ -1,16 +1,13 @@
-# QCMS v4.13.6
+# QCMS v4.13.7
 
-Build: 4136-RMTC-OSP-TEXT-LAYOUT-SOURCES
+Build: `4137-SUPPLY-PO-FSI-PART-RMTC-WORKSHEET`
 
-Priority release: approved RMTC part extension, separate MetLAB Supplier/OSP Vendor, partial OSP receipts, duplicate fuzzy validation, Part Master approved sources, kg heat-balance reporting, and NUMBER/TEXT inspection characteristics with 75% text matching.
+Controlled release for approved-RMTC Part Worksheet extension, Customer Order three-month stock/procurement checks, Raw Material and Forging Purchase Orders, supplier PO print/control, receipt-linked procurement MIS, and a secondary FSI Part Number used alongside the original/customer Part Number throughout QCMS.
 
-# QCMS v4.13.3 — Login No-Menu / STAWN Footer / Portal Polish
-
-- Build: `4133-LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH`
-- Login is isolated from the authenticated application shell: no top menu, side rail, user badge or navigation.
-- Factory photograph remains on the left and is cropped responsively; IDENTIFICATION form remains on the right.
-- Shared footer on login and all authenticated pages: `Developed by Rajesh Dhokale | dhokaleraj@icloud.com | Copyrights by STAWN`.
-- Native Streamlit grey header strip is removed so the authenticated maroon top menu remains fully visible.
-- Maroon section-title hierarchy, cream bordered fields, framed pocket cards and enterprise grids/tables are preserved and strengthened.
-- Existing QCMS business logic, data, permissions, reports, exports and Supabase transactions are preserved.
-- No new Supabase migration is required.
+Key controls:
+- Approved RMTCs can be extended to another compatible Part Worksheet without releasing the original/customer part identity externally.
+- Customer Order / Schedule entry snapshots available system stock against rolling three-month schedule demand and controls whether RM procurement can be raised.
+- Controlled RM/Forging Purchase Orders use the FSI/703/F04 print concept and remain linked through Material Inward / Forging Receipt.
+- Supplier-facing Purchase Order item identity uses FSI Part Number; original/customer Part Number remains available internally for genealogy.
+- Purchase Order reports include pending POs, RM orders, RM section orders, supplier orders, and RM-for-Part orders.
+- Existing QCMS quality, OSP, Supply Chain, reports, security, UI and historical data remain preserved.

@@ -506,11 +506,12 @@ def render_entry() -> None:
 
     with stage_section("A", 'PART DETAILS', 'All fields shown in the approved Part Master layout.', key="part_master_render_entry_a"):
         with st.form("part_header"):
-            c = st.columns(4, gap="small")
-            part_number = c[0].text_input("Part Number", value=str(existing.get("part_number") or ""))
-            part_name = c[1].text_input("Part Description", value=str(existing.get("part_name") or ""))
-            finish_weight = c[2].number_input("Part Finish Weight (kg)", min_value=0.0, value=float(existing.get("finished_weight_kg") or 0), step=0.01)
-            status = c[3].selectbox("Status", ["ACTIVE", "INACTIVE"], index=0 if str(existing.get("status") or "ACTIVE") == "ACTIVE" else 1)
+            c = st.columns(5, gap="small")
+            part_number = c[0].text_input("Part Number", value=str(existing.get("part_number") or ""), help="Original / customer Part Number. Internal QCMS identity.")
+            fsi_part_number = c[1].text_input("FSI Part Number", value=str(existing.get("fsi_part_number") or ""), help="Secondary FSI identity used on supplier-facing documents so the original Part Number remains confidential.")
+            part_name = c[2].text_input("Part Description", value=str(existing.get("part_name") or ""))
+            finish_weight = c[3].number_input("Part Finish Weight (kg)", min_value=0.0, value=float(existing.get("finished_weight_kg") or 0), step=0.01)
+            status = c[4].selectbox("Status", ["ACTIVE", "INACTIVE"], index=0 if str(existing.get("status") or "ACTIVE") == "ACTIVE" else 1)
             c = st.columns(4, gap="small")
             customer_id = c[0].selectbox("Customer", list(customer_map), format_func=lambda x: customer_map[x], index=list(customer_map).index(str(existing.get("customer_id"))) if str(existing.get("customer_id")) in customer_map else 0) if customer_map else None
             grade_id = c[1].selectbox("Material Grade", list(grade_map), format_func=lambda x: grade_map[x], index=list(grade_map).index(str(existing.get("material_grade_id"))) if str(existing.get("material_grade_id")) in grade_map else 0) if grade_map else None
@@ -522,7 +523,7 @@ def render_entry() -> None:
             try:
                 if not all([part_number.strip(), part_name.strip(), customer_id, grade_id]):
                     raise ValueError("Part Number, Description, Customer and Material Grade are mandatory.")
-                payload = {"part_number": part_number.strip(), "part_name": part_name.strip(), "customer_id": customer_id, "material_grade_id": grade_id, "finished_weight_kg": finish_weight, "status": status, "remarks": remarks.strip() or None}
+                payload = {"part_number": part_number.strip(), "fsi_part_number": fsi_part_number.strip() or None, "part_name": part_name.strip(), "customer_id": customer_id, "material_grade_id": grade_id, "finished_weight_kg": finish_weight, "status": status, "remarks": remarks.strip() or None}
                 if existing:
                     payload["drawing_number"] = existing.get("drawing_number")
                     payload["drawing_revision"] = existing.get("drawing_revision")
@@ -532,6 +533,8 @@ def render_entry() -> None:
                         continue
                     if str(row.get("part_number") or "").strip().casefold() == part_number.strip().casefold():
                         raise ValueError("Duplicate Part Number is not allowed.")
+                    if fsi_part_number.strip() and str(row.get("fsi_part_number") or "").strip().casefold() == fsi_part_number.strip().casefold():
+                        raise ValueError("Duplicate FSI Part Number is not allowed.")
                     if (str(row.get("customer_id") or "") == str(customer_id or "") and
                         str(row.get("material_grade_id") or "") == str(grade_id or "") and
                         duplicate_service._fuzzy_word_duplicate(part_name, row.get("part_name"))):
@@ -918,8 +921,8 @@ def render_records() -> None:
     parts = repo.select("parts", order_by="part_number", limit=3000)
     grades = {str(g["id"]): g for g in repo.select("material_grades", limit=3000)}
     customers = {str(p["id"]): p for p in repo.select("parties", contains={"party_types": ["CUSTOMER"]}, limit=3000)}
-    search = st.text_input("Search Part Number or Description")
-    rows = [p for p in parts if not search or search.casefold() in (str(p.get("part_number")) + " " + str(p.get("part_name"))).casefold()]
+    search = st.text_input("Search Part Number, FSI Part Number or Description")
+    rows = [p for p in parts if not search or search.casefold() in (str(p.get("part_number")) + " " + str(p.get("fsi_part_number")) + " " + str(p.get("part_name"))).casefold()]
 
     if rows:
         labels = {str(row["id"]): part_label(row) for row in rows}
@@ -949,7 +952,7 @@ def render_records() -> None:
             pdf = controlled_record_pdf_bytes(
                 "PART MASTER RECORD",
                 {
-                    "Part Number": selected_row.get("part_number"), "Part Description": selected_row.get("part_name"),
+                    "Part Number": selected_row.get("part_number"), "FSI Part Number": selected_row.get("fsi_part_number"), "Part Description": selected_row.get("part_name"),
                     "Customer": (customers.get(str(selected_row.get("customer_id"))) or {}).get("party_name"),
                     "Material Grade": (grades.get(str(selected_row.get("material_grade_id"))) or {}).get("grade_code"),
                     "Finish Weight kg": selected_row.get("finished_weight_kg"), "Drawing Number": selected_row.get("drawing_number"),
@@ -981,5 +984,5 @@ def render_records() -> None:
         st.info("No Part Master records match the search.")
 
     section_bar("PART MASTER REGISTER", "The selected record and actions are intentionally shown above the register.")
-    df = pd.DataFrame([{"Part Number": p.get("part_number"), "Part Description": p.get("part_name"), "Finish Weight kg": p.get("finished_weight_kg"), "Customer": (customers.get(str(p.get("customer_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(p.get("material_grade_id"))) or {}).get("grade_code"), "Drawing": p.get("drawing_number"), "Revision": p.get("drawing_revision"), "Status": p.get("status")} for p in rows])
+    df = pd.DataFrame([{"Part Number": p.get("part_number"), "FSI Part Number": p.get("fsi_part_number"), "Part Description": p.get("part_name"), "Finish Weight kg": p.get("finished_weight_kg"), "Customer": (customers.get(str(p.get("customer_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(p.get("material_grade_id"))) or {}).get("grade_code"), "Drawing": p.get("drawing_number"), "Revision": p.get("drawing_revision"), "Status": p.get("status")} for p in rows])
     portal_table(df, hide_index=True, width="stretch", height=620)

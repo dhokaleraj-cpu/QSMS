@@ -149,6 +149,7 @@ def demo_store() -> dict[str, list[dict]]:
         {
             **_base(IDS["part"]),
             "part_number": "71.784.3",
+            "fsi_part_number": "FSI-0001",
             "part_name": "Differential Spider",
             "customer_id": IDS["customer"],
             "material_grade_id": IDS["grade_16"],
@@ -171,6 +172,7 @@ def demo_store() -> dict[str, list[dict]]:
         {
             **_base(IDS["part_2"]),
             "part_number": "40286128",
+            "fsi_part_number": "FSI-0002",
             "part_name": "Differential Shaft",
             "customer_id": IDS["customer"],
             "material_grade_id": IDS["grade_20"],

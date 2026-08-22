@@ -87,6 +87,7 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
         ("Report Date", report_date),
         ("Report Type", "MetLAB" if is_metlab else "Dimensional Inspection"),
         ("Part Number", part.get("part_number")),
+        ("FSI Part Number", part.get("fsi_part_number")),
         ("Part Name", part.get("part_name")),
         ("Customer Name", customer.get("party_name")),
         ("Supplier / OSP Vendor", supplier.get("party_name")),
@@ -675,23 +676,23 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     story.append(Spacer(1, 1.6 * mm))
     story.append(_rmtc_section_bar("COVERED PART WORKSHEET REGISTER", content_width, section_text_style))
     part_summary = [[
-        "Part No.", "Description", "Grade", "Planned Qty", "Input kg", "Steel kg", "Worksheet", "Auto Validation", "Final Decision",
+        "Part No.", "FSI Part No.", "Description", "Grade", "Planned Qty", "Input kg", "Steel kg", "Worksheet", "Auto Validation", "Final Decision",
     ]]
     for approval in part_approvals:
         part = parts.get(str(approval.get("part_id"))) or {}
         grade = grades.get(str(part.get("material_grade_id"))) or {}
         part_summary.append([
-            part.get("part_number"), part.get("part_name"), grade.get("grade_code") or grade.get("grade_name"),
+            part.get("part_number"), part.get("fsi_part_number"), part.get("part_name"), grade.get("grade_code") or grade.get("grade_name"),
             approval.get("planned_production_quantity_pcs"), approval.get("input_weight_kg"), approval.get("planned_steel_quantity_kg"),
             "Completed" if approval.get("worksheet_completed_at") else "Pending",
             approval.get("approval_status") or "NOT_EVALUATED", approval.get("disposition") or "PENDING",
         ])
     if len(part_summary) == 1:
-        part_summary.append(["-", "No covered part worksheets found", "", "", "", "", "Pending", "NOT_EVALUATED", "PENDING"])
+        part_summary.append(["-", "-", "No covered part worksheets found", "", "", "", "", "Pending", "NOT_EVALUATED", "PENDING"])
     story.append(_rmtc_grid(
         part_summary,
-        [18*mm, 30*mm, 18*mm, 18*mm, 17*mm, 19*mm, 22*mm, 25*mm, 27*mm],
-        header_style, small_style, status_columns=(6, 7, 8),
+        [17*mm, 20*mm, 27*mm, 17*mm, 16*mm, 17*mm, 18*mm, 20*mm, 21*mm, 21*mm],
+        header_style, small_style, status_columns=(7, 8, 9),
     ))
 
     mechanical = record.get("mechanical_results") or {}
@@ -715,8 +716,9 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         story.append(_rmtc_section_bar(part_title, content_width, section_text_style))
 
         identity_rows = [
-            ["Part Number", part.get("part_number"), "Part Description", part.get("part_name"), "Material Grade", grade.get("grade_code") or grade.get("grade_name")],
-            ["Heat Number", record.get("heat_number"), "Heat Code", record.get("heat_code"), "Worksheet Status", "Completed" if approval.get("worksheet_completed_at") else "Pending"],
+            ["Part Number", part.get("part_number"), "FSI Part Number", part.get("fsi_part_number"), "Part Description", part.get("part_name")],
+            ["Material Grade", grade.get("grade_code") or grade.get("grade_name"), "Heat Number", record.get("heat_number"), "Heat Code", record.get("heat_code")],
+            ["Worksheet Status", "Completed" if approval.get("worksheet_completed_at") else "Pending", "", "", "", ""],
             ["Planned Production Qty pcs", approval.get("planned_production_quantity_pcs"), "Input Weight kg", approval.get("input_weight_kg"), "Planned Steel kg", approval.get("planned_steel_quantity_kg")],
         ]
         story.append(_rmtc_labeled_grid(
@@ -1359,6 +1361,7 @@ def qc_calculation_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         "Calculation Date": record.get("calculation_date"),
         "Performed By": _employee_name(employee),
         "Part Number": part.get("part_number"),
+        "FSI Part Number": part.get("fsi_part_number"),
         "Material Grade": grade.get("grade_code"),
         "Heat Number": record.get("heat_number"),
         "Standard / Basis": record.get("standard_reference"),

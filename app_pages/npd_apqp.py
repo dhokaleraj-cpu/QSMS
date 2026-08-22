@@ -345,7 +345,7 @@ def render_process_flow() -> None:
             } for row in all_point_rows]
             pdf = controlled_record_pdf_bytes(
                 "NPD PROCESS FLOW",
-                {"Part Number": part.get("part_number"), "Part Description": part.get("part_name"), "Revision": flow.get("revision"), "Effective Date": flow.get("effective_date"), "Status": flow.get("status"), "Remarks": flow.get("remarks")},
+                {"Part Number": part.get("part_number"), "FSI Part Number": part.get("fsi_part_number"), "Part Description": part.get("part_name"), "Revision": flow.get("revision"), "Effective Date": flow.get("effective_date"), "Status": flow.get("status"), "Remarks": flow.get("remarks")},
                 {"Operational Sequence": step_rows, "Process Checkpoints / Bullet Points": point_rows},
                 record_number=f"{part.get('part_number')}-REV-{flow.get('revision')}",
             )
@@ -724,7 +724,7 @@ def render_npd_status() -> None:
                     })
             pdf = controlled_record_pdf_bytes(
                 "NPD ORDER STATUS",
-                {"Order Number": order.get("order_number"), "Part Number": part.get("part_number"), "Part Description": part.get("part_name"), "Customer": customer.get("party_name"), "Order Qty": order.get("order_qty"), "Order Date": order.get("order_date"), "Start Date": order.get("start_date"), "Delivery Date": order.get("delivery_date"), "Overall Status": overall, "Order Remarks": order.get("remarks")},
+                {"Order Number": order.get("order_number"), "Part Number": part.get("part_number"), "FSI Part Number": part.get("fsi_part_number"), "Part Description": part.get("part_name"), "Customer": customer.get("party_name"), "Order Qty": order.get("order_qty"), "Order Date": order.get("order_date"), "Start Date": order.get("start_date"), "Delivery Date": order.get("delivery_date"), "Overall Status": overall, "Order Remarks": order.get("remarks")},
                 {"Process Status": process_pdf_rows, "Process Checkpoints / Bullet Points": point_pdf_rows},
                 record_number=str(order.get("order_number") or ""),
             )
@@ -889,7 +889,7 @@ def render_apqp() -> None:
         } for row in tasks]
         pdf = controlled_record_pdf_bytes(
             "APQP PROJECT STATUS",
-            {"Project / NPD Number": project.get("project_code"), "Part Number": part_row.get("part_number"), "Part Description": part_row.get("part_name"), "Customer": customer_row.get("party_name"), "PPAP Submission Level": project.get("submission_level"), "Target Submission": project.get("target_submission_date"), "Coordinator": project.get("coordinator"), "Completion %": project.get("completion_percent"), "Status": project.get("status"), "Remarks": project.get("remarks")},
+            {"Project / NPD Number": project.get("project_code"), "Part Number": part_row.get("part_number"), "FSI Part Number": part_row.get("fsi_part_number"), "Part Description": part_row.get("part_name"), "Customer": customer_row.get("party_name"), "PPAP Submission Level": project.get("submission_level"), "Target Submission": project.get("target_submission_date"), "Coordinator": project.get("coordinator"), "Completion %": project.get("completion_percent"), "Status": project.get("status"), "Remarks": project.get("remarks")},
             {"APQP Gates / Deliverables": pdf_tasks},
             record_number=str(project.get("project_code") or ""),
         )

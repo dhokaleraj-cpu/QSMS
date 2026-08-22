@@ -121,6 +121,11 @@ required = [
     "supabase/migrations/20260821170000_qcms_rmtc_osp_text_layout_sources_v4136.sql",
     "tests/test_v4136_rmtc_osp_text_layout_sources.py",
     "docs/RELEASE_4_13_6.md",
+    "supabase/migrations/20260822193000_qcms_supply_po_fsi_part_rmtc_worksheet_v4137.sql",
+    "core/purchase_order_reporting.py",
+    "templates/FSI_STANDARD_PO_TERMS_2023.pdf",
+    "tests/test_v4137_supply_po_fsi_part_rmtc_worksheet.py",
+    "docs/RELEASE_4_13_7.md",
 ]
 for item in required:
     if not (ROOT / item).exists():
@@ -129,7 +134,7 @@ for item in required:
 app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
-    "dashboard", "masters", "rmtc-entry", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-rm-procurement", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "supply-order-mis", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "inspection-home", "records-center", "heat-ledger",
+    "dashboard", "masters", "rmtc-entry", "rmtc-approved-worksheet", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-rm-procurement", "supply-purchase-orders", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "supply-order-mis", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "inspection-home", "records-center", "heat-ledger",
     "reports-home", "heat-transaction-report", "osp-balance-report", "supply-chain-report", "rmtc-report", "inward-report", "dimensional-report", "metlab-report", "complaints-report", "traceability-report", "npd-report", "apqp-report", "qc-report", "inspection-layout-report", "standards-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
@@ -587,8 +592,40 @@ if "def _fuzzy_word_duplicate" not in master_service_v4136:
 if '"Qty kg": "steel_quantity_kg"' not in reports_v4136 or '"Balance kg": "current_heat_balance_kg"' not in reports_v4136:
     errors.append("QCMS 4.13.6 heat transaction kg quantity/balance columns are missing")
 
+# QCMS 4.13.7 Supply PO / FSI Part / approved RMTC worksheet contract.
+v4137_marker = "4137-SUPPLY-PO-FSI-PART-RMTC-WORKSHEET"
+v4137_sql_path = ROOT / "supabase" / "migrations" / "20260822193000_qcms_supply_po_fsi_part_rmtc_worksheet_v4137.sql"
+v4137_sql = v4137_sql_path.read_text(encoding="utf-8") if v4137_sql_path.exists() else ""
+v4137_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v4137_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v4137_rmtc = (ROOT / "app_pages" / "rmtc_pages.py").read_text(encoding="utf-8")
+v4137_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
+v4137_po = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
+v4137_streamlit = (ROOT / "streamlit_app.py").read_text(encoding="utf-8")
+if v4137_marker not in ui_text or v4137_marker not in auth_text or v4137_marker not in v4137_streamlit:
+    errors.append("QCMS 4.13.7 build fingerprint is missing")
+for token in ("fsi_part_number", "supply_purchase_orders", "supply_purchase_order_items", "rm_procurement_required", "three_month_schedule_pcs_snapshot"):
+    if token not in v4137_sql:
+        errors.append(f"QCMS 4.13.7 database contract missing: {token}")
+for token in ("def procurement_check", "rolling three-month schedule quantity", "def create_purchase_order", "def purchase_order_received_qty"):
+    if token not in v4137_service:
+        errors.append(f"QCMS 4.13.7 Supply Chain service token missing: {token}")
+if "def render_purchase_orders" not in v4137_supply or "Pending Purchase Orders" not in v4137_supply or "RM Section Orders" not in v4137_supply:
+    errors.append("QCMS 4.13.7 controlled Purchase Order workspace/reports are incomplete")
+if "def render_approved_part_worksheet" not in v4137_rmtc or "ADD PART NUMBER TO APPROVED RMTC" not in v4137_rmtc:
+    errors.append("QCMS 4.13.7 approved RMTC Part Worksheet module is missing")
+if 'text_input("FSI Part Number"' not in v4137_part:
+    errors.append("QCMS 4.13.7 FSI Part Number Part Master field is missing")
+if "FSI_STANDARD_PO_TERMS_2023.pdf" not in v4137_po or not (ROOT / "templates" / "FSI_STANDARD_PO_TERMS_2023.pdf").exists():
+    errors.append("QCMS 4.13.7 controlled FSI Purchase Order terms template is missing")
+
 report = {
-    "release": "QCMS 4.13.6 RMTC part extension + OSP partial receipts + NUMBER/TEXT layouts",
+    "release": "QCMS 4.13.7 Supply PO + FSI Part identity + approved RMTC Part Worksheet",
+    "supply_purchase_order_module": "def render_purchase_orders" in v4137_supply,
+    "supply_po_reference_print": "FSI_STANDARD_PO_TERMS_2023.pdf" in v4137_po,
+    "fsi_part_number_identity": 'text_input("FSI Part Number"' in v4137_part,
+    "customer_order_three_month_procurement_gate": "def procurement_check" in v4137_service and "rolling three-month schedule quantity" in v4137_service,
+    "approved_rmtc_part_worksheet_page": "def render_approved_part_worksheet" in v4137_rmtc,
     "rmtc_approved_part_extension": "ADD PART NUMBER TO APPROVED RMTC" in rmtc_pages_v4136,
     "metlab_separate_osp_vendor": 'selectbox("OSP Vendor"' in metlab_v4136,
     "osp_partial_receipts": "Receipt Batch Qty (pcs)" in osp_v4136 and "public.osp_receipts" in v4136_sql,

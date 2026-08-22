@@ -406,6 +406,49 @@ def render_entry()->None:
                 st.info('No additional active Part with the same Material Grade is available to add to this RMTC.')
 
 
+
+def render_approved_part_worksheet()->None:
+    subpage_navigation(('rmtc-entry','RMTC Entry',':material/fact_check:'),('rmtc-part','Part Worksheet',':material/format_list_bulleted:'),('rmtc-approval','Validation & Decision',':material/approval:'))
+    page_header('Approved RMTC · Add Part Worksheet','Extend an already Accepted RMTC to another compatible Part Number while existing approved Parts remain released for production.','RMTC')
+    svc=RMTCService(); perms=current_permissions('RMTC_ENTRY')
+    parts={str(p['id']):p for p in svc.parts()}
+    records=[r for r in svc.list() if str(r.get('status') or '') in ('APPROVED','PARTIALLY_APPROVED') and str(r.get('disposition') or '') in ('ACCEPTED','ACCEPTED_UNDER_RESERVE')]
+    labels={str(r['id']):f"{r.get('rmtc_number')} · Heat {r.get('heat_number')} · {r.get('certificate_quantity') or 0} kg · {str(r.get('disposition') or '').replace('_',' ').title()}" for r in records}
+    if not labels:
+        st.info('No Accepted / Accepted Under Reserve RMTC is available to extend to another Part Number.'); return
+    rid=st.selectbox('Approved RMTC',list(labels),format_func=lambda v:labels[v],key='approved_rmtc_worksheet_header')
+    header=svc.get(rid) or {}; covered=svc.covered_parts(rid); covered_ids={str(r.get('part_id')) for r in covered}
+    heat_bal=svc.heat_summary(str(header.get('heat_number') or '')) or {}
+    with stage_section('A','APPROVED RMTC & GLOBAL HEAT BALANCE','The original heat/certificate remains unchanged. New Part Worksheets share the same RMTC steel balance and may use the same approved Heat until its global balance is consumed.',key='approved_rmtc_balance'):
+        portal_table(pd.DataFrame([{
+            'RMTC':header.get('rmtc_number'),'Heat Number':header.get('heat_number'),'Material Grade':(svc.repo.get('material_grades',str(header.get('material_grade_id') or '')) or {}).get('grade_code'),
+            'RMTC Steel Qty kg':header.get('certificate_quantity'),'Inward Used kg':heat_bal.get('inward_steel_quantity_kg'),
+            'Available / Unallocated kg':heat_bal.get('available_unallocated_steel_quantity_kg') or heat_bal.get('available_steel_quantity_kg'),
+            'Covered Parts':len(covered),'Status':header.get('disposition'),
+        }]),hide_index=True,width='stretch')
+    with stage_section('B','CURRENT COVERED PART WORKSHEETS','Existing approved Part Worksheets remain valid and are not reset when another compatible Part is added.',key='approved_rmtc_current_parts'):
+        rows=[]
+        for row in covered:
+            part=parts.get(str(row.get('part_id'))) or {}
+            rows.append({'Part Number':part.get('part_number'),'FSI Part Number':part.get('fsi_part_number'),'Part Description':part.get('part_name'),'Worksheet': 'COMPLETED' if row.get('worksheet_completed_at') else 'PENDING','Automated Validation':row.get('approval_status'),'Final Decision':row.get('disposition'),'Planned pcs':row.get('planned_production_quantity_pcs'),'Planned Steel kg':row.get('planned_steel_quantity_kg')})
+        portal_table(style_status_dataframe(pd.DataFrame(rows)),hide_index=True,width='stretch',height=min(420,100+38*max(len(rows),1)))
+    with stage_section('C','ADD NEW PART WORKSHEET','Only active Parts with the same Material Grade and not already covered are offered. The new Part then opens in the normal Part Worksheet module for its Part-specific plan and validation.',key='approved_rmtc_add_part'):
+        compatible=[p for p in parts.values() if str(p.get('id')) not in covered_ids and str(p.get('material_grade_id') or '')==str(header.get('material_grade_id') or '')]
+        if not compatible:
+            st.info('No additional active Part with the same Material Grade is available.'); return
+        compat={str(p['id']):part_label(p) for p in compatible}
+        part_id=st.selectbox('New Part Number / FSI Part Number',list(compat),format_func=lambda v:compat[v],key='approved_rmtc_new_part')
+        selected=parts.get(part_id) or {}
+        portal_table(pd.DataFrame([{'Part Number':selected.get('part_number'),'FSI Part Number':selected.get('fsi_part_number'),'Part Description':selected.get('part_name'),'Material Grade':(svc.repo.get('material_grades',str(selected.get('material_grade_id') or '')) or {}).get('grade_code'),'Drawing':selected.get('drawing_number'),'Revision':selected.get('drawing_revision')}]),hide_index=True,width='stretch')
+        if st.button('Add Part Worksheet to Approved RMTC',type='primary',width='stretch',disabled=not perms['can_edit']):
+            try:
+                svc.add_part_to_approved_rmtc(rid,part_id)
+                st.session_state['part_rmtc_id']=rid; st.session_state['rmtc_part_choice']=part_id
+                save_success_popup('New Part Worksheet added to the approved RMTC. Existing accepted Parts remain released. Complete the new worksheet and validation for this Part.',queue_for_rerun=True)
+                st.switch_page(st.session_state['_qsms_pages']['rmtc-part'])
+            except Exception as exc: st.error(str(exc))
+
+
 def render_part()->None:
     subpage_navigation(('rmtc-records','RMTC Records',':material/table_view:'),('rmtc-approval','Validation & Approval',':material/approval:'))
     page_header('RMTC Entry · Part Worksheet','Chemical composition, Actual/Calculated Jominy, DI and properties for one covered part.','Step 2')
@@ -423,7 +466,7 @@ def render_part()->None:
     workflow_progress(_workflow_steps(header,part_rows))
     if st.button('Back to RMTC Header',icon=':material/arrow_back:',width='content'):
         _open_rmtc_header_for_edit(rid)
-    labels={str(row.get('part_id')):f"{(parts.get(str(row.get('part_id'))) or {}).get('part_number')} · {(parts.get(str(row.get('part_id'))) or {}).get('part_name')}" for row in part_rows}
+    labels={str(row.get('part_id')):part_label(parts.get(str(row.get('part_id'))) or {}) for row in part_rows}
     if not labels:st.warning('No covered parts exist.');return
     preferred=str(st.session_state.get('rmtc_part_choice') or '')
     part_id=st.selectbox('Part Worksheet',list(labels),index=list(labels).index(preferred) if preferred in labels else 0,format_func=lambda x:labels[x])
@@ -433,7 +476,7 @@ def render_part()->None:
     existing=svc.details(rid,part_id)
     writable=perms['can_edit'] or perms['can_create']
     with stage_section("A", 'PART & MATERIAL', 'Each selected part is a separate controlled worksheet.', key="rmtc_pages_render_part_a"):
-        portal_table(pd.DataFrame([{'RMTC':header.get('rmtc_number'),'Heat Number':header.get('heat_number'),'Internal Heat Code':header.get('heat_code'),'Part Number':part.get('part_number'),'Part Description':part.get('part_name'),'Material Grade':grade.get('grade_code'),'Status':header.get('status')}]),hide_index=True,width='stretch')
+        portal_table(pd.DataFrame([{'RMTC':header.get('rmtc_number'),'Heat Number':header.get('heat_number'),'Internal Heat Code':header.get('heat_code'),'Part Number':part.get('part_number'),'FSI Part Number':part.get('fsi_part_number'),'Part Description':part.get('part_name'),'Material Grade':grade.get('grade_code'),'Status':header.get('status')}]),hide_index=True,width='stretch')
 
         source_rows=svc.source_details(part_id)
         production_source=next((row for row in source_rows if str(row.get('supplier_id'))==str(header.get('supplier_id'))),{})

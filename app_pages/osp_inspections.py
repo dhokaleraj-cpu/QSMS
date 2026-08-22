@@ -63,7 +63,7 @@ def _pending_table(rows: list[dict], report_type: str, scope: str) -> None:
         "receipt_metlab_disposition"
     )
     frame = pd.DataFrame([{
-        "OSP Job": r.get("osp_job_number"), "Heat Number": r.get("heat_number"), "Part Number": r.get("part_number"),
+        "OSP Job": r.get("osp_job_number"), "Heat Number": r.get("heat_number"), "Part Number": r.get("part_number"), "FSI Part Number": r.get("fsi_part_number"),
         "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"), "Vendor Batch": r.get("vendor_batch_number"),
         "Quantity pcs": r.get("sample_quantity") if scope == "OSP_SAMPLE" else r.get("quantity_received"),
         "Decision": r.get(disposition_key) or "PENDING", "Status": r.get("status"),
@@ -113,12 +113,13 @@ def _render(report_type: str) -> None:
         plan = next(r for r in plans if str(r["id"]) == plan_id)
 
     with stage_section("B", 'OSP BATCH & PROCESS SPECIFICATION', key="osp_inspections__render_b"):
-        c = st.columns(5, gap="small")
+        c = st.columns(6, gap="small")
         c[0].text_input("Heat Number", value=str(job.get("heat_number") or ""), disabled=True)
         c[1].text_input("Part Number", value=str(job.get("part_number") or ""), disabled=True)
-        c[2].text_input("OSP Vendor", value=str(job.get("vendor_name") or ""), disabled=True)
-        c[3].text_input("OSP Process", value=str(job.get("process_name") or ""), disabled=True)
-        c[4].text_input("Vendor Batch", value=str(job.get("vendor_batch_number") or ""), disabled=True)
+        c[2].text_input("FSI Part Number", value=str(job.get("fsi_part_number") or ""), disabled=True)
+        c[3].text_input("OSP Vendor", value=str(job.get("vendor_name") or ""), disabled=True)
+        c[4].text_input("OSP Process", value=str(job.get("process_name") or ""), disabled=True)
+        c[5].text_input("Vendor Batch", value=str(job.get("vendor_batch_number") or ""), disabled=True)
         st.text_area("Process Specification", value=str(job.get("process_specification") or ""), disabled=True, height=68)
 
         report_id = str((existing or {}).get("id") or "")

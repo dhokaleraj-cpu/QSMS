@@ -6,6 +6,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 from core.ui import portal_table
+from core.selection_labels import part_label
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
@@ -62,6 +63,7 @@ def _pending_frame(rows: list[dict], parts: dict[str, dict], parties: dict[str, 
         "Date": row.get("inward_date"),
         "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"),
         "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"),
+        "FSI Part Number": (parts.get(str(row.get("part_id"))) or {}).get("fsi_part_number"),
         "Heat Number": row.get("heat_number"),
         "Steel kg": row.get("steel_quantity_kg") or row.get("quantity_received"),
         "Production pcs": row.get("production_quantity_pcs"),
@@ -128,7 +130,7 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
         scope_keys = list(STANDALONE_STAGES)
         current_scope = str((existing or {}).get("inspection_scope") or "RAW_MATERIAL_STAGE")
         scope = st.selectbox("Report Stage", scope_keys, index=scope_keys.index(current_scope) if current_scope in scope_keys else 0, format_func=lambda v: STANDALONE_STAGES[v], disabled=bool(existing))
-        part_map = {pid: f"{row.get('part_number')} · {row.get('part_name')}" for pid, row in parts.items()}
+        part_map = {pid: part_label(row) for pid, row in parts.items()}
         if not part_map:
             st.warning("No active Parts are available."); return
         current_part = str((existing or {}).get("part_id") or next(iter(part_map)))
@@ -338,12 +340,13 @@ def render_entry() -> None:
         c4.text_input("Inspection Stage", value=str((stages.get(str(plan.get("inspection_stage_id"))) or {}).get("stage_name") or "Not assigned"), disabled=True)
 
         sample_size = min(max(int((existing or {}).get("sample_size") or plan.get("default_sample_size") or 1), 1), 10)
-        c1, c2, c3, c4, c5 = st.columns(5, gap="small")
+        c1, c2, c3, c4, c5, c6 = st.columns(6, gap="small")
         report_no = c1.text_input("Report Number", value=str((existing or {}).get("report_number") or ""), placeholder="Auto on first save")
         inspection_date = c2.date_input("Inspection Date", value=date.fromisoformat(str((existing or {}).get("inspection_date"))[:10]) if (existing or {}).get("inspection_date") else date.today(), format="DD-MM-YYYY")
         c3.text_input("Part Number", value=str(part.get("part_number") or ""), disabled=True)
-        c4.text_input("Heat Number", value=str(inward.get("heat_number") or ""), disabled=True)
-        c5.text_input("Heat Code", value=str(inward.get("heat_code") or ""), disabled=True)
+        c4.text_input("FSI Part Number", value=str(part.get("fsi_part_number") or ""), disabled=True)
+        c5.text_input("Heat Number", value=str(inward.get("heat_number") or ""), disabled=True)
+        c6.text_input("Heat Code", value=str(inward.get("heat_code") or ""), disabled=True)
         c1, c2, c3, c4, c5 = st.columns(5, gap="small")
         c1.text_input("Supplier", value=str((parties.get(str(inward.get("supplier_id"))) or {}).get("party_name") or ""), disabled=True)
         c2.text_input("Steel Quantity (kg)", value=f"{float(inward.get('steel_quantity_kg') or inward.get('quantity_received') or 0):,.3f}", disabled=True)
@@ -438,5 +441,5 @@ def render_records() -> None:
             if password_delete_panel(repo=service.repo, table="inspection_reports", rows=[selected_row], labeler=lambda row: row.get("report_number"), key=f"delete_dimensional_{selected}", can_delete=perms["can_archive"], title="Delete Selected Dimensional Report"):
                 st.rerun()
     section_bar("DIMENSIONAL REGISTER")
-    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("inspection_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Conclusion": row.get("remarks"), "Result": row.get("overall_result"), "Final Decision": row.get("disposition"), "Decision Reason": row.get("disposition_reason"), "Status": row.get("status")} for row in filtered])
+    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("inspection_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "FSI Part Number": (parts.get(str(row.get("part_id"))) or {}).get("fsi_part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Conclusion": row.get("remarks"), "Result": row.get("overall_result"), "Final Decision": row.get("disposition"), "Decision Reason": row.get("disposition_reason"), "Status": row.get("status")} for row in filtered])
     portal_table(style_status_dataframe(display), hide_index=True, width="stretch", height=520)

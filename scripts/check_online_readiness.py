@@ -128,11 +128,16 @@ required = [
     "supabase/migrations/20260821170000_qcms_rmtc_osp_text_layout_sources_v4136.sql",
     "tests/test_v4136_rmtc_osp_text_layout_sources.py",
     "docs/RELEASE_4_13_6.md",
+    "supabase/migrations/20260822193000_qcms_supply_po_fsi_part_rmtc_worksheet_v4137.sql",
+    "core/purchase_order_reporting.py",
+    "templates/FSI_STANDARD_PO_TERMS_2023.pdf",
+    "tests/test_v4137_supply_po_fsi_part_rmtc_worksheet.py",
+    "docs/RELEASE_4_13_7.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.13.6 - RMTC part extension, OSP partial receipts and NUMBER/TEXT layouts",
+    "phase": "QCMS 4.13.7 - Supply PO, FSI Part identity and approved RMTC Part Worksheet",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

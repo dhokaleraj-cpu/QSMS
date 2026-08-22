@@ -8,7 +8,7 @@ def txt(path: str) -> str:
 
 
 def test_v4136_release_and_build_markers():
-    assert (ROOT / "VERSION").read_text().strip() == "4.13.6"
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.6", "4.13.7"}
     marker = "4136-RMTC-OSP-TEXT-LAYOUT-SOURCES"
     assert marker in txt("core/ui.py")
     assert marker in txt("core/auth.py")

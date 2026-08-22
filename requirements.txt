@@ -7,3 +7,5 @@ pytest>=9,<10
 plotly>=6.0,<7
 httpx>=0.28,<1
 reportlab>=4.4,<5
+
+pypdf>=5,<7

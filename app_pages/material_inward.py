@@ -36,9 +36,11 @@ def _record_from_state(service: InwardService) -> dict:
     return service.get(record_id) or {}
 
 
-def _source_label(row: dict) -> str:
+def _source_label(row: dict, part: dict | None = None) -> str:
+    part = part or {}
+    fsi = part.get("fsi_part_number") or row.get("fsi_part_number")
     return (
-        f"{row.get('rmtc_number')} · {row.get('part_number')} · {row.get('supplier_name')} · "
+        f"{row.get('rmtc_number')} · {row.get('part_number')} · FSI {fsi or '-'} · {row.get('supplier_name')} · "
         f"Heat {row.get('heat_number')} · RMTC balance "
         f"{float(row.get('available_steel_quantity_kg') or row.get('available_quantity') or 0):,.3f} kg"
     )
@@ -64,6 +66,7 @@ def render_entry() -> None:
     # When enabled, only pending RM Procurement records are selectable and the linked
     # Customer Order / Part becomes the poka-yoke source for the inward transaction.
     supply_service = SupplyChainService(service.repo)
+    part_master_map = {str(row["id"]): row for row in supply_service.parts()}
     launch_po_id = str(st.session_state.get("supply_rm_po_link_id") or "")
     existing_po_id = str(existing.get("supply_rm_purchase_order_id") or "")
     default_supply_link = bool(launch_po_id or existing_po_id)
@@ -149,6 +152,7 @@ def render_entry() -> None:
                 "Inward": row.get("inward_number"),
                 "Supplier": row.get("supplier_name"),
                 "Part Number": row.get("part_number"),
+                "FSI Part Number": (part_master_map.get(str(row.get("part_id"))) or {}).get("fsi_part_number"),
                 "Heat": row.get("heat_number"),
                 "Steel kg": row.get("steel_quantity_kg") or row.get("quantity_received"),
                 "Production pcs": row.get("production_quantity_pcs"),
@@ -166,7 +170,7 @@ def render_entry() -> None:
         accepted = [row for row in accepted if str(row.get("part_id") or "") == linked_part_id]
         if not accepted:
             st.warning("No accepted RMTC steel source is currently available for the Part Number linked to this RM Procurement record.")
-    source_map = {str(row["rmtc_part_approval_id"]): _source_label(row) for row in accepted}
+    source_map = {str(row["rmtc_part_approval_id"]): _source_label(row, part_master_map.get(str(row.get("part_id"))) or {}) for row in accepted}
     selected_existing = str(existing.get("rmtc_part_approval_id") or "")
     options = [""] + list(source_map)
     if selected_existing and selected_existing not in source_map:
@@ -208,7 +212,7 @@ def render_entry() -> None:
                 {"label": "RMTC Balance", "value": f"{available_for_entry:,.3f} kg", "foot": f"Reusable until global heat balance is consumed"},
             ])
             portal_table(pd.DataFrame([{
-                "Part Number": source.get("part_number"), "Part Description": source.get("part_name"),
+                "Part Number": source.get("part_number"), "FSI Part Number": (part_master_map.get(str(source.get("part_id"))) or {}).get("fsi_part_number"), "Part Description": source.get("part_name"),
                 "Supplier": source.get("supplier_name"), "Steel Mill": source.get("steel_mill_name"),
                 "Material Grade": source.get("material_grade"), "Heat Number": source.get("heat_number"),
                 "Internal Heat Code": source.get("heat_code"), "Section": source.get("section_size"),
@@ -368,7 +372,7 @@ def render_records() -> None:
     subpage_navigation(("dashboard", "Dashboard", ":material/arrow_back:"), ("records-center", "Records Centre", ":material/table_view:"), ("inward-entry", "New Material Inward / Edit", ":material/input:"))
     page_header("Material Inward · Records", context="Steel and production register")
     service = InwardService(); perms = current_permissions("MATERIAL_INWARD")
-    rows = service.list(); search = st.text_input("Search Inward, GRN, Supplier Invoice or Heat")
+    rows = service.list(); part_master_map = {str(row["id"]): row for row in service.repo.select("parts", limit=5000)}; search = st.text_input("Search Inward, GRN, Supplier Invoice or Heat")
     filtered = [row for row in rows if not search or search.casefold() in " ".join(str(row.get(key) or "") for key in ("inward_number", "grn_number", "heat_number", "heat_code", "invoice_number")).casefold()]
 
     if filtered:
@@ -401,7 +405,7 @@ def render_records() -> None:
     section_bar("MATERIAL INWARD REGISTER")
     df = pd.DataFrame([{
         "Inward Number": row.get("inward_number"), "Date": row.get("inward_date"), "GRN": row.get("grn_number"),
-        "Supplier": row.get("supplier_name"), "Part Number": row.get("part_number"), "Part Description": row.get("part_name"),
+        "Supplier": row.get("supplier_name"), "Part Number": row.get("part_number"), "FSI Part Number": (part_master_map.get(str(row.get("part_id"))) or {}).get("fsi_part_number"), "Part Description": row.get("part_name"),
         "Heat Number": row.get("heat_number"), "Heat Code": row.get("heat_code"),
         "Steel Qty kg": row.get("steel_quantity_kg") or row.get("quantity_received"),
         "Production Qty pcs": row.get("production_quantity_pcs"), "Accepted pcs": row.get("accepted_production_quantity_pcs"), "Rejected pcs": row.get("rejected_production_quantity_pcs"), "On Hold pcs": row.get("hold_production_quantity_pcs"), "Input Weight kg": row.get("input_weight_kg"),

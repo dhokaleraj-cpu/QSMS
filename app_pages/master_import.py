@@ -54,7 +54,7 @@ SHEET_HINTS = {
 }
 
 COMMON_SYNONYMS = {
-    "part description": "part_name", "part name": "part_name", "customer": "customer_id",
+    "part description": "part_name", "part name": "part_name", "fsi part number": "fsi_part_number", "fsi part no": "fsi_part_number", "customer": "customer_id",
     "material grade": "material_grade_id", "grade": "grade_code", "material number": "material_number",
     "drawing": "drawing_number", "revision": "revision", "drawing revision": "drawing_revision",
     "finished weight kg": "finished_weight_kg", "finish weight kg": "finished_weight_kg",
@@ -154,8 +154,8 @@ def _lookup_candidates(service: MasterService, lookup: str) -> list[tuple[str, s
             keys = [row.get("material_number"), row.get("grade_code")]
             label = f"{row.get('material_number') or ''} · {row.get('grade_code') or ''}".strip(" ·")
         elif lookup == "parts":
-            keys = [row.get("part_number"), row.get("part_name")]
-            label = f"{row.get('part_number') or ''} · {row.get('part_name') or ''}".strip(" ·")
+            keys = [row.get("part_number"), row.get("fsi_part_number"), row.get("part_name")]
+            label = f"{row.get('part_number') or ''} · FSI {row.get('fsi_part_number') or '-'} · {row.get('part_name') or ''}".strip(" ·")
         elif lookup == "processes":
             keys = [row.get("process_code"), row.get("process_name")]
             label = f"{row.get('process_code') or ''} · {row.get('process_name') or ''}".strip(" ·")

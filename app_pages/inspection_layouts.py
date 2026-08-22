@@ -13,12 +13,13 @@ from core.delete_service import password_delete_panel
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes
 from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.selection_labels import part_label
 
 
 def _maps(service: InspectionService):
     parts = service.parts(); processes = service.processes(); stages = service.stages()
     return (
-        parts, {str(r["id"]): f"{r.get('part_number')} · {r.get('part_name')}" for r in parts},
+        parts, {str(r["id"]): part_label(r) for r in parts},
         {str(r["id"]): f"{r.get('process_code')} · {r.get('process_name')}" for r in processes},
         {str(r["id"]): f"{r.get('stage_code')} · {r.get('stage_name')}" for r in stages},
     )
@@ -271,7 +272,7 @@ def render_records() -> None:
                 "INSPECTION LAYOUT RECORD",
                 {
                     "Plan Number": selected_row.get("plan_number"), "Revision": selected_row.get("revision"), "Layout Type": selected_row.get("layout_type"),
-                    "Layout Name": selected_row.get("layout_name"), "Part Number": (parts.get(str(selected_row.get("part_id"))) or {}).get("part_number"),
+                    "Layout Name": selected_row.get("layout_name"), "Part Number": (parts.get(str(selected_row.get("part_id"))) or {}).get("part_number"), "FSI Part Number": (parts.get(str(selected_row.get("part_id"))) or {}).get("fsi_part_number"),
                     "Process": (processes.get(str(selected_row.get("process_id"))) or {}).get("process_name"), "Stage": (stages.get(str(selected_row.get("inspection_stage_id"))) or {}).get("stage_name"),
                     "Default Samples": selected_row.get("default_sample_size"), "Format": selected_row.get("format_number"), "Status": selected_row.get("status"),
                 },
@@ -294,7 +295,7 @@ def render_records() -> None:
     display = pd.DataFrame([{
         "Plan Number": row.get("plan_number"), "Revision": row.get("revision"), "Layout Type": row.get("layout_type"),
         "Inward Type": str(row.get("inward_type") or "MATERIAL_INWARD").replace("_", " ").title(),
-        "Layout Name": row.get("layout_name"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"),
+        "Layout Name": row.get("layout_name"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "FSI Part Number": (parts.get(str(row.get("part_id"))) or {}).get("fsi_part_number"),
         "Process": (processes.get(str(row.get("process_id"))) or {}).get("process_name"),
         "Stage": (stages.get(str(row.get("inspection_stage_id"))) or {}).get("stage_name"),
         "Samples": row.get("default_sample_size"), "Format": row.get("format_number"), "Status": row.get("status"),

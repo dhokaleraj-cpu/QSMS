@@ -6,6 +6,7 @@ from typing import Any, Mapping, Sequence
 
 from core.repository import Repository
 from core.selection_labels import party_label
+from core.purchase_order_reporting import DEFAULT_SPECIAL_INSTRUCTIONS
 
 MONTHS = {
     1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
@@ -42,6 +43,22 @@ def number(value: Any) -> float:
         return float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def month_start(value: date | str | None = None) -> date:
+    if isinstance(value, date):
+        d = value
+    else:
+        try:
+            d = datetime.fromisoformat(str(value or date.today().isoformat())[:10]).date()
+        except ValueError:
+            d = date.today()
+    return date(d.year, d.month, 1)
+
+
+def add_months(value: date, months: int) -> date:
+    index = value.year * 12 + (value.month - 1) + int(months)
+    return date(index // 12, index % 12 + 1, 1)
 
 
 def monthly_reference(part_number: str, month: int, year: int) -> str:
@@ -142,6 +159,12 @@ class SupplyChainService:
             result.append(item)
         return result
 
+    def purchase_orders(self) -> list[dict]:
+        return self.repo.select("supply_purchase_orders", order_by="created_at", desc=True, limit=10000)
+
+    def purchase_order_items(self, purchase_order_id: str | None = None) -> list[dict]:
+        return self.repo.select("supply_purchase_order_items", eq={"purchase_order_id": purchase_order_id} if purchase_order_id else None, order_by="created_at", desc=False, limit=10000)
+
     def rm_purchase_orders(self) -> list[dict]:
         return self.repo.select("supply_rm_purchase_orders", order_by="created_at", desc=True, limit=10000)
 
@@ -183,7 +206,7 @@ class SupplyChainService:
         customer = parties.get(str(order.get("customer_id"))) or {}
         return (
             f"{order.get('master_reference_no')} · Pos {order.get('order_position') or '-'} · "
-            f"{part.get('part_number') or ''} · {party_label(customer)} · {number(order.get('order_qty_pcs')):,.0f} pcs"
+            f"{part.get('part_number') or ''} · FSI {part.get('fsi_part_number') or '-'} · {party_label(customer)} · {number(order.get('order_qty_pcs')):,.0f} pcs"
         )
 
     def order_context(self, order: Mapping[str, Any] | str) -> dict[str, Any]:
@@ -201,6 +224,7 @@ class SupplyChainService:
             "Position": order.get("order_position"),
             "Customer": party_label(customer),
             "Part Number": part.get("part_number"),
+            "FSI Part Number": part.get("fsi_part_number"),
             "Part Description": part.get("part_name"),
             "Material Grade": grade.get("grade_code"),
             "Drawing / Revision": " / ".join(v for v in (str(part.get("drawing_number") or "").strip(), str(part.get("drawing_revision") or "").strip()) if v),
@@ -208,9 +232,223 @@ class SupplyChainService:
             "Order Qty pcs": number(order.get("order_qty_pcs")),
             "Gross kg/pc": number(order.get("gross_weight_kg_snapshot")),
             "RM Required kg": number(order.get("required_rm_kg")),
+            "Available Stock pcs": number(order.get("available_stock_pcs_snapshot")),
+            "3 Month Schedule pcs": number(order.get("three_month_schedule_pcs_snapshot")),
+            "RM Procurement Required": bool(order.get("rm_procurement_required", True)),
+            "Procurement Decision": order.get("procurement_decision"),
             "Delivery Date": order.get("customer_delivery_date"),
             "Status": order.get("status"),
         }
+
+    # ------------------------------------------------ stock / procurement decision
+    def system_available_qty(self, part_id: str) -> float:
+        """Production quantity currently available in QCMS for this Part Number."""
+        rows = self.repo.select("production_batches", eq={"part_id": part_id}, limit=20000)
+        return round(sum(max(number(r.get("quantity_available")), 0.0) for r in rows if str(r.get("status") or "").upper() not in {"REJECTED", "CANCELLED", "SCRAPPED"}), 3)
+
+    def three_month_schedule_demand(self, part_id: str, customer_id: str | None = None, *, anchor: date | str | None = None, exclude_order_id: str | None = None) -> float:
+        start = month_start(anchor)
+        end = add_months(start, 3)
+        total = 0.0
+        for row in self.customer_orders():
+            if str(row.get("id")) == str(exclude_order_id or "") or str(row.get("status")) == "CANCELLED":
+                continue
+            if str(row.get("part_id")) != str(part_id):
+                continue
+            if customer_id and str(row.get("customer_id")) != str(customer_id):
+                continue
+            if str(row.get("order_type")) != "MONTHLY_SCHEDULE":
+                continue
+            schedule = parse_business_date(row.get("schedule_month"))
+            if not schedule:
+                continue
+            d = month_start(schedule)
+            if start <= d < end:
+                total += number(row.get("order_qty_pcs"))
+        return round(total, 3)
+
+    def procurement_check(self, part_id: str, customer_id: str | None = None, *, anchor: date | str | None = None, proposed_three_month_qty: float = 0.0, exclude_order_id: str | None = None) -> dict[str, Any]:
+        stock = self.system_available_qty(part_id)
+        existing = self.three_month_schedule_demand(part_id, customer_id, anchor=anchor, exclude_order_id=exclude_order_id)
+        demand = round(existing + max(number(proposed_three_month_qty), 0.0), 3)
+        shortage = round(max(demand - stock, 0.0), 3)
+        return {
+            "available_stock_pcs": stock,
+            "existing_three_month_schedule_pcs": existing,
+            "three_month_schedule_pcs": demand,
+            "shortage_pcs": shortage,
+            "rm_procurement_allowed": shortage > 0.0001,
+        }
+
+    # ------------------------------------------------ controlled Purchase Orders
+    def purchase_order(self, purchase_order_id: str) -> dict | None:
+        return self.repo.get("supply_purchase_orders", purchase_order_id)
+
+    def purchase_order_item(self, purchase_order_id: str) -> dict | None:
+        rows = self.purchase_order_items(purchase_order_id)
+        return rows[0] if rows else None
+
+    @staticmethod
+    def _party_snapshot(row: Mapping[str, Any]) -> dict[str, Any]:
+        return {key: row.get(key) for key in ("party_code", "party_name", "address", "city", "state", "country", "tax_identifier", "phone", "email", "contact_person")}
+
+    def purchase_order_received_qty(self, purchase_order_id: str) -> float:
+        po = self.purchase_order(purchase_order_id) or {}
+        if str(po.get("po_type")) == "RAW_MATERIAL":
+            stages = self.repo.select("supply_rm_purchase_orders", eq={"purchase_order_id": purchase_order_id}, limit=1000)
+            ids = {str(r.get("id")) for r in stages}
+            return round(sum(number(r.get("received_qty_kg")) for r in self.rm_receipts() if str(r.get("rm_purchase_order_id")) in ids), 3)
+        stages = self.repo.select("supply_forging_orders", eq={"purchase_order_id": purchase_order_id}, limit=1000)
+        ids = {str(r.get("id")) for r in stages}
+        return round(sum(number(r.get("received_qty_pcs")) for r in self.forging_receipts() if str(r.get("forging_order_id")) in ids), 3)
+
+    def sync_purchase_order_status(self, purchase_order_id: str | None) -> str:
+        if not purchase_order_id:
+            return ""
+        po = self.purchase_order(purchase_order_id) or {}
+        if not po or str(po.get("status")) == "CANCELLED":
+            return str(po.get("status") or "")
+        ordered = sum(number(r.get("quantity")) for r in self.purchase_order_items(purchase_order_id))
+        received = self.purchase_order_received_qty(purchase_order_id)
+        status = "CLOSED" if ordered > 0 and received + 0.0001 >= ordered else ("PARTIAL" if received > 0 else "OPEN")
+        if str(po.get("status")) != status:
+            self.repo.update("supply_purchase_orders", purchase_order_id, {"status": status})
+        return status
+
+    def pending_forging_po_sources(self) -> list[dict]:
+        rows: list[dict] = []
+        # Direct-forging flow: Customer Order is the PO source.
+        for order in self.pending_direct_forging_orders():
+            row = dict(order)
+            row["_source_type"] = "CUSTOMER_ORDER"
+            row["_source_id"] = str(order.get("id"))
+            row["_customer_order_id"] = str(order.get("id"))
+            row["_balance_pcs"] = number(order.get("forging_balance_pcs"))
+            rows.append(row)
+        # FSI-RM flow: Forging PO is released after RM-to-Forger dispatch.
+        linked = {str(r.get("rm_dispatch_id")) for r in self.forging_orders() if r.get("rm_dispatch_id") and str(r.get("status")) != "CANCELLED"}
+        for dispatch in self.rm_dispatches():
+            if str(dispatch.get("id")) in linked:
+                continue
+            order = self.order(str(dispatch.get("customer_order_id") or "")) or {}
+            if not order or self.flow_for_order(order) != FLOW_FSI_RM:
+                continue
+            row = {**order, **{f"dispatch_{k}": v for k, v in dispatch.items()}}
+            row["_source_type"] = "RM_DISPATCH"
+            row["_source_id"] = str(dispatch.get("id"))
+            row["_customer_order_id"] = str(order.get("id"))
+            row["_balance_pcs"] = max(number(order.get("order_qty_pcs")) - self.totals(str(order.get("id")))["forging_ordered_pcs"], 0.0)
+            row["_rm_dispatch"] = dispatch
+            rows.append(row)
+        rows.sort(key=lambda r: (str(r.get("customer_delivery_date") or "9999-12-31"), str(r.get("master_reference_no") or "")))
+        return rows
+
+    def create_purchase_order(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        p = dict(payload)
+        po_type = str(p.get("po_type") or "").upper()
+        if po_type not in {"RAW_MATERIAL", "FORGING"}:
+            raise ValueError("Select Raw Material or Forging Purchase Order type.")
+        order_id = str(p.get("customer_order_id") or "")
+        order = self.order(order_id) or {}
+        if not order:
+            raise ValueError("Select a valid Customer Order / Schedule source.")
+        part = self.repo.get("parts", str(order.get("part_id") or "")) or {}
+        fsi_part_number = str(part.get("fsi_part_number") or "").strip()
+        if not fsi_part_number:
+            raise ValueError("FSI Part Number is required in Part Master before a supplier-facing Purchase Order can be created.")
+        supplier_id = str(p.get("supplier_id") or "")
+        supplier = self.repo.get("parties", supplier_id) or {}
+        if not supplier:
+            raise ValueError("Select a valid Supplier.")
+        raw = self.repo.get("part_raw_material_details", str(order.get("raw_material_detail_id") or "")) or {}
+        if po_type == "RAW_MATERIAL":
+            if not bool(order.get("rm_procurement_required", True)):
+                raise ValueError("RM Procurement is not enabled for this Customer Order because system stock covers the saved three-month schedule decision.")
+            live_check = self.procurement_check(
+                str(order.get("part_id") or ""), str(order.get("customer_id") or ""),
+                anchor=order.get("schedule_month") or order.get("customer_delivery_date") or order.get("order_date"),
+            )
+            if not bool(live_check.get("rm_procurement_allowed")):
+                raise ValueError("Raw Material Purchase Order is blocked: current system available quantity is equal to or greater than the rolling three-month schedule quantity.")
+        quantity = number(p.get("quantity"))
+        if quantity <= 0:
+            raise ValueError("Purchase Order quantity must be greater than zero.")
+        unit_price = max(number(p.get("unit_price")), 0.0)
+        gst_percent = max(number(p.get("gst_percent")), 0.0)
+        subtotal = round(quantity * unit_price, 2)
+        gst_amount = round(subtotal * gst_percent / 100.0, 2)
+        state = str(supplier.get("state") or "").strip().casefold()
+        intra_state = not state or state in {"maharashtra", "mh"}
+        cgst = round(gst_amount / 2.0, 2) if intra_state else 0.0
+        sgst = round(gst_amount / 2.0, 2) if intra_state else 0.0
+        igst = gst_amount if not intra_state else 0.0
+        other = max(number(p.get("other_amount")), 0.0)
+        grand_total = round(subtotal + cgst + sgst + igst + other, 2)
+        po_number = str(self.repo.rpc("qcms_next_supply_po_number") or "").strip()
+        if not po_number:
+            raise RuntimeError("QCMS could not allocate the next Purchase Order number.")
+        header = self.repo.insert("supply_purchase_orders", {
+            "po_number": po_number, "po_type": po_type, "supplier_id": supplier_id,
+            "order_date": p.get("order_date") or date.today().isoformat(), "delivery_date": p.get("delivery_date"),
+            "requisitioner": p.get("requisitioner"), "ship_via": p.get("ship_via") or "Road",
+            "incoterm": p.get("incoterm") or "DAP, CHAKAN", "payment_term": p.get("payment_term") or "NET 30 DAYS AFTER GRN",
+            "quotation_reference": p.get("quotation_reference"), "quotation_date": p.get("quotation_date"), "old_po_reference": p.get("old_po_reference"),
+            "currency": p.get("currency") or "INR", "plant_snapshot": {"name": "Four Star Industries Private Limited D9", "address1": "Plot No.D9, Chakan MIDC PH II", "address2": "Bhamboli, Khed", "address3": "Pune 410501", "tax_identifier": "27AAGCF3769A1ZP", "phone": "022 40104412", "email": "orders@fourstarindustries.com"},
+            "vendor_snapshot": self._party_snapshot(supplier), "ship_to_snapshot": {"name": "Four Star Industries Private Limited D9", "address1": "Plot No.D9, Chakan MIDC PH II", "address2": "Bhamboli, Khed", "address3": "Pune 410501", "tax_identifier": "27AAGCF3769A1ZP", "phone": "022 40104412", "email": "orders@fourstarindustries.com"},
+            "remarks": p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.", "special_instructions": p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,
+            "subtotal": subtotal, "cgst_amount": cgst, "sgst_amount": sgst, "igst_amount": igst, "other_amount": other, "grand_total": grand_total, "status": "OPEN",
+        })
+        item_description = str(p.get("item_description") or part.get("part_name") or "").strip()
+        item = self.repo.insert("supply_purchase_order_items", {
+            "purchase_order_id": header.get("id"), "customer_order_id": order_id, "part_id": part.get("id"), "material_grade_id": part.get("material_grade_id"),
+            "item_no": fsi_part_number, "fsi_part_number_snapshot": fsi_part_number, "original_part_number_snapshot": part.get("part_number"), "item_description": item_description,
+            "rm_section": raw.get("section_size") or part.get("section_size"), "quantity": quantity, "uom": p.get("uom") or ("KGS" if po_type == "RAW_MATERIAL" else "NOS"),
+            "unit_price": unit_price, "gst_percent": gst_percent, "gst_amount": gst_amount, "line_total": subtotal,
+            "forging_weight_kg": raw.get("forging_weight_kg") or part.get("forging_weight_kg"), "gross_weight_kg": raw.get("gross_weight_kg") or part.get("gross_weight_kg"),
+            "rm_rate_per_kg": p.get("rm_rate_per_kg"), "tool_cost_text": p.get("tool_cost_text"), "profit_percent": p.get("profit_percent"),
+            "rejection_icc_text": p.get("rejection_icc_text"), "packaging": p.get("packaging"), "remarks": p.get("item_remarks"),
+        })
+        if po_type == "RAW_MATERIAL":
+            stage = self.save_transaction("supply_rm_purchase_orders", {
+                "customer_order_id": order_id, "rm_supplier_id": supplier_id, "supplier_order_no": po_number,
+                "order_date": header.get("order_date"), "ordered_qty_kg": quantity, "expected_date": header.get("delivery_date"), "status": "OPEN",
+                "remarks": "Controlled Purchase Order " + po_number, "purchase_order_id": header.get("id"),
+            })
+        else:
+            dispatch = p.get("rm_dispatch") or {}
+            stage_payload = {
+                "customer_order_id": order_id, "forging_supplier_id": supplier_id, "supplier_order_no": po_number,
+                "order_date": header.get("order_date"), "order_qty_pcs": quantity,
+                "required_rm_kg": round(quantity * number(order.get("gross_weight_kg_snapshot")), 3), "expected_date": header.get("delivery_date"),
+                "status": "OPEN", "remarks": "Controlled Purchase Order " + po_number, "purchase_order_id": header.get("id"),
+            }
+            if dispatch:
+                stage_payload.update({"rm_dispatch_id": dispatch.get("id"), "inward_lot_id": dispatch.get("inward_lot_id"), "heat_number": dispatch.get("heat_number"), "heat_code": dispatch.get("heat_code")})
+            stage = self.save_transaction("supply_forging_orders", stage_payload)
+        self.sync_order_status(order_id)
+        return {"header": header, "item": item, "stage": stage}
+
+    def purchase_order_rows(self) -> list[dict]:
+        parts, parties, grades = self.master_maps()
+        headers = {str(r.get("id")): r for r in self.purchase_orders()}
+        rows: list[dict] = []
+        for item in self.purchase_order_items():
+            header = headers.get(str(item.get("purchase_order_id"))) or {}
+            part = parts.get(str(item.get("part_id"))) or {}
+            supplier = parties.get(str(header.get("supplier_id"))) or {}
+            grade = grades.get(str(item.get("material_grade_id"))) or {}
+            received = self.purchase_order_received_qty(str(header.get("id")))
+            ordered = number(item.get("quantity"))
+            rows.append({
+                "PO Number": header.get("po_number"), "PO Type": str(header.get("po_type") or "").replace("_", " ").title(), "PO Date": header.get("order_date"),
+                "Delivery Date": header.get("delivery_date"), "Supplier": party_label(supplier), "Part Number": item.get("original_part_number_snapshot") or part.get("part_number"),
+                "FSI Part Number": item.get("fsi_part_number_snapshot") or part.get("fsi_part_number"), "Part Description": item.get("item_description") or part.get("part_name"),
+                "Material Grade": grade.get("grade_code"), "RM Section": item.get("rm_section"), "Ordered Qty": ordered, "UOM": item.get("uom"),
+                "Received Qty": received, "Pending Qty": max(ordered-received, 0), "Unit Price": item.get("unit_price"), "GST %": item.get("gst_percent"),
+                "Total": header.get("grand_total"), "Status": header.get("status"), "_po_id": header.get("id"), "_part_id": item.get("part_id"), "_supplier_id": header.get("supplier_id"),
+            })
+        rows.sort(key=lambda r: (str(r.get("Delivery Date") or "9999-12-31"), str(r.get("PO Number") or "")))
+        return rows
 
     # ----------------------------------------------------------- duplicate guards
     def _assert_purchase_order_duplicate(self, payload: Mapping[str, Any], *, record_id: str | None = None) -> None:
@@ -258,6 +496,22 @@ class SupplyChainService:
         if qty <= 0 or gross <= 0:
             raise ValueError("Order Quantity and Forging Supplier Gross Weight must be greater than zero.")
         p["required_rm_kg"] = round(qty * gross, 3) if flow == FLOW_FSI_RM else 0.0
+        check_override = p.pop("_procurement_check", None)
+        check = dict(check_override) if isinstance(check_override, Mapping) else self.procurement_check(str(p.get("part_id") or ""), str(p.get("customer_id") or ""), anchor=p.get("schedule_month") or p.get("customer_delivery_date") or p.get("order_date"), proposed_three_month_qty=number(p.pop("proposed_three_month_qty", qty if str(p.get("order_type")) == "PURCHASE_ORDER" else 0)))
+        requested = bool(p.get("rm_procurement_required", check["rm_procurement_allowed"]))
+        if flow == FLOW_DIRECT_FORGING:
+            requested = False; decision = "DIRECT_FORGING"
+        elif not check["rm_procurement_allowed"]:
+            requested = False; decision = "AVAILABLE_STOCK"
+        else:
+            decision = "REQUIRED" if requested else "MANUAL_NOT_REQUIRED"
+        p.update({
+            "rm_procurement_required": requested,
+            "available_stock_pcs_snapshot": check["available_stock_pcs"],
+            "three_month_schedule_pcs_snapshot": check["three_month_schedule_pcs"],
+            "procurement_shortage_pcs_snapshot": check["shortage_pcs"],
+            "procurement_decision": decision,
+        })
         p["remarks"] = flow_remarks(p.get("remarks"), flow)
         if str(p.get("order_type")) == "MONTHLY_SCHEDULE":
             schedule = str(p.get("schedule_month") or "")[:10]
@@ -292,6 +546,15 @@ class SupplyChainService:
         if qty <= 0 or gross <= 0:
             raise ValueError("Order Quantity and Gross Weight must be greater than zero.")
         p["required_rm_kg"] = round(qty * gross, 3) if flow == FLOW_FSI_RM else 0.0
+        check = self.procurement_check(str(merged.get("part_id") or ""), str(merged.get("customer_id") or ""), anchor=merged.get("schedule_month") or merged.get("customer_delivery_date") or merged.get("order_date"), proposed_three_month_qty=number(p.pop("proposed_three_month_qty", 0)), exclude_order_id=record_id)
+        requested = bool(merged.get("rm_procurement_required", check["rm_procurement_allowed"])) if flow == FLOW_FSI_RM else False
+        if flow == FLOW_DIRECT_FORGING:
+            decision = "DIRECT_FORGING"
+        elif not check["rm_procurement_allowed"]:
+            requested = False; decision = "AVAILABLE_STOCK"
+        else:
+            decision = "REQUIRED" if requested else "MANUAL_NOT_REQUIRED"
+        p.update({"rm_procurement_required":requested,"available_stock_pcs_snapshot":check["available_stock_pcs"],"three_month_schedule_pcs_snapshot":check["three_month_schedule_pcs"],"procurement_shortage_pcs_snapshot":check["shortage_pcs"],"procurement_decision":decision})
         p["remarks"] = flow_remarks(merged.get("remarks"), flow)
         if str(merged.get("order_type")) == "PURCHASE_ORDER":
             ref = str(merged.get("customer_order_no") or "").strip()
@@ -348,6 +611,14 @@ class SupplyChainService:
             if str(order.get("status")) in {"COMPLETED", "CANCELLED"}:
                 continue
             if self.flow_for_order(order) != FLOW_FSI_RM:
+                continue
+            if not bool(order.get("rm_procurement_required", True)):
+                continue
+            live_check = self.procurement_check(
+                str(order.get("part_id") or ""), str(order.get("customer_id") or ""),
+                anchor=order.get("schedule_month") or order.get("customer_delivery_date") or order.get("order_date"),
+            )
+            if not bool(live_check.get("rm_procurement_allowed")):
                 continue
             total = self.totals(str(order["id"]))["rm_ordered_kg"]
             required = number(order.get("required_rm_kg"))
@@ -491,6 +762,7 @@ class SupplyChainService:
         existing=self.repo.find_one("supply_rm_receipts",eq={"inward_lot_id":inward_id})
         saved=self.repo.update("supply_rm_receipts",str(existing["id"]),payload) if existing else self.repo.insert("supply_rm_receipts",payload)
         self.sync_order_status(str(order.get("id")))
+        self.sync_purchase_order_status(str(po.get("purchase_order_id") or ""))
         return saved
 
     # --------------------------------------------------------------- import logic
@@ -568,6 +840,7 @@ class SupplyChainService:
                 "PosNr": order.get("order_position"),
                 "Customer": party_label(customer),
                 "Part Number": part.get("part_number"),
+                "FSI Part Number": part.get("fsi_part_number"),
                 "Part Description": part.get("part_name"),
                 "Order / Schedule Qty pcs": qty,
                 "Dispatched pcs": dispatched,
@@ -591,12 +864,13 @@ class SupplyChainService:
         drives the dispatch balance.
         """
         source = list(rows or self.order_mis_rows())
-        groups: dict[tuple[str, str, str, str], dict[str, float]] = {}
+        groups: dict[tuple[str, str, str, str, str], dict[str, float]] = {}
         for row in source:
             key = (
                 str(row.get("Month") or "Unscheduled"),
                 str(row.get("Customer") or "-"),
                 str(row.get("Part Number") or "-"),
+                str(row.get("FSI Part Number") or "-"),
                 str(row.get("Part Description") or "-"),
             )
             bucket = groups.setdefault(key, {"ordered": 0.0, "dispatched": 0.0})
@@ -604,13 +878,14 @@ class SupplyChainService:
             bucket["dispatched"] += number(row.get("Dispatched pcs"))
         result = []
         for key in sorted(groups):
-            month, customer, part_number, part_description = key
+            month, customer, part_number, fsi_part_number, part_description = key
             ordered = groups[key]["ordered"]
             dispatched = groups[key]["dispatched"]
             result.append({
                 "Month": month,
                 "Customer Name": customer,
                 "Part Number": part_number,
+                "FSI Part Number": fsi_part_number,
                 "Part Description": part_description,
                 "Order / Schedule Qty pcs": ordered,
                 "Dispatched pcs": dispatched,
