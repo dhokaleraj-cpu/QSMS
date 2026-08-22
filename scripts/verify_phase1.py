@@ -645,8 +645,25 @@ if "display_items = list(items)[:6]" not in v4138_po or "TECHNICAL DATA" not in 
 if "Backfilled from controlled QCMS Purchase Order history" not in v4138_backfill:
     errors.append("QCMS 4.13.8 historical price/source backfill is missing")
 
+# QCMS 4.13.9 corrective linkage / incremental RMTC / item-wise PO technical data contract.
+v4139_marker = "4139-RM-PROCUREMENT-LINK-RMTC-PART-PO-ITEM-TECH"
+v4139_sql = (ROOT / "supabase" / "migrations" / "20260822224500_qcms_rmtc_incremental_part_release_guard_v4139.sql").read_text(encoding="utf-8")
+v4139_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v4139_po = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
+if v4139_marker not in ui_text or v4139_marker not in auth_text or v4139_marker not in v4137_streamlit:
+    errors.append("QCMS 4.13.9 build fingerprint is missing")
+if v4139_service.count('proposed_three_month_qty=number(order.get("order_qty_pcs")) if str(order.get("order_type") or "") == "PURCHASE_ORDER" else 0.0') < 2:
+    errors.append("QCMS 4.13.9 Customer PO procurement recheck fix is missing")
+if "v_pending_decisions" not in v4139_sql or "PARTIALLY_APPROVED permits released Parts" not in v4139_sql:
+    errors.append("QCMS 4.13.9 incremental approved-RMTC Part guard is missing")
+if "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA" not in v4139_po or "compact_technical_pairs" not in v4139_po:
+    errors.append("QCMS 4.13.9 item-wise PO technical data print sequence is missing")
+
 report = {
-    "release": "QCMS 4.13.8 Multi RM PO + Supplier/FSI Part Price History + Part Master Technical Data",
+    "release": "QCMS 4.13.9 RM Procurement Link + Incremental RMTC Part + Item-wise PO Technical Data",
+    "customer_order_rm_procurement_link_fix": v4139_service.count('proposed_three_month_qty=number(order.get("order_qty_pcs")) if str(order.get("order_type") or "") == "PURCHASE_ORDER" else 0.0') >= 2,
+    "incremental_approved_rmtc_part_guard": "v_pending_decisions" in v4139_sql,
+    "item_wise_po_technical_data": "compact_technical_pairs" in v4139_po and "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA" in v4139_po,
     "multi_rm_po_sources": "Select Customer Orders / Schedules for this RM Purchase Order" in v4138_supply and "supply_purchase_order_sources" in v4138_service,
     "supplier_fsi_price_history": "part_supplier_price_history" in v4138_sql and "def current_price" in v4138_service,
     "part_master_po_technical_data": "Save Supplier Technical Data" in v4138_part and "technical_data_snapshot" in v4138_service,

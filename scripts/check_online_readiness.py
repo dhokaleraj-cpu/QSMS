@@ -137,11 +137,14 @@ required = [
     "supabase/migrations/20260822213100_qcms_multi_rm_po_history_backfill_v4138.sql",
     "tests/test_v4138_multi_rm_po_price_history_technical_data.py",
     "docs/RELEASE_4_13_8.md",
+    "supabase/migrations/20260822224500_qcms_rmtc_incremental_part_release_guard_v4139.sql",
+    "tests/test_v4139_rm_procurement_rmtc_po_item_tech.py",
+    "docs/RELEASE_4_13_9.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.13.8 - Multi RM PO, Supplier/FSI Part Price History and Part Master Technical Data",
+    "phase": "QCMS 4.13.9 - RM Procurement Link, Incremental RMTC Part Worksheet and Item-wise PO Technical Data",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

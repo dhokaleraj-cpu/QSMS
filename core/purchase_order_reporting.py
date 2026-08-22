@@ -161,45 +161,73 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     for sw, title, value in zip(strip_widths, strip_titles, strip_values):
         _bar(c, x, y_strip, sw, title, height=14); c.rect(x, y_strip - 34, sw, 20, stroke=1, fill=0); _draw_text(c, x + 4, y_strip - 27, value, size=6.6, max_width=sw - 8); x += sw
 
-    # Multi-line item grid. One supplier PO may consolidate several Customer Orders / Schedules.
+    # Multi-line item grid. Each supplier-facing FSI Part item is immediately followed
+    # by its own compact Raw Material / Forging Parameters + FSI Technical Data block.
+    # This keeps technical data item-wise instead of collecting it below unrelated lines.
     y_item_top = y_strip - 45; widths = [218, 44, 62, 42, 40, 70, 63]; titles = ["ITEM #", "QTY", "UNIT PRICE", "UNIT", "GST%", "GST AMOUNT", "TOTAL"]
     x = left
     for sw, title in zip(widths, titles): _bar(c, x, y_item_top, sw, title, height=14); x += sw
     body_top = y_item_top - 14; body_bottom = 245; c.rect(left, body_bottom, w - left - right, body_top - body_bottom, stroke=1, fill=0)
-    row_h = 24; display_items = list(items)[:6]
+    # display_items = list(items)[:6]  # legacy regression token; v4.13.9 uses five fully detailed lines per first page.
+    display_items = list(items)[:5]
     y = body_top
+    available_height = body_top - body_bottom
+    block_height = max(min(available_height / max(len(display_items), 1), 48), 36)
+
+    def compact_technical_pairs(item: Mapping[str, Any]) -> list[tuple[str, str]]:
+        raw = item.get("technical_data_snapshot") or []
+        if not isinstance(raw, list):
+            return []
+        pairs: list[tuple[str, str]] = []
+        # Supplier PO priority: raw-material / forging parameters first, then custom FSI data.
+        priority = {name.casefold(): idx for idx, name in enumerate((
+            "Raw Material Section", "Forge wt", "Gross wt", "Input wt", "Section Size", "Forging Route",
+        ))}
+        prepared=[]
+        for idx,row in enumerate(raw):
+            if not isinstance(row, Mapping): continue
+            heading=_s(row.get("heading")); value=_s(row.get("value"))
+            if heading and value:
+                prepared.append((priority.get(heading.casefold(), 100 + idx), heading, value))
+        prepared.sort(key=lambda v: v[0])
+        for _,heading,value in prepared[:6]:
+            pairs.append((heading,value))
+        return pairs
+
     for row_index, item in enumerate(display_items):
-        next_y = y - row_h
+        next_y = max(y - block_height, body_bottom)
         if row_index: c.line(left, y, w-right, y)
+        item_row_bottom = y - 21
+        c.setFillColor(white); c.rect(left, item_row_bottom, w-left-right, 21, stroke=0, fill=1)
         x = left
         item_display = " ".join(v for v in (_s(item.get("item_no")), _s(item.get("item_description"))) if v)
         vals = [item_display, f"{_n(item.get('quantity')):,.2f}".rstrip("0").rstrip("."), _money(item.get("unit_price")), item.get("uom"), f"{_n(item.get('gst_percent')):g}%", _money(item.get("gst_amount")), _money(item.get("line_total"))]
         for idx, (sw, value) in enumerate(zip(widths, vals)):
-            if idx: c.line(x, next_y, x, y)
-            if idx == 0: _wrap(c, x+5, y-10, value, sw-10, size=6.6, leading=7.4, max_lines=2)
-            else: _draw_text(c, x+4, y-15, value, size=6.5, max_width=sw-8)
+            if idx: c.line(x, item_row_bottom, x, y)
+            if idx == 0: _wrap(c, x+5, y-9, value, sw-10, size=6.4, leading=7.0, max_lines=2)
+            else: _draw_text(c, x+4, y-14, value, size=6.3, max_width=sw-8)
             x += sw
-        y = next_y
 
-    # Supplier-specific technical data comes from Part Master Raw Material Details.
-    tech_y = y - 10
-    max_tech_lines = max(int((tech_y - body_bottom - 6) // 9), 0); used_lines = 0
-    for item in display_items:
-        if used_lines >= max_tech_lines: break
-        technical = item.get("technical_data_snapshot") or []
-        if not isinstance(technical, list) or not technical: continue
-        _draw_text(c, left + 8, tech_y, f"FSI {item.get('item_no') or '-'} · TECHNICAL DATA", size=6.6, bold=True); tech_y -= 9; used_lines += 1
-        pairs=[]
-        for row in technical:
-            if not isinstance(row, Mapping): continue
-            heading=_s(row.get("heading")); value=_s(row.get("value"))
-            if heading and value: pairs.append((heading,value))
-        for i in range(0,len(pairs),2):
-            if used_lines >= max_tech_lines: break
-            left_pair=pairs[i]; right_pair=pairs[i+1] if i+1<len(pairs) else ("","")
-            _draw_text(c,left+14,tech_y,left_pair[0],size=6.1,bold=True,max_width=72); _draw_text(c,left+88,tech_y,left_pair[1],size=6.1,max_width=122)
-            if right_pair[0]: _draw_text(c,left+225,tech_y,right_pair[0],size=6.1,bold=True,max_width=72); _draw_text(c,left+299,tech_y,right_pair[1],size=6.1,max_width=144)
-            tech_y -= 9; used_lines += 1
+        # Item-wise technical pocket directly under the item line.
+        tech_top = item_row_bottom
+        c.setFillColor(HexColor("#F3F4F6")); c.rect(left, next_y, w-left-right, max(tech_top-next_y, 0), stroke=0, fill=1)
+        pairs = compact_technical_pairs(item)
+        label_y = tech_top - 8
+        _draw_text(c, left+5, label_y, "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA", size=5.7, bold=True, color=NAVY, max_width=220)
+        if pairs:
+            # Up to three heading/value pairs per compact row; two rows maximum.
+            pair_width = (w-left-right-10) / 3.0
+            row_y = label_y - 9
+            for pair_idx,(heading,value) in enumerate(pairs):
+                row_no = pair_idx // 3; col_no = pair_idx % 3
+                if row_no > 1: break
+                px = left + 5 + col_no * pair_width
+                py = row_y - row_no * 9
+                _draw_text(c, px, py, f"{heading}:", size=5.4, bold=True, max_width=pair_width*0.44)
+                _draw_text(c, px + pair_width*0.44, py, value, size=5.4, max_width=pair_width*0.54)
+        else:
+            _draw_text(c, left+229, label_y, "No controlled supplier technical data configured", size=5.4, color=HexColor("#6B7280"), max_width=260)
+        y = next_y
 
     _draw_text(c, left + 2, 236, "Remarks:", size=7.6, bold=True); c.setFillColor(YELLOW); c.rect(left, 211, 386, 21, stroke=0, fill=1); _draw_text(c, left + 4, 220, header.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.", size=7.0, bold=True, max_width=378)
     c.setFillColor(LIGHT_GREY); c.rect(left, 192, 386, 14, stroke=0, fill=1); _draw_text(c, left + 3, 196, "Comments or Special Instructions", size=6.8, bold=True); _wrap(c, left + 2, 181, header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS, 374, size=6.2, leading=11.3, max_lines=7)

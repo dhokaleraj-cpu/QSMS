@@ -1,6 +1,17 @@
-# QCMS v4.13.8
+# QCMS v4.13.9
 
-Build: `4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA`
+Build: `4139-RM-PROCUREMENT-LINK-RMTC-PART-PO-ITEM-TECH`
+
+Corrective controlled release for Customer Order → RM Procurement/PO visibility, incremental Approved RMTC Part Worksheet extension, and item-wise Purchase Order technical data.
+
+Key controls:
+- FSI-RM Customer Orders / Schedules retain their saved procurement decision and are rechecked with the correct order demand when the pending RM list is rendered.
+- Customer Purchase Orders contribute their own order quantity to the live three-month procurement check; Monthly Schedules continue to use their saved rolling schedule demand.
+- Direct Forging orders remain intentionally excluded from RM Procurement.
+- Approved RMTCs can be extended with a pending Part Worksheet while previously accepted covered Parts remain released.
+- PARTIALLY_APPROVED RMTC state now supports accepted covered Parts together with a newly pending/on-hold/rejected Part Worksheet.
+- Purchase Order PDF prints each FSI Part item line followed immediately by that Part/Supplier Raw Material / Forging Parameters and FSI Technical Data before the next item line.
+- Existing v4.13.8 multi-order RM PO, Supplier/FSI Part price history, technical-data snapshots, FSI Part confidentiality and historical data remain preserved.
 
 Controlled release for multi-source Raw Material Purchase Orders, supplier/FSI-Part price history, supplier-specific Part Master technical data, approved-RMTC Part Worksheet extension, Customer Order three-month stock/procurement checks, supplier PO print/control, receipt-linked procurement MIS, and the secondary FSI Part Number identity.
 

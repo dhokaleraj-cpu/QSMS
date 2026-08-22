@@ -477,7 +477,11 @@ class SupplyChainService:
                     raise ValueError(f"{order.get('master_reference_no')}: Raw Material Purchase Order is not applicable to the Direct Forging flow.")
                 if not bool(order.get("rm_procurement_required", True)):
                     raise ValueError(f"{order.get('master_reference_no')}: RM Procurement is not enabled because available stock covers the saved three-month decision.")
-                live_check = self.procurement_check(str(order.get("part_id") or ""), str(order.get("customer_id") or ""), anchor=order.get("schedule_month") or order.get("customer_delivery_date") or order.get("order_date"))
+                live_check = self.procurement_check(
+                    str(order.get("part_id") or ""), str(order.get("customer_id") or ""),
+                    anchor=order.get("schedule_month") or order.get("customer_delivery_date") or order.get("order_date"),
+                    proposed_three_month_qty=number(order.get("order_qty_pcs")) if str(order.get("order_type") or "") == "PURCHASE_ORDER" else 0.0,
+                )
                 if not bool(live_check.get("rm_procurement_allowed")):
                     raise ValueError(f"{order.get('master_reference_no')}: current system stock is sufficient for the rolling three-month schedule.")
                 balance = max(number(order.get("required_rm_kg")) - self.totals(order_id)["rm_ordered_kg"], 0.0)
@@ -754,9 +758,13 @@ class SupplyChainService:
                 continue
             if not bool(order.get("rm_procurement_required", True)):
                 continue
+            # Recheck against current stock without losing the demand that was saved when
+            # the Customer Order was created. Customer Purchase Orders are not rows in the
+            # Monthly Schedule table, so their own order quantity must be passed explicitly.
             live_check = self.procurement_check(
                 str(order.get("part_id") or ""), str(order.get("customer_id") or ""),
                 anchor=order.get("schedule_month") or order.get("customer_delivery_date") or order.get("order_date"),
+                proposed_three_month_qty=number(order.get("order_qty_pcs")) if str(order.get("order_type") or "") == "PURCHASE_ORDER" else 0.0,
             )
             if not bool(live_check.get("rm_procurement_allowed")):
                 continue

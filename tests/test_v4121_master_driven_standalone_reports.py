@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version_and_migration():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.12.1", "4.12.2", "4.12.3", "4.12.4", "4.12.5", "4.12.6", "4.12.7", "4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.12.1", "4.12.2", "4.12.3", "4.12.4", "4.12.5", "4.12.6", "4.12.7", "4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9"}
     migration = ROOT / "supabase/migrations/20260819170000_qcms_master_driven_standalone_reports_v4121.sql"
     assert migration.exists()
     sql = migration.read_text()
