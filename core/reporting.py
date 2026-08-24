@@ -7,6 +7,7 @@ import re
 from typing import Mapping
 
 import pandas as pd
+from openpyxl.styles import Font as XLFont, PatternFill as XLPatternFill
 from PIL import Image as PILImage
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -16,6 +17,9 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 from reportlab.platypus import CondPageBreak, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, Image as RLImage
+from reportlab.graphics.shapes import Drawing, String, Line
+from reportlab.graphics.charts.lineplots import LinePlot
+from reportlab.graphics.widgets.markers import makeMarker
 
 from core.config import get_settings
 
@@ -78,7 +82,10 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
     is_metlab = kind == "METLAB"
     report_number = record.get("report_number") or "Quality Report"
     report_date = record.get("test_date") if is_metlab else record.get("inspection_date")
-    conclusion = record.get("remarks") or f"Overall result: {record.get('overall_result') or 'NOT_EVALUATED'}"
+    result_map = dict(payload.get("results") or {}) if is_metlab else {}
+    controlled_conclusion = (result_map.get("conclusion") or "PENDING") if is_metlab else None
+    conclusion_remark = record.get("remarks") or ""
+    conclusion = controlled_conclusion if is_metlab else (conclusion_remark or f"Overall result: {record.get('overall_result') or 'NOT_EVALUATED'}")
     final_decision = record.get("disposition") or "PENDING"
     decision_reason = record.get("disposition_reason") or ""
 
@@ -104,6 +111,7 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
         ("Report Layout", record.get("layout_name_snapshot")),
         ("Production / Lot Quantity pcs", record.get("production_quantity_pcs") or record.get("lot_quantity")),
         ("Conclusion", conclusion),
+        ("Conclusion Remark", conclusion_remark if is_metlab else ""),
         ("Final Decision", final_decision),
         ("Decision Reason", decision_reason),
         ("Status", record.get("status")),
@@ -119,12 +127,19 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
             writer, index=False, sheet_name=safe_excel_sheet_name("Report Summary", used_names=used)
         )
         if is_metlab:
-            result_map = dict(payload.get("results") or {})
+            traverse = dict(result_map.get("case_depth_traverse") or {})
+            traverse_rows = []
+            for row in list(traverse.get("rows") or []):
+                item = {"Distance (mm)": row.get("distance_mm")}
+                for location in list(traverse.get("locations") or []):
+                    item[str(location)] = row.get(str(location))
+                traverse_rows.append(item)
             sections = (
                 ("MetLAB Results", list(result_map.get("rows") or [])),
                 ("Chemistry", list(result_map.get("chemistry_rows") or [])),
                 ("Jominy", list(result_map.get("jominy_rows") or [])),
                 ("Requirements", list(result_map.get("requirement_rows") or [])),
+                ("Case Depth Traverse", traverse_rows),
             )
         else:
             sections = (("Inspection Results", list(payload.get("results") or [])),)
@@ -136,11 +151,46 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
                 )
             if frame.empty:
                 frame = pd.DataFrame([{"Information": "No result rows recorded"}])
-            frame.to_excel(writer, index=False, sheet_name=safe_excel_sheet_name(title, used_names=used))
+            sheet_name = safe_excel_sheet_name(title, used_names=used)
+            frame.to_excel(writer, index=False, sheet_name=sheet_name)
+            worksheet = writer.book[sheet_name]
+            header_lookup = {str(cell.value or "").strip().casefold(): cell.column for cell in worksheet[1]}
+            result_col = next((column for name, column in header_lookup.items() if name == "result"), None)
+            observation_cols = [column for name, column in header_lookup.items() if any(token in name for token in ("actual", "observation", "measured", "reading", "metlab hrc"))]
+            if result_col:
+                for row_index in range(2, worksheet.max_row + 1):
+                    result = str(worksheet.cell(row_index, result_col).value or "").strip().upper().replace(" ", "_")
+                    if result in {"FAIL", "REJECTED"}:
+                        fill = XLPatternFill("solid", fgColor="FEE2E2"); font = XLFont(bold=True, color="991B1B")
+                    elif result in {"ON_HOLD", "HOLD", "ACCEPTED_UNDER_RESERVE"}:
+                        fill = XLPatternFill("solid", fgColor="FEF3C7"); font = XLFont(bold=True, color="92400E")
+                    elif result in {"PASS", "ACCEPTED", "APPROVED"}:
+                        fill = XLPatternFill("solid", fgColor="DCFCE7"); font = XLFont(bold=True, color="166534")
+                    else:
+                        continue
+                    worksheet.cell(row_index, result_col).fill = fill
+                    worksheet.cell(row_index, result_col).font = font
+                    if result in {"FAIL", "REJECTED", "ON_HOLD", "HOLD", "ACCEPTED_UNDER_RESERVE"}:
+                        for column in observation_cols:
+                            worksheet.cell(row_index, column).fill = fill
+                            worksheet.cell(row_index, column).font = font
         decision = pd.DataFrame([
-            {"Conclusion": conclusion, "Final Decision": final_decision, "Decision Reason": decision_reason, "Status": record.get("status")}
+            {"Conclusion": conclusion, "Conclusion Remark": conclusion_remark if is_metlab else "", "Final Decision": final_decision, "Decision Reason": decision_reason, "Status": record.get("status")}
         ])
-        decision.to_excel(writer, index=False, sheet_name=safe_excel_sheet_name("Conclusion and Decision", used_names=used))
+        decision_sheet = safe_excel_sheet_name("Conclusion and Decision", used_names=used)
+        decision.to_excel(writer, index=False, sheet_name=decision_sheet)
+        worksheet = writer.book[decision_sheet]
+        for column_name in ("Conclusion", "Final Decision"):
+            column_index = next((cell.column for cell in worksheet[1] if str(cell.value or "") == column_name), None)
+            if not column_index:
+                continue
+            value = str(worksheet.cell(2, column_index).value or "").strip().upper().replace(" ", "_")
+            if value in {"REJECTED", "FAIL"}:
+                worksheet.cell(2, column_index).fill = XLPatternFill("solid", fgColor="FEE2E2"); worksheet.cell(2, column_index).font = XLFont(bold=True, color="991B1B")
+            elif value in {"ON_HOLD", "HOLD", "ACCEPTED_UNDER_RESERVE"}:
+                worksheet.cell(2, column_index).fill = XLPatternFill("solid", fgColor="FEF3C7"); worksheet.cell(2, column_index).font = XLFont(bold=True, color="92400E")
+            elif value in {"ACCEPTED", "PASS", "APPROVED"}:
+                worksheet.cell(2, column_index).fill = XLPatternFill("solid", fgColor="DCFCE7"); worksheet.cell(2, column_index).font = XLFont(bold=True, color="166534")
     return buffer.getvalue()
 
 
@@ -899,18 +949,172 @@ def _photo_grid_table(
     return table
 
 
-def _controlled_styles() -> dict[str, ParagraphStyle]:
+def _controlled_styles(scale: float = 1.0) -> dict[str, ParagraphStyle]:
+    """Controlled report styles; MetLAB uses scale=1.20 from QCMS v4.14.1."""
     styles = getSampleStyleSheet()
-    cell = ParagraphStyle("QcCell", parent=styles["Normal"], fontName="Helvetica", fontSize=5.4, leading=6.4, textColor=TEXT)
+    factor = max(float(scale or 1.0), 0.8)
+    cell = ParagraphStyle("QcCell", parent=styles["Normal"], fontName="Helvetica", fontSize=5.4 * factor, leading=6.4 * factor, textColor=TEXT)
     return {
-        "section": ParagraphStyle("QcSection", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=7.2, leading=8.4, textColor=WHITE),
-        "sub": ParagraphStyle("QcSub", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=6.5, leading=7.6, textColor=NAVY),
-        "header": ParagraphStyle("QcHeader", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=5.2, leading=6.1, textColor=WHITE, alignment=TA_CENTER),
+        "section": ParagraphStyle("QcSection", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=7.2 * factor, leading=8.4 * factor, textColor=WHITE),
+        "sub": ParagraphStyle("QcSub", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=6.5 * factor, leading=7.6 * factor, textColor=NAVY),
+        "header": ParagraphStyle("QcHeader", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=5.2 * factor, leading=6.1 * factor, textColor=WHITE, alignment=TA_CENTER),
         "cell": cell,
-        "small": ParagraphStyle("QcSmall", parent=cell, fontSize=4.8, leading=5.6),
+        "small": ParagraphStyle("QcSmall", parent=cell, fontSize=4.8 * factor, leading=5.6 * factor),
         "label": ParagraphStyle("QcLabel", parent=cell, fontName="Helvetica-Bold", textColor=NAVY),
         "center": ParagraphStyle("QcCenter", parent=cell, alignment=TA_CENTER),
+        "fail": ParagraphStyle("QcFail", parent=cell, fontName="Helvetica-Bold", textColor=colors.HexColor("#991B1B")),
+        "reserve": ParagraphStyle("QcReserve", parent=cell, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400E")),
     }
+
+
+def _inspection_result_grid(
+    rows: list[list[object]],
+    widths: list[float],
+    header_style: ParagraphStyle,
+    cell_style: ParagraphStyle,
+    *,
+    result_column: int,
+    observation_columns: tuple[int, ...],
+    header_rows: int = 1,
+) -> Table:
+    """Grid that visually flags out-of-spec observations, not only the Result cell."""
+    prepared: list[list[Paragraph]] = []
+    commands = [
+        ("BACKGROUND", (0, 0), (-1, header_rows - 1), NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, header_rows - 1), WHITE),
+        ("GRID", (0, 0), (-1, -1), 0.42, colors.HexColor("#6E8294")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2.0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2.0),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.0),
+        ("ROWBACKGROUNDS", (0, header_rows), (-1, -1), [WHITE, LIGHT_BLUE]),
+    ]
+    for row_index, row in enumerate(rows):
+        if row_index < header_rows:
+            prepared.append([_paragraph(value, header_style) for value in row])
+            continue
+        result = str(row[result_column] if result_column < len(row) else "").strip().upper().replace(" ", "_")
+        is_fail = result in {"FAIL", "REJECTED"}
+        is_reserve = result in {"ON_HOLD", "HOLD", "ACCEPTED_UNDER_RESERVE"}
+        cells: list[Paragraph] = []
+        for col_index, value in enumerate(row):
+            style = cell_style
+            if col_index in observation_columns and is_fail:
+                style = ParagraphStyle(f"QcFail_{row_index}_{col_index}", parent=cell_style, fontName="Helvetica-Bold", textColor=colors.HexColor("#991B1B"))
+            elif col_index in observation_columns and is_reserve:
+                style = ParagraphStyle(f"QcReserve_{row_index}_{col_index}", parent=cell_style, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400E"))
+            cells.append(_paragraph(value, style))
+        prepared.append(cells)
+        commands.append(("BACKGROUND", (result_column, row_index), (result_column, row_index), _table_status_color(result)))
+        if is_fail:
+            for col_index in observation_columns:
+                commands.append(("BACKGROUND", (col_index, row_index), (col_index, row_index), colors.HexColor("#FEE2E2")))
+        elif is_reserve:
+            for col_index in observation_columns:
+                commands.append(("BACKGROUND", (col_index, row_index), (col_index, row_index), colors.HexColor("#FEF3C7")))
+    table = Table(prepared, colWidths=widths, repeatRows=header_rows, hAlign="LEFT", splitByRow=1)
+    table.setStyle(TableStyle(commands))
+    return table
+
+
+def _decision_summary_table(rows: list[list[object]], widths: list[float], label_style: ParagraphStyle, cell_style: ParagraphStyle) -> Table:
+    prepared: list[list[Paragraph]] = []
+    commands = [
+        ("GRID", (0, 0), (-1, -1), 0.42, colors.HexColor("#8295A6")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2.4), ("RIGHTPADDING", (0, 0), (-1, -1), 2.4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3.0), ("BOTTOMPADDING", (0, 0), (-1, -1), 3.0),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EDF4FA")),
+    ]
+    for row_index, row in enumerate(rows):
+        label, value = row[0], row[1]
+        decision_row = str(label).strip().casefold() in {"final decision", "conclusion"}
+        canonical = str(value or "").strip().upper().replace(" ", "_")
+        value_style = cell_style
+        if decision_row and canonical in {"REJECTED", "FAIL"}:
+            value_style = ParagraphStyle(f"QcDecisionFail{row_index}", parent=cell_style, fontName="Helvetica-Bold", textColor=colors.HexColor("#991B1B"))
+        elif decision_row and canonical in {"ON_HOLD", "HOLD", "ACCEPTED_UNDER_RESERVE"}:
+            value_style = ParagraphStyle(f"QcDecisionHold{row_index}", parent=cell_style, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400E"))
+        elif decision_row and canonical in {"ACCEPTED", "PASS", "APPROVED"}:
+            value_style = ParagraphStyle(f"QcDecisionPass{row_index}", parent=cell_style, fontName="Helvetica-Bold", textColor=colors.HexColor("#166534"))
+        prepared.append([_paragraph(label, label_style), _paragraph(value, value_style)])
+        if decision_row:
+            commands.append(("BACKGROUND", (1, row_index), (1, row_index), _table_status_color(canonical)))
+    table = Table(prepared, colWidths=widths, hAlign="LEFT", splitByRow=1)
+    table.setStyle(TableStyle(commands))
+    return table
+
+
+def _case_depth_traverse_flowables(traverse: Mapping[str, object], content_width: float, styles: Mapping[str, ParagraphStyle]) -> list[object]:
+    locations = [str(value).strip() for value in (traverse.get("locations") or []) if str(value).strip()]
+    source_rows = [dict(row) for row in (traverse.get("rows") or []) if isinstance(row, Mapping)]
+    rows = []
+    for row in source_rows:
+        try:
+            distance = float(row.get("distance_mm"))
+        except (TypeError, ValueError):
+            continue
+        values = []
+        has_value = False
+        for location in locations:
+            value = row.get(location)
+            try:
+                numeric = None if value in (None, "") else float(value)
+            except (TypeError, ValueError):
+                numeric = None
+            values.append(numeric)
+            has_value = has_value or numeric is not None
+        rows.append((distance, values, has_value))
+    if not locations or not any(row[2] for row in rows):
+        return []
+    rows.sort(key=lambda item: item[0])
+
+    table_rows: list[list[object]] = [["Distance (mm)", *locations]]
+    for distance, values, _ in rows:
+        table_rows.append([f"{distance:.2f}", *["" if value is None else f"{value:g}" for value in values]])
+    first_width = 30 * mm
+    other_width = (content_width - first_width) / max(len(locations), 1)
+    table = _rmtc_grid(table_rows, [first_width] + [other_width] * len(locations), styles["header"], styles["cell"])
+
+    drawing = Drawing(content_width, 58 * mm)
+    plot = LinePlot()
+    plot.x = 35
+    plot.y = 25
+    plot.width = max(content_width - 88, 250)
+    plot.height = 118
+    series = []
+    all_y: list[float] = []
+    for loc_index, _location in enumerate(locations):
+        points = [(distance, values[loc_index]) for distance, values, _ in rows if values[loc_index] is not None]
+        series.append(points)
+        all_y.extend(value for _, value in points)
+    plot.data = series
+    x_values = [distance for distance, _, _ in rows]
+    plot.xValueAxis.valueMin = min(x_values)
+    plot.xValueAxis.valueMax = max(x_values)
+    plot.xValueAxis.valueSteps = sorted(set(x_values))
+    plot.xValueAxis.labelTextFormat = lambda value: f"{value:g}"
+    plot.yValueAxis.valueMin = max(0, (min(all_y) - 100) if all_y else 0)
+    plot.yValueAxis.valueMax = (max(all_y) + 75) if all_y else 1000
+    plot.yValueAxis.valueSteps = None
+    palette = [BLUE, colors.HexColor("#7C3AED"), colors.HexColor("#059669"), colors.HexColor("#DC2626"), colors.HexColor("#D97706"), colors.HexColor("#0F766E"), colors.HexColor("#9333EA"), colors.HexColor("#475569")]
+    for index in range(len(series)):
+        plot.lines[index].strokeColor = palette[index % len(palette)]
+        plot.lines[index].strokeWidth = 1.4
+        plot.lines[index].symbol = makeMarker("FilledCircle")
+        plot.lines[index].symbol.size = 3.5
+        plot.lines[index].symbol.fillColor = palette[index % len(palette)]
+        plot.lines[index].symbol.strokeColor = palette[index % len(palette)]
+    drawing.add(plot)
+    drawing.add(String(4, 53 * mm, "CASE DEPTH TRAVERSE · Distance (mm) vs Hardness (HV)", fontName="Helvetica-Bold", fontSize=7.4, fillColor=NAVY))
+    legend_x = content_width - 48 * mm
+    legend_y = 50 * mm
+    for index, location in enumerate(locations[:8]):
+        y = legend_y - index * 9
+        drawing.add(Line(legend_x, y, legend_x + 11, y, strokeColor=palette[index % len(palette)], strokeWidth=1.6))
+        drawing.add(String(legend_x + 14, y - 2.5, location[:20], fontName="Helvetica", fontSize=5.6, fillColor=TEXT))
+    return [table, Spacer(1, 1.5 * mm), drawing]
 
 
 def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
@@ -946,7 +1150,7 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         buffer, pagesize=A4, leftMargin=edge, rightMargin=edge, topMargin=30 * mm, bottomMargin=12 * mm,
         title=title, author="Four Star Industries - Quality Control Monitoring System", allowSplitting=1,
     )
-    sty = _controlled_styles()
+    sty = _controlled_styles(scale=1.20)
     story: list[object] = []
 
     story.append(_rmtc_section_bar(title, content_width, sty["section"]))
@@ -978,7 +1182,7 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
             lo, hi = row.get("lower_spec"), row.get("upper_spec")
             if lo is not None or hi is not None:
                 spec = f"{'' if lo is None else lo} - {'' if hi is None else hi}".strip(" -")
-        test_rows.append([row.get("sequence_no") or sequence, row.get("parameter"), spec, row.get("actual_value"), row.get("unit"), row.get("result")])
+        test_rows.append([sequence, row.get("parameter"), spec, row.get("actual_value"), row.get("unit"), row.get("result")])
         sequence += 1
     for row in requirement_rows:
         test_rows.append([sequence, row.get("requirement_name"), row.get("requirement_value"), row.get("actual_value"), row.get("unit"), row.get("result")])
@@ -987,7 +1191,7 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         test_rows.append([1, "Metallurgical requirements", "As approved inspection layout", "No result rows recorded", "", "NOT_EVALUATED"])
     story.append(Spacer(1, 1.4 * mm))
     story.append(_rmtc_section_bar("METALLURGICAL TEST RESULTS", content_width, sty["section"]))
-    story.append(_rmtc_grid(test_rows, [12*mm, 54*mm, 50*mm, 46*mm, 14*mm, 18*mm], sty["header"], sty["small"], status_columns=(5,)))
+    story.append(_inspection_result_grid(test_rows, [12*mm, 54*mm, 50*mm, 46*mm, 14*mm, 18*mm], sty["header"], sty["small"], result_column=5, observation_columns=(3,)))
 
     chemistry_rows = [dict(row) for row in (results.get("chemistry_rows") or [])]
     if chemistry_rows:
@@ -995,7 +1199,7 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         rows = [["Element", "Minimum", "Maximum", "RMTC Actual", "MetLAB Actual", "Unit", "Result"]]
         for row in chemistry_rows:
             rows.append([row.get("element"), row.get("minimum_value"), row.get("maximum_value"), row.get("rmtc_actual_value"), row.get("actual_value"), row.get("unit"), row.get("result")])
-        story.append(_rmtc_grid(rows, [22*mm, 26*mm, 26*mm, 32*mm, 32*mm, 18*mm, 38*mm], sty["header"], sty["small"], status_columns=(6,)))
+        story.append(_inspection_result_grid(rows, [22*mm, 26*mm, 26*mm, 32*mm, 32*mm, 18*mm, 38*mm], sty["header"], sty["small"], result_column=6, observation_columns=(4,)))
 
     jominy_rows = [dict(row) for row in (results.get("jominy_rows") or [])]
     if jominy_rows:
@@ -1003,24 +1207,34 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         rows = [["Distance", "mm", "Min HRC", "Max HRC", "RMTC HRC", "MetLAB HRC", "Result", "Remark"]]
         for row in jominy_rows:
             rows.append([row.get("distance_label"), row.get("distance_mm"), row.get("minimum_hrc"), row.get("maximum_hrc"), row.get("rmtc_actual_hrc"), row.get("actual_value"), row.get("result"), row.get("remarks")])
-        story.append(_rmtc_grid(rows, [20*mm, 17*mm, 22*mm, 22*mm, 25*mm, 28*mm, 22*mm, 38*mm], sty["header"], sty["small"], status_columns=(6,)))
+        story.append(_inspection_result_grid(rows, [20*mm, 17*mm, 22*mm, 22*mm, 25*mm, 28*mm, 22*mm, 38*mm], sty["header"], sty["small"], result_column=6, observation_columns=(5,)))
 
-    story.append(CondPageBreak(70 * mm))
+    traverse = dict(results.get("case_depth_traverse") or {})
+    traverse_flowables = _case_depth_traverse_flowables(traverse, content_width, sty)
+    if traverse_flowables:
+        story.append(Spacer(1, 1.2 * mm))
+        story.append(_rmtc_section_bar("CASE DEPTH / MICROHARDNESS TRAVERSE", content_width, sty["section"]))
+        story.extend(traverse_flowables)
+
+    actual_microstructure_images = [row for row in microstructure_images if bytes(row.get("bytes") or b"")]
+    story.append(CondPageBreak(58 * mm))
     story.append(_rmtc_section_bar("MICROSTRUCTURE PHOTOGRAPHS", content_width, sty["section"]))
-    story.append(_photo_grid_table(microstructure_images, content_width, sty["center"], columns=2, max_height=46*mm))
+    story.append(_photo_grid_table(actual_microstructure_images, content_width, sty["center"], columns=2, max_height=52*mm))
 
     prepared = _employee_name(employees.get(str(record.get("prepared_by_employee_id"))))
     validated = _employee_name(employees.get(str(record.get("validated_by_employee_id"))))
     approved = _employee_name(employees.get(str(record.get("approved_by_employee_id"))))
     overall = record.get("disposition") or record.get("overall_result") or "NOT_EVALUATED"
-    conclusion = record.get("remarks") or f"Overall result: {record.get('overall_result') or overall}"
+    controlled_conclusion = results.get("conclusion") or (record.get("disposition") if str(record.get("status") or "").upper() == "FINAL" else "PENDING")
+    conclusion_remark = record.get("remarks") or "-"
     decision_reason = record.get("disposition_reason") or "-"
     story.append(Spacer(1, 1.5 * mm))
-    story.append(_rmtc_labeled_grid([
-        ["Conclusion", conclusion],
+    story.append(_decision_summary_table([
+        ["Conclusion", controlled_conclusion],
+        ["Conclusion Remark", conclusion_remark],
         ["Final Decision", overall],
         ["Decision Reason", decision_reason],
-    ], [32*mm, 162*mm], sty["label"], sty["cell"], label_columns=(0,)))
+    ], [32*mm, 162*mm], sty["label"], sty["cell"]))
     story.append(_rmtc_labeled_grid([
         ["Prepared By", prepared, "Validated By", validated, "Verified & Approved By", approved],
         ["Prepared / Test Date", record.get("test_date"), "Validated At", record.get("validated_at"), "Decision At", record.get("decision_at")],
@@ -1078,15 +1292,15 @@ def dimensional_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
             specification = f"{row.get('lower_spec') if row.get('lower_spec') is not None else ''} - {row.get('upper_spec') if row.get('upper_spec') is not None else ''} {row.get('unit') or ''}".strip()
         rows.append([row.get("sequence_no") or row.get("characteristic_no") or index, row.get("characteristic"), specification, observations or row.get("attribute_result"), row.get("checking_aid"), row.get("result")])
     if len(rows)==1: rows.append([1,"Inspection characteristic","As approved layout","No results recorded","","NOT_EVALUATED"])
-    story.append(_rmtc_grid(rows, [12*mm,54*mm,48*mm,42*mm,22*mm,16*mm], sty["header"], sty["small"], status_columns=(5,)))
+    story.append(_inspection_result_grid(rows, [12*mm,54*mm,48*mm,42*mm,22*mm,16*mm], sty["header"], sty["small"], result_column=5, observation_columns=(3,)))
     overall = record.get("disposition") or record.get("overall_result") or "NOT_EVALUATED"
     conclusion = record.get("remarks") or f"Overall result: {record.get('overall_result') or overall}"
     decision_reason = record.get("disposition_reason") or "-"
-    story.append(Spacer(1,1.5*mm)); story.append(_rmtc_labeled_grid([
+    story.append(Spacer(1,1.5*mm)); story.append(_decision_summary_table([
         ["Conclusion", conclusion],
         ["Final Decision", overall],
         ["Decision Reason", decision_reason],
-    ], [36*mm,158*mm], sty["label"], sty["cell"], label_columns=(0,)))
+    ], [36*mm,158*mm], sty["label"], sty["cell"]))
     story.append(_rmtc_labeled_grid([["Prepared By",_employee_name(employees.get(str(record.get("prepared_by_employee_id")))),"Validated By",_employee_name(employees.get(str(record.get("validated_by_employee_id")))),"Approved By",_employee_name(employees.get(str(record.get("approved_by_employee_id"))))]], [25*mm,39*mm,25*mm,39*mm,25*mm,41*mm], sty["label"], sty["center"], label_columns=(0,2,4)))
     doc.build(story, canvasmaker=lambda *args, **kwargs: _PageNumberCanvas(*args, report_title=title, **kwargs))
     return buffer.getvalue()

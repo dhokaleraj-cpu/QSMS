@@ -8,7 +8,7 @@ def text(path: str) -> str:
 
 
 def test_v4140_version_and_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() == "4.14.0"
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.0", "4.14.1"}
     marker = "4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL"
     assert marker in text("streamlit_app.py")
     assert marker in text("core/ui.py")
@@ -49,7 +49,7 @@ def test_po_hsn_sac_and_clean_item_layout():
     assert "HSN / SAC" in supply
     assert "HSN / SAC:" in po
     assert "No vertical grid lines in the PO item body" in po
-    assert "display_items = list(items)[:3]" in po
+    assert "display_items = list(items)[:2]" in po
     assert "_continuation_items_bytes" in po
 
 

@@ -147,11 +147,15 @@ required = [
     "app_pages/email_settings.py",
     "tests/test_v4140_po_rmtc_hsn_email.py",
     "docs/RELEASE_4_14_0.md",
+    "supabase/migrations/20260824144500_qcms_heat_metlab_case_depth_login_approval_price_v4141.sql",
+    "tests/test_v4141_heat_metlab_case_depth_quality_price.py",
+    "docs/RELEASE_4_14_1.md",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.1.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.0 - PO Source Visibility, RMTC Added-Part Validation, HSN/SAC and Email Notifications",
+    "phase": "QCMS 4.14.1 - Additive Heat Capacity, MetLAB Traverse, Controlled Quality Decisions and PO Price History",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

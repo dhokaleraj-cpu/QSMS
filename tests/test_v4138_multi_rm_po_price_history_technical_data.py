@@ -6,7 +6,7 @@ def text(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 def test_release_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.13.8", "4.13.9", "4.14.0"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.8", "4.13.9", "4.14.0", "4.14.1"}
     marker = "4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA"
     for rel in ("streamlit_app.py", "core/ui.py", "core/auth.py"):
         assert marker in text(rel)
@@ -57,12 +57,13 @@ def test_po_screen_no_longer_retypes_old_technical_commercial_fields():
     assert 'number_input("Profit %"' not in page
     assert 'text_input("Rejection + ICC"' not in page
 
-def test_po_pdf_supports_multiple_vendor_lines_and_keeps_price_history_internal():
+def test_po_pdf_supports_multiple_vendor_lines_and_prints_price_revision_history():
     reporting = text("core/purchase_order_reporting.py")
-    assert "display_items = list(items)[:3]" in reporting
+    assert "display_items = list(items)[:2]" in reporting
     assert "_continuation_items_bytes" in reporting
     assert "supplier-specific technical heading/value snapshots" in reporting
-    assert "Price history stays internal to QCMS" in reporting
+    assert "PRICE REVISION HISTORY" in reporting
+    assert "_draw_price_history" in reporting
     assert "original/customer part number remains an internal QCMS field" in reporting
 
 def test_v4137_po_history_is_backfilled_into_sources_and_price_history():

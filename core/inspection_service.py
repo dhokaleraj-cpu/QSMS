@@ -119,6 +119,34 @@ class InspectionService:
             return filtered or rows
         return rows
 
+    def employee_for_profile(self, profile: Mapping[str, Any] | None) -> dict[str, Any]:
+        """Resolve the current QCMS login to its active Employee Master row.
+
+        profile_id is authoritative for new records. Exact email and exact normalized
+        employee name are retained as controlled fallbacks for legacy Employee rows
+        created before User ↔ Employee linking was introduced.
+        """
+        profile = dict(profile or {})
+        profile_id = _text(profile.get("id"))
+        email = _text(profile.get("email")).casefold()
+        full_name = " ".join(_text(profile.get("full_name")).casefold().split())
+        rows = self.employees()
+        if profile_id:
+            match = next((row for row in rows if _text(row.get("profile_id")) == profile_id), None)
+            if match:
+                return dict(match)
+        if email:
+            match = next((row for row in rows if _text(row.get("email")).casefold() == email), None)
+            if match:
+                return dict(match)
+        if full_name:
+            def employee_name(row: Mapping[str, Any]) -> str:
+                return " ".join(f"{_text(row.get('first_name'))} {_text(row.get('last_name'))}".casefold().split())
+            match = next((row for row in rows if employee_name(row) == full_name), None)
+            if match:
+                return dict(match)
+        return {}
+
     def inward_lots(self) -> list[dict]:
         rows = self.repo.select("inward_lots", order_by="created_at", desc=True, limit=4000)
         return [
@@ -389,14 +417,34 @@ class InspectionService:
         full_payload = dict(payload)
         if isinstance(results, Mapping):
             # Keep stable RMTC-style section keys for database validation and reporting.
+            controlled_conclusion = _text(results.get("conclusion") or "PENDING").upper().replace(" ", "_")
+            allowed_conclusions = {"PENDING", *FINAL_DISPOSITIONS}
+            if controlled_conclusion not in allowed_conclusions:
+                raise ValueError("MetLAB Conclusion must be Pending, On Hold, Accepted, Accepted Under Reserve or Rejected.")
+            result_sections = [
+                [dict(row) for row in results.get("rows", [])],
+                [dict(row) for row in results.get("chemistry_rows", [])],
+                [dict(row) for row in results.get("jominy_rows", [])],
+                [dict(row) for row in results.get("requirement_rows", [])],
+            ]
+            bad_rows = [
+                row for section in result_sections for row in section
+                if _text(row.get("result") or "NOT_EVALUATED").upper() not in {"PASS", "NOT_APPLICABLE"}
+            ]
+            if controlled_conclusion == "ACCEPTED" and bad_rows:
+                raise ValueError("MetLAB Conclusion cannot be Accepted while any applicable observation is out of specification or not evaluated. Use Accepted Under Reserve, Rejected, On Hold or Pending.")
+            if controlled_conclusion in {"ON_HOLD", "ACCEPTED_UNDER_RESERVE", "REJECTED"} and not _text(full_payload.get("remarks")):
+                raise ValueError("A Conclusion Remark is required for On Hold, Accepted Under Reserve or Rejected conclusions.")
             full_payload["results"] = {
-                "rows": [dict(row) for row in results.get("rows", [])],
-                "chemistry_rows": [dict(row) for row in results.get("chemistry_rows", [])],
-                "jominy_rows": [dict(row) for row in results.get("jominy_rows", [])],
-                "requirement_rows": [dict(row) for row in results.get("requirement_rows", [])],
+                "rows": result_sections[0],
+                "chemistry_rows": result_sections[1],
+                "jominy_rows": result_sections[2],
+                "requirement_rows": result_sections[3],
+                "case_depth_traverse": dict(results.get("case_depth_traverse") or {}),
+                "conclusion": controlled_conclusion,
             }
         else:
-            full_payload["results"] = {"rows": [dict(row) for row in results], "chemistry_rows": [], "jominy_rows": [], "requirement_rows": []}
+            full_payload["results"] = {"rows": [dict(row) for row in results], "chemistry_rows": [], "jominy_rows": [], "requirement_rows": [], "case_depth_traverse": {}, "conclusion": "PENDING"}
         return self.repo.update("lab_tests", report_id, full_payload) if report_id else self.repo.insert("lab_tests", full_payload)
 
     def _report_employees(self, record: Mapping[str, Any]) -> dict[str, dict]:
@@ -491,15 +539,12 @@ class InspectionService:
         }
 
     def finalize_dimensional(self, report_id: str, disposition: str, reason: str, validator: str, approver: str) -> dict:
-        record = self.get_dimensional(report_id) or {}
-        # Standalone reports intentionally have no Material Inward / OSP parent, so
-        # they must not call the linked-flow RPC which refreshes an inward quality gate.
-        if record and not record.get("inward_lot_id") and not record.get("osp_job_id"):
-            payload = self._standalone_final_payload(disposition, reason, validator, approver)
-            bad = sum(1 for row in self.dimensional_results(report_id) if _text(row.get("result")).upper() not in {"PASS", "NOT_APPLICABLE"})
-            if payload["disposition"] == "ACCEPTED" and bad:
-                raise ValueError("Accepted is allowed only when every applicable characteristic passes.")
-            return self.repo.update("inspection_reports", report_id, payload)
+        """Finalize through the database gate for linked and standalone reports.
+
+        QCMS v4.14.1 intentionally does not trust an arbitrary Approved By value:
+        the RPC verifies that ``approver`` is the employee mapped to auth.uid() and
+        that the login has DIMENSIONAL_REPORT approval permission.
+        """
         return self.repo.rpc("qsms_finalize_dimensional_report", {
             "p_report_id": report_id,
             "p_disposition": disposition,
@@ -509,17 +554,7 @@ class InspectionService:
         }) or {}
 
     def finalize_metlab(self, report_id: str, disposition: str, reason: str, validator: str, approver: str) -> dict:
-        record = self.get_metlab(report_id) or {}
-        if record and not record.get("inward_lot_id") and not record.get("osp_job_id"):
-            payload = self._standalone_final_payload(disposition, reason, validator, approver)
-            result_map = dict(record.get("results") or {})
-            all_rows: list[dict] = []
-            for key in ("rows", "chemistry_rows", "jominy_rows", "requirement_rows"):
-                all_rows.extend(dict(row) for row in (result_map.get(key) or []))
-            bad = sum(1 for row in all_rows if _text(row.get("result")).upper() not in {"PASS", "NOT_APPLICABLE"})
-            if payload["disposition"] == "ACCEPTED" and bad and not _text(reason):
-                raise ValueError("Manual acceptance reason is mandatory when applicable MetLAB results do not all pass.")
-            return self.repo.update("lab_tests", report_id, payload)
+        """Finalize MetLAB through the logged-in employee approval gate."""
         return self.repo.rpc("qsms_finalize_metlab_report", {
             "p_report_id": report_id,
             "p_disposition": disposition,

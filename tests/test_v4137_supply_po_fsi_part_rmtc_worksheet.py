@@ -9,7 +9,7 @@ def text(rel: str) -> str:
 
 
 def test_v4137_release_and_build_markers():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.13.7", "4.13.8", "4.13.9", "4.14.0"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.1"}
     marker = "4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA"
     assert marker in text("core/ui.py")
     assert marker in text("core/auth.py")

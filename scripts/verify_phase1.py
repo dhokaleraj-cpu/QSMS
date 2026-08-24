@@ -435,9 +435,9 @@ for label, page_text in (("MetLAB", metlab_text), ("Dimensional", dimensional_te
 for token in ("def quality_record_excel_bytes", '["Final Decision", overall]', '["Decision Reason", decision_reason]'):
     if token not in reporting_text:
         errors.append(f"QCMS 4.12.5 reporting token missing: {token}")
-for token in ('_standalone_final_payload', 'not record.get("inward_lot_id") and not record.get("osp_job_id")'):
+for token in ('self.repo.rpc("qsms_finalize_dimensional_report"', 'self.repo.rpc("qsms_finalize_metlab_report"', 'employee_for_profile'):
     if token not in inspection_service_text:
-        errors.append(f"QCMS 4.12.5 standalone final-decision token missing: {token}")
+        errors.append(f"QCMS v4.14.1 universal login-employee final-decision gate missing: {token}")
 for token in ('"Customer Name": customer', '"Part Number": part_number', '"Part Description": part_description'):
     if token not in supply_service_text:
         errors.append(f"QCMS 4.12.5 monthly MIS identity token missing: {token}")
@@ -640,7 +640,7 @@ for token in ("def price_history", "def current_price", "def technical_data_snap
         errors.append(f"QCMS 4.13.8 Supply Chain service token missing: {token}")
 if "Save Supplier Technical Data" not in v4138_part or "Save Supplier / FSI Part Price History" not in v4138_part:
     errors.append("QCMS 4.13.8 Part Master technical data / price history editors are missing")
-if "display_items = list(items)[:3]" not in v4138_po or "TECHNICAL DATA" not in v4138_po:
+if "display_items = list(items)[:2]" not in v4138_po or "TECHNICAL DATA" not in v4138_po or "PRICE REVISION HISTORY" not in v4138_po:
     errors.append("QCMS 4.13.8 multi-line Purchase Order print / technical snapshot rendering is incomplete")
 if "Backfilled from controlled QCMS Purchase Order history" not in v4138_backfill:
     errors.append("QCMS 4.13.8 historical price/source backfill is missing")
@@ -692,13 +692,51 @@ if "class NotificationService" not in v4140_notify or "qcms-send-email" not in v
 if "nodemailer" not in v4140_edge or "qcms_email_settings" not in v4140_edge or "qcms_notification_outbox" not in v4140_edge:
     errors.append("QCMS 4.14.0 server-side SMTP Edge Function is incomplete")
 
+# QCMS 4.14.1 additive Heat / MetLAB traverse / logged-in approval / PO price-history contract.
+v4141_marker = "4141-HEAT-SUM-METLAB-TRAVERSE-LOGIN-APPROVAL-PO-PRICE"
+v4141_sql = (ROOT / "supabase" / "migrations" / "20260824144500_qcms_heat_metlab_case_depth_login_approval_price_v4141.sql").read_text(encoding="utf-8")
+v4141_metlab = (ROOT / "app_pages" / "metlab_report.py").read_text(encoding="utf-8")
+v4141_dimensional = (ROOT / "app_pages" / "dimensional_report.py").read_text(encoding="utf-8")
+v4141_reporting = (ROOT / "core" / "reporting.py").read_text(encoding="utf-8")
+v4141_service = (ROOT / "core" / "inspection_service.py").read_text(encoding="utf-8")
+v4141_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
+if v4141_marker not in ui_text or v4141_marker not in auth_text or v4141_marker not in v4137_streamlit:
+    errors.append("QCMS 4.14.1 build fingerprint is missing")
+for token in ("sum(coalesce(r.certificate_quantity,0))", "year_format='YY'", "qcms_current_login_employee_id", "Approved By must be the currently logged-in employee"):
+    if token not in v4141_sql:
+        errors.append(f"QCMS 4.14.1 database contract missing: {token}")
+for token in ("Distance starts at 0.05 mm", "Traverse Locations", "Select Existing MetLAB Report to Edit", 'selectbox("Conclusion"', '"conclusion": conclusion'):
+    if token not in v4141_metlab:
+        errors.append(f"QCMS 4.14.1 MetLAB contract missing: {token}")
+if "Select Existing Dimensional Report to Edit" not in v4141_dimensional or "Enable Controlled Amendment" not in v4141_dimensional:
+    errors.append("QCMS 4.14.1 Dimensional direct edit / controlled amendment is incomplete")
+for token in ("_controlled_styles(scale=1.20)", "CASE DEPTH / MICROHARDNESS TRAVERSE", "_inspection_result_grid", "XLPatternFill"):
+    if token not in v4141_reporting:
+        errors.append(f"QCMS 4.14.1 report rendering contract missing: {token}")
+if "employee_for_profile" not in v4141_service or '"conclusion": controlled_conclusion' not in v4141_service:
+    errors.append("QCMS 4.14.1 current-login approval / controlled conclusion service is incomplete")
+if '"Remark": r.get("remarks")' not in v4141_part or "PRICE REVISION HISTORY" not in v4140_po:
+    errors.append("QCMS 4.14.1 Part price-history remark / PO print is incomplete")
+
 report = {
-    "release": "QCMS 4.14.0 PO Source + RMTC Added-Part Validation + HSN/SAC + Email Notifications",
+    "release": "QCMS 4.14.1 Additive Heat + MetLAB Traverse + Quality Decisions + PO Price History",
+    "additive_same_heat_rmtc_capacity": "sum(coalesce(r.certificate_quantity,0))" in v4141_sql and "r.id<>new.id" in v4141_sql,
+    "metlab_yy_auto_number": "year_format='YY'" in v4141_sql and "Generated automatically on first save" in v4141_metlab,
+    "metlab_simple_serial_numbers": '"Sr No": index' in v4141_metlab and "test_rows.append([sequence" in v4141_reporting,
+    "metlab_font_plus_20_percent": "_controlled_styles(scale=1.20)" in v4141_reporting,
+    "metlab_case_depth_traverse": "Distance starts at 0.05 mm" in v4141_metlab and "LinePlot" in v4141_reporting,
+    "report_direct_edit": "Select Existing MetLAB Report to Edit" in v4141_metlab and "Select Existing Dimensional Report to Edit" in v4141_dimensional,
+    "controlled_final_amendment": "Enable Controlled Amendment" in v4141_metlab and "Enable Controlled Amendment" in v4141_dimensional,
+    "out_of_spec_visual_highlight": "_inspection_result_grid" in v4141_reporting and "XLPatternFill" in v4141_reporting,
+    "current_login_approver": "qcms_current_login_employee_id" in v4141_sql and "Approved By (Current Login)" in v4141_metlab and "Approved By (Current Login)" in v4141_dimensional,
+    "metlab_controlled_conclusion": 'selectbox("Conclusion"' in v4141_metlab and '"conclusion": controlled_conclusion' in v4141_service,
+    "po_part_price_revision_history": "PRICE REVISION HISTORY" in v4140_po and '"Remark": r.get("remarks")' in v4141_part,
+
     "po_source_visibility": "def purchase_order_source_status" in v4140_service and "PO Eligibility" in v4140_supply,
     "explicit_supply_flow": 'explicit = str(order.get("supply_flow")' in v4140_service and "supply_flow" in v4140_sql,
     "added_part_validate_decide": "incremental_part_review" in v4140_rmtc and "Validate Added Part Against Masters" in v4140_rmtc,
     "po_hsn_sac": "hsn_sac_code" in v4140_sql and "HSN / SAC:" in v4140_po,
-    "po_clean_item_layout": "No vertical grid lines in the PO item body" in v4140_po and "display_items = list(items)[:3]" in v4140_po,
+    "po_clean_item_layout": "No vertical grid lines in the PO item body" in v4140_po and "display_items = list(items)[:2]" in v4140_po,
     "email_server_settings": "EMAIL SERVER SETTINGS" in v4140_email,
     "responsibility_routing": "RESPONSIBILITY ROUTING" in v4140_email,
     "email_outbox": "qcms_notification_outbox" in v4140_sql and "class NotificationService" in v4140_notify,
@@ -710,7 +748,7 @@ report = {
     "multi_rm_po_sources": "Select ELIGIBLE Customer Orders / Schedules for this RM Purchase Order" in v4138_supply and "supply_purchase_order_sources" in v4138_service,
     "supplier_fsi_price_history": "part_supplier_price_history" in v4138_sql and "def current_price" in v4138_service,
     "part_master_po_technical_data": "Save Supplier Technical Data" in v4138_part and "technical_data_snapshot" in v4138_service,
-    "multi_line_po_pdf": "display_items = list(items)[:3]" in v4138_po and "_continuation_items_bytes" in v4138_po,
+    "multi_line_po_pdf": "display_items = list(items)[:2]" in v4138_po and "_continuation_items_bytes" in v4138_po,
     "historical_po_price_backfill": "Backfilled from controlled QCMS Purchase Order history" in v4138_backfill,
     "supply_purchase_order_module": "def render_purchase_orders" in v4137_supply,
     "supply_po_reference_print": "FSI_STANDARD_PO_TERMS_2023.pdf" in v4137_po,

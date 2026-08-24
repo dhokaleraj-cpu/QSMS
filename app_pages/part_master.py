@@ -936,8 +936,8 @@ def render_entry() -> None:
                 "Start Date": pd.to_datetime(r.get("start_date"), errors="coerce"),
                 "End Date": pd.to_datetime(r.get("end_date"), errors="coerce") if r.get("end_date") else pd.NaT,
                 "Price": r.get("price"), "Currency": r.get("currency") or "INR", "UOM": r.get("uom") or "KGS",
-                "Status": r.get("status") or "ACTIVE",
-            } for r in price_rows], columns=["Start Date", "End Date", "Price", "Currency", "UOM", "Status"])
+                "Remark": r.get("remarks") or "", "Status": r.get("status") or "ACTIVE",
+            } for r in price_rows], columns=["Start Date", "End Date", "Price", "Currency", "UOM", "Remark", "Status"])
             price_edit = st.data_editor(
                 price_df, num_rows="dynamic", hide_index=True, width="stretch", height=240, key=f"price_history_{selected_raw_id}", disabled=not writable,
                 column_config={
@@ -946,6 +946,7 @@ def render_entry() -> None:
                     "Price": st.column_config.NumberColumn(required=True, min_value=0.0, format="%.2f"),
                     "Currency": st.column_config.SelectboxColumn(options=["INR", "USD", "EUR", "GBP"], required=True),
                     "UOM": st.column_config.SelectboxColumn(options=["KGS", "NOS", "PCS"], required=True),
+                    "Remark": st.column_config.TextColumn(help="Price revision reason / commercial remark. This prints in the PO Price Revision History table."),
                     "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
                 },
             )
@@ -964,7 +965,7 @@ def render_entry() -> None:
                         if not start: raise ValueError("Start Date is required for every price-history row.")
                         if end and end < start: raise ValueError("Price History End Date cannot be earlier than Start Date.")
                         price = 0 if pd.isna(row.get("Price")) else float(row.get("Price"))
-                        return {"supplier_id": selected_supplier_id, "raw_material_detail_id": selected_raw_id, "start_date": start, "end_date": end, "price": price, "currency": str(row.get("Currency") or "INR"), "uom": str(row.get("UOM") or "KGS"), "status": str(row.get("Status") or "ACTIVE")}
+                        return {"supplier_id": selected_supplier_id, "raw_material_detail_id": selected_raw_id, "start_date": start, "end_date": end, "price": price, "currency": str(row.get("Currency") or "INR"), "uom": str(row.get("UOM") or "KGS"), "remarks": str(row.get("Remark") or "").strip() or None, "status": str(row.get("Status") or "ACTIVE")}
                     _save_rows(repo, "part_supplier_price_history", part_id, frame, ("part_id", "supplier_id", "uom", "start_date"), price_mapper)
                     save_success_popup("Supplier / FSI Part price history saved successfully.", queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))

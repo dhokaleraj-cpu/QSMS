@@ -130,6 +130,57 @@ def _block(c: canvas.Canvas, x: float, y_top: float, width: float, title: str, l
     return y
 
 
+def _price_history_rows(item: Mapping[str, Any], *, limit: int = 4) -> list[Mapping[str, Any]]:
+    raw = item.get("price_history_snapshot") or []
+    if not isinstance(raw, list):
+        return []
+    rows = [row for row in raw if isinstance(row, Mapping) and _s(row.get("start_date"))]
+    rows.sort(key=lambda row: _s(row.get("start_date")), reverse=True)
+    # Show the most recent controlled periods, but print them oldest-to-newest for readability.
+    return list(reversed(rows[:limit]))
+
+
+def _draw_price_history(c: canvas.Canvas, x: float, y_top: float, width: float, item: Mapping[str, Any], *, max_rows: int = 4) -> float:
+    """Draw the supplier/FSI Part Price Revision History under one PO item."""
+    rows = _price_history_rows(item, limit=max_rows)
+    _draw_text(c, x, y_top, "PRICE REVISION HISTORY", size=5.8, bold=True, color=NAVY, max_width=width)
+    header_y = y_top - 12
+    col_widths = [74, 74, 72, max(width - 220, 80)]
+    titles = ["START DATE", "END DATE", "PRICE", "REMARK"]
+    cx = x
+    c.setFillColor(HexColor("#D7E1F1"))
+    c.rect(x, header_y - 9, width, 11, stroke=1, fill=1)
+    for idx, (cw, title) in enumerate(zip(col_widths, titles)):
+        if idx:
+            c.line(cx, header_y - 9, cx, header_y + 2)
+        _draw_text(c, cx + 2, header_y - 5, title, size=4.8, bold=True, color=NAVY, max_width=cw - 4)
+        cx += cw
+    if not rows:
+        c.setFillColor(white)
+        c.rect(x, header_y - 21, width, 12, stroke=1, fill=1)
+        _draw_text(c, x + 3, header_y - 17, "No controlled price revision history recorded", size=5.0, color=HexColor("#6B7280"), max_width=width - 6)
+        return header_y - 21
+    y = header_y - 9
+    for row in rows:
+        next_y = y - 12
+        c.setFillColor(white)
+        c.rect(x, next_y, width, 12, stroke=1, fill=1)
+        values = [
+            _date(row.get("start_date")),
+            _date(row.get("end_date")) or "Current",
+            f"{_s(row.get('currency') or 'INR')} {_money(row.get('price'))}/{_s(row.get('uom') or '')}".rstrip("/"),
+            _s(row.get("remarks")),
+        ]
+        cx = x
+        for idx, (cw, value) in enumerate(zip(col_widths, values)):
+            if idx:
+                c.line(cx, next_y, cx, y)
+            _draw_text(c, cx + 2, next_y + 3.5, value, size=4.9, max_width=cw - 4)
+            cx += cw
+        y = next_y
+    return y
+
+
 def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, Any]]) -> bytes:
     out = BytesIO()
     c = canvas.Canvas(out, pagesize=A4)
@@ -168,11 +219,11 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     x = left
     for sw, title in zip(widths, titles): _bar(c, x, y_item_top, sw, title, height=14); x += sw
     body_top = y_item_top - 14; body_bottom = 245; c.rect(left, body_bottom, w - left - right, body_top - body_bottom, stroke=1, fill=0)
-    # v4.14.0 reserves a larger item pocket for clean HSN/SAC + technical data.
-    display_items = list(items)[:3]
+    # v4.14.1 reserves a larger item pocket for HSN/SAC, technical data and Price Revision History.
+    display_items = list(items)[:2]
     y = body_top
     available_height = body_top - body_bottom
-    block_height = max(min(available_height / max(len(display_items), 1), 86), 58)
+    block_height = max(min(available_height / max(len(display_items), 1), 126), 110)
 
     def compact_technical_pairs(item: Mapping[str, Any]) -> list[tuple[str, str]]:
         raw = item.get("technical_data_snapshot") or []
@@ -219,20 +270,19 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
         c.setFillColor(HexColor("#F3F4F6")); c.rect(left, next_y, w-left-right, max(tech_top-next_y, 0), stroke=0, fill=1)
         pairs = compact_technical_pairs(item)
         label_y = tech_top - 8
-        _draw_text(c, left+5, label_y, "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA", size=5.7, bold=True, color=NAVY, max_width=220)
+        _draw_text(c, left+5, label_y, "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA", size=5.7, bold=True, color=NAVY, max_width=260)
         if pairs:
-            # Up to three heading/value pairs per compact row; two rows maximum.
             pair_width = (w-left-right-10) / 3.0
             row_y = label_y - 9
-            for pair_idx,(heading,value) in enumerate(pairs):
+            for pair_idx,(heading,value) in enumerate(pairs[:6]):
                 row_no = pair_idx // 3; col_no = pair_idx % 3
-                if row_no > 1: break
                 px = left + 5 + col_no * pair_width
                 py = row_y - row_no * 9
                 _draw_text(c, px, py, f"{heading}:", size=5.4, bold=True, max_width=pair_width*0.44)
                 _draw_text(c, px + pair_width*0.44, py, value, size=5.4, max_width=pair_width*0.54)
         else:
             _draw_text(c, left+229, label_y, "No controlled supplier technical data configured", size=5.4, color=HexColor("#6B7280"), max_width=260)
+        _draw_price_history(c, left+5, tech_top-39, w-left-right-10, item, max_rows=3)
         y = next_y
 
     _draw_text(c, left + 2, 236, "Remarks:", size=7.6, bold=True); c.setFillColor(YELLOW); c.rect(left, 211, 386, 21, stroke=0, fill=1); _draw_text(c, left + 4, 220, header.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.", size=7.0, bold=True, max_width=378)
@@ -252,7 +302,7 @@ def _continuation_items_bytes(header: Mapping[str, Any], items: Sequence[Mapping
     widths=[218,44,62,42,40,70,63]; titles=["ITEM #","QTY","UNIT PRICE","UNIT","GST%","GST AMOUNT","TOTAL"]
     remaining=list(items)
     while remaining:
-        page_items=remaining[:4]; remaining=remaining[4:]
+        page_items=remaining[:3]; remaining=remaining[3:]
         logo_path=Path(__file__).resolve().parent.parent / "assets" / "fsi_logo.png"
         if logo_path.exists():
             try:c.drawImage(str(logo_path),left,h-58,width=105,height=39,preserveAspectRatio=True,mask="auto")
@@ -286,10 +336,11 @@ def _continuation_items_bytes(header: Mapping[str, Any], items: Sequence[Mapping
                 for row in raw:
                     if isinstance(row,Mapping) and _s(row.get("heading")) and _s(row.get("value")):pairs.append((_s(row.get("heading")),_s(row.get("value"))))
             pair_width=(w-left-right-10)/3.0; row_y=item_row_bottom-24
-            for pidx,(heading,value) in enumerate(pairs[:9]):
+            for pidx,(heading,value) in enumerate(pairs[:6]):
                 row_no=pidx//3;col_no=pidx%3;px=left+5+col_no*pair_width;py=row_y-row_no*12
                 _draw_text(c,px,py,f"{heading}:",size=5.5,bold=True,max_width=pair_width*0.43)
                 _draw_text(c,px+pair_width*0.43,py,value,size=5.5,max_width=pair_width*0.55)
+            _draw_price_history(c,left+5,item_row_bottom-55,w-left-right-10,item,max_rows=4)
             y=next_y
         _draw_text(c,left,25,"QCMS controlled continuation · Technical data is item-specific and supplier-specific.",size=5.8,color=HexColor("#6B7280"))
         c.showPage()
@@ -331,7 +382,8 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
     Page 1 supports multiple supplier-facing FSI Part Number lines under one controlled
     PO and prints supplier-specific technical heading/value snapshots from Part Master.
     The original/customer part number remains an internal QCMS field and is never printed.
-    Price history stays internal to QCMS and is not exposed on the supplier document.
+    Each supplier-facing part section includes its controlled Price Revision History snapshot
+    (Start Date / End Date / Price / Remark) immediately below the item technical data.
     Any extra item lines continue on clean item pages before the controlled FSI/703/F04 terms template.
     """
     if PdfReader is None or PdfWriter is None:
@@ -341,8 +393,8 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
         raise ValueError("At least one Purchase Order line is required.")
     first = _first_page_bytes(header, normalized)
     writer = PdfWriter(); writer.add_page(PdfReader(BytesIO(first)).pages[0])
-    if len(normalized) > 3:
-        continuation = PdfReader(BytesIO(_continuation_items_bytes(header, normalized[3:])))
+    if len(normalized) > 2:
+        continuation = PdfReader(BytesIO(_continuation_items_bytes(header, normalized[2:])))
         for page in continuation.pages: writer.add_page(page)
     path = Path(terms_path) if terms_path else Path(__file__).resolve().parent.parent / "templates" / "FSI_STANDARD_PO_TERMS_2023.pdf"
     if path.exists():

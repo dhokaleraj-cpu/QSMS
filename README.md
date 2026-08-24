@@ -1,6 +1,6 @@
-# QCMS v4.14.0
+# QCMS v4.14.1
 
-Build: `4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL`
+Build: `4141-HEAT-SUM-METLAB-TRAVERSE-LOGIN-APPROVAL-PO-PRICE`
 
 Corrective workflow + notification release for Purchase Order source visibility, incremental Approved-RMTC Part validation/decision, HSN/SAC supplier print, clean item-wise Purchase Order layout, and configurable next-responsibility email notifications.
 

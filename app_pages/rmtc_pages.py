@@ -205,7 +205,7 @@ def render_entry()->None:
         heat_usage=svc.heat_usage(heat_search) if heat_search else []
         if heat_search:
             st.markdown("**GLOBAL HEAT QUANTITY BALANCE & RECORD LIST**")
-            st.caption("One Heat Number shares one global steel quantity. The balance and every linked RMTC/Part allocation are shown below.")
+            st.caption("Global Heat Steel Quantity is the sum of the certificate quantities from each distinct Supplier RMTC Number under this Heat. Every RMTC remains separately traceable.")
         if heat_summary:
             k1,k2,k3,k4=st.columns(4,gap='small')
             k1.metric('Global Heat Steel',f"{float(heat_summary.get('global_steel_quantity_kg') or 0):,.3f} kg")
@@ -220,20 +220,21 @@ def render_entry()->None:
             if int(heat_summary.get('active_rmtc_count') or 0)==0 and int(heat_summary.get('rejected_rmtc_count') or 0)>0:
                 st.success('The previous RMTC record(s) for this Heat Number are rejected. Create another RMTC using a different Supplier RMTC Number.')
             else:
-                st.info('This Heat Number already exists. Supplier and Part may be reused, but every RMTC must have a different Supplier RMTC Number.')
+                st.info('This Heat Number already exists. A new distinct Supplier RMTC Number adds its own certificate quantity to the same Global Heat total; Supplier and Part may be reused.')
             if heat_usage:
                 usage_df=pd.DataFrame(heat_usage).rename(columns={
                     'rmtc_number':'RMTC Number','rmtc_status':'RMTC Status','rmtc_disposition':'RMTC Disposition',
                     'supplier_rmtc_number':'Supplier RMTC Number','supplier_name':'Supplier','part_number':'Part Number','part_name':'Part Description',
+                    'rmtc_steel_quantity_kg':'RMTC Cert Qty (kg)',
                     'planned_production_quantity_pcs':'Planned Qty (pcs)','input_weight_kg':'Input Wt (kg)',
                     'planned_steel_quantity_kg':'Planned Steel (kg)','inward_production_quantity_pcs':'Inward Qty (pcs)',
                     'inward_steel_quantity_kg':'Inward Steel (kg)','remaining_planned_steel_quantity_kg':'Remaining Plan (kg)',
                     'automated_validation':'Automated Validation','part_disposition':'Part Decision'
                 })
-                show=[c for c in ['RMTC Number','Supplier RMTC Number','RMTC Status','RMTC Disposition','Supplier','Part Number','Part Description','Planned Qty (pcs)','Input Wt (kg)','Planned Steel (kg)','Inward Qty (pcs)','Inward Steel (kg)','Remaining Plan (kg)','Automated Validation','Part Decision'] if c in usage_df.columns]
+                show=[c for c in ['RMTC Number','Supplier RMTC Number','RMTC Cert Qty (kg)','RMTC Status','RMTC Disposition','Supplier','Part Number','Part Description','Planned Qty (pcs)','Input Wt (kg)','Planned Steel (kg)','Inward Qty (pcs)','Inward Steel (kg)','Remaining Plan (kg)','Automated Validation','Part Decision'] if c in usage_df.columns]
                 portal_table(style_status_dataframe(usage_df[show]),width='stretch',hide_index=True,height=min(360,80+len(usage_df)*36))
         elif heat_search:
-            st.caption('New Heat Number. The steel quantity entered below becomes the global Heat steel quantity.')
+            st.caption('New Heat Number. The RMTC certificate quantity entered below becomes the first contribution to the Global Heat certified steel quantity.')
 
         if heat_summary:
             hb1,hb2=st.columns(2,gap='small')
@@ -283,8 +284,20 @@ def render_entry()->None:
         heat_code=c[3].text_input('Internal Heat Code',value=str(existing.get('heat_code') or ''),placeholder='Auto on save: Steel Mill initial-0001',key=f'rmtc_heat_code_{form_token}')
         c=st.columns(4,gap='small')
         heat_global_qty=float(heat_summary.get('global_steel_quantity_kg') or 0) if heat_summary else 0.0
-        qty_default=float(existing.get('certificate_quantity') or heat_global_qty or 0)
-        qty=c[0].number_input('Global Heat Steel Quantity (kg)',min_value=0.0,value=qty_default,step=1.0,disabled=bool(heat_summary),key=f'rmtc_qty_{form_token}')
+        qty_default=float(existing.get('certificate_quantity') or 0)
+        qty=c[0].number_input(
+            'This RMTC Certificate Quantity (kg)', min_value=0.0, value=qty_default, step=1.0,
+            disabled=not writable, key=f'rmtc_qty_{form_token}',
+            help='For the same Heat Number with a different Supplier RMTC Number, this certificate quantity is added to the Global Heat certified quantity.',
+        )
+        same_existing_heat=bool(existing) and svc.normalize_heat_number(existing.get('heat_number'))==svc.normalize_heat_number(heat_search)
+        existing_contribution=float(existing.get('certificate_quantity') or 0) if same_existing_heat else 0.0
+        projected_global=max(heat_global_qty-existing_contribution,0.0)+float(qty or 0)
+        if heat_search and qty>0:
+            st.caption(
+                f"Projected Global Heat certified quantity after save: {projected_global:,.3f} kg "
+                f"(current {heat_global_qty:,.3f} kg {'minus this RMTC current contribution ' + format(existing_contribution, ',.3f') + ' kg plus revised certificate quantity' if existing_contribution else '+ this RMTC certificate quantity'})."
+            )
         c[1].text_input('RM Section',value=str(source.get('section_size') or existing.get('rm_section') or ''),disabled=True,key=f'rmtc_section_{form_token}')
         c[2].text_input('Forging Route / Root',value=str(source.get('forging_route') or existing.get('forging_route') or ''),disabled=True,key=f'rmtc_route_{form_token}')
         prepared_options=['']+list(prepared_map);current_prepared=str(existing.get('prepared_by_employee_id') or '')
