@@ -10,6 +10,7 @@ from core.selection_labels import part_label
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
+from core.notification_service import NotificationService
 from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
 from core.reporting import dimensional_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
@@ -249,6 +250,16 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
                     "vendor_batch_number_snapshot": vendor_batch_number.strip() or None,
                 }
                 saved = service.save_dimensional(payload, saved_rows, existing_id or None)
+                if not existing_id:
+                    NotificationService(service.repo).notify(
+                        "DIMENSIONAL_APPROVAL_PENDING",
+                        subject=f"QCMS · Dimensional approval pending · {saved.get('report_number') or final_number}",
+                        body_text=(f"Dimensional Inspection Report {saved.get('report_number') or final_number} is ready for validation / approval.\n"
+                                   f"Part: {(parts.get(str(saved.get('part_id'))) or {}).get('part_number') or '-'}\n"
+                                   f"Inspection Date: {saved.get('inspection_date') or test_date}"),
+                        related_table="inspection_reports",related_id=str(saved.get("id")),
+                        context={"inspection_report_id":str(saved.get("id")),"next_task":"Dimensional Approval"},
+                    )
                 if attachment is not None:
                     service.upload_attachment("DIMENSIONAL_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "inspection_reports", "attachment_path")
                 st.session_state["edit_dimensional_id"] = str(saved["id"]); save_success_popup(f"Standalone Dimensional Report {final_number} saved successfully.", queue_for_rerun=True); st.rerun()
@@ -385,6 +396,16 @@ def render_entry() -> None:
                 payload = {"report_number": final_number, "report_type": "DIMENSIONAL", "inspection_plan_id": plan_id, "inspection_stage_id": plan.get("inspection_stage_id"), "process_id": plan.get("process_id"), "part_id": part_id, "inward_lot_id": inward_id, "inspection_date": inspection_date.isoformat(), "sample_size": int(sample_size), "accepted_quantity": 0, "rejected_quantity": 0, "inspector": employee_map.get(prepared), "overall_result": "NOT_EVALUATED", "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None, "disposition": disposition, "disposition_reason": reason.strip() or None, "heat_number": inward.get("heat_number"), "heat_code": inward.get("heat_code"), "lot_quantity": lot_qty, "supplier_id": inward.get("supplier_id"), "drawing_number": part.get("drawing_number"), "drawing_revision": part.get("drawing_revision"), "prepared_by_employee_id": prepared, "source_layout_revision": plan.get("revision"), "layout_name_snapshot": plan.get("layout_name"), "layout_type_name": section_name, "steel_quantity_kg": inward.get("steel_quantity_kg") or inward.get("quantity_received"), "production_quantity_pcs": inward.get("production_quantity_pcs")}
                 with st.spinner("Saving report and layout characteristics…"):
                     saved = service.save_dimensional(payload, saved_rows, str(existing["id"]) if existing else None)
+                    if not existing:
+                        NotificationService(service.repo).notify(
+                            "DIMENSIONAL_APPROVAL_PENDING",
+                            subject=f"QCMS · Dimensional approval pending · {saved.get('report_number') or final_number}",
+                            body_text=(f"Dimensional Inspection Report {saved.get('report_number') or final_number} is ready for validation / approval.\n"
+                                       f"Part: {part.get('part_number') or '-'}\n"
+                                       f"Source: {inward.get('inward_number') or inward.get('heat_number') or '-'}"),
+                            related_table="inspection_reports",related_id=str(saved.get("id")),
+                            context={"inspection_report_id":str(saved.get("id")),"inward_lot_id":str(inward_id),"next_task":"Dimensional Approval"},
+                        )
                     if attachment is not None:
                         service.upload_attachment("DIMENSIONAL_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "inspection_reports", "attachment_path")
                 st.session_state["edit_dimensional_id"] = str(saved["id"])

@@ -16,6 +16,7 @@ from core.delete_service import password_delete_panel
 from core.calculations import band_status, calculate_di, calculate_jominy_curve
 from core.permissions import normalized_role
 from core.rmtc_service import RMTCService
+from core.notification_service import NotificationService
 from core.reporting import rmtc_record_pdf_bytes
 from core.selection_labels import employee_label, part_label, party_label
 from core.steel_balance import remaining_planned_steel
@@ -364,6 +365,15 @@ def render_entry()->None:
                     try:
                         repo.update('rmtc_approvals',str(existing['id']),{'validated_by_employee_id':validator,'approved_by_employee_id':approver})
                         repo.rpc('qsms_submit_rmtc',{'p_rmtc_id':str(existing['id'])})
+                        NotificationService(repo).notify(
+                            'RMTC_APPROVAL_PENDING',
+                            subject=f"QCMS · RMTC approval pending · {existing.get('rmtc_number')}",
+                            body_text=(f"RMTC {existing.get('rmtc_number')} is pending validation / approval.\n"
+                                       f"Heat Number: {existing.get('heat_number') or '-'}\n"
+                                       f"Supplier RMTC: {existing.get('certificate_reference') or '-'}"),
+                            related_table='rmtc_approvals', related_id=str(existing['id']),
+                            context={'rmtc_id':str(existing['id']),'next_task':'RMTC Approval'},
+                        )
                         save_success_popup('RMTC moved to Approval Pending.', queue_for_rerun=True);st.rerun()
                     except Exception as exc:st.error(str(exc))
             else:
@@ -398,6 +408,12 @@ def render_entry()->None:
                 if st.button('Add Part Number to Approved RMTC',type='primary',width='stretch',disabled=not perms['can_edit'],key=f"rmtc_add_part_button_{existing.get('id')}"):
                     try:
                         svc.add_part_to_approved_rmtc(str(existing['id']),add_part_id)
+                        NotificationService(repo).notify(
+                            'RMTC_APPROVAL_PENDING',
+                            subject=f"QCMS · Added Part worksheet pending · {existing.get('rmtc_number')}",
+                            body_text=f"A new Part Number was added to approved RMTC {existing.get('rmtc_number')}. Complete its Part Worksheet, validation and final decision.",
+                            related_table='rmtc_approvals',related_id=str(existing['id']),context={'rmtc_id':str(existing['id']),'part_id':str(add_part_id),'next_task':'Added Part Worksheet / RMTC Approval'},
+                        )
                         st.session_state['part_rmtc_id']=str(existing['id']); st.session_state['rmtc_part_choice']=add_part_id
                         save_success_popup('Part Number added to the approved RMTC. Complete the new Part Worksheet and validation; previously accepted Parts remain released.',queue_for_rerun=True)
                         st.switch_page(st.session_state['_qsms_pages']['rmtc-part'])
@@ -435,18 +451,59 @@ def render_approved_part_worksheet()->None:
     with stage_section('C','ADD NEW PART WORKSHEET','Only active Parts with the same Material Grade and not already covered are offered. The new Part then opens in the normal Part Worksheet module for its Part-specific plan and validation.',key='approved_rmtc_add_part'):
         compatible=[p for p in parts.values() if str(p.get('id')) not in covered_ids and str(p.get('material_grade_id') or '')==str(header.get('material_grade_id') or '')]
         if not compatible:
-            st.info('No additional active Part with the same Material Grade is available.'); return
-        compat={str(p['id']):part_label(p) for p in compatible}
-        part_id=st.selectbox('New Part Number / FSI Part Number',list(compat),format_func=lambda v:compat[v],key='approved_rmtc_new_part')
-        selected=parts.get(part_id) or {}
-        portal_table(pd.DataFrame([{'Part Number':selected.get('part_number'),'FSI Part Number':selected.get('fsi_part_number'),'Part Description':selected.get('part_name'),'Material Grade':(svc.repo.get('material_grades',str(selected.get('material_grade_id') or '')) or {}).get('grade_code'),'Drawing':selected.get('drawing_number'),'Revision':selected.get('drawing_revision')}]),hide_index=True,width='stretch')
-        if st.button('Add Part Worksheet to Approved RMTC',type='primary',width='stretch',disabled=not perms['can_edit']):
-            try:
-                svc.add_part_to_approved_rmtc(rid,part_id)
-                st.session_state['part_rmtc_id']=rid; st.session_state['rmtc_part_choice']=part_id
-                save_success_popup('New Part Worksheet added to the approved RMTC. Existing accepted Parts remain released. Complete the new worksheet and validation for this Part.',queue_for_rerun=True)
-                st.switch_page(st.session_state['_qsms_pages']['rmtc-part'])
-            except Exception as exc: st.error(str(exc))
+            st.info('No additional active Part with the same Material Grade is available.')
+        else:
+            compat={str(p['id']):part_label(p) for p in compatible}
+            part_id=st.selectbox('New Part Number / FSI Part Number',list(compat),format_func=lambda v:compat[v],key='approved_rmtc_new_part')
+            selected=parts.get(part_id) or {}
+            portal_table(pd.DataFrame([{'Part Number':selected.get('part_number'),'FSI Part Number':selected.get('fsi_part_number'),'Part Description':selected.get('part_name'),'Material Grade':(svc.repo.get('material_grades',str(selected.get('material_grade_id') or '')) or {}).get('grade_code'),'Drawing':selected.get('drawing_number'),'Revision':selected.get('drawing_revision')}]),hide_index=True,width='stretch')
+            if st.button('Add Part Worksheet to Approved RMTC',type='primary',width='stretch',disabled=not perms['can_edit']):
+                try:
+                    svc.add_part_to_approved_rmtc(rid,part_id)
+                    st.session_state['part_rmtc_id']=rid; st.session_state['rmtc_part_choice']=part_id
+                    save_success_popup('New Part Worksheet added to the approved RMTC. Existing accepted Parts remain released. Complete the new worksheet and validation for this Part.',queue_for_rerun=True)
+                    st.switch_page(st.session_state['_qsms_pages']['rmtc-part'])
+                except Exception as exc: st.error(str(exc))
+
+    # v4.14.0: added Parts can be validated and decided without reopening/resetting
+    # the already accepted Parts on the same RMTC.
+    covered=svc.covered_parts(rid)
+    pending_parts=[r for r in covered if str(r.get('disposition') or 'PENDING') not in ('ACCEPTED','ACCEPTED_UNDER_RESERVE')]
+    with stage_section('D','VALIDATE & DECIDE ADDED PART WORKSHEET','Validate only the newly added Part against its Part Master requirements, then save its independent final decision. Existing accepted Parts remain released.',key='approved_rmtc_validate_added'):
+        if not pending_parts:
+            st.success('All covered Part Worksheets already have a released final decision.')
+        else:
+            pending_labels={str(r.get('part_id')):part_label(parts.get(str(r.get('part_id'))) or {}) for r in pending_parts}
+            validate_part_id=st.selectbox('Added Part Worksheet Pending Decision',list(pending_labels),format_func=lambda v:pending_labels[v],key='approved_rmtc_validate_part')
+            pending_row=next(r for r in pending_parts if str(r.get('part_id'))==validate_part_id)
+            part=parts.get(validate_part_id) or {}
+            portal_table(pd.DataFrame([{
+                'Part Number':part.get('part_number'),'FSI Part Number':part.get('fsi_part_number'),'Worksheet':'COMPLETED' if pending_row.get('worksheet_completed_at') else 'PENDING',
+                'Automated Validation':pending_row.get('approval_status'),'Source':pending_row.get('source_status'),'Material Grade':pending_row.get('material_grade_status'),'Raw Material':pending_row.get('raw_material_status'),
+                'Chemistry':pending_row.get('chemistry_status'),'Jominy':pending_row.get('jominy_status'),'Requirements':pending_row.get('requirement_status'),'Current Decision':pending_row.get('disposition')
+            }]),hide_index=True,width='stretch')
+            c=st.columns(2,gap='small')
+            if c[0].button('1 · Validate Added Part Against Masters',type='primary',width='stretch',disabled=not perms['can_edit'] or not pending_row.get('worksheet_completed_at')):
+                try:
+                    result=svc.validate_added_part(rid,validate_part_id)
+                    save_success_popup(f"Added Part validation completed · Recommendation {result.get('approval_status') or result.get('recommendation') or 'updated'}.",queue_for_rerun=True);st.rerun()
+                except Exception as exc:st.error(str(exc))
+            if c[1].button('Open Part Worksheet',width='stretch'):
+                st.session_state['part_rmtc_id']=rid;st.session_state['rmtc_part_choice']=validate_part_id;st.switch_page(st.session_state['_qsms_pages']['rmtc-part'])
+
+            # Final decision controls appear after the worksheet exists; manual decision is independent of automated recommendation.
+            employees=[e for e in svc.repo.select('employees',eq={'status':'ACTIVE'},order_by='first_name',limit=2000) if 'RMTC_APPROVE' in (e.get('approval_authorities') or [])]
+            emp_labels={str(e.get('id')):f"{e.get('employee_code')} · {e.get('first_name')} {e.get('last_name')} · {e.get('designation') or ''}" for e in employees}
+            dcols=st.columns(2,gap='small')
+            disposition=dcols[0].selectbox('Final Decision',['PENDING','ACCEPTED','ACCEPTED_UNDER_RESERVE','ON_HOLD','REJECTED'],key='approved_rmtc_added_disposition')
+            approver=dcols[1].selectbox('Approved / Decided By',['']+list(emp_labels),format_func=lambda v:emp_labels.get(v,'— Select RMTC Approver —'),key='approved_rmtc_added_approver')
+            reason=st.text_area('Decision / Reserve / Hold / Rejection Reason',height=75,key='approved_rmtc_added_reason')
+            decision_disabled=not perms.get('can_approve',False) or disposition=='PENDING' or not approver or not pending_row.get('worksheet_completed_at')
+            if st.button('2 · Save Added Part Final Decision',type='primary',width='stretch',disabled=decision_disabled):
+                try:
+                    svc.decide_added_part(rid,validate_part_id,disposition,reason.strip() or None,approver)
+                    save_success_popup('Added Part final decision saved. Existing accepted Part releases were not changed.',queue_for_rerun=True);st.rerun()
+                except Exception as exc:st.error(str(exc))
 
 
 def render_part()->None:
@@ -671,7 +728,9 @@ def render_approval()->None:
                 'Decision / Reserve Reason':r.get('decision_reason') or '',
                 '_part_id':str(r.get('part_id')),
             })
-        finalized=str(record.get('status')) in ('APPROVED','PARTIALLY_APPROVED','REJECTED')
+        pending_added_parts=[row for row in details['parts'] if normalize_disposition(row.get('disposition') or 'PENDING') in ('PENDING','ON_HOLD')]
+        incremental_part_review=str(record.get('status'))=='PARTIALLY_APPROVED' and bool(pending_added_parts)
+        finalized=str(record.get('status')) in ('APPROVED','REJECTED') or (str(record.get('status'))=='PARTIALLY_APPROVED' and not incremental_part_review)
         if finalized and role=='ADMIN':
             st.markdown("**Admin Decision Control**")
             revisions=svc.decision_revisions(rid)
@@ -716,12 +775,50 @@ def render_approval()->None:
         approved=c[1].selectbox('Approved / Decided By',approver_options,index=approver_options.index(current_approver) if current_approver in approver_options else 0,format_func=lambda x:approve_map.get(x,'— Select Approver —'),disabled=finalized)
 
         can_approve=perms['can_approve'] or role in ('ADMIN','QUALITY_MANAGER','METLAB_APPROVER')
+
+        if incremental_part_review:
+            st.markdown('**Added Part Worksheet · Validation & Final Decision**')
+            st.caption('Existing accepted Part Numbers remain released. Only the newly added Pending / On Hold Part Worksheet is validated and decided here.')
+            pending_map={str(row.get('part_id')):part_label(parts.get(str(row.get('part_id'))) or {}) for row in pending_added_parts}
+            added_part_id=st.selectbox('Pending Added Part Number',list(pending_map),format_func=lambda value:pending_map[value],key=f'incremental_rmtc_part_{rid}')
+            added_row=next(row for row in pending_added_parts if str(row.get('part_id'))==str(added_part_id))
+            icols=st.columns(3,gap='small')
+            added_validator=icols[0].selectbox('Added Part · Validated By',validator_options,index=validator_options.index(current_validator) if current_validator in validator_options else 0,format_func=lambda x:validate_map.get(x,'— Select Validator —'),key=f'incremental_validator_{rid}_{added_part_id}')
+            added_approver=icols[1].selectbox('Added Part · Approved / Decided By',approver_options,index=approver_options.index(current_approver) if current_approver in approver_options else 0,format_func=lambda x:approve_map.get(x,'— Select Approver —'),key=f'incremental_approver_{rid}_{added_part_id}')
+            worksheet_done=bool(added_row.get('worksheet_completed_at'))
+            icols[2].page_link(st.session_state['_qsms_pages']['rmtc-part'],label='Open Part Worksheet',icon=':material/format_list_bulleted:',width='stretch')
+            if not worksheet_done:
+                st.warning('Complete and save this Part Worksheet before automated validation.')
+            b1,b2=st.columns(2,gap='small')
+            if b1.button('1 · Validate Added Part Against Masters',type='primary',width='stretch',disabled=not worksheet_done or not added_validator,key=f'incremental_validate_{rid}_{added_part_id}'):
+                try:
+                    repo.update('rmtc_approvals',rid,{'validated_by_employee_id':added_validator,'approved_by_employee_id':added_approver or None})
+                    svc.validate_added_part(rid,added_part_id)
+                    save_success_popup('Added Part validation completed. Existing accepted Part releases were not changed.',queue_for_rerun=True);st.rerun()
+                except Exception as exc:st.error(str(exc))
+            added_disposition=b2.selectbox('2 · Added Part Final Decision',['PENDING','ACCEPTED','ACCEPTED_UNDER_RESERVE','ON_HOLD','REJECTED'],format_func=lambda v:disposition_label(v),key=f'incremental_disposition_{rid}_{added_part_id}')
+            added_reason=st.text_area('Added Part Decision / Reserve / Hold / Rejection Reason',height=70,key=f'incremental_reason_{rid}_{added_part_id}')
+            if st.button('3 · Save Added Part Final Decision',type='primary',width='stretch',disabled=not can_approve or not worksheet_done or not added_approver or added_disposition=='PENDING',key=f'incremental_decide_{rid}_{added_part_id}'):
+                try:
+                    svc.decide_added_part(rid,added_part_id,added_disposition,added_reason.strip() or None,added_approver)
+                    save_success_popup('Added Part final decision saved. Existing accepted Parts remain released.',queue_for_rerun=True);st.rerun()
+                except Exception as exc:st.error(str(exc))
+
         workflow=st.columns(3,gap='small')
         submit_disabled=record.get('status')!='DRAFT' or not validated or not approved
         if workflow[0].button('1 · Submit for Validation',disabled=submit_disabled,width='stretch'):
             try:
                 repo.update('rmtc_approvals',rid,{'validated_by_employee_id':validated,'approved_by_employee_id':approved})
                 repo.rpc('qsms_submit_rmtc',{'p_rmtc_id':rid})
+                NotificationService(repo).notify(
+                    'RMTC_APPROVAL_PENDING',
+                    subject=f"QCMS · RMTC approval pending · {record.get('rmtc_number')}",
+                    body_text=(f"RMTC {record.get('rmtc_number')} is pending validation / approval.\n"
+                               f"Heat Number: {record.get('heat_number') or '-'}\n"
+                               f"Covered Parts: {len(details.get('parts') or [])}"),
+                    related_table='rmtc_approvals', related_id=rid,
+                    context={'rmtc_id':rid,'next_task':'RMTC Approval'},
+                )
                 save_success_popup('RMTC submitted and moved to Approval Pending.', queue_for_rerun=True);st.rerun()
             except Exception as exc:st.error(str(exc))
 

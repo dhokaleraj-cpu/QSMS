@@ -12,6 +12,7 @@ from core.selection_labels import part_label
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
+from core.notification_service import NotificationService
 from core.inspection_service import FINAL_DISPOSITIONS, RESULT_OPTIONS, InspectionService
 from core.reporting import metlab_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
@@ -271,6 +272,16 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                     **{f"microstructure_caption_{slot}": micro_captions[slot - 1].strip() or None for slot in range(1, 5)},
                 }
                 saved = service.save_metlab(payload, {"rows": layout_rows}, existing_id or None)
+                if not existing_id:
+                    NotificationService(service.repo).notify(
+                        "METLAB_APPROVAL_PENDING",
+                        subject=f"QCMS · MetLAB approval pending · {saved.get('report_number') or final_number}",
+                        body_text=(f"MetLAB Report {saved.get('report_number') or final_number} is ready for validation / approval.\n"
+                                   f"Part: {(parts.get(str(saved.get('part_id'))) or {}).get('part_number') or '-'}\n"
+                                   f"Test Date: {saved.get('test_date') or test_date}"),
+                        related_table="lab_tests",related_id=str(saved.get("id")),
+                        context={"lab_test_id":str(saved.get("id")),"next_task":"MetLAB Approval"},
+                    )
                 if attachment is not None:
                     service.upload_attachment("METLAB_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "lab_tests", "attachment_path")
                 for slot, image in enumerate(micro_files, start=1):
@@ -473,6 +484,16 @@ def render_entry() -> None:
                 results = {"rows": layout_rows, "chemistry_rows": chemistry_rows, "jominy_rows": jominy_rows, "requirement_rows": requirement_rows}
                 with st.spinner("Saving RMTC verification sections…"):
                     saved = service.save_metlab(payload, results, str(existing["id"]) if existing else None)
+                    if not existing:
+                        NotificationService(service.repo).notify(
+                            "METLAB_APPROVAL_PENDING",
+                            subject=f"QCMS · MetLAB approval pending · {saved.get('report_number') or final_number}",
+                            body_text=(f"MetLAB Report {saved.get('report_number') or final_number} is ready for validation / approval.\n"
+                                       f"Part: {part.get('part_number') or '-'}\n"
+                                       f"Source: {inward.get('inward_number') or inward.get('heat_number') or '-'}"),
+                            related_table="lab_tests",related_id=str(saved.get("id")),
+                            context={"lab_test_id":str(saved.get("id")),"inward_lot_id":str(inward_id),"next_task":"MetLAB Approval"},
+                        )
                     if attachment is not None:
                         service.upload_attachment("METLAB_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "lab_tests", "attachment_path")
                     for slot, image in enumerate(micro_files, start=1):

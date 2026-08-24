@@ -140,11 +140,18 @@ required = [
     "supabase/migrations/20260822224500_qcms_rmtc_incremental_part_release_guard_v4139.sql",
     "tests/test_v4139_rm_procurement_rmtc_po_item_tech.py",
     "docs/RELEASE_4_13_9.md",
+    "supabase/migrations/20260824121500_qcms_po_hsn_email_notifications_v4140.sql",
+    "supabase/functions/qcms-send-email/index.ts",
+    "supabase/functions/qcms-send-email/deno.json",
+    "core/notification_service.py",
+    "app_pages/email_settings.py",
+    "tests/test_v4140_po_rmtc_hsn_email.py",
+    "docs/RELEASE_4_14_0.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.13.9 - RM Procurement Link, Incremental RMTC Part Worksheet and Item-wise PO Technical Data",
+    "phase": "QCMS 4.14.0 - PO Source Visibility, RMTC Added-Part Validation, HSN/SAC and Email Notifications",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

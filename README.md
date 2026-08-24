@@ -1,3 +1,19 @@
+# QCMS v4.14.0
+
+Build: `4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL`
+
+Corrective workflow + notification release for Purchase Order source visibility, incremental Approved-RMTC Part validation/decision, HSN/SAC supplier print, clean item-wise Purchase Order layout, and configurable next-responsibility email notifications.
+
+Key controls:
+- Customer Order Supply Flow is stored directly and every open order is visible on the PO eligibility grid with a reason.
+- DANA-style FSI-RM orders remain eligible for RM PO until RM balance is ordered; Direct-Forging orders appear in Forging PO until forging quantity is ordered.
+- Newly added Parts under an approved RMTC can be validated and decided independently while previously accepted Parts remain released.
+- PO supports HSN/SAC and removes vertical body grid lines with more item/technical-data space and continuation pages.
+- Admin Email Server & Notifications provides SMTP settings, employee responsibility routing, test/retry outbox and server-side delivery.
+- Existing v4.13.9 and earlier data/logic remain preserved.
+
+---
+
 # QCMS v4.13.9
 
 Build: `4139-RM-PROCUREMENT-LINK-RMTC-PART-PO-ITEM-TECH`

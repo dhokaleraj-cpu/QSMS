@@ -9,6 +9,7 @@ from core.ui import portal_table
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
 from core.osp_service import OSPService
+from core.notification_service import NotificationService
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes, dimensional_record_pdf_bytes, metlab_record_pdf_bytes
 from core.selection_labels import party_label, process_label
@@ -110,6 +111,17 @@ def render_sample_receipt() -> None:
     if submitted:
         try:
             service.record_sample({"osp_job_id": job["id"], "sample_received_date": received_date.isoformat(), "sample_reference": reference, "vendor_batch_number": vendor_batch, "sample_quantity": sample_qty})
+            NotificationService(service.repo).notify(
+                "OSP_SAMPLE_PENDING",
+                subject=f"QCMS · OSP sample inspection pending · {job.get('osp_job_number')}",
+                body_text=(f"OSP sample receipt is recorded for {job.get('osp_job_number')}.\n"
+                           f"Part: {job.get('part_number') or '-'} · FSI {job.get('fsi_part_number') or '-'}\n"
+                           f"Vendor: {job.get('vendor_name') or '-'}\n"
+                           f"Vendor Batch: {vendor_batch or '-'}\n"
+                           "Complete OSP Dimensional and MetLAB sample inspections."),
+                related_table="osp_jobs",related_id=str(job.get("id")),
+                context={"osp_job_id":str(job.get("id")),"next_task":"OSP Sample Dimensional / MetLAB"},
+            )
             save_success_popup("OSP sample receipt saved successfully. Complete both OSP Dimensional and MetLAB inspections.", queue_for_rerun=True); st.rerun()
         except Exception as exc: st.error(str(exc))
     if job.get("sample_received_date"):

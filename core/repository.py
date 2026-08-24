@@ -28,7 +28,7 @@ TENANT_SCOPED_TABLES = {
     "rmtc_decision_revisions",
     "npd_process_flows", "npd_process_flow_steps", "npd_process_flow_points", "npd_orders", "npd_order_steps", "npd_order_step_points",
     "qc_calculation_records", "customer_standards", "part_standard_links", "quality_complaints", "quality_complaint_followups", "quality_complaint_actions",
-    "supply_customer_orders", "supply_purchase_orders", "supply_purchase_order_items", "supply_purchase_order_sources", "supply_rm_purchase_orders", "supply_rm_receipts", "supply_forging_orders", "supply_rm_dispatches", "supply_forging_receipts", "supply_downstream_events",
+    "supply_customer_orders", "supply_purchase_orders", "supply_purchase_order_items", "supply_purchase_order_sources", "qcms_email_settings", "qcms_notification_routes", "qcms_notification_outbox", "supply_rm_purchase_orders", "supply_rm_receipts", "supply_forging_orders", "supply_rm_dispatches", "supply_forging_receipts", "supply_downstream_events",
     "ppap_projects", "ppap_documents", "pfd_headers", "pfd_steps", "pfmea_headers", "pfmea_items",
     "control_plan_headers", "control_plan_items", "spc_plans", "spc_studies", "spc_readings",
     "msa_plans", "msa_studies", "msa_readings", "capacity_studies", "balloon_characteristics",

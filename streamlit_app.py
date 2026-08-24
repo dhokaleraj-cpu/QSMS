@@ -1,5 +1,5 @@
-# QCMS 4.13.9 — RM-PROCUREMENT-LINK-RMTC-PART-PO-ITEM-TECH
-# BUILD 4139-RM-PROCUREMENT-LINK-RMTC-PART-PO-ITEM-TECH
+# QCMS 4.14.0 — PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL
+# BUILD 4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL
 # QCMS 4.13.8 — SUPPLY-PO-FSI-PART-RMTC-WORKSHEET
 # BUILD 4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA
 # QCMS 4.13.5 — MAROON-SECTIONS-WHITE-FIELDS-KPI-ICON-FIX
@@ -14,6 +14,7 @@ from app_pages import (
     complaints,
     dimensional_report,
     employee_master,
+    email_settings,
     inspection_home,
     inspection_layouts,
     master_home,
@@ -113,6 +114,7 @@ PAGE_ITEMS = (
     ("employee-entry", st.Page(employee_master.render_entry, title="Employee Entry", icon=":material/person_add:", url_path="employee-entry")),
     ("employee-records", st.Page(employee_master.render_records, title="Employee Records", icon=":material/groups:", url_path="employee-records")),
     ("user-access", st.Page(user_access.render, title="Users & Access", icon=":material/admin_panel_settings:", url_path="user-access")),
+    ("email-settings", st.Page(email_settings.render, title="Email Server & Notifications", icon=":material/forward_to_inbox:", url_path="email-settings")),
     ("master-import", st.Page(master_import.render, title="Master Import", icon=":material/upload_file:", url_path="master-import")),
     ("standards-entry", st.Page(standards_bank.render_entry, title="Customer Standards Entry", icon=":material/library_books:", url_path="standards-entry")),
     ("standards-records", st.Page(standards_bank.render_records, title="Customer Standards Records", icon=":material/menu_book:", url_path="standards-records")),
@@ -155,6 +157,10 @@ MODULE_SUBMENUS = {
         ("user-access", "Users & Access", ":material/admin_panel_settings:"),
         ("standards-entry", "Standards Bank", ":material/library_books:"),
         ("master-import", "Master Import", ":material/upload_file:"),
+    ),
+    "Admin": (
+        ("user-access", "Users & Access", ":material/admin_panel_settings:"),
+        ("email-settings", "Email Server & Notifications", ":material/forward_to_inbox:"),
     ),
     "RMTC": (
         ("rmtc-entry", "RMTC Entry", ":material/fact_check:"),
@@ -270,7 +276,7 @@ ROUTE_MODULE = {
     "dashboard": "Dashboard", "my-account": "Dashboard",
     "masters": "Masters", "part-entry": "Masters", "process-entry": "Masters",
     "grade-entry": "Masters", "reference-entry": "Masters", "employee-entry": "Masters",
-    "user-access": "Masters", "master-import": "Masters", "standards-entry": "Masters",
+    "user-access": "Admin", "email-settings": "Admin", "master-import": "Masters", "standards-entry": "Masters",
     "rmtc-entry": "RMTC", "rmtc-approved-worksheet": "RMTC", "rmtc-part": "RMTC", "rmtc-approval": "RMTC",
     "inward-entry": "Inward",
     "osp-home": "OSP", "osp-material-out": "OSP", "osp-sample-receipt": "OSP",
@@ -299,7 +305,7 @@ PAGE_TITLE_TO_PATH = {
     "Process Master Records": "process-records", "Material Grade Entry": "grade-entry",
     "Material Grade Records": "grade-records", "Reference Master Entry": "reference-entry",
     "Reference Master Records": "reference-records", "Employee Entry": "employee-entry",
-    "Employee Records": "employee-records", "Users & Access": "user-access", "Master Import": "master-import", "Customer Standards Entry": "standards-entry", "Customer Standards Records": "standards-records", "My Account": "my-account",
+    "Employee Records": "employee-records", "Users & Access": "user-access", "Email Server & Notifications": "email-settings", "Master Import": "master-import", "Customer Standards Entry": "standards-entry", "Customer Standards Records": "standards-records", "My Account": "my-account",
     "Approved RMTC Part Worksheet": "rmtc-approved-worksheet", "RMTC Part Worksheet": "rmtc-part", "RMTC Records": "rmtc-records",
     "RMTC Approval": "rmtc-approval", "Material Inward Records": "inward-records",
     "OSP Material Out": "osp-material-out", "OSP Sample Receipt": "osp-sample-receipt",

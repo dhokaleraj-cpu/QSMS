@@ -6,7 +6,7 @@ def text(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 def test_release_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.13.8", "4.13.9"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.8", "4.13.9", "4.14.0"}
     marker = "4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA"
     for rel in ("streamlit_app.py", "core/ui.py", "core/auth.py"):
         assert marker in text(rel)
@@ -17,7 +17,7 @@ def test_multi_customer_order_rm_po_allocation_schema_and_ui():
     service = text("core/supply_chain_service.py")
     assert "create table if not exists public.supply_purchase_order_sources" in sql
     assert "purchase_order_item_id" in sql
-    assert "Select Customer Orders / Schedules for this RM Purchase Order" in page
+    assert "Select ELIGIBLE Customer Orders / Schedules for this RM Purchase Order" in page
     assert '"customer_order_ids":source_order_ids' in page
     assert 'raw_order_ids = p.get("customer_order_ids")' in service
     assert 'self.repo.insert("supply_purchase_order_sources"' in service
@@ -59,7 +59,8 @@ def test_po_screen_no_longer_retypes_old_technical_commercial_fields():
 
 def test_po_pdf_supports_multiple_vendor_lines_and_keeps_price_history_internal():
     reporting = text("core/purchase_order_reporting.py")
-    assert "display_items = list(items)[:6]" in reporting
+    assert "display_items = list(items)[:3]" in reporting
+    assert "_continuation_items_bytes" in reporting
     assert "supplier-specific technical heading/value snapshots" in reporting
     assert "Price history stays internal to QCMS" in reporting
     assert "original/customer part number remains an internal QCMS field" in reporting

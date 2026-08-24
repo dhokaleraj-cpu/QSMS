@@ -168,11 +168,11 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     x = left
     for sw, title in zip(widths, titles): _bar(c, x, y_item_top, sw, title, height=14); x += sw
     body_top = y_item_top - 14; body_bottom = 245; c.rect(left, body_bottom, w - left - right, body_top - body_bottom, stroke=1, fill=0)
-    # display_items = list(items)[:6]  # legacy regression token; v4.13.9 uses five fully detailed lines per first page.
-    display_items = list(items)[:5]
+    # v4.14.0 reserves a larger item pocket for clean HSN/SAC + technical data.
+    display_items = list(items)[:3]
     y = body_top
     available_height = body_top - body_bottom
-    block_height = max(min(available_height / max(len(display_items), 1), 48), 36)
+    block_height = max(min(available_height / max(len(display_items), 1), 86), 58)
 
     def compact_technical_pairs(item: Mapping[str, Any]) -> list[tuple[str, str]]:
         raw = item.get("technical_data_snapshot") or []
@@ -197,19 +197,25 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     for row_index, item in enumerate(display_items):
         next_y = max(y - block_height, body_bottom)
         if row_index: c.line(left, y, w-right, y)
-        item_row_bottom = y - 21
-        c.setFillColor(white); c.rect(left, item_row_bottom, w-left-right, 21, stroke=0, fill=1)
+        item_row_bottom = y - 29
+        c.setFillColor(white); c.rect(left, item_row_bottom, w-left-right, 29, stroke=0, fill=1)
         x = left
         item_display = " ".join(v for v in (_s(item.get("item_no")), _s(item.get("item_description"))) if v)
         vals = [item_display, f"{_n(item.get('quantity')):,.2f}".rstrip("0").rstrip("."), _money(item.get("unit_price")), item.get("uom"), f"{_n(item.get('gst_percent')):g}%", _money(item.get("gst_amount")), _money(item.get("line_total"))]
         for idx, (sw, value) in enumerate(zip(widths, vals)):
-            if idx: c.line(x, item_row_bottom, x, y)
-            if idx == 0: _wrap(c, x+5, y-9, value, sw-10, size=6.4, leading=7.0, max_lines=2)
-            else: _draw_text(c, x+4, y-14, value, size=6.3, max_width=sw-8)
+            # No vertical grid lines in the PO item body. Whitespace/alignment separates
+            # commercial columns while horizontal item separators keep the layout clean.
+            if idx == 0:
+                _wrap(c, x+5, y-10, value, sw-10, size=6.5, leading=7.2, max_lines=2)
+                hsn=_s(item.get("hsn_sac_code"))
+                if hsn: _draw_text(c, x+5, y-25, f"HSN / SAC: {hsn}", size=5.6, bold=True, color=HexColor("#4B5563"), max_width=sw-10)
+            else:
+                _draw_text(c, x+4, y-17, value, size=6.4, max_width=sw-8)
             x += sw
 
         # Item-wise technical pocket directly under the item line.
         tech_top = item_row_bottom
+        c.setStrokeColor(HexColor("#D1D5DB")); c.line(left, tech_top, w-right, tech_top)
         c.setFillColor(HexColor("#F3F4F6")); c.rect(left, next_y, w-left-right, max(tech_top-next_y, 0), stroke=0, fill=1)
         pairs = compact_technical_pairs(item)
         label_y = tech_top - 8
@@ -238,6 +244,56 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     c.setFont("Helvetica-Bold",8.0); c.drawString(total_x,ytot,"TOTAL"); c.drawString(total_x+61,ytot,f"INR {_money(header.get('grand_total'))}")
     _draw_text(c,w-143,81,"Authorised Signatory",size=7.0,bold=True); _draw_text(c,w-174,67,PLANT["name"],size=6.2); _draw_text(c,left+318,47,"If you have any questions about this purchase order, please contact",size=6.0); _draw_text(c,left+375,36,"FSI, connect@fourstarindustries.com",size=6.0)
     c.showPage(); c.save(); return out.getvalue()
+
+
+def _continuation_items_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, Any]]) -> bytes:
+    """Render supplier PO item continuation pages with generous item-wise technical pockets."""
+    out=BytesIO(); c=canvas.Canvas(out,pagesize=A4); w,h=A4; left,right=28,28
+    widths=[218,44,62,42,40,70,63]; titles=["ITEM #","QTY","UNIT PRICE","UNIT","GST%","GST AMOUNT","TOTAL"]
+    remaining=list(items)
+    while remaining:
+        page_items=remaining[:4]; remaining=remaining[4:]
+        logo_path=Path(__file__).resolve().parent.parent / "assets" / "fsi_logo.png"
+        if logo_path.exists():
+            try:c.drawImage(str(logo_path),left,h-58,width=105,height=39,preserveAspectRatio=True,mask="auto")
+            except Exception:pass
+        c.setFillColor(black);c.setFont("Helvetica-Bold",18);c.drawRightString(w-right,h-34,"PURCHASE ORDER · ITEMS CONTINUED")
+        _draw_text(c,w-168,h-52,f"PO # {_s(header.get('po_number'))}",size=7.2,bold=True)
+        _draw_text(c,w-168,h-65,f"DATE {_date(header.get('order_date'))}",size=7.2)
+        y_top=h-92; x=left
+        for sw,title in zip(widths,titles): _bar(c,x,y_top,sw,title,height=16); x+=sw
+        y=y_top-16; bottom=48; block_height=(y-bottom)/max(len(page_items),1)
+        for idx,item in enumerate(page_items):
+            next_y=max(y-block_height,bottom)
+            if idx:c.setStrokeColor(HexColor("#9CA3AF"));c.line(left,y,w-right,y)
+            item_row_bottom=y-34
+            item_display=" ".join(v for v in (_s(item.get("item_no")),_s(item.get("item_description"))) if v)
+            vals=[item_display,f"{_n(item.get('quantity')):,.2f}".rstrip("0").rstrip("."),_money(item.get("unit_price")),item.get("uom"),f"{_n(item.get('gst_percent')):g}%",_money(item.get("gst_amount")),_money(item.get("line_total"))]
+            x=left
+            for col,(sw,value) in enumerate(zip(widths,vals)):
+                if col==0:
+                    _wrap(c,x+5,y-11,value,sw-10,size=6.7,leading=7.6,max_lines=2)
+                    hsn=_s(item.get("hsn_sac_code"))
+                    if hsn:_draw_text(c,x+5,y-28,f"HSN / SAC: {hsn}",size=5.8,bold=True,color=HexColor("#4B5563"),max_width=sw-10)
+                else:_draw_text(c,x+4,y-20,value,size=6.5,max_width=sw-8)
+                x+=sw
+            c.setStrokeColor(HexColor("#D1D5DB"));c.line(left,item_row_bottom,w-right,item_row_bottom)
+            c.setFillColor(HexColor("#F3F4F6"));c.rect(left,next_y,w-left-right,max(item_row_bottom-next_y,0),stroke=0,fill=1)
+            _draw_text(c,left+5,item_row_bottom-10,"RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA",size=6.0,bold=True,color=NAVY,max_width=260)
+            raw=item.get("technical_data_snapshot") or []
+            pairs=[]
+            if isinstance(raw,list):
+                for row in raw:
+                    if isinstance(row,Mapping) and _s(row.get("heading")) and _s(row.get("value")):pairs.append((_s(row.get("heading")),_s(row.get("value"))))
+            pair_width=(w-left-right-10)/3.0; row_y=item_row_bottom-24
+            for pidx,(heading,value) in enumerate(pairs[:9]):
+                row_no=pidx//3;col_no=pidx%3;px=left+5+col_no*pair_width;py=row_y-row_no*12
+                _draw_text(c,px,py,f"{heading}:",size=5.5,bold=True,max_width=pair_width*0.43)
+                _draw_text(c,px+pair_width*0.43,py,value,size=5.5,max_width=pair_width*0.55)
+            y=next_y
+        _draw_text(c,left,25,"QCMS controlled continuation · Technical data is item-specific and supplier-specific.",size=5.8,color=HexColor("#6B7280"))
+        c.showPage()
+    c.save();return out.getvalue()
 
 def _terms_with_dynamic_header(terms_path: Path, *, po_number: str, order_date: str) -> list[Any]:
     if PdfReader is None:
@@ -276,7 +332,7 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
     PO and prints supplier-specific technical heading/value snapshots from Part Master.
     The original/customer part number remains an internal QCMS field and is never printed.
     Price history stays internal to QCMS and is not exposed on the supplier document.
-    Pages 2-13 remain the controlled FSI/703/F04 terms template.
+    Any extra item lines continue on clean item pages before the controlled FSI/703/F04 terms template.
     """
     if PdfReader is None or PdfWriter is None:
         raise RuntimeError("pypdf is not installed. Add pypdf to requirements.txt.")
@@ -285,6 +341,9 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
         raise ValueError("At least one Purchase Order line is required.")
     first = _first_page_bytes(header, normalized)
     writer = PdfWriter(); writer.add_page(PdfReader(BytesIO(first)).pages[0])
+    if len(normalized) > 3:
+        continuation = PdfReader(BytesIO(_continuation_items_bytes(header, normalized[3:])))
+        for page in continuation.pages: writer.add_page(page)
     path = Path(terms_path) if terms_path else Path(__file__).resolve().parent.parent / "templates" / "FSI_STANDARD_PO_TERMS_2023.pdf"
     if path.exists():
         for page in _terms_with_dynamic_header(path, po_number=_s(header.get("po_number")), order_date=_s(header.get("order_date"))): writer.add_page(page)

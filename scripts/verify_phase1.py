@@ -138,7 +138,7 @@ expected_paths = {
     "reports-home", "heat-transaction-report", "osp-balance-report", "supply-chain-report", "rmtc-report", "inward-report", "dimensional-report", "metlab-report", "complaints-report", "traceability-report", "npd-report", "apqp-report", "qc-report", "inspection-layout-report", "standards-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
-    "user-access", "master-import", "standards-entry", "standards-records", "my-account", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
+    "user-access", "email-settings", "master-import", "standards-entry", "standards-records", "my-account", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
     "osp-material-out", "osp-sample-receipt", "osp-inward", "osp-dimensional", "osp-metlab", "osp-records",
     "inspection-layout-entry", "inspection-layout-records", "dimensional-entry",
     "dimensional-records", "metlab-entry", "metlab-records",
@@ -627,12 +627,12 @@ v4138_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-
 v4138_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
 v4138_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
 v4138_po = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
-if v4138_marker not in ui_text or v4138_marker not in auth_text or v4138_marker not in v4137_streamlit:
-    errors.append("QCMS 4.13.8 build fingerprint is missing")
+if v4138_marker not in ui_text and "4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL" not in ui_text:
+    errors.append("QCMS 4.13.8/4.14.0 compatible build fingerprint is missing")
 for token in ("part_raw_material_technical_data", "part_supplier_price_history", "supply_purchase_order_sources", "technical_data_snapshot", "price_history_snapshot"):
     if token not in v4138_sql:
         errors.append(f"QCMS 4.13.8 database contract missing: {token}")
-for token in ("Select Customer Orders / Schedules for this RM Purchase Order", "PO Allocation kg", "PART MASTER TECHNICAL DATA & PRICE HISTORY"):
+for token in ("Select ELIGIBLE Customer Orders / Schedules for this RM Purchase Order", "PO Allocation kg", "PART MASTER TECHNICAL DATA & PRICE HISTORY"):
     if token not in v4138_supply:
         errors.append(f"QCMS 4.13.8 Purchase Order UI token missing: {token}")
 for token in ("def price_history", "def current_price", "def technical_data_snapshot", "supply_purchase_order_sources"):
@@ -640,7 +640,7 @@ for token in ("def price_history", "def current_price", "def technical_data_snap
         errors.append(f"QCMS 4.13.8 Supply Chain service token missing: {token}")
 if "Save Supplier Technical Data" not in v4138_part or "Save Supplier / FSI Part Price History" not in v4138_part:
     errors.append("QCMS 4.13.8 Part Master technical data / price history editors are missing")
-if "display_items = list(items)[:6]" not in v4138_po or "TECHNICAL DATA" not in v4138_po:
+if "display_items = list(items)[:3]" not in v4138_po or "TECHNICAL DATA" not in v4138_po:
     errors.append("QCMS 4.13.8 multi-line Purchase Order print / technical snapshot rendering is incomplete")
 if "Backfilled from controlled QCMS Purchase Order history" not in v4138_backfill:
     errors.append("QCMS 4.13.8 historical price/source backfill is missing")
@@ -650,24 +650,67 @@ v4139_marker = "4139-RM-PROCUREMENT-LINK-RMTC-PART-PO-ITEM-TECH"
 v4139_sql = (ROOT / "supabase" / "migrations" / "20260822224500_qcms_rmtc_incremental_part_release_guard_v4139.sql").read_text(encoding="utf-8")
 v4139_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
 v4139_po = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
-if v4139_marker not in ui_text or v4139_marker not in auth_text or v4139_marker not in v4137_streamlit:
-    errors.append("QCMS 4.13.9 build fingerprint is missing")
-if v4139_service.count('proposed_three_month_qty=number(order.get("order_qty_pcs")) if str(order.get("order_type") or "") == "PURCHASE_ORDER" else 0.0') < 2:
-    errors.append("QCMS 4.13.9 Customer PO procurement recheck fix is missing")
+if v4139_marker not in ui_text and "4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL" not in ui_text:
+    errors.append("QCMS 4.13.9/4.14.0 compatible build fingerprint is missing")
+if 'proposed_three_month_qty=number(order.get("order_qty_pcs")) if str(order.get("order_type") or "") == "PURCHASE_ORDER" else 0.0' not in v4139_service or "must respect the decision saved with" not in v4139_service:
+    errors.append("QCMS 4.13.9 Customer PO procurement recheck / saved-decision fix is missing")
 if "v_pending_decisions" not in v4139_sql or "PARTIALLY_APPROVED permits released Parts" not in v4139_sql:
     errors.append("QCMS 4.13.9 incremental approved-RMTC Part guard is missing")
 if "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA" not in v4139_po or "compact_technical_pairs" not in v4139_po:
     errors.append("QCMS 4.13.9 item-wise PO technical data print sequence is missing")
 
+# QCMS 4.14.0 PO source visibility / added-Part validation / HSN-SAC / email notification contract.
+v4140_marker = "4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL"
+v4140_sql = (ROOT / "supabase" / "migrations" / "20260824121500_qcms_po_hsn_email_notifications_v4140.sql").read_text(encoding="utf-8")
+v4140_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v4140_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v4140_rmtc = (ROOT / "app_pages" / "rmtc_pages.py").read_text(encoding="utf-8")
+v4140_po = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
+v4140_email = (ROOT / "app_pages" / "email_settings.py").read_text(encoding="utf-8")
+v4140_notify = (ROOT / "core" / "notification_service.py").read_text(encoding="utf-8")
+v4140_edge = (ROOT / "supabase" / "functions" / "qcms-send-email" / "index.ts").read_text(encoding="utf-8")
+if v4140_marker not in ui_text or v4140_marker not in auth_text or v4140_marker not in v4137_streamlit:
+    errors.append("QCMS 4.14.0 build fingerprint is missing")
+for token in ("hsn_sac_code", "qcms_email_settings", "qcms_notification_routes", "qcms_notification_outbox", "supply_flow"):
+    if token not in v4140_sql:
+        errors.append(f"QCMS 4.14.0 schema contract missing: {token}")
+for token in ("CUSTOMER ORDER / SCHEDULE PURCHASE ORDER ELIGIBILITY", "PO Eligibility", "Reason", "HSN / SAC"):
+    if token not in v4140_supply:
+        errors.append(f"QCMS 4.14.0 Purchase Order source/HSN UI token missing: {token}")
+if 'explicit = str(order.get("supply_flow")' not in v4140_service or "def purchase_order_source_status" not in v4140_service:
+    errors.append("QCMS 4.14.0 explicit Supply Flow / PO source eligibility service is missing")
+for token in ("Validate Added Part Against Masters", "Save Added Part Final Decision", "incremental_part_review"):
+    if token not in v4140_rmtc:
+        errors.append(f"QCMS 4.14.0 added-Part RMTC validation token missing: {token}")
+if "HSN / SAC:" not in v4140_po or "No vertical grid lines in the PO item body" not in v4140_po or "_continuation_items_bytes" not in v4140_po:
+    errors.append("QCMS 4.14.0 clean HSN/SAC Purchase Order print contract is missing")
+for token in ("EMAIL SERVER SETTINGS", "RESPONSIBILITY ROUTING", "TEST & NOTIFICATION OUTBOX"):
+    if token not in v4140_email:
+        errors.append(f"QCMS 4.14.0 Email Server settings token missing: {token}")
+if "class NotificationService" not in v4140_notify or "qcms-send-email" not in v4140_notify or "Workflow execution must never" not in v4140_notify:
+    errors.append("QCMS 4.14.0 notification outbox service is incomplete")
+if "nodemailer" not in v4140_edge or "qcms_email_settings" not in v4140_edge or "qcms_notification_outbox" not in v4140_edge:
+    errors.append("QCMS 4.14.0 server-side SMTP Edge Function is incomplete")
+
 report = {
-    "release": "QCMS 4.13.9 RM Procurement Link + Incremental RMTC Part + Item-wise PO Technical Data",
-    "customer_order_rm_procurement_link_fix": v4139_service.count('proposed_three_month_qty=number(order.get("order_qty_pcs")) if str(order.get("order_type") or "") == "PURCHASE_ORDER" else 0.0') >= 2,
+    "release": "QCMS 4.14.0 PO Source + RMTC Added-Part Validation + HSN/SAC + Email Notifications",
+    "po_source_visibility": "def purchase_order_source_status" in v4140_service and "PO Eligibility" in v4140_supply,
+    "explicit_supply_flow": 'explicit = str(order.get("supply_flow")' in v4140_service and "supply_flow" in v4140_sql,
+    "added_part_validate_decide": "incremental_part_review" in v4140_rmtc and "Validate Added Part Against Masters" in v4140_rmtc,
+    "po_hsn_sac": "hsn_sac_code" in v4140_sql and "HSN / SAC:" in v4140_po,
+    "po_clean_item_layout": "No vertical grid lines in the PO item body" in v4140_po and "display_items = list(items)[:3]" in v4140_po,
+    "email_server_settings": "EMAIL SERVER SETTINGS" in v4140_email,
+    "responsibility_routing": "RESPONSIBILITY ROUTING" in v4140_email,
+    "email_outbox": "qcms_notification_outbox" in v4140_sql and "class NotificationService" in v4140_notify,
+    "smtp_edge_function": "nodemailer" in v4140_edge,
+
+    "customer_order_rm_procurement_link_fix": 'proposed_three_month_qty=number(order.get("order_qty_pcs")) if str(order.get("order_type") or "") == "PURCHASE_ORDER" else 0.0' in v4139_service and "must respect the decision saved with" in v4139_service,
     "incremental_approved_rmtc_part_guard": "v_pending_decisions" in v4139_sql,
     "item_wise_po_technical_data": "compact_technical_pairs" in v4139_po and "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA" in v4139_po,
-    "multi_rm_po_sources": "Select Customer Orders / Schedules for this RM Purchase Order" in v4138_supply and "supply_purchase_order_sources" in v4138_service,
+    "multi_rm_po_sources": "Select ELIGIBLE Customer Orders / Schedules for this RM Purchase Order" in v4138_supply and "supply_purchase_order_sources" in v4138_service,
     "supplier_fsi_price_history": "part_supplier_price_history" in v4138_sql and "def current_price" in v4138_service,
     "part_master_po_technical_data": "Save Supplier Technical Data" in v4138_part and "technical_data_snapshot" in v4138_service,
-    "multi_line_po_pdf": "display_items = list(items)[:6]" in v4138_po,
+    "multi_line_po_pdf": "display_items = list(items)[:3]" in v4138_po and "_continuation_items_bytes" in v4138_po,
     "historical_po_price_backfill": "Backfilled from controlled QCMS Purchase Order history" in v4138_backfill,
     "supply_purchase_order_module": "def render_purchase_orders" in v4137_supply,
     "supply_po_reference_print": "FSI_STANDARD_PO_TERMS_2023.pdf" in v4137_po,
