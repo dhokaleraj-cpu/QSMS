@@ -233,23 +233,38 @@ class MasterService:
         needed = 2 if shorter <= 2 else 3
         return shared >= needed and (shared / shorter) >= 0.67
 
+    _IDENTITY_DUPLICATE_FIELDS: dict[str, tuple[str, ...]] = {
+        # Only true master identity fields receive word-level duplicate validation.
+        # Common technical/business fields (standard, revision, model, address, method,
+        # designation, parameter, remarks, etc.) may legitimately repeat across masters.
+        "customers": ("party_name",),
+        "suppliers": ("party_name",),
+        "steel_mills": ("party_name",),
+        "osp_vendors": ("party_name",),
+        # Part descriptions are intentionally NOT unique: many Part Numbers can share them.
+        "parts": ("fsi_part_number",),
+        "material_grades": ("grade_code",),
+        "approved_sources": ("source_code",),
+        "customer_standards": ("standard_code", "standard_name"),
+        "processes": ("process_name",),
+        "inspection_stages": ("stage_name",),
+        "quality_assets": ("asset_name",),
+    }
+
     def duplicate_match(
         self, definition: MasterDef, payload: Mapping[str, Any], *,
         record_id: str | None = None, extra_unique_fields: Sequence[str] = (),
     ) -> str | None:
+        """Detect duplicates only on controlled IDs/codes and identity descriptions.
+
+        Natural keys stay exact.  Word-level duplicate matching is deliberately restricted
+        to the explicit identity fields above. This prevents reusable data such as standards,
+        revisions, manufacturers, designations, methods and remarks from blocking valid records.
+        """
         rows = self.list_records(definition, status="All")
         natural_fields = tuple(definition.natural_key)
         expected = tuple(self._normalized_key_value(payload.get(field)) for field in natural_fields)
-        # Human-readable master fields where a 2–3 word near-match is meaningful.
-        fuzzy_fields = list(extra_unique_fields)
-        for field in definition.fields:
-            name = field.name
-            if field.kind not in {"text", "textarea"}:
-                continue
-            if name in fuzzy_fields or name in natural_fields:
-                continue
-            if any(token in name for token in ("name", "description", "standard", "parameter", "designation")):
-                fuzzy_fields.append(name)
+        fuzzy_fields = list(dict.fromkeys([*self._IDENTITY_DUPLICATE_FIELDS.get(definition.key, ()), *extra_unique_fields]))
 
         for row in rows:
             if record_id and str(row.get("id")) == str(record_id):
@@ -259,9 +274,13 @@ class MasterService:
             for field in fuzzy_fields:
                 candidate = payload.get(field)
                 existing = row.get(field)
-                if self._normalized_key_value(candidate) and self._normalized_key_value(candidate) == self._normalized_key_value(existing):
+                if not self._normalized_key_value(candidate):
+                    continue
+                if self._normalized_key_value(candidate) == self._normalized_key_value(existing):
                     return f"matching {field.replace('_', ' ')}"
-                if self._fuzzy_word_duplicate(candidate, existing):
+                # Fuzzy word matching is useful for descriptive identity/name fields, not codes.
+                is_description_field = any(token in field for token in ("name", "description"))
+                if is_description_field and self._fuzzy_word_duplicate(candidate, existing):
                     return f"2–3 matching words in {field.replace('_', ' ')} ({existing})"
         return None
 
@@ -296,20 +315,10 @@ class MasterService:
         errors = self.validate_payload(definition, payload)
         if errors:
             raise ValueError("\n".join(errors))
-        extra_unique_fields: tuple[str, ...] = ()
-        if definition.key in {"customers", "suppliers", "steel_mills", "osp_vendors"}:
-            extra_unique_fields = ("party_name",)
-        elif definition.key == "processes":
-            extra_unique_fields = ("process_name",)
-        elif definition.key == "inspection_stages":
-            extra_unique_fields = ("stage_name",)
-        elif definition.key == "quality_assets":
-            extra_unique_fields = ("asset_name",)
         self.assert_no_duplicate(
             definition,
             payload,
             record_id=str(existing["id"]) if existing else record_id,
-            extra_unique_fields=extra_unique_fields,
         )
         if existing:
             return self.repo.update(definition.table, str(existing["id"]), payload), "updated"

@@ -3,7 +3,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 def test_v4133_release_and_login_isolation():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.1"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9"}
     ui = (ROOT / "core/ui.py").read_text()
     auth = (ROOT / "core/auth.py").read_text()
     assert "4133-LOGIN-NO-MENU-STAWN-FOOTER-PORTAL-POLISH" in ui

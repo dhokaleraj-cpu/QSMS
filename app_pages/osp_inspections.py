@@ -187,10 +187,11 @@ def _render(report_type: str) -> None:
                 final_number = report_no.strip() or inspection.next_number(report_type)
                 quantity = float(job.get("sample_quantity") if scope == "OSP_SAMPLE" else job.get("quantity_received") or 0)
                 source_inward = inspection.repo.get("inward_lots", str(job.get("source_inward_lot_id") or "")) or {}
+                opening_source = inspection.repo.get("supply_opening_stock", str(job.get("opening_stock_id") or "")) or {}
                 common = {
                     "report_number": final_number, "part_id": job.get("part_id"), "osp_job_id": job_id, "batch_id": job.get("osp_batch_id"),
                     "process_id": job.get("process_id"), "inspection_scope": scope, "heat_number": job.get("heat_number"), "heat_code": job.get("heat_code"),
-                    "supplier_id": source_inward.get("supplier_id"), "status": str((existing or {}).get("status") or "DRAFT"), "overall_result": "NOT_EVALUATED",
+                    "supplier_id": source_inward.get("supplier_id") or opening_source.get("supplier_id"), "status": str((existing or {}).get("status") or "DRAFT"), "overall_result": "NOT_EVALUATED",
                     "disposition": str((existing or {}).get("disposition") or "PENDING"), "remarks": remarks.strip() or None,
                     "prepared_by_employee_id": prepared, "layout_name_snapshot": plan.get("layout_name"), "layout_type_name": report_type,
                     "production_quantity_pcs": quantity, "process_specification_snapshot": job.get("process_specification"),

@@ -1,0 +1,26 @@
+{
+  "version": "4.14.9",
+  "build": "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY",
+  "features": [
+    "metlab_stopiteration_safe",
+    "direct_metlab_edit_always_visible",
+    "direct_dimensional_edit_always_visible",
+    "direct_rmtc_edit",
+    "identity_only_duplicates",
+    "opening_stock_import_export",
+    "opening_stock_supply_home_quick_action",
+    "smtp_working_preserved",
+    "live_runtime_diagnostics",
+    "global_live_build_strip",
+    "remote_push_verification",
+    "streamlit_deploy_target_proof",
+    "next_stage_employee_department_routing",
+    "module_email_templates",
+    "generated_pdf_and_document_attachments",
+    "supplier_vendor_notification_copy",
+    "automatic_open_overdue_pdf_email_schedules",
+    "party_notification_emails",
+    "forced_streamlit_redeploy_commit"
+  ],
+  "source": "controlled_release"
+}

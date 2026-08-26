@@ -11,6 +11,7 @@ import streamlit as st
 from core.ui import portal_table
 
 from core.access import current_permissions
+from core.password_edit import password_reopen_for_edit
 from core.attachments import AttachmentService, AttachmentSlot, new_attachment_uploaders, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.calculations import band_status, calculate_di, calculate_jominy_curve
@@ -187,12 +188,35 @@ def render_entry()->None:
     page_header('RMTC Entry · Header','Create or edit the certificate header, heat, source, covered parts and RMTC attachment.','Step 1')
     template_download_row([('RMTC_Entry_Template.xlsx', 'Download RMTC Entry Template')], key_prefix='rmtc_entry')
     svc=RMTCService();repo=svc.repo;perms=current_permissions('RMTC_ENTRY')
+    # DIRECT RMTC EDIT SELECTOR v4.14.5
+    section_bar('NEW / EDIT EXISTING RMTC')
+    rmtc_rows=svc.list()
+    rmtc_labels={'':'— Create New RMTC —'}
+    rmtc_labels.update({str(row.get('id')):f"{row.get('rmtc_number') or '-'} · Heat {row.get('heat_number') or '-'} · {row.get('status') or '-'}" for row in rmtc_rows if row.get('id')})
+    rmtc_ids=list(rmtc_labels)
+    current_edit_id=str(st.session_state.get('edit_rmtc_id') or '')
+    chosen_rmtc=st.selectbox('Select Existing RMTC to Edit',rmtc_ids,index=rmtc_ids.index(current_edit_id) if current_edit_id in rmtc_ids else 0,format_func=lambda value:rmtc_labels[value],key='rmtc_direct_edit_selector')
+    re1,re2=st.columns(2,gap='small')
+    if re1.button('Load Selected RMTC for Edit',type='primary',width='stretch',disabled=not chosen_rmtc or not perms['can_edit'],key='rmtc_direct_edit_load'):
+        st.session_state['edit_rmtc_id']=chosen_rmtc;st.session_state['rmtc_entry_mode']='edit';st.rerun()
+    if re2.button('Start New RMTC',width='stretch',key='rmtc_direct_edit_new'):
+        st.session_state.pop('edit_rmtc_id',None);st.session_state['rmtc_entry_mode']='new';st.rerun()
+    if not perms['can_edit']:
+        st.caption('Your user does not currently have RMTC Edit permission. Administrator role is not required; module Edit permission is required.')
     if st.session_state.get('rmtc_entry_mode')!='edit':
         st.session_state.pop('edit_rmtc_id',None)
     existing=_header_record(svc) if st.session_state.get('rmtc_entry_mode')=='edit' else {}
     form_token=str(existing.get('id') or f"new_{int(st.session_state.get('rmtc_new_form_nonce') or 0)}")
     existing_parts_rows=svc.covered_parts(str(existing.get('id'))) if existing else []
     workflow_progress(_workflow_steps(existing,existing_parts_rows))
+    if existing and str(existing.get('status') or 'DRAFT').upper() != 'DRAFT':
+        section_bar('EDIT SELECTED RMTC')
+        password_reopen_for_edit(
+            repo=svc.repo, table='rmtc_approvals', record=existing, entity_type='RMTC', can_edit=perms['can_edit'],
+            key=f"rmtc_password_edit_top_{existing.get('id')}", title='Edit Approved / Final RMTC with Password',
+        )
+    elif existing:
+        st.success(f"Editing RMTC {existing.get('rmtc_number') or existing.get('id')}. Draft header fields are editable with your assigned RMTC Edit permission.")
 
     with stage_section("A", 'HEAT NUMBER SEARCH', 'Search the Heat Number first. The same Heat may be reused only with a different Supplier RMTC Number.', key="rmtc_pages_render_entry_a"):
         default_heat=str(existing.get('heat_number') or st.session_state.get('rmtc_heat_search') or '')
@@ -205,7 +229,7 @@ def render_entry()->None:
         heat_usage=svc.heat_usage(heat_search) if heat_search else []
         if heat_search:
             st.markdown("**GLOBAL HEAT QUANTITY BALANCE & RECORD LIST**")
-            st.caption("Global Heat Steel Quantity is the sum of the certificate quantities from each distinct Supplier RMTC Number under this Heat. Every RMTC remains separately traceable.")
+            st.caption("One Heat Number shares one global steel quantity. The balance and every linked RMTC/Part allocation are shown below.")
         if heat_summary:
             k1,k2,k3,k4=st.columns(4,gap='small')
             k1.metric('Global Heat Steel',f"{float(heat_summary.get('global_steel_quantity_kg') or 0):,.3f} kg")
@@ -220,21 +244,20 @@ def render_entry()->None:
             if int(heat_summary.get('active_rmtc_count') or 0)==0 and int(heat_summary.get('rejected_rmtc_count') or 0)>0:
                 st.success('The previous RMTC record(s) for this Heat Number are rejected. Create another RMTC using a different Supplier RMTC Number.')
             else:
-                st.info('This Heat Number already exists. A new distinct Supplier RMTC Number adds its own certificate quantity to the same Global Heat total; Supplier and Part may be reused.')
+                st.info('This Heat Number already exists. Supplier and Part may be reused, but every RMTC must have a different Supplier RMTC Number.')
             if heat_usage:
                 usage_df=pd.DataFrame(heat_usage).rename(columns={
                     'rmtc_number':'RMTC Number','rmtc_status':'RMTC Status','rmtc_disposition':'RMTC Disposition',
                     'supplier_rmtc_number':'Supplier RMTC Number','supplier_name':'Supplier','part_number':'Part Number','part_name':'Part Description',
-                    'rmtc_steel_quantity_kg':'RMTC Cert Qty (kg)',
                     'planned_production_quantity_pcs':'Planned Qty (pcs)','input_weight_kg':'Input Wt (kg)',
                     'planned_steel_quantity_kg':'Planned Steel (kg)','inward_production_quantity_pcs':'Inward Qty (pcs)',
                     'inward_steel_quantity_kg':'Inward Steel (kg)','remaining_planned_steel_quantity_kg':'Remaining Plan (kg)',
                     'automated_validation':'Automated Validation','part_disposition':'Part Decision'
                 })
-                show=[c for c in ['RMTC Number','Supplier RMTC Number','RMTC Cert Qty (kg)','RMTC Status','RMTC Disposition','Supplier','Part Number','Part Description','Planned Qty (pcs)','Input Wt (kg)','Planned Steel (kg)','Inward Qty (pcs)','Inward Steel (kg)','Remaining Plan (kg)','Automated Validation','Part Decision'] if c in usage_df.columns]
+                show=[c for c in ['RMTC Number','Supplier RMTC Number','RMTC Status','RMTC Disposition','Supplier','Part Number','Part Description','Planned Qty (pcs)','Input Wt (kg)','Planned Steel (kg)','Inward Qty (pcs)','Inward Steel (kg)','Remaining Plan (kg)','Automated Validation','Part Decision'] if c in usage_df.columns]
                 portal_table(style_status_dataframe(usage_df[show]),width='stretch',hide_index=True,height=min(360,80+len(usage_df)*36))
         elif heat_search:
-            st.caption('New Heat Number. The RMTC certificate quantity entered below becomes the first contribution to the Global Heat certified steel quantity.')
+            st.caption('New Heat Number. The steel quantity entered below becomes the global Heat steel quantity.')
 
         if heat_summary:
             hb1,hb2=st.columns(2,gap='small')
@@ -248,7 +271,7 @@ def render_entry()->None:
         if existing and st.button('Start New RMTC',icon=':material/add:',width='content'):
             _start_new_rmtc_for_heat(heat_search)
             st.rerun()
-        writable=(perms['can_edit'] if existing else perms['can_create']) and (not existing or str(existing.get('status') or 'DRAFT')=='DRAFT')
+        writable=(perms['can_edit'] if existing else perms['can_create']) and (not existing or str(existing.get('status') or 'DRAFT').upper()=='DRAFT')
         parts,part_map=_part_maps(svc)
         if not parts:st.warning('Create an active Part Master first.');return
         existing_parts=[str(row.get('part_id')) for row in existing_parts_rows] if existing else []
@@ -284,20 +307,8 @@ def render_entry()->None:
         heat_code=c[3].text_input('Internal Heat Code',value=str(existing.get('heat_code') or ''),placeholder='Auto on save: Steel Mill initial-0001',key=f'rmtc_heat_code_{form_token}')
         c=st.columns(4,gap='small')
         heat_global_qty=float(heat_summary.get('global_steel_quantity_kg') or 0) if heat_summary else 0.0
-        qty_default=float(existing.get('certificate_quantity') or 0)
-        qty=c[0].number_input(
-            'This RMTC Certificate Quantity (kg)', min_value=0.0, value=qty_default, step=1.0,
-            disabled=not writable, key=f'rmtc_qty_{form_token}',
-            help='For the same Heat Number with a different Supplier RMTC Number, this certificate quantity is added to the Global Heat certified quantity.',
-        )
-        same_existing_heat=bool(existing) and svc.normalize_heat_number(existing.get('heat_number'))==svc.normalize_heat_number(heat_search)
-        existing_contribution=float(existing.get('certificate_quantity') or 0) if same_existing_heat else 0.0
-        projected_global=max(heat_global_qty-existing_contribution,0.0)+float(qty or 0)
-        if heat_search and qty>0:
-            st.caption(
-                f"Projected Global Heat certified quantity after save: {projected_global:,.3f} kg "
-                f"(current {heat_global_qty:,.3f} kg {'minus this RMTC current contribution ' + format(existing_contribution, ',.3f') + ' kg plus revised certificate quantity' if existing_contribution else '+ this RMTC certificate quantity'})."
-            )
+        qty_default=float(existing.get('certificate_quantity') or heat_global_qty or 0)
+        qty=c[0].number_input('Global Heat Steel Quantity (kg)',min_value=0.0,value=qty_default,step=1.0,disabled=bool(heat_summary),key=f'rmtc_qty_{form_token}')
         c[1].text_input('RM Section',value=str(source.get('section_size') or existing.get('rm_section') or ''),disabled=True,key=f'rmtc_section_{form_token}')
         c[2].text_input('Forging Route / Root',value=str(source.get('forging_route') or existing.get('forging_route') or ''),disabled=True,key=f'rmtc_route_{form_token}')
         prepared_options=['']+list(prepared_map);current_prepared=str(existing.get('prepared_by_employee_id') or '')
@@ -658,7 +669,7 @@ def render_records()->None:
         ])
         c=st.columns(4,gap='small')
         with c[0]:
-            if st.button('Edit Header',icon=':material/edit:',width='stretch',key=f'edit_rmtc_header_{selected}'):
+            if st.button('Open / Edit RMTC Header',icon=':material/edit:',width='stretch',key=f'edit_rmtc_header_{selected}'):
                 _open_rmtc_header_for_edit(selected)
         with c[1]:st.page_link(st.session_state['_qsms_pages']['rmtc-part'],label='Part Worksheets',icon=':material/format_list_bulleted:',width='stretch')
         with c[2]:st.page_link(st.session_state['_qsms_pages']['rmtc-approval'],label='Validation & Decision',icon=':material/approval:',width='stretch')

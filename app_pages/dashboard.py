@@ -11,6 +11,7 @@ from core.ui import portal_table
 from core.inspection_queue import build_inspection_queue, pending_count
 from core.repository import Repository
 from core.ui import dashboard_card, kpi_grid, page_header, section_bar, stage_section, style_status_dataframe
+from core.config import get_settings
 
 
 def _count(repo: Repository, table: str, eq: dict | None = None, contains: dict | None = None) -> int:
@@ -56,6 +57,8 @@ def _donut(title: str, values: list[Any], color_map: dict[str, str]) -> None:
 
 def render() -> None:
     page_header("Quality Dashboard", context="Live Supabase")
+    _settings = get_settings()
+    st.info(f"LIVE RELEASE VERIFICATION · QCMS v{_settings.version} · BUILD 4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY")
     repo = Repository()
 
     rmtc_rows = repo.select("rmtc_approvals", order_by="created_at", desc=True, limit=2000)

@@ -1,7 +1,11 @@
-# QCMS 4.14.1 — HEAT-SUM-METLAB-TRAVERSE-LOGIN-APPROVAL-PO-PRICE
-# BUILD 4141-HEAT-SUM-METLAB-TRAVERSE-LOGIN-APPROVAL-PO-PRICE
-# QCMS 4.14.0 — PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL
-# BUILD 4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL
+# QCMS 4.14.5 BUILD 4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE
+# QCMS 4.14.4 — METLAB-EDIT-MASTER-DUPLICATE-OPENING-IMPORT-SMTP-GUIDE
+# BUILD 4144-METLAB-EDIT-MASTER-DUPLICATE-OPENING-IMPORT-SMTP-GUIDE
+# QCMS 4.14.3 — PART-GRADES-LEADTIME-OPENING-STOCK-PASSWORD-EDIT-O365
+# BUILD 4143-PART-GRADES-LEADTIME-OPENING-STOCK-PASSWORD-EDIT-O365
+# QCMS 4.14.2 — PO-ORDER-VISIBILITY-FULL-PRICE-HISTORY
+# BUILD 4142-PO-ORDER-VISIBILITY-FULL-PRICE-HISTORY
+# COMPAT BUILD 4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL
 # QCMS 4.13.8 — SUPPLY-PO-FSI-PART-RMTC-WORKSHEET
 # BUILD 4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA
 # QCMS 4.13.5 — MAROON-SECTIONS-WHITE-FIELDS-KPI-ICON-FIX
@@ -91,7 +95,20 @@ def _fetch_profile(client: Any, user_id: str) -> dict[str, Any]:
     for _ in range(3):
         response = client.table("profiles").select("*").eq("id", user_id).limit(1).execute()
         if response.data:
-            return dict(response.data[0])
+            profile = dict(response.data[0])
+            try:
+                employee = client.table("employees").select("id,employee_code,department,designation,approval_authorities").eq("profile_id", user_id).eq("status", "ACTIVE").limit(1).execute()
+                if employee.data:
+                    row = dict(employee.data[0])
+                    profile["employee_id"] = row.get("id")
+                    profile["employee_code"] = row.get("employee_code")
+                    profile["department"] = row.get("department")
+                    profile["designation"] = row.get("designation")
+                    profile["approval_authorities"] = row.get("approval_authorities") or []
+            except Exception:
+                # User login must not fail just because the optional Employee link is unavailable.
+                pass
+            return profile
         time.sleep(0.2)
     raise RuntimeError("The authenticated account has no QCMS profile. Ask the QCMS administrator to verify user provisioning.")
 
@@ -339,6 +356,16 @@ def render_login() -> None:
                 email = st.text_input("Login *", placeholder="name@company.com")
                 password = st.text_input("Password *", type="password", placeholder="Enter password")
                 submitted = st.form_submit_button("Login", width="stretch")
+            with st.expander("Forgot Password?", expanded=False):
+                with st.form("qcms_password_recovery_form"):
+                    recovery_email = st.text_input("Registered Company Email", placeholder="name@company.com", key="qcms_recovery_email")
+                    send_reset = st.form_submit_button("Send Password Reset Link", width="stretch")
+                if send_reset:
+                    try:
+                        request_password_reset(recovery_email)
+                        st.success("If the email is registered in QCMS, a password reset message has been requested. Check the mailbox and follow the secure link.")
+                    except Exception as exc:
+                        st.error(_friendly_error(exc, "Password recovery"))
 
     app_footer()
 

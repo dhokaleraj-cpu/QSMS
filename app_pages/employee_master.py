@@ -16,14 +16,18 @@ from core.selection_labels import employee_label
 from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 
+DEPARTMENT_OPTIONS = ["Quality", "Production", "Stores", "MetLAB", "Engineering", "Supply Chain", "Management", "Business Development", "Procurement", "HR", "Accounts"]
+
+
 def _labels(rows:list[dict])->dict[str,str]:
     return {str(r['id']):employee_label(r) for r in rows}
 
 
-def _learned_select(catalog:LearnedValueCatalog,label:str,field_key:str,value:str,key:str):
+def _learned_select(catalog:LearnedValueCatalog,label:str,field_key:str,value:str,key:str,defaults=()):
     suggestions=catalog.suggestions(field_key)
     options=[]
     if value: options.append(value)
+    options += [item for item in defaults if item not in options]
     options += [item for item in suggestions if item not in options]
     return st.selectbox(label,options,index=0,accept_new_options=True,key=key) if options else st.text_input(label,value=value,key=key)
 
@@ -50,7 +54,7 @@ def render_entry()->None:
         email=c[3].text_input('Email',value=str(existing.get('email') or ''))
         c=st.columns(4,gap='small')
         with c[0]:
-            department=_learned_select(catalog,'Department','employee.department',str(existing.get('department') or ''),'emp_dept')
+            department=_learned_select(catalog,'Department','employee.department',str(existing.get('department') or ''),'emp_dept',DEPARTMENT_OPTIONS)
         with c[1]:
             designation=_learned_select(catalog,'Designation','employee.designation',str(existing.get('designation') or ''),'emp_desig')
         with c[2]:

@@ -1,7 +1,12 @@
-# QCMS 4.14.1 — HEAT-SUM-METLAB-TRAVERSE-LOGIN-APPROVAL-PO-PRICE
-# BUILD 4141-HEAT-SUM-METLAB-TRAVERSE-LOGIN-APPROVAL-PO-PRICE
-# QCMS 4.14.0 — PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL
-# BUILD 4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL
+# QCMS 4.14.5 — DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE
+# BUILD 4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE
+# QCMS 4.14.4 — METLAB-EDIT-MASTER-DUPLICATE-OPENING-IMPORT-SMTP-GUIDE
+# BUILD 4144-METLAB-EDIT-MASTER-DUPLICATE-OPENING-IMPORT-SMTP-GUIDE
+# QCMS 4.14.3 — PART-GRADES-LEADTIME-OPENING-STOCK-PASSWORD-EDIT-O365
+# BUILD 4143-PART-GRADES-LEADTIME-OPENING-STOCK-PASSWORD-EDIT-O365
+# QCMS 4.14.2 — PO-ORDER-VISIBILITY-FULL-PRICE-HISTORY
+# BUILD 4142-PO-ORDER-VISIBILITY-FULL-PRICE-HISTORY
+# COMPAT BUILD 4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL
 # QCMS 4.13.8 — SUPPLY-PO-FSI-PART-RMTC-WORKSHEET
 # BUILD 4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA
 # QCMS 4.13.5 — MAROON-SECTIONS-WHITE-FIELDS-KPI-ICON-FIX
@@ -257,26 +262,14 @@ def portal_table(data: Any, *, hide_index: bool = True, width: Any = "stretch", 
         cells: list[str] = []
         if not hide_index:
             cells.append(f'<td class="qcms-index-cell">{safe(row_index)}</td>')
-        row_state_values = {
-            str(show_value(row.get(col)) or "").strip().upper().replace(" ", "_")
-            for col in frame.columns
-            if any(token in str(col).casefold() for token in ("result", "status", "decision", "disposition", "validation"))
-        }
-        row_out_of_spec = bool(row_state_values & {"FAIL", "REJECTED"})
-        row_reserve = bool(row_state_values & {"ON_HOLD", "ACCEPTED_UNDER_RESERVE", "HOLD"})
         for col in frame.columns:
             raw = show_value(row.get(col))
             key = str(col).casefold()
             canonical = str(raw or "").strip().upper().replace(" ", "_")
             is_status = any(token in key for token in status_tokens) or canonical in STATUS_STYLE
-            observation_cell = any(token in key for token in ("actual", "observation", "measured", "reading"))
             if is_status and raw:
                 fg, bg = STATUS_STYLE.get(canonical, ("#334155", "#E2E8F0"))
-                value_html = f'<span class="qcms-table-chip" style="color:{fg};background:{bg};font-weight:800">{safe(raw.replace("_", " ").title())}</span>'
-            elif observation_cell and raw and row_out_of_spec:
-                value_html = f'<span style="display:inline-block;padding:2px 6px;border-radius:5px;color:#991B1B;background:#FEE2E2;font-weight:800;border:1px solid #FCA5A5">{safe(raw)}</span>'
-            elif observation_cell and raw and row_reserve:
-                value_html = f'<span style="display:inline-block;padding:2px 6px;border-radius:5px;color:#92400E;background:#FEF3C7;font-weight:750;border:1px solid #FCD34D">{safe(raw)}</span>'
+                value_html = f'<span class="qcms-table-chip" style="color:{fg};background:{bg}">{safe(raw.replace("_", " ").title())}</span>'
             else:
                 value_html = safe(raw)
             numeric = isinstance(row.get(col), (int, float)) and not isinstance(row.get(col), bool)

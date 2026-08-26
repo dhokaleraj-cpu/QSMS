@@ -68,12 +68,12 @@ def render_entry() -> None:
                 if not grade_code.strip(): raise ValueError("Material Grade is mandatory.")
                 if not material_number.strip(): raise ValueError("Material Number is mandatory and is normally generated automatically.")
                 payload = {"grade_code": grade_code.strip(), "material_number": material_number.strip(), "standard": standard.strip() or None, "revision": revision.strip() or "00", "effective_date": effective.isoformat() if effective else None, "status": status, "remarks": remarks.strip() or None}
-                expected_key = (grade_code.strip().casefold(), (revision.strip() or "00").casefold())
+                expected_code = grade_code.strip().casefold()
                 for row in repo.select("material_grades", limit=5000):
                     if existing and str(row.get("id")) == str(existing.get("id")):
                         continue
-                    if (str(row.get("grade_code") or "").strip().casefold(), str(row.get("revision") or "00").strip().casefold()) == expected_key:
-                        raise ValueError("Duplicate Material Grade + Revision is not allowed.")
+                    if str(row.get("grade_code") or "").strip().casefold() == expected_code:
+                        raise ValueError("Duplicate Material Grade code is not allowed. Standard, revision and other common fields may repeat and should be updated on the same grade record.")
                 saved = repo.update("material_grades", str(existing["id"]), payload) if existing else repo.insert("material_grades", payload)
                 catalog.remember_many("material.standard", [standard]); catalog.remember_many("material.grade", [grade_code])
                 st.session_state.pop(material_number_key, None)

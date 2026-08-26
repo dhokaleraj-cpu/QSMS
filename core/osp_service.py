@@ -32,8 +32,42 @@ class OSPService:
         return self._enrich_part_identity(self.repo.select("v_qsms_osp_register", order_by="created_at", desc=True, limit=5000))
 
     def dispatch_candidates(self) -> list[dict]:
-        rows = self._enrich_part_identity(self.repo.select("v_qsms_osp_dispatch_candidates", order_by="inward_date", desc=True, limit=5000))
-        return [row for row in rows if float(row.get("osp_available_quantity_pcs") or 0) > 0]
+        inward_rows = self._enrich_part_identity(self.repo.select("v_qsms_osp_dispatch_candidates", order_by="inward_date", desc=True, limit=5000))
+        candidates: list[dict] = []
+        for row in inward_rows:
+            if float(row.get("osp_available_quantity_pcs") or 0) <= 0:
+                continue
+            item = dict(row)
+            item["source_type"] = "INWARD"
+            item["candidate_key"] = f"INWARD:{row.get('inward_lot_id')}"
+            candidates.append(item)
+
+        opening = self.repo.select("supply_opening_stock", eq={"status": "ACTIVE"}, order_by="created_at", desc=True, limit=5000)
+        eligible_stages = {"MACHINING", "OSP_READY", "FINAL_INSPECTION", "FINISHED_GOODS"}
+        opening_rows: list[dict] = []
+        for stock in opening:
+            if str(stock.get("stage") or "").upper() not in eligible_stages:
+                continue
+            available = float(stock.get("available_quantity_pcs") or 0)
+            if available <= 0:
+                continue
+            opening_rows.append({
+                "source_type": "OPENING_STOCK",
+                "candidate_key": f"OPEN:{stock.get('id')}",
+                "opening_stock_id": stock.get("id"),
+                "inward_lot_id": None,
+                "inward_number": stock.get("lot_reference") or "Opening Stock",
+                "inward_date": str(stock.get("created_at") or "")[:10],
+                "part_id": stock.get("part_id"),
+                "heat_number": stock.get("heat_number") or "OPENING",
+                "heat_code": stock.get("heat_code") or "OPENING",
+                "quality_disposition": "OPENING_STOCK",
+                "status": stock.get("status"),
+                "supply_chain_stage": stock.get("stage"),
+                "osp_available_quantity_pcs": available,
+            })
+        candidates.extend(self._enrich_part_identity(opening_rows))
+        return candidates
 
     def vendors(self) -> list[dict]:
         rows = self.repo.select(
@@ -106,8 +140,7 @@ class OSPService:
         return {str(row["id"]): row for row in rows}
 
     def create_dispatch(self, payload: Mapping[str, Any]) -> dict:
-        return self.repo.rpc("qsms_create_osp_dispatch", {
-            "p_inward_lot_id": payload["inward_lot_id"],
+        common = {
             "p_vendor_id": payload["vendor_id"],
             "p_process_id": payload["process_id"],
             "p_process_specification_id": payload["process_specification_id"],
@@ -117,7 +150,11 @@ class OSPService:
             "p_expected_return_date": payload.get("expected_return_date"),
             "p_sample_quantity": payload.get("sample_quantity", 1),
             "p_remarks": payload.get("remarks"),
-        }) or {}
+        }
+        opening_stock_id = str(payload.get("opening_stock_id") or "").strip()
+        if opening_stock_id:
+            return self.repo.rpc("qsms_create_osp_dispatch_from_opening_stock", {"p_opening_stock_id": opening_stock_id, **common}) or {}
+        return self.repo.rpc("qsms_create_osp_dispatch", {"p_inward_lot_id": payload["inward_lot_id"], **common}) or {}
 
     def record_sample(self, payload: Mapping[str, Any]) -> dict:
         return self.repo.rpc("qsms_record_osp_sample", {

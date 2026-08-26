@@ -60,11 +60,18 @@ def render_material_out() -> None:
     service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS")
     candidates = service.dispatch_candidates()
     if not candidates:
-        st.info("No released Material Inward production balance is available for OSP dispatch.")
+        st.info("No released Material Inward or eligible Opening Stock balance is available for OSP dispatch.")
         return
-    labels = {str(row["inward_lot_id"]): f"{row.get('inward_number')} · {row.get('part_number')} · FSI {row.get('fsi_part_number') or '-'} · Heat {row.get('heat_number')} · Available {float(row.get('osp_available_quantity_pcs') or 0):,.0f} pcs" for row in candidates}
-    inward_id = st.selectbox("Released Material Inward", list(labels), format_func=lambda value: labels[value])
-    candidate = next(row for row in candidates if str(row["inward_lot_id"]) == inward_id)
+    labels = {
+        str(row["candidate_key"]):
+        f"{'Opening Stock' if row.get('source_type') == 'OPENING_STOCK' else 'Material Inward'} · {row.get('inward_number')} · "
+        f"{row.get('part_number')} · FSI {row.get('fsi_part_number') or '-'} · Heat {row.get('heat_number')} · "
+        f"Stage {str(row.get('supply_chain_stage') or 'Released').replace('_',' ').title()} · Available {float(row.get('osp_available_quantity_pcs') or 0):,.0f} pcs"
+        for row in candidates
+    }
+    selected_key = st.selectbox("OSP Source · Released Inward / Opening Stock", list(labels), format_func=lambda value: labels[value])
+    candidate = next(row for row in candidates if str(row["candidate_key"]) == selected_key)
+    inward_id = candidate.get("inward_lot_id")
     specifications = service.specifications(str(candidate.get("part_id")))
     processes = service.processes(); vendors = service.vendors()
     if not specifications:
@@ -89,7 +96,7 @@ def render_material_out() -> None:
     if submitted:
         try:
             process_id = str(selected_spec.get("process_id"))
-            saved = service.create_dispatch({"inward_lot_id": inward_id, "vendor_id": vendor_id, "process_id": process_id, "process_specification_id": spec_id, "dispatch_date": dispatch_date.isoformat(), "dispatch_challan": challan, "quantity_dispatched": quantity, "expected_return_date": expected_date.isoformat(), "sample_quantity": sample_qty, "remarks": remarks})
+            saved = service.create_dispatch({"inward_lot_id": inward_id, "opening_stock_id": candidate.get("opening_stock_id"), "vendor_id": vendor_id, "process_id": process_id, "process_specification_id": spec_id, "dispatch_date": dispatch_date.isoformat(), "dispatch_challan": challan, "quantity_dispatched": quantity, "expected_return_date": expected_date.isoformat(), "sample_quantity": sample_qty, "remarks": remarks})
             save_success_popup(f"OSP Material Out {saved.get('osp_job_number')} saved successfully.", queue_for_rerun=True)
             st.rerun()
         except Exception as exc: st.error(str(exc))

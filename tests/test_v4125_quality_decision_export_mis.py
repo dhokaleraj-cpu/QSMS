@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_and_visible_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.12.5", "4.12.6", "4.12.7", "4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.1"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.12.5", "4.12.6", "4.12.7", "4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9"}
     assert "4125-QUALITY-DECISION-EXPORT-MIS" in (ROOT / "core/ui.py").read_text()
     assert "4125-QUALITY-DECISION-EXPORT-MIS" in (ROOT / "core/auth.py").read_text()
 
@@ -32,12 +32,12 @@ def test_metlab_and_dimensional_have_conclusion_final_decision_and_exports():
     assert '"Decision Reason", decision_reason' in reporting
 
 
-def test_standalone_final_decision_uses_universal_login_approval_rpc():
+def test_standalone_final_decision_does_not_require_inward_gate_rpc():
     service = (ROOT / "core/inspection_service.py").read_text()
-    assert 'self.repo.rpc("qsms_finalize_dimensional_report"' in service
-    assert 'self.repo.rpc("qsms_finalize_metlab_report"' in service
-    assert "employee_for_profile" in service
-    assert "logged-in employee" in service
+    assert "not record.get(\"inward_lot_id\") and not record.get(\"osp_job_id\")" in service
+    assert "_standalone_final_payload" in service
+    assert 'return self.repo.update("inspection_reports", report_id, payload)' in service
+    assert 'return self.repo.update("lab_tests", report_id, payload)' in service
 
 
 def test_quality_record_excel_contains_controlled_summary_and_decision_sheet():

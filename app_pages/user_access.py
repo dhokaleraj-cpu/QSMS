@@ -10,7 +10,7 @@ from core.permissions import is_admin
 from core.repository import Repository
 from core.ui import page_header, save_success_popup, section_bar, stage_section, subpage_navigation
 
-ROLES=['ADMIN','QUALITY_MANAGER','METLAB_APPROVER','QUALITY_ENGINEER','PRODUCTION','SQA','MASTER_DATA','AUDITOR','VIEWER']
+ROLES=['ADMIN','MANAGEMENT','SUPPLY_CHAIN','PROCUREMENT','BUSINESS_DEVELOPMENT','QUALITY_MANAGER','METLAB_APPROVER','QUALITY_ENGINEER','PRODUCTION','SQA','MASTER_DATA','AUDITOR','VIEWER']
 
 
 def _invoke(payload):

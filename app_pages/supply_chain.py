@@ -1,3 +1,4 @@
+# QCMS downstream notification route keys retained for receipt stages: RM_RECEIPT_PENDING / FORGING_RECEIPT_PENDING
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -9,6 +10,7 @@ import streamlit as st
 from core.ui import portal_table
 
 from core.access import current_permissions
+from core.attachments import AttachmentSlot, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
 from core.purchase_order_reporting import purchase_order_pdf_bytes, DEFAULT_SPECIAL_INSTRUCTIONS
@@ -29,6 +31,7 @@ from core.ui import (
     page_header,
     safe,
     save_success_popup,
+    section_bar,
     stage_section,
     workflow_progress,
 )
@@ -247,6 +250,11 @@ def render_home() -> None:
         {"label":"Orders Completed","value":sum(str(r.get("status"))=="COMPLETED" for r in orders),"foot":"Completed flow cards are green + ticked","color":"#15803D","background":"#F0FDF4"},
         {"label":"Customer Dispatch pcs","value":f"{dispatched:,.0f}","foot":"All linked Customer References","color":"#075985","background":"#F0F9FF"},
     ])
+    with stage_section("0","OPENING STOCK & IMPORT","Load existing stock by supply-chain stage before evaluating new procurement. Finished Goods contributes to customer available stock; eligible WIP can feed OSP.",key="supply_home_opening_stock_quick"):
+        q1,q2=st.columns(2,gap="small")
+        q1.info("Manual opening balance, stage-controlled inventory, Excel template/import and current-stock export are available in one dedicated module.")
+        if q2.button("Open Opening Stock & Import",type="primary",width="stretch",key="supply_home_opening_stock_button"):
+            st.switch_page(st.session_state["_qsms_pages"]["supply-opening-stock"])
     with stage_section("A","OPEN ORDER STATUS","Colour order cards are sorted by upcoming delivery date; completed cards turn green with a tick.",key="supply_home_status"):
         frame=_order_display_rows(service,sorted(active,key=lambda r:str(r.get("customer_delivery_date") or "9999-12-31")))
         filtered=_searchable_grid(frame.drop(columns=["_id"],errors="ignore"),title="Open Customer Order Status",key="supply_home_open",height=360)
@@ -276,7 +284,7 @@ def render_customer_orders() -> None:
         filtered_parts=[r for r in parts if not customer_id or str(r.get("customer_id") or "") in {"",str(customer_id)}]; fp_map={str(r["id"]):part_map[str(r["id"])] for r in filtered_parts}; part_id=c2.selectbox("Part Number",list(fp_map),format_func=lambda v:fp_map[v]) if fp_map else None
         raw_rows=service.raw_material_options(str(part_id or "")) if part_id else []; raw_labels={}
         for r in raw_rows:
-            supplier=parties.get(str(r.get("supplier_id"))) or {}; gross=number(r.get("gross_weight_kg") or r.get("input_weight_kg") or r.get("forging_weight_kg")); raw_labels[str(r["id"])]=f"{r.get('material_section_name') or 'Raw Material'} · {party_label(supplier)} · Gross {gross:.3f} kg/pc · {r.get('section_size') or '-'}"
+            supplier=parties.get(str(r.get("supplier_id"))) or {}; gross=number(r.get("gross_weight_kg") or r.get("input_weight_kg") or r.get("forging_weight_kg")); grade=(service.repo.get("material_grades",str(r.get("material_grade_id") or "")) or {}).get("grade_code") or "-"; raw_labels[str(r["id"])]=f"{r.get('material_section_name') or 'Raw Material'} · Grade {grade} · {party_label(supplier)} · Gross {gross:.3f} kg/pc · {r.get('section_size') or '-'} · Lead {int(r.get('lead_time_days') or 0)}d"
         raw_id=st.selectbox("Part Master Raw Material / Forging Source",list(raw_labels),format_func=lambda v:raw_labels[v]) if raw_labels else None
         selected_raw=next((r for r in raw_rows if str(r["id"])==str(raw_id)),{}) if raw_id else {}; gross=number(selected_raw.get("gross_weight_kg") or selected_raw.get("input_weight_kg") or selected_raw.get("forging_weight_kg"))
         if part_id: _show_order_context(service,str(next((r.get("id") for r in service.customer_orders() if False),"")),key="dummy") if False else None
@@ -316,6 +324,7 @@ def render_customer_orders() -> None:
                             related_table="supply_customer_orders", related_id=str(saved_order.get("id")),
                             context={"customer_order_id":str(saved_order.get("id")),"next_task":"RM Procurement"},
                         )
+                    st.session_state["last_supply_customer_order_id"] = str(saved_order.get("id") or "")
                     save_success_popup(f"Customer Order {order_no} / Pos {position} created.",queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
         else:
@@ -348,10 +357,10 @@ def render_customer_orders() -> None:
                 schedule_rm_required=False
             if st.button("Create / Add Six-Month Schedule",type="primary",width="stretch",disabled=not perms["can_create"] or not customer_id or not part_id or not raw_id or gross<=0):
                 try:
-                    created=[]
+                    created=[]; created_ids=[]
                     for mm,yy,q,d in month_data:
                         if q<=0: continue
-                        saved=service.create_customer_order({"order_type":"MONTHLY_SCHEDULE","customer_id":customer_id,"part_id":part_id,"order_position":f"{mm:02d}-{yy}","schedule_month":date(yy,mm,1).isoformat(),"order_date":receipt_date.isoformat(),"customer_delivery_date":d.isoformat(),"order_qty_pcs":q,"forging_supplier_id":selected_raw.get("supplier_id"),"raw_material_detail_id":raw_id,"gross_weight_kg_snapshot":gross,"status":"OPEN","remarks":remarks.strip() or None,"supply_flow":supply_flow,"rm_procurement_required":schedule_rm_required,"_procurement_check":schedule_check}); created.append(saved.get("master_reference_no"))
+                        saved=service.create_customer_order({"order_type":"MONTHLY_SCHEDULE","customer_id":customer_id,"part_id":part_id,"order_position":f"{mm:02d}-{yy}","schedule_month":date(yy,mm,1).isoformat(),"order_date":receipt_date.isoformat(),"customer_delivery_date":d.isoformat(),"order_qty_pcs":q,"forging_supplier_id":selected_raw.get("supplier_id"),"raw_material_detail_id":raw_id,"gross_weight_kg_snapshot":gross,"status":"OPEN","remarks":remarks.strip() or None,"supply_flow":supply_flow,"rm_procurement_required":schedule_rm_required,"_procurement_check":schedule_check}); created.append(saved.get("master_reference_no")); created_ids.append(str(saved.get("id") or ""))
                     if not created: raise ValueError("Enter quantity for at least one of the six months.")
                     if schedule_rm_required:
                         NotificationService(service.repo).notify(
@@ -363,6 +372,7 @@ def render_customer_orders() -> None:
                                        f"First 3-month demand: {number(schedule_check.get('three_month_schedule_pcs')):,.0f} pcs"),
                             context={"customer_order_refs":created,"next_task":"RM Procurement"},
                         )
+                    if created_ids: st.session_state["last_supply_customer_order_id"] = created_ids[-1]
                     save_success_popup(f"{len(created)} monthly schedule record(s) created.",queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
     with stage_section("B","CUSTOMER ORDER IMPORT · COLUMNS A TO F","Reads rows after the detected header. Existing Item / Order No. / PosNr combinations are skipped; only database-missing orders are imported.",key="supply_customer_import"):
@@ -386,8 +396,171 @@ def render_customer_orders() -> None:
             except Exception as exc: st.error(str(exc))
     with stage_section("C","CUSTOMER ORDER REGISTER","Global search covers all displayed fields.",key="supply_customer_order_register"):
         rows=service.customer_orders(); frame=_order_display_rows(service,rows); _searchable_grid(frame.drop(columns=["_id"],errors="ignore"),title="Customer Order Register",key="supply_customer_order_register_grid",height=520); _order_cards(frame,key="customer_register_cards")
-    _edit_delete_panel(service,table="supply_customer_orders",rows=service.customer_orders(),title="CUSTOMER ORDER EDIT / DELETE",stage="D",key="supply_customer_order",labeler=lambda r:f"{r.get('master_reference_no')} · Pos {r.get('order_position') or '-'}",fields=(("supply_flow","Supply Chain Flow","select",(FLOW_FSI_RM,FLOW_DIRECT_FORGING)),("customer_order_no","Customer Order No.","text"),("order_position","PosNr / Position","text"),("order_date","Order Date","date"),("customer_delivery_date","Delivery Date","date"),("order_qty_pcs","Order Qty pcs","number"),("status","Status","select",("OPEN","IN_PROGRESS","COMPLETED","CANCELLED")),("remarks","Remarks","text")),perms=perms)
+    with stage_section("D","CUSTOMER ORDER ATTACHMENT","Attach the customer PO, schedule, amendment or other supporting document to any saved Customer Order / Schedule.",key="supply_customer_order_attachment"):
+        attachment_rows=service.customer_orders()
+        if attachment_rows:
+            attachment_labels={str(r["id"]):f"{r.get('master_reference_no')} · Pos {r.get('order_position') or '-'} · {r.get('customer_delivery_date') or '-'}" for r in attachment_rows}
+            last_order_id=str(st.session_state.get("last_supply_customer_order_id") or "")
+            attachment_ids=list(attachment_labels)
+            attachment_index=attachment_ids.index(last_order_id) if last_order_id in attachment_ids else 0
+            attachment_order_id=st.selectbox("Customer Order / Schedule",attachment_ids,index=attachment_index,format_func=lambda v:attachment_labels[v],key="supply_customer_attachment_order")
+            render_attachment_manager(
+                repo=service.repo,entity_type="SUPPLY_CUSTOMER_ORDER",entity_id=attachment_order_id,folder="supply_customer_orders",
+                slots=(AttachmentSlot("CUSTOMER_ORDER_ATTACHMENT","Customer Order / Schedule Attachment","Customer PO, schedule, amendment or supporting file."),),
+                key_prefix=f"supply_customer_order_{attachment_order_id}",can_add_or_replace=perms["can_edit"] or perms["can_create"],can_delete=perms["can_archive"],title="ATTACHMENT FILE",
+            )
+        else: st.info("Create a Customer Order / Schedule before adding an attachment.")
+    _edit_delete_panel(service,table="supply_customer_orders",rows=service.customer_orders(),title="CUSTOMER ORDER EDIT / DELETE",stage="E",key="supply_customer_order",labeler=lambda r:f"{r.get('master_reference_no')} · Pos {r.get('order_position') or '-'}",fields=(("supply_flow","Supply Chain Flow","select",(FLOW_FSI_RM,FLOW_DIRECT_FORGING)),("customer_order_no","Customer Order No.","text"),("order_position","PosNr / Position","text"),("order_date","Order Date","date"),("customer_delivery_date","Delivery Date","date"),("order_qty_pcs","Order Qty pcs","number"),("status","Status","select",("OPEN","IN_PROGRESS","COMPLETED","CANCELLED")),("remarks","Remarks","text")),perms=perms)
 
+
+
+OPENING_STOCK_STAGES = {
+    "RAW_MATERIAL": "Raw Material",
+    "FORGING": "Forging",
+    "MACHINING": "Machining / WIP",
+    "OSP_READY": "OSP Ready",
+    "AT_OSP": "At OSP",
+    "FINAL_INSPECTION": "Final Inspection",
+    "FINISHED_GOODS": "Finished Goods",
+}
+
+
+def render_opening_stock() -> None:
+    page_header("Supply Chain Opening Stock", "Load existing stock by Part and current process stage without resetting live transactions", "Supply Chain")
+    service=SupplyChainService(); perms=current_permissions("SUPPLY_CHAIN")
+    parts,parties,grades=_maps(service)
+    part_labels={pid:part_label(row,customer_name=party_label(parties.get(str(row.get("customer_id"))) or {})) for pid,row in parts.items()}
+    grade_labels={gid:str(row.get("grade_code") or gid) for gid,row in grades.items()}
+    supplier_labels={pid:party_label(row) for pid,row in parties.items()}
+
+    with stage_section("A","ADD OPENING STOCK","Opening quantities are added separately from historical QCMS transactions. Finished Goods counts toward customer-order stock; eligible WIP stages can be selected in OSP Material Out.",key="supply_opening_stock_add"):
+        if not part_labels:
+            st.warning("Create an active Part Master before adding Opening Stock.")
+        else:
+            part_id=st.selectbox("Part Number",list(part_labels),format_func=lambda v:part_labels[v],key="opening_stock_part")
+            grade_links=service.material_grade_links(part_id)
+            grade_ids=[str(r.get("material_grade_id")) for r in grade_links if str(r.get("material_grade_id") or "") in grade_labels]
+            primary_grade=str((parts.get(part_id) or {}).get("material_grade_id") or "")
+            if primary_grade and primary_grade in grade_labels and primary_grade not in grade_ids: grade_ids.insert(0,primary_grade)
+            raw_rows=service.raw_material_options(part_id)
+            raw_labels={str(r["id"]):f"{r.get('material_section_name') or 'Raw Material'} · Grade {grade_labels.get(str(r.get('material_grade_id')),'-')} · {supplier_labels.get(str(r.get('supplier_id')),'Supplier')} · {r.get('section_size') or '-'}" for r in raw_rows}
+            with st.form("supply_opening_stock_form"):
+                c=st.columns(4,gap="small")
+                stage=c[0].selectbox("Supply Chain Stage",list(OPENING_STOCK_STAGES),format_func=lambda v:OPENING_STOCK_STAGES[v])
+                grade_id=c[1].selectbox("Material Grade",[""]+grade_ids,format_func=lambda v:"Not Applicable / Unknown" if not v else grade_labels.get(v,v))
+                raw_id=c[2].selectbox("Raw Material / Supplier Section",[""]+list(raw_labels),format_func=lambda v:"Not Linked" if not v else raw_labels[v])
+                supplier_id=str((next((r for r in raw_rows if str(r.get("id"))==str(raw_id)),{}) or {}).get("supplier_id") or "") if raw_id else ""
+                c[3].text_input("Supplier",value=supplier_labels.get(supplier_id,"-"),disabled=True)
+                c=st.columns(4,gap="small")
+                lot_reference=c[0].text_input("Opening Lot / Reference")
+                heat_number=c[1].text_input("Heat Number")
+                heat_code=c[2].text_input("Heat Code")
+                qty_pcs=c[3].number_input("Opening Qty (pcs)",min_value=0.0,value=0.0,step=1.0)
+                c=st.columns(3,gap="small")
+                available_pcs=c[0].number_input("Available Qty (pcs)",min_value=0.0,value=float(qty_pcs),step=1.0,help="Quantity currently available at the selected stage. This may be lower than the original opening quantity.")
+                qty_kg=c[1].number_input("Opening Qty (kg)",min_value=0.0,value=0.0,step=1.0)
+                remarks=c[2].text_input("Remarks")
+                submitted=st.form_submit_button("Add Opening Stock",type="primary",width="stretch",disabled=not perms["can_create"])
+            if submitted:
+                try:
+                    raw=next((r for r in raw_rows if str(r.get("id"))==str(raw_id)),{}) if raw_id else {}
+                    selected_grade=grade_id or str(raw.get("material_grade_id") or primary_grade or "") or None
+                    service.save_opening_stock({
+                        "part_id":part_id,"stage":stage,"material_grade_id":selected_grade,"raw_material_detail_id":raw_id or None,"supplier_id":supplier_id or None,
+                        "lot_reference":lot_reference.strip() or None,"heat_number":heat_number.strip() or None,"heat_code":heat_code.strip() or None,
+                        "quantity_pcs":qty_pcs,"available_quantity_pcs":available_pcs,"quantity_kg":qty_kg,"remarks":remarks.strip() or None,"status":"ACTIVE",
+                    })
+                    save_success_popup("Opening Stock added successfully and is now available to the relevant Supply Chain / OSP stage.",queue_for_rerun=True); st.rerun()
+                except Exception as exc: st.error(str(exc))
+
+    rows=service.opening_stock()
+    def display_rows():
+        data=[]
+        for r in rows:
+            part=parts.get(str(r.get("part_id"))) or {}
+            raw=next((x for x in service.raw_material_options(str(r.get("part_id"))) if str(x.get("id"))==str(r.get("raw_material_detail_id"))),{}) if r.get("raw_material_detail_id") else {}
+            data.append({
+                "Part Number":part.get("part_number"),"FSI Part Number":part.get("fsi_part_number"),"Part Description":part.get("part_name"),
+                "Stage":OPENING_STOCK_STAGES.get(str(r.get("stage")),str(r.get("stage"))),"Material Grade":grade_labels.get(str(r.get("material_grade_id")),"-"),
+                "Raw Material Section":raw.get("material_section_name") or "-","Supplier":supplier_labels.get(str(r.get("supplier_id")),"-"),
+                "Opening Reference":r.get("lot_reference"),"Heat Number":r.get("heat_number"),"Heat Code":r.get("heat_code"),
+                "Opening Qty pcs":r.get("quantity_pcs"),"Available Qty pcs":r.get("available_quantity_pcs"),"Opening Qty kg":r.get("quantity_kg"),
+                "Status":r.get("status"),"Remarks":r.get("remarks"),"_id":str(r.get("id")),
+            })
+        return data
+    frame=pd.DataFrame(display_rows())
+
+    with stage_section("B","OPENING STOCK IMPORT / EXPORT UTILITY","Download a controlled template, preview the import, skip exact duplicate Opening References, and export the complete current register.",key="supply_opening_stock_import_export"):
+        template=pd.DataFrame([{
+            "Part Number":"","FSI Part Number":"","Stage":"FINISHED_GOODS","Material Grade":"","Supplier Code":"",
+            "Raw Material Section":"","Section Size":"","Opening Reference":"OPEN-001","Heat Number":"","Heat Code":"",
+            "Opening Qty pcs":0,"Available Qty pcs":0,"Opening Qty kg":0,"Remarks":"",
+        }])
+        c1,c2=st.columns(2,gap="small")
+        c1.download_button(
+            "Download Opening Stock Import Template", data=_excel_bytes(template,"Opening Stock Template"),
+            file_name="QCMS_Opening_Stock_Import_Template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/download:", width="stretch",
+            key="opening_stock_template_download",
+        )
+        current_export=frame.drop(columns=["_id"],errors="ignore") if not frame.empty else pd.DataFrame(columns=template.columns)
+        c2.download_button(
+            "Export Current Opening Stock", data=_excel_bytes(current_export,"Opening Stock Register"),
+            file_name="QCMS_Opening_Stock_Register.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/table_view:", width="stretch",
+            key="opening_stock_register_export",
+        )
+        st.caption("Import Stage values: RAW_MATERIAL, FORGING, MACHINING, OSP_READY, AT_OSP, FINAL_INSPECTION, FINISHED_GOODS. Opening Reference is mandatory for duplicate-safe import.")
+        uploaded=st.file_uploader("Opening Stock Excel Import",type=["xlsx","xlsm","xls"],key="opening_stock_import_file")
+        if uploaded is not None:
+            try:
+                imported=pd.read_excel(uploaded,dtype=object).dropna(how="all")
+                preview=service.opening_stock_import_preview(imported.to_dict("records"))
+                visible=pd.DataFrame([{k:v for k,v in row.items() if not k.startswith("_")} for row in preview])
+                portal_table(_style_supply_dataframe(visible.rename(columns={"Action":"Status"})),hide_index=True,width="stretch",height=min(520,90+34*max(len(visible),1)))
+                errors=sum(str(row.get("Action"))=="ERROR" for row in preview)
+                duplicates=sum(str(row.get("Action"))=="SKIP_DUPLICATE" for row in preview)
+                st.caption(f"Preview: New {sum(str(row.get('Action'))=='CREATE' for row in preview)} · Duplicates skipped {duplicates} · Errors {errors}")
+                if st.button("Import Opening Stock · New Rows Only",type="primary",width="stretch",disabled=not perms["can_create"] or errors>0,key="opening_stock_import_apply"):
+                    result=service.apply_opening_stock_import(preview)
+                    save_success_popup(f"Opening Stock import complete · New {result['created']} · Duplicates skipped {result['skipped']}",queue_for_rerun=True); st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+    with stage_section("C","OPENING STOCK REGISTER","Stage-wise opening stock remains traceable. Only Finished Goods is included in customer-order available stock; eligible WIP stages are available to OSP.",key="supply_opening_stock_register"):
+        _searchable_grid(frame.drop(columns=["_id"],errors="ignore"),title="Opening Stock Register",key="supply_opening_stock_register_grid",height=520)
+
+    with stage_section("D","OPENING STOCK EDIT / DELETE","Edit quantities/stage with Supply Chain edit rights. Permanent deletion additionally requires the current QCMS password.",key="supply_opening_stock_edit"):
+        if not rows:
+            st.info("No Opening Stock records are available.")
+        else:
+            labels={str(r["id"]):f"{part_labels.get(str(r.get('part_id')),'Part')} · {OPENING_STOCK_STAGES.get(str(r.get('stage')),r.get('stage'))} · {number(r.get('available_quantity_pcs')):,.0f} pcs" for r in rows}
+            selected_id=st.selectbox("Opening Stock Record",list(labels),format_func=lambda v:labels[v],key="opening_stock_edit_select")
+            record=next(r for r in rows if str(r.get("id"))==selected_id)
+            with st.form("opening_stock_edit_form"):
+                c=st.columns(4,gap="small")
+                e_stage=c[0].selectbox("Stage",list(OPENING_STOCK_STAGES),index=list(OPENING_STOCK_STAGES).index(str(record.get("stage"))) if str(record.get("stage")) in OPENING_STOCK_STAGES else 0,format_func=lambda v:OPENING_STOCK_STAGES[v])
+                e_qty=c[1].number_input("Opening Qty pcs",min_value=0.0,value=float(number(record.get("quantity_pcs"))),step=1.0)
+                e_available=c[2].number_input("Available Qty pcs",min_value=0.0,value=float(number(record.get("available_quantity_pcs"))),step=1.0)
+                e_kg=c[3].number_input("Opening Qty kg",min_value=0.0,value=float(number(record.get("quantity_kg"))),step=1.0)
+                c=st.columns(4,gap="small")
+                e_lot=c[0].text_input("Opening Reference",value=str(record.get("lot_reference") or ""))
+                e_heat=c[1].text_input("Heat Number",value=str(record.get("heat_number") or ""))
+                e_heat_code=c[2].text_input("Heat Code",value=str(record.get("heat_code") or ""))
+                e_status=c[3].selectbox("Status",["ACTIVE","CONSUMED","INACTIVE"],index=["ACTIVE","CONSUMED","INACTIVE"].index(str(record.get("status") or "ACTIVE")) if str(record.get("status") or "ACTIVE") in ["ACTIVE","CONSUMED","INACTIVE"] else 0)
+                e_remarks=st.text_input("Remarks",value=str(record.get("remarks") or ""))
+                edit_submit=st.form_submit_button("Save Opening Stock Changes",type="primary",width="stretch",disabled=not perms["can_edit"])
+            if edit_submit:
+                try:
+                    service.save_opening_stock({
+                        "part_id":record.get("part_id"),"stage":e_stage,"material_grade_id":record.get("material_grade_id"),"raw_material_detail_id":record.get("raw_material_detail_id"),"supplier_id":record.get("supplier_id"),
+                        "lot_reference":e_lot.strip() or None,"heat_number":e_heat.strip() or None,"heat_code":e_heat_code.strip() or None,
+                        "quantity_pcs":e_qty,"available_quantity_pcs":e_available,"quantity_kg":e_kg,"remarks":e_remarks.strip() or None,"status":e_status,
+                    },record_id=selected_id)
+                    save_success_popup("Opening Stock updated successfully.",queue_for_rerun=True); st.rerun()
+                except Exception as exc: st.error(str(exc))
+            if password_delete_panel(repo=service.repo,table="supply_opening_stock",rows=[record],labeler=lambda r:labels[str(r["id"])],key=f"delete_opening_stock_{selected_id}",can_delete=perms["can_edit"],title="Delete Opening Stock Record",help_text="Permanent deletion requires your current QCMS password. Delete is blocked if the record has already been used for OSP genealogy."):
+                st.rerun()
 
 def render_rm_procurement() -> None:
     page_header("Raw Material Procurement","Pending Customer Orders first · sorted by upcoming customer delivery date","Supply Chain")
@@ -434,13 +607,22 @@ def render_purchase_orders() -> None:
             st.info("No open Customer Order / Schedule is available.")
 
         if po_type=="RAW_MATERIAL":
-            pending=service.pending_customer_orders_for_rm()
-            labels={str(r["id"]):f"{r.get('master_reference_no')} · Pos {r.get('order_position') or '-'} · FSI {(parts.get(str(r.get('part_id'))) or {}).get('fsi_part_number') or '-'} · RM Balance {number(r.get('rm_balance_kg')):,.3f} kg · Due {r.get('customer_delivery_date') or '-'}" for r in pending}
+            # v4.14.2: one source of truth for both visibility and selection. The old page
+            # rendered one all-order grid but built the selector from a second pending list;
+            # any divergence made valid Customer Orders look as if they had disappeared.
+            eligible_orders=[dict(r) for r in eligibility if bool(r.get("_po_eligible"))]
+            pending_by_id={str(r.get("id")):r for r in service.pending_customer_orders_for_rm()}
+            for row in eligible_orders:
+                pending=pending_by_id.get(str(row.get("id"))) or {}
+                row["rm_ordered_kg"]=number(pending.get("rm_ordered_kg"))
+                row["rm_balance_kg"]=number(pending.get("rm_balance_kg") or max(number(row.get("required_rm_kg"))-number(pending.get("rm_ordered_kg")),0.0))
+            labels={str(r["id"]):f"{r.get('master_reference_no')} · Pos {r.get('order_position') or '-'} · FSI {(parts.get(str(r.get('part_id'))) or {}).get('fsi_part_number') or 'ENTER AT PO'} · RM Balance {number(r.get('rm_balance_kg')):,.3f} kg · Due {r.get('customer_delivery_date') or '-'}" for r in eligible_orders}
             pre=str(st.session_state.pop("supply_po_source_order_id","") or "")
             defaults=[pre] if pre in labels else []
             source_order_ids=st.multiselect("Select ELIGIBLE Customer Orders / Schedules for this RM Purchase Order",list(labels),default=defaults,format_func=lambda v:labels[v],key="supply_po_rm_sources") if labels else []
+            st.caption(f"Open Customer Orders / Schedules: {len(eligibility):,} · Eligible for RM PO: {len(eligible_orders):,}. Every open order remains visible in the status table above.")
             if source_order_ids:
-                selected=[next(r for r in pending if str(r.get("id"))==oid) for oid in source_order_ids]
+                selected=[next(r for r in eligible_orders if str(r.get("id"))==oid) for oid in source_order_ids]
                 selected_frame=_order_display_rows(service,selected)
                 portal_table(selected_frame.drop(columns=["_id"],errors="ignore"),hide_index=True,width="stretch",height=min(300,80+len(selected)*38))
             elif labels:
@@ -448,7 +630,13 @@ def render_purchase_orders() -> None:
             else:
                 st.warning("No Customer Order is currently eligible for an RM Purchase Order. Review the eligibility/reason grid above.")
         else:
-            pending=service.pending_forging_po_sources(); data=[]
+            # v4.14.2: forging selection also comes from the same all-order eligibility
+            # result that drives the visible status grid.  This removes the second UI-only
+            # source interpretation that could leave an eligible Customer Order visible in
+            # one table but unavailable in the PO selector.
+            forging_eligible=[dict(r) for r in eligibility if bool(r.get("_po_eligible")) and r.get("_po_source")]
+            pending=[dict(r.get("_po_source") or {}) for r in forging_eligible]
+            data=[]
             for r in pending:
                 order=service.order(str(r.get("_customer_order_id") or "")) or {}
                 data.append({**service.order_context(order),"Source":r.get("_source_type"),"Forging Balance pcs":r.get("_balance_pcs"),"RM Dispatch":(r.get("_rm_dispatch") or {}).get("dispatch_number"),"Heat Number":(r.get("_rm_dispatch") or {}).get("heat_number"),"Status":"ELIGIBLE","_source_id":r.get("_source_id")})
@@ -458,6 +646,7 @@ def render_purchase_orders() -> None:
             chosen=st.selectbox("Select ELIGIBLE Forging PO Source",list(labels),format_func=lambda v:labels[v],key="supply_po_forging_source") if labels else None
             if chosen is not None:
                 selected_forging_source=pending[int(chosen)]; source_order_id=str(selected_forging_source.get("_customer_order_id") or ""); source_order_ids=[source_order_id]; rm_dispatch=selected_forging_source.get("_rm_dispatch") or {}
+            st.caption(f"Open Customer Orders / Schedules: {len(eligibility):,} · Eligible for Forging PO: {len(pending):,}. Every open order remains visible in the status table above.")
             if not labels: st.warning("No Customer Order / Supply Chain source is currently eligible for a Forging Purchase Order. Review the reason grid above.")
 
     with stage_section("B","PURCHASE ORDER ENTRY","Supplier-facing Item # uses the FSI Part Number. RM technical heading/value data and Start Date / End Date / Price history come from the selected supplier-specific Part Master Raw Material record.",key="supply_po_entry"):
@@ -482,15 +671,25 @@ def render_purchase_orders() -> None:
             supplier_id=c[0].selectbox("Supplier",supplier_options,index=supplier_options.index(default_supplier) if default_supplier in supplier_options else 0,format_func=lambda v:supplier_labels[v],key="controlled_po_supplier") if supplier_options else None
             order_date=c[1].date_input("PO Date",value=date.today(),format="DD-MM-YYYY",key="controlled_po_date")
             due_dates=[_iso_date(o.get("customer_delivery_date")) for o in selected_orders if o.get("customer_delivery_date")]
-            delivery_default=min(due_dates) if due_dates else date.today()
-            delivery_date=c[2].date_input("Delivery Date",value=delivery_default,format="DD-MM-YYYY",key="controlled_po_delivery")
+            lead_days=0
+            if supplier_id:
+                lead_values=[]
+                for source_order in selected_orders:
+                    source_part_id=str(source_order.get("part_id") or "")
+                    source_raw=service.raw_material_for_supplier(source_part_id,str(supplier_id),str(source_order.get("raw_material_detail_id") or "")) or {}
+                    lead_values.append(int(source_raw.get("lead_time_days") or 0))
+                lead_days=max(lead_values or [0])
+            delivery_default=(order_date+timedelta(days=lead_days)) if lead_days>0 else (min(due_dates) if due_dates else order_date)
+            delivery_key=f"controlled_po_delivery_{po_type}_{str(supplier_id or 'none')[:8]}_{order_date.isoformat()}_{'_'.join(str(v)[:6] for v in source_order_ids)}"
+            delivery_date=c[2].date_input("Delivery Date",value=delivery_default,format="DD-MM-YYYY",key=delivery_key,help="Automatically defaults from the longest supplier Raw Material Lead Time for the selected PO items. You may edit the date before creating the PO.")
             requisitioner=c[3].text_input("Requisitioner",value="",key="controlled_po_requisitioner")
+            if lead_days>0: st.caption(f"Delivery default calculated from Part Master supplier lead time: {lead_days} day(s) from PO Date. The displayed Delivery Date remains editable.")
             c=st.columns(4,gap="small")
             ship_via=c[0].text_input("Ship Via",value="Road",key="controlled_po_ship_via"); incoterm=c[1].text_input("Incoterm",value="DAP, CHAKAN",key="controlled_po_incoterm"); payment=c[2].text_input("Payment Term",value="NET 30 DAYS AFTER GRN",key="controlled_po_payment"); quote_date=c[3].date_input("Quotation Date",value=date.today(),format="DD-MM-YYYY",key="controlled_po_quote_date")
             c=st.columns(2,gap="small"); quote_ref=c[0].text_input("Quotation Reference",key="controlled_po_quote_ref"); old_po=c[1].text_input("Old PO Details",key="controlled_po_old_po")
             gst=st.number_input("GST %",min_value=0.0,value=18.0,step=1.0,key="controlled_po_gst")
 
-            allocations: dict[str,float]={}; line_prices: dict[str,float]={}; line_hsn: dict[str,str]={}; all_lines_valid=bool(supplier_id)
+            allocations: dict[str,float]={}; line_prices: dict[str,float]={}; line_hsn: dict[str,str]={}; line_fsi: dict[str,str]={}; all_lines_valid=bool(supplier_id)
             if po_type=="RAW_MATERIAL" and supplier_id:
                 allocation_rows=[]; raw_for_order={}; group_order_ids={}
                 for order in selected_orders:
@@ -498,8 +697,8 @@ def render_purchase_orders() -> None:
                     raw=service.raw_material_for_supplier(str(part.get("id") or ""),supplier_id,str(order.get("raw_material_detail_id") or "")); raw_for_order[oid]=raw
                     group_key=f"{part.get('id')}|{(raw or {}).get('id') or ''}"
                     group_order_ids.setdefault(group_key,[]).append(oid)
-                    allocation_rows.append({"Order ID":oid,"Customer Order / Schedule":order.get("master_reference_no"),"Position":order.get("order_position"),"FSI Part Number":part.get("fsi_part_number") or "MISSING","Part Description":part.get("part_name"),"RM Section":(raw or {}).get("section_size") or "NO SUPPLIER RM DETAIL","Pending RM kg":balance,"PO Allocation kg":balance})
-                    if not raw or not str(part.get("fsi_part_number") or "").strip(): all_lines_valid=False
+                    allocation_rows.append({"Order ID":oid,"Customer Order / Schedule":order.get("master_reference_no"),"Position":order.get("order_position"),"FSI Part Number":part.get("fsi_part_number") or "ENTER IN ITEM GRID","Part Description":part.get("part_name"),"RM Section":(raw or {}).get("section_size") or "NO SUPPLIER RM DETAIL","Pending RM kg":balance,"PO Allocation kg":balance})
+                    if not raw: all_lines_valid=False
                 alloc_df=pd.DataFrame(allocation_rows)
                 alloc_edit=st.data_editor(alloc_df,hide_index=True,width="stretch",height=min(360,90+len(alloc_df)*38),key="controlled_po_allocations",disabled=["Order ID","Customer Order / Schedule","Position","FSI Part Number","Part Description","RM Section","Pending RM kg"],column_config={"Order ID":None,"Pending RM kg":st.column_config.NumberColumn(format="%.3f"),"PO Allocation kg":st.column_config.NumberColumn(min_value=0.001,format="%.3f",required=True)})
                 for _,row in alloc_edit.iterrows(): allocations[str(row.get("Order ID"))]=number(row.get("PO Allocation kg"))
@@ -513,9 +712,10 @@ def render_purchase_orders() -> None:
                     part,raw=group["part"],group["raw"]; current=service.current_price(str(part.get("id") or ""),supplier_id,on_date=order_date,uom="KGS")
                     line_rows.append({"Line Key":key,"FSI Part Number":part.get("fsi_part_number"),"HSN / SAC":part.get("hsn_sac_code") or "","Part Description":part.get("part_name"),"Raw Material Section":raw.get("material_section_name"),"Section Size":raw.get("section_size"),"PO Qty kg":round(group["qty"],3),"Unit Price":current})
                 line_df=pd.DataFrame(line_rows)
-                line_edit=st.data_editor(line_df,hide_index=True,width="stretch",height=min(330,90+len(line_df)*38),key="controlled_po_lines",disabled=["Line Key","FSI Part Number","Part Description","Raw Material Section","Section Size","PO Qty kg"],column_config={"Line Key":None,"HSN / SAC":st.column_config.TextColumn(help="HSN/SAC printed on this supplier PO line."),"PO Qty kg":st.column_config.NumberColumn(format="%.3f"),"Unit Price":st.column_config.NumberColumn(min_value=0.0,format="%.2f",required=True)})
+                line_edit=st.data_editor(line_df,hide_index=True,width="stretch",height=min(330,90+len(line_df)*38),key="controlled_po_lines",disabled=["Line Key","Part Description","Raw Material Section","Section Size","PO Qty kg"],column_config={"Line Key":None,"FSI Part Number":st.column_config.TextColumn(required=True,help="Supplier-facing FSI identity. If Part Master is blank, enter it here; the original Customer Part Number is never printed."),"HSN / SAC":st.column_config.TextColumn(help="HSN/SAC printed on this supplier PO line."),"PO Qty kg":st.column_config.NumberColumn(format="%.3f"),"Unit Price":st.column_config.NumberColumn(min_value=0.0,format="%.2f",required=True)})
                 for _,row in line_edit.iterrows():
-                    line_prices[str(row.get("Line Key"))]=number(row.get("Unit Price")); line_hsn[str(row.get("Line Key"))]=str(row.get("HSN / SAC") or "").strip()
+                    key=str(row.get("Line Key")); line_prices[key]=number(row.get("Unit Price")); line_hsn[key]=str(row.get("HSN / SAC") or "").strip(); line_fsi[key]=str(row.get("FSI Part Number") or "").strip()
+                    if not line_fsi[key]: all_lines_valid=False
 
                 section_bar("PART MASTER TECHNICAL DATA & PRICE HISTORY", "Read-only PO source data. Edit these values only in Part Master → Raw Material Details for the respective Supplier.")
                 for key,group in group_data.items():
@@ -527,18 +727,18 @@ def render_purchase_orders() -> None:
                         else: st.warning("No supplier technical data is configured. Add heading/value rows in Part Master → Raw Material Details.")
                         hist=service.price_history(str(part.get("id") or ""),supplier_id,uom="KGS")
                         if hist:
-                            portal_table(pd.DataFrame([{"Start Date":r.get("start_date"),"End Date":r.get("end_date") or "Current","Price":r.get("price"),"Currency":r.get("currency"),"UOM":r.get("uom")} for r in hist]),hide_index=True,width="stretch",height=min(280,70+len(hist)*34))
+                            portal_table(pd.DataFrame([{"Start Date":r.get("start_date"),"End Date":r.get("end_date") or "Current","Basic Rate":r.get("price"),"Freight":r.get("freight"),"Tool Cost":r.get("tool_cost"),"P&F":r.get("packing_forwarding"),"Profit":r.get("profit"),"ICC/Rej.":r.get("icc_rejection"),"Currency":r.get("currency"),"UOM":r.get("uom"),"Remark":r.get("remarks") or "","Status":r.get("status") or "ACTIVE"} for r in reversed(hist)]),hide_index=True,width="stretch",height=min(320,70+len(hist)*34))
                         else: st.info("No prior supplier / FSI Part price history is recorded. The first non-zero PO price will start the history automatically.")
             elif po_type=="FORGING" and supplier_id:
                 order=selected_orders[0]; source_order_id=str(order.get("id") or ""); _show_order_context(service,source_order_id,key="supply_po_context",export=False)
                 part=parts.get(str(order.get("part_id"))) or {}; raw=service.raw_material_for_supplier(str(part.get("id") or ""),supplier_id,str(order.get("raw_material_detail_id") or "")) or {}
                 totals=service.totals(source_order_id); default_qty=max(number(order.get("order_qty_pcs"))-totals["forging_ordered_pcs"],1.0)
-                c=st.columns(4,gap="small"); qty=c[0].number_input("Order Quantity",min_value=0.001,value=float(default_qty),step=1.0,key="controlled_po_qty"); c[1].text_input("UOM",value="NOS",disabled=True,key="controlled_po_uom_view"); current_price=service.current_price(str(part.get("id") or ""),supplier_id,on_date=order_date,uom="NOS"); unit_price=c[2].number_input("Unit Price",min_value=0.0,value=float(current_price),step=0.01,key="controlled_po_unit_price"); hsn_sac_code=c[3].text_input("HSN / SAC Code",value=str(part.get("hsn_sac_code") or ""),key="controlled_po_hsn_sac")
+                c=st.columns(5,gap="small"); qty=c[0].number_input("Order Quantity",min_value=0.001,value=float(default_qty),step=1.0,key="controlled_po_qty"); c[1].text_input("UOM",value="NOS",disabled=True,key="controlled_po_uom_view"); current_price=service.current_price(str(part.get("id") or ""),supplier_id,on_date=order_date,uom="NOS"); unit_price=c[2].number_input("Unit Price",min_value=0.0,value=float(current_price),step=0.01,key="controlled_po_unit_price"); hsn_sac_code=c[3].text_input("HSN / SAC Code",value=str(part.get("hsn_sac_code") or ""),key="controlled_po_hsn_sac"); fsi_part_number=c[4].text_input("FSI Part Number",value=str(part.get("fsi_part_number") or ""),key="controlled_po_fsi_part",help="Required supplier-facing identity; Customer Part Number is not printed.")
                 section_bar("PART MASTER TECHNICAL DATA & PRICE HISTORY")
                 tech=service.technical_data_snapshot(raw,part); hist=service.price_history(str(part.get("id") or ""),supplier_id,uom="NOS")
                 if tech: portal_table(pd.DataFrame([{"Heading":r.get("heading"),"Value":r.get("value")} for r in tech]),hide_index=True,width="stretch")
-                if hist: portal_table(pd.DataFrame([{"Start Date":r.get("start_date"),"End Date":r.get("end_date") or "Current","Price":r.get("price"),"Currency":r.get("currency"),"UOM":r.get("uom")} for r in hist]),hide_index=True,width="stretch")
-                all_lines_valid=bool(str(part.get("fsi_part_number") or "").strip())
+                if hist: portal_table(pd.DataFrame([{"Start Date":r.get("start_date"),"End Date":r.get("end_date") or "Current","Basic Rate":r.get("price"),"Freight":r.get("freight"),"Tool Cost":r.get("tool_cost"),"P&F":r.get("packing_forwarding"),"Profit":r.get("profit"),"ICC/Rej.":r.get("icc_rejection"),"Currency":r.get("currency"),"UOM":r.get("uom"),"Remark":r.get("remarks") or "","Status":r.get("status") or "ACTIVE"} for r in reversed(hist)]),hide_index=True,width="stretch")
+                all_lines_valid=bool(str(fsi_part_number or "").strip())
 
             remarks=st.text_area("Remarks",value="PART WILL BE SUPPLIED AS PER DRAWING.",height=70,key="controlled_po_remarks")
             instructions=st.text_area("Comments / Special Instructions",value=DEFAULT_SPECIAL_INSTRUCTIONS,height=135,key="controlled_po_instructions")
@@ -546,24 +746,29 @@ def render_purchase_orders() -> None:
             if st.button("Create Controlled Purchase Order",type="primary",width="stretch",disabled=create_disabled):
                 try:
                     payload={"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date.isoformat(),"delivery_date":delivery_date.isoformat(),"requisitioner":requisitioner.strip() or None,"ship_via":ship_via.strip(),"incoterm":incoterm.strip(),"payment_term":payment.strip(),"quotation_reference":quote_ref.strip() or None,"quotation_date":quote_date.isoformat(),"old_po_reference":old_po.strip() or None,"gst_percent":gst,"remarks":remarks.strip() or None,"special_instructions":instructions.strip() or None}
-                    if po_type=="RAW_MATERIAL": payload.update({"customer_order_ids":source_order_ids,"allocations":allocations,"line_prices":line_prices,"line_hsn_sac":line_hsn})
-                    else: payload.update({"customer_order_id":source_order_id,"quantity":qty,"uom":"NOS","unit_price":unit_price,"hsn_sac_code":hsn_sac_code.strip() or None,"rm_dispatch":rm_dispatch})
+                    if po_type=="RAW_MATERIAL": payload.update({"customer_order_ids":source_order_ids,"allocations":allocations,"line_prices":line_prices,"line_hsn_sac":line_hsn,"line_fsi_part_numbers":line_fsi})
+                    else: payload.update({"customer_order_id":source_order_id,"quantity":qty,"uom":"NOS","unit_price":unit_price,"hsn_sac_code":hsn_sac_code.strip() or None,"fsi_part_number":str(fsi_part_number or "").strip(),"rm_dispatch":rm_dispatch})
                     result=service.create_purchase_order(payload)
                     st.session_state["last_supply_purchase_order_id"]=str((result.get("header") or {}).get("id") or "")
                     header_result=result.get("header") or {}
                     NotificationService(service.repo).notify(
-                        "RM_RECEIPT_PENDING" if po_type=="RAW_MATERIAL" else "FORGING_RECEIPT_PENDING",
-                        subject=f"QCMS · {str(po_type).replace('_',' ').title()} PO {header_result.get('po_number')} created",
-                        body_text=f"Purchase Order {header_result.get('po_number')} has been created in QCMS for {supplier_labels.get(str(supplier_id),'Supplier')}. The next dependent Supply Chain task is pending.",
+                        "RM_PO_CREATED" if po_type=="RAW_MATERIAL" else "FORGING_PO_CREATED",
                         related_table="supply_purchase_orders", related_id=str(header_result.get("id") or ""),
-                        context={"po_number":header_result.get("po_number"),"po_type":po_type,"customer_order_ids":source_order_ids},
+                        context={
+                            "po_number": header_result.get("po_number"),
+                            "po_type": po_type,
+                            "customer_order_ids": source_order_ids,
+                            "supplier_id": str(supplier_id or ""),
+                            "supplier_name": supplier_labels.get(str(supplier_id), "Supplier"),
+                            "next_task": "Raw Material Receipt / Material Inward" if po_type=="RAW_MATERIAL" else "Forging Receipt",
+                        },
                     )
                     save_success_popup(f"Purchase Order {header_result.get('po_number')} created with {len(result.get('items') or [])} vendor line(s) and {len(result.get('stages') or [])} linked Supply Chain allocation(s).",queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
 
             last_id=str(st.session_state.get("last_supply_purchase_order_id") or "")
             if last_id:
-                header=service.purchase_order(last_id) or {}; items=service.purchase_order_items(last_id)
+                header=service.purchase_order(last_id) or {}; items=service.purchase_order_items_for_print(last_id)
                 if header and items:
                     try: st.download_button("Download / Print Purchase Order PDF",purchase_order_pdf_bytes(header,items),file_name=f"{header.get('po_number')}.pdf",mime="application/pdf",icon=":material/picture_as_pdf:",width="stretch",key=f"download_supply_po_{last_id}")
                     except Exception as exc: st.error(f"Purchase Order PDF could not be generated: {exc}")
@@ -575,7 +780,7 @@ def render_purchase_orders() -> None:
         labels={pid:f"{h.get('po_number')} · {str(h.get('po_type') or '').replace('_',' ').title()} · {supplier_labels.get(str(h.get('supplier_id')),'Supplier')} · {len(service.purchase_order_items(pid))} line(s) · {h.get('status')}" for pid,h in headers.items()}
         selected_po=st.selectbox("Purchase Order for PDF / Status",list(labels),format_func=lambda v:labels[v],key="supply_po_register_select") if labels else None
         if selected_po:
-            service.sync_purchase_order_status(selected_po); header=service.purchase_order(selected_po) or {}; items=service.purchase_order_items(selected_po); c=st.columns(2,gap="small")
+            service.sync_purchase_order_status(selected_po); header=service.purchase_order(selected_po) or {}; items=service.purchase_order_items_for_print(selected_po); c=st.columns(2,gap="small")
             try: c[0].download_button("Download / Print Selected PO",purchase_order_pdf_bytes(header,items),file_name=f"{header.get('po_number')}.pdf",mime="application/pdf",width="stretch",key=f"selected_po_pdf_{selected_po}")
             except Exception as exc: c[0].error(str(exc))
             if c[1].button("Cancel Selected PO",width="stretch",disabled=not perms["can_edit"] or str(header.get("status"))=="CLOSED"):

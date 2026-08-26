@@ -8,7 +8,7 @@ def text(rel: str) -> str:
 
 
 def test_v4135_release_and_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.1"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9"}
     marker = "4135-MAROON-SECTIONS-WHITE-FIELDS-KPI-ICON-FIX"
     assert marker in text("core/ui.py")
     assert marker in text("core/auth.py")

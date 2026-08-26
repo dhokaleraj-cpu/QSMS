@@ -1,7 +1,16 @@
-# QCMS 4.14.1 — HEAT-SUM-METLAB-TRAVERSE-LOGIN-APPROVAL-PO-PRICE
-# BUILD 4141-HEAT-SUM-METLAB-TRAVERSE-LOGIN-APPROVAL-PO-PRICE
-# QCMS 4.14.0 — PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL
-# BUILD 4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL
+# QCMS 4.14.9 — DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY
+# BUILD 4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY
+# QCMS 4.14.6 — LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY
+# BUILD 4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY
+# QCMS 4.14.5 — DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE
+# BUILD 4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE
+# QCMS 4.14.4 — METLAB-EDIT-MASTER-DUPLICATE-OPENING-IMPORT-SMTP-GUIDE
+# BUILD 4144-METLAB-EDIT-MASTER-DUPLICATE-OPENING-IMPORT-SMTP-GUIDE
+# QCMS 4.14.3 — PART-GRADES-LEADTIME-OPENING-STOCK-PASSWORD-EDIT-O365
+# BUILD 4143-PART-GRADES-LEADTIME-OPENING-STOCK-PASSWORD-EDIT-O365
+# QCMS 4.14.2 — PO-ORDER-VISIBILITY-FULL-PRICE-HISTORY
+# BUILD 4142-PO-ORDER-VISIBILITY-FULL-PRICE-HISTORY
+# COMPAT BUILD 4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL
 # QCMS 4.13.8 — SUPPLY-PO-FSI-PART-RMTC-WORKSHEET
 # BUILD 4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA
 # QCMS 4.13.5 — MAROON-SECTIONS-WHITE-FIELDS-KPI-ICON-FIX
@@ -13,6 +22,7 @@ import streamlit as st
 
 from app_pages import (
     dashboard,
+    deployment_diagnostics,
     complaints,
     dimensional_report,
     employee_master,
@@ -60,6 +70,7 @@ profile = current_profile() or {}
 # mapping from page.url_path can drop the "dashboard" key.
 PAGE_ITEMS = (
     ("dashboard", st.Page(dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard", default=True)),
+    ("deployment-diagnostics", st.Page(deployment_diagnostics.render, title="Deployment Diagnostics", icon=":material/verified:", url_path="deployment-diagnostics")),
     ("masters", st.Page(master_home.render, title="Masters", icon=":material/dataset:", url_path="masters")),
     ("rmtc-entry", st.Page(rmtc_pages.render_entry, title="RMTC Entry", icon=":material/fact_check:", url_path="rmtc-entry")),
     ("rmtc-approved-worksheet", st.Page(rmtc_pages.render_approved_part_worksheet, title="Approved RMTC Part Worksheet", icon=":material/add_task:", url_path="rmtc-approved-worksheet")),
@@ -67,6 +78,7 @@ PAGE_ITEMS = (
     ("osp-home", st.Page(osp_transactions.render_home, title="OSP Transactions", icon=":material/factory:", url_path="osp-home")),
     ("supply-chain-home", st.Page(supply_chain.render_home, title="Supply Chain", icon=":material/local_shipping:", url_path="supply-chain-home")),
     ("supply-customer-orders", st.Page(supply_chain.render_customer_orders, title="Supply Customer Orders", icon=":material/receipt_long:", url_path="supply-customer-orders")),
+    ("supply-opening-stock", st.Page(supply_chain.render_opening_stock, title="Opening Stock & Import", icon=":material/inventory_2:", url_path="supply-opening-stock")),
     ("supply-rm-procurement", st.Page(supply_chain.render_rm_procurement, title="Supply RM Procurement", icon=":material/shopping_cart:", url_path="supply-rm-procurement")),
     ("supply-purchase-orders", st.Page(supply_chain.render_purchase_orders, title="Supply Purchase Orders", icon=":material/request_quote:", url_path="supply-purchase-orders")),
     ("supply-rm-receipt", st.Page(supply_chain.render_rm_receipt, title="Supply RM Receipt", icon=":material/inventory:", url_path="supply-rm-receipt")),
@@ -163,6 +175,7 @@ MODULE_SUBMENUS = {
     "Admin": (
         ("user-access", "Users & Access", ":material/admin_panel_settings:"),
         ("email-settings", "Email Server & Notifications", ":material/forward_to_inbox:"),
+        ("deployment-diagnostics", "Deployment Diagnostics", ":material/verified:"),
     ),
     "RMTC": (
         ("rmtc-entry", "RMTC Entry", ":material/fact_check:"),
@@ -189,6 +202,7 @@ MODULE_SUBMENUS = {
     "Supply Chain": (
         ("supply-chain-home", "Supply Chain Home", ":material/local_shipping:"),
         ("supply-customer-orders", "Customer Orders", ":material/receipt_long:"),
+        ("supply-opening-stock", "Opening Stock & Import", ":material/inventory_2:"),
         ("supply-rm-procurement", "RM Procurement", ":material/shopping_cart:"),
         ("supply-purchase-orders", "Purchase Orders", ":material/request_quote:"),
         ("supply-rm-receipt", "RM Receipt", ":material/inventory:"),
@@ -278,12 +292,12 @@ ROUTE_MODULE = {
     "dashboard": "Dashboard", "my-account": "Dashboard",
     "masters": "Masters", "part-entry": "Masters", "process-entry": "Masters",
     "grade-entry": "Masters", "reference-entry": "Masters", "employee-entry": "Masters",
-    "user-access": "Admin", "email-settings": "Admin", "master-import": "Masters", "standards-entry": "Masters",
+    "user-access": "Admin", "email-settings": "Admin", "deployment-diagnostics": "Admin", "master-import": "Masters", "standards-entry": "Masters",
     "rmtc-entry": "RMTC", "rmtc-approved-worksheet": "RMTC", "rmtc-part": "RMTC", "rmtc-approval": "RMTC",
     "inward-entry": "Inward",
     "osp-home": "OSP", "osp-material-out": "OSP", "osp-sample-receipt": "OSP",
     "osp-inward": "OSP", "osp-dimensional": "OSP", "osp-metlab": "OSP",
-    "supply-chain-home": "Supply Chain", "supply-customer-orders": "Supply Chain", "supply-rm-procurement": "Supply Chain", "supply-purchase-orders": "Supply Chain", "supply-rm-receipt": "Supply Chain", "supply-rm-dispatch": "Supply Chain", "supply-forging": "Supply Chain", "supply-downstream": "Supply Chain", "supply-traceability": "Supply Chain", "supply-order-mis": "Supply Chain",
+    "supply-chain-home": "Supply Chain", "supply-customer-orders": "Supply Chain", "supply-opening-stock": "Supply Chain", "supply-rm-procurement": "Supply Chain", "supply-purchase-orders": "Supply Chain", "supply-rm-receipt": "Supply Chain", "supply-rm-dispatch": "Supply Chain", "supply-forging": "Supply Chain", "supply-downstream": "Supply Chain", "supply-traceability": "Supply Chain", "supply-order-mis": "Supply Chain",
     "npd-process-flow": "NPD & APQP", "npd-status": "NPD & APQP", "apqp": "NPD & APQP",
     "qc-tools": "QC Calculation Tools",
     "complaints-home": "Complaints", "customer-complaint": "Complaints",
@@ -307,13 +321,13 @@ PAGE_TITLE_TO_PATH = {
     "Process Master Records": "process-records", "Material Grade Entry": "grade-entry",
     "Material Grade Records": "grade-records", "Reference Master Entry": "reference-entry",
     "Reference Master Records": "reference-records", "Employee Entry": "employee-entry",
-    "Employee Records": "employee-records", "Users & Access": "user-access", "Email Server & Notifications": "email-settings", "Master Import": "master-import", "Customer Standards Entry": "standards-entry", "Customer Standards Records": "standards-records", "My Account": "my-account",
+    "Employee Records": "employee-records", "Users & Access": "user-access", "Email Server & Notifications": "email-settings", "Deployment Diagnostics": "deployment-diagnostics", "Master Import": "master-import", "Customer Standards Entry": "standards-entry", "Customer Standards Records": "standards-records", "My Account": "my-account",
     "Approved RMTC Part Worksheet": "rmtc-approved-worksheet", "RMTC Part Worksheet": "rmtc-part", "RMTC Records": "rmtc-records",
     "RMTC Approval": "rmtc-approval", "Material Inward Records": "inward-records",
     "OSP Material Out": "osp-material-out", "OSP Sample Receipt": "osp-sample-receipt",
     "OSP Material Inward": "osp-inward", "OSP Dimensional": "osp-dimensional",
     "OSP MetLAB": "osp-metlab", "OSP Records": "osp-records",
-    "Supply Chain": "supply-chain-home", "Supply Customer Orders": "supply-customer-orders", "Supply RM Procurement": "supply-rm-procurement", "Supply Purchase Orders": "supply-purchase-orders", "Supply RM Receipt": "supply-rm-receipt", "Supply RM to Forging": "supply-rm-dispatch", "Supply Forging": "supply-forging", "Supply Downstream": "supply-downstream", "Supply Traceability": "supply-traceability", "Supply Order MIS": "supply-order-mis",
+    "Supply Chain": "supply-chain-home", "Supply Customer Orders": "supply-customer-orders", "Supply Opening Stock": "supply-opening-stock", "Opening Stock & Import": "supply-opening-stock", "Supply RM Procurement": "supply-rm-procurement", "Supply Purchase Orders": "supply-purchase-orders", "Supply RM Receipt": "supply-rm-receipt", "Supply RM to Forging": "supply-rm-dispatch", "Supply Forging": "supply-forging", "Supply Downstream": "supply-downstream", "Supply Traceability": "supply-traceability", "Supply Order MIS": "supply-order-mis",
     "Process Flow Designer": "npd-process-flow", "NPD Status": "npd-status", "APQP": "apqp",
     "QC Calculation Tools": "qc-tools", "QC Calculation Records": "qc-calculation-records",
     "Complaint Management": "complaints-home", "Customer Complaint": "customer-complaint", "Supplier Complaint": "supplier-complaint", "Complaint Analysis & CAPA": "complaint-analysis", "Complaint Records": "complaint-records",
@@ -369,6 +383,8 @@ RAIL_NAV = (
 
 if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
     logout()
+
+st.caption(f"LIVE BUILD · QCMS v{settings.version} · 4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY")
 
 # v4.12.9 keeps the real two-column Streamlit workspace and hardens component styling.
 # v4.12.8 uses a real two-column Streamlit workspace. The charcoal navigation

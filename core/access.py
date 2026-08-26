@@ -37,19 +37,22 @@ def module_permissions(profile: Mapping[str, Any] | None, module_key: str, repo:
     )
     if not rows:
         role = str((profile or {}).get("role") or "VIEWER").upper()
-        default_write = role in {"QUALITY_MANAGER", "MASTER_DATA", "METLAB_APPROVER"}
-        inward_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "SQA", "PRODUCTION"}
-        npd_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "MASTER_DATA", "SQA", "PRODUCTION"}
-        qc_tools_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "METLAB_APPROVER", "SQA"}
-        complaint_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "SQA", "PRODUCTION"}
-        supply_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "MASTER_DATA", "SQA", "PRODUCTION"}
+        department = str((profile or {}).get("department") or "").upper().replace(" ", "_")
+        management = role == "MANAGEMENT" or department == "MANAGEMENT"
+        supply_function = role in {"SUPPLY_CHAIN", "PROCUREMENT", "BUSINESS_DEVELOPMENT", "MANAGEMENT"} or department in {"SUPPLY_CHAIN", "SUPPLYCHAIN", "PROCUREMENT", "BUSINESS_DEVELOPMENT", "MANAGEMENT"}
+        default_write = role in {"QUALITY_MANAGER", "MASTER_DATA", "METLAB_APPROVER", "PROCUREMENT", "MANAGEMENT"} or management
+        inward_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "SQA", "PRODUCTION", "SUPPLY_CHAIN", "PROCUREMENT", "MANAGEMENT"} or department in {"SUPPLY_CHAIN", "SUPPLYCHAIN", "PROCUREMENT", "MANAGEMENT"}
+        npd_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "MASTER_DATA", "SQA", "PRODUCTION", "BUSINESS_DEVELOPMENT", "MANAGEMENT"} or department in {"BUSINESS_DEVELOPMENT", "MANAGEMENT"}
+        qc_tools_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "METLAB_APPROVER", "SQA", "MANAGEMENT"}
+        complaint_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "SQA", "PRODUCTION", "BUSINESS_DEVELOPMENT", "MANAGEMENT"}
+        supply_write = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "MASTER_DATA", "SQA", "PRODUCTION"} or supply_function
         write_allowed = supply_write if module_key == "SUPPLY_CHAIN" else (complaint_write if module_key == "COMPLAINT_MANAGEMENT" else (qc_tools_write if module_key == "QC_CALCULATION_TOOLS" else (npd_write if module_key == "NPD_APQP" else (inward_write if module_key in {"MATERIAL_INWARD", "OSP_TRANSACTIONS", "DIMENSIONAL_REPORT"} else default_write))))
         return {
             "can_view": True,
             "can_create": write_allowed,
             "can_edit": write_allowed,
             "can_archive": False,
-            "can_approve": role in {"QUALITY_MANAGER", "METLAB_APPROVER"},
+            "can_approve": role in {"QUALITY_MANAGER", "METLAB_APPROVER", "MANAGEMENT"},
         }
     row = rows[0]
     return {key: bool(row.get(key)) for key in ("can_view", "can_create", "can_edit", "can_archive", "can_approve")}
