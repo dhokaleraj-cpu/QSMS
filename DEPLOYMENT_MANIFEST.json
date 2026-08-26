@@ -1,6 +1,6 @@
 {
-  "version": "4.14.9",
-  "build": "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY",
+  "version": "4.14.10",
+  "build": "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -20,7 +20,10 @@
     "supplier_vendor_notification_copy",
     "automatic_open_overdue_pdf_email_schedules",
     "party_notification_emails",
-    "forced_streamlit_redeploy_commit"
+    "forced_streamlit_redeploy_commit",
+    "po_ship_to_customer_supplier_vendor_master",
+    "po_logged_in_employee_requisitioner",
+    "po_ship_to_snapshot_pdf"
   ],
   "source": "controlled_release"
 }

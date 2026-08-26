@@ -58,7 +58,7 @@ def _donut(title: str, values: list[Any], color_map: dict[str, str]) -> None:
 def render() -> None:
     page_header("Quality Dashboard", context="Live Supabase")
     _settings = get_settings()
-    st.info(f"LIVE RELEASE VERIFICATION · QCMS v{_settings.version} · BUILD 4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY")
+    st.info(f"LIVE RELEASE VERIFICATION · QCMS v{_settings.version} · BUILD 41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER")
     repo = Repository()
 
     rmtc_rows = repo.select("rmtc_approvals", order_by="created_at", desc=True, limit=2000)

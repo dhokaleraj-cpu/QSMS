@@ -765,7 +765,7 @@ if "535 5.7.139" not in v4144_email or "Authenticated SMTP" not in v4144_email:
 # QCMS 4.14.5 deployment / direct-edit verification.
 v4145_dashboard = (ROOT / "app_pages" / "dashboard.py").read_text(encoding="utf-8")
 v4145_manifest = (ROOT / "DEPLOYMENT_MANIFEST.json").read_text(encoding="utf-8")
-if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY")):
+if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER")):
     errors.append("QCMS live release verification banner is missing")
 if "Select Existing MetLAB Report to Edit" not in v4144_metlab or "Select Existing Dimensional Report to Edit" not in v4144_dimensional or "Select Existing RMTC to Edit" not in v4144_rmtc:
     errors.append("QCMS 4.14.5 direct report edit selectors are incomplete")
@@ -790,8 +790,22 @@ if "X-QCMS-Scheduler" not in v4147_overdue or "pg_cron" not in v4147_migration o
 if "Git origin" not in v4147_diag or "Streamlit main file" not in v4147_diag:
     errors.append("QCMS 4.14.7 live deployment target proof is incomplete")
 
+# QCMS 4.14.10 controlled PO Ship-To / Requisitioner.
+v41410_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v41410_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v41410_po = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
+v41410_sql = (ROOT / "supabase" / "migrations" / "20260826152000_qcms_po_shipto_requisitioner_v41410.sql").read_text(encoding="utf-8")
+if "SHIP-TO ADDRESS · MASTER CONTROLLED" not in v41410_supply or "Ship-To Source" not in v41410_supply:
+    errors.append("QCMS 4.14.10 Ship-To master selector is incomplete")
+if "Requisitioner (Logged-in Employee)" not in v41410_supply or "requisitioner_employee_id" not in v41410_service:
+    errors.append("QCMS 4.14.10 logged-in employee Requisitioner is incomplete")
+if 'ship_to_snapshot = self._party_snapshot(ship_to_party)' not in v41410_service or '_party_lines(ship)' not in v41410_po:
+    errors.append("QCMS 4.14.10 Ship-To snapshot/PDF print control is incomplete")
+if "qcms_control_supply_po_identity" not in v41410_sql or "ship_to_party_id" not in v41410_sql:
+    errors.append("QCMS 4.14.10 database identity control is incomplete")
+
 report = {
-    "release": "QCMS 4.14.7 Deploy Target / Next-Stage Email / Automatic Overdue Reports",
+    "release": "QCMS 4.14.10 PO Ship-To Master / Logged-in Employee Requisitioner",
     "po_source_visibility": "def purchase_order_source_status" in v4140_service and "PO Eligibility" in v4140_supply,
     "explicit_supply_flow": 'explicit = str(order.get("supply_flow")' in v4140_service and "supply_flow" in v4140_sql,
     "added_part_validate_decide": "incremental_part_review" in v4140_rmtc and "Validate Added Part Against Masters" in v4140_rmtc,
@@ -815,13 +829,16 @@ report = {
     "v4144_identity_duplicate_policy": '"customer_standards": ("standard_code", "standard_name")' in v4144_master and '"parts": ("fsi_part_number",)' in v4144_master,
     "v4144_opening_stock_import": "OPENING STOCK IMPORT / EXPORT UTILITY" in v4144_supply and "opening_stock_import_preview" in v4144_supply_service and "apply_opening_stock_import" in v4144_supply_service,
     "v4144_smtp_auth_guidance": "535 5.7.139" in v4144_email and "Authenticated SMTP" in v4144_email,
-    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY")),
+    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER")),
     "v4146_runtime_diagnostics": "deployment-diagnostics" in app_text and "LIVE BUILD · QCMS" in app_text and (ROOT / "app_pages" / "deployment_diagnostics.py").exists(),
     "v4147_deploy_target_proof": "Git origin" in v4147_diag and "Streamlit main file" in v4147_diag,
     "v4147_next_stage_email": "NEXT-STAGE RESPONSIBILITY ROUTING" in v4147_email and "department_emails" in v4147_notify,
     "v4147_email_templates": "MODULE EMAIL TEMPLATES" in v4147_email and "qcms_email_templates" in v4147_migration,
     "v4147_email_attachments": "attachment_manifest" in v4147_notify and "attachments" in v4147_sender,
     "v4147_overdue_scheduler": "qcms-overdue-notifier-hourly" in v4147_migration and "X-QCMS-Scheduler" in v4147_overdue,
+    "v41410_po_ship_to_master": "SHIP-TO ADDRESS · MASTER CONTROLLED" in v41410_supply and "ship_to_party_id" in v41410_service,
+    "v41410_login_employee_requisitioner": "Requisitioner (Logged-in Employee)" in v41410_supply and "requisitioner_employee_id" in v41410_service,
+    "v41410_ship_to_pdf_snapshot": "_party_lines(ship)" in v41410_po and "qcms_control_supply_po_identity" in v41410_sql,
     "v4145_direct_report_edit": all(token in combined for token, combined in (("Select Existing MetLAB Report to Edit", v4144_metlab), ("Select Existing Dimensional Report to Edit", v4144_dimensional), ("Select Existing RMTC to Edit", v4144_rmtc))),
     "v4145_remote_push_manifest": '"remote_push_verification"' in v4145_manifest,
 

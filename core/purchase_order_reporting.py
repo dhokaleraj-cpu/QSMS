@@ -112,11 +112,19 @@ def _bar(c: canvas.Canvas, x: float, y: float, width: float, title: str, *, heig
 
 
 def _party_lines(snapshot: Mapping[str, Any]) -> list[str]:
+    # Supports both Party Master snapshots (address/city/state/country) and
+    # legacy plant snapshots (address1/address2/address3) so historical POs
+    # keep printing correctly while v4.14.10 Ship-To can come from any master.
+    party_name = _s(snapshot.get("party_name") or snapshot.get("name"))
+    address1 = _s(snapshot.get("address") or snapshot.get("address1"))
+    locality = ", ".join(v for v in (_s(snapshot.get("city")), _s(snapshot.get("state")), _s(snapshot.get("country"))) if v)
+    legacy_locality = ", ".join(v for v in (_s(snapshot.get("address2")), _s(snapshot.get("address3"))) if v)
     return [
-        _s(snapshot.get("party_name") or snapshot.get("name")),
-        _s(snapshot.get("address")),
-        ", ".join(v for v in (_s(snapshot.get("city")), _s(snapshot.get("state")), _s(snapshot.get("country"))) if v),
+        party_name,
+        address1,
+        locality or legacy_locality,
         _s(snapshot.get("tax_identifier")),
+        _s(snapshot.get("contact_person")),
         _s(snapshot.get("phone")),
         _s(snapshot.get("email")),
     ]
@@ -308,7 +316,7 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     _block(c, right_x, h-86, 184, "REFERENCE DETAILS", [f"QUOTATION DATE: {_date(header.get('quotation_date'))}", _s(header.get("quotation_reference"))], max_lines=3)
     _block(c, right_x, h-136, 184, "OLD PO DETAILS", [_s(header.get("old_po_reference"))], max_lines=2)
     ship = dict(header.get("ship_to_snapshot") or PLANT)
-    _block(c, right_x, h-174, 184, "SHIP TO", [ship.get("name") or PLANT["name"], ship.get("address1") or PLANT["address1"], ship.get("address2") or PLANT["address2"], ship.get("address3") or PLANT["address3"], ship.get("tax_identifier") or PLANT["tax_identifier"], ship.get("phone") or PLANT["phone"], ship.get("email") or PLANT["email"]], max_lines=7)
+    _block(c, right_x, h-174, 184, "SHIP TO", _party_lines(ship), max_lines=7)
 
     y_strip = h-284; strip_widths = [78,106,82,93,w-left-right-359]
     strip_titles = ["REQUISITIONER","SHIP VIA","INCOTERM","DELIVERY DATE","PAYMENT TERM"]

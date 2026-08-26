@@ -698,6 +698,41 @@ class SupplyChainService:
         if not supplier:
             raise ValueError("Select a valid Supplier.")
 
+        # v4.14.10: Ship-To is always selected from controlled Party masters and the
+        # exact party details are snapshotted into the PO. Requisitioner is linked to
+        # the logged-in Employee Master record (the database trigger independently
+        # enforces the current authenticated employee on live Supabase inserts).
+        ship_to_party_id = str(p.get("ship_to_party_id") or "").strip()
+        ship_to_source_type = str(p.get("ship_to_source_type") or "").upper().strip()
+        if ship_to_source_type not in {"CUSTOMER", "SUPPLIER", "VENDOR"}:
+            raise ValueError("Select Ship-To Source from Customer Master, Supplier Master or Vendor / OSP Master.")
+        ship_to_party = self.repo.get("parties", ship_to_party_id) or {}
+        if not ship_to_party or str(ship_to_party.get("status") or "ACTIVE").upper() != "ACTIVE":
+            raise ValueError("Select a valid ACTIVE Ship-To party/address from the selected master.")
+        ship_types = {str(v).upper() for v in (ship_to_party.get("party_types") or [])}
+        source_valid = (
+            (ship_to_source_type == "CUSTOMER" and "CUSTOMER" in ship_types)
+            or (ship_to_source_type == "SUPPLIER" and bool(ship_types & {"SUPPLIER", "STEEL_MILL"}))
+            or (ship_to_source_type == "VENDOR" and bool(ship_types & {"OSP_VENDOR", "FORGING_SUPPLIER"}))
+        )
+        if not source_valid:
+            raise ValueError("The selected Ship-To party does not belong to the selected Customer / Supplier / Vendor master.")
+        ship_to_snapshot = self._party_snapshot(ship_to_party)
+        ship_to_snapshot.update({"source_type": ship_to_source_type, "source_party_id": ship_to_party_id})
+
+        requisitioner_employee_id = str(p.get("requisitioner_employee_id") or "").strip()
+        requisitioner_employee = self.repo.get("employees", requisitioner_employee_id) or {}
+        if not requisitioner_employee or str(requisitioner_employee.get("status") or "ACTIVE").upper() != "ACTIVE":
+            raise ValueError("The logged-in user must be linked to an ACTIVE Employee Master record before creating a Purchase Order.")
+        requisitioner_name = " ".join(
+            v for v in (
+                str(requisitioner_employee.get("first_name") or "").strip(),
+                str(requisitioner_employee.get("last_name") or "").strip(),
+            ) if v
+        ).strip()
+        if not requisitioner_name:
+            raise ValueError("The logged-in Employee Master record does not have a valid employee name.")
+
         # ------------------------------------------------------------------
         # RAW MATERIAL: one controlled PO can consolidate multiple Customer
         # Orders / Monthly Schedules. Each source retains its own execution
@@ -770,7 +805,7 @@ class SupplyChainService:
             po_number = str(self.repo.rpc("qcms_next_supply_po_number") or "").strip()
             if not po_number:
                 raise RuntimeError("QCMS could not allocate the next Purchase Order number.")
-            header = self.repo.insert("supply_purchase_orders", {"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date_value,"delivery_date":p.get("delivery_date"),"requisitioner":p.get("requisitioner"),"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":currency,"plant_snapshot":{"name":"Four Star Industries Private Limited D9","address1":"Plot No.D9, Chakan MIDC PH II","address2":"Bhamboli, Khed","address3":"Pune 410501","tax_identifier":"27AAGCF3769A1ZP","phone":"022 40104412","email":"orders@fourstarindustries.com"},"vendor_snapshot":self._party_snapshot(supplier),"ship_to_snapshot":{"name":"Four Star Industries Private Limited D9","address1":"Plot No.D9, Chakan MIDC PH II","address2":"Bhamboli, Khed","address3":"Pune 410501","tax_identifier":"27AAGCF3769A1ZP","phone":"022 40104412","email":"orders@fourstarindustries.com"},"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"OPEN"})
+            header = self.repo.insert("supply_purchase_orders", {"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date_value,"delivery_date":p.get("delivery_date"),"requisitioner":requisitioner_name,"requisitioner_employee_id":requisitioner_employee_id,"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":currency,"plant_snapshot":{"name":"Four Star Industries Private Limited D9","address1":"Plot No.D9, Chakan MIDC PH II","address2":"Bhamboli, Khed","address3":"Pune 410501","tax_identifier":"27AAGCF3769A1ZP","phone":"022 40104412","email":"orders@fourstarindustries.com"},"vendor_snapshot":self._party_snapshot(supplier),"ship_to_party_id":ship_to_party_id,"ship_to_source_type":ship_to_source_type,"ship_to_snapshot":ship_to_snapshot,"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"OPEN"})
             items: list[dict] = []; stages: list[dict] = []
             for line in line_data:
                 part, raw = line["part"], line["raw"]; fsi = str(line.get("fsi_part_number") or "").strip()
@@ -804,7 +839,7 @@ class SupplyChainService:
         state=str(supplier.get("state") or "").strip().casefold(); intra_state=not state or state in {"maharashtra","mh"}; cgst=round(gst_amount/2,2) if intra_state else 0.0; sgst=round(gst_amount/2,2) if intra_state else 0.0; igst=gst_amount if not intra_state else 0.0; other=max(number(p.get("other_amount")),0.0); grand_total=round(subtotal+cgst+sgst+igst+other,2)
         po_number=str(self.repo.rpc("qcms_next_supply_po_number") or "").strip();
         if not po_number: raise RuntimeError("QCMS could not allocate the next Purchase Order number.")
-        header=self.repo.insert("supply_purchase_orders", {"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":p.get("order_date") or date.today().isoformat(),"delivery_date":p.get("delivery_date"),"requisitioner":p.get("requisitioner"),"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":p.get("currency") or "INR","plant_snapshot":{"name":"Four Star Industries Private Limited D9","address1":"Plot No.D9, Chakan MIDC PH II","address2":"Bhamboli, Khed","address3":"Pune 410501","tax_identifier":"27AAGCF3769A1ZP","phone":"022 40104412","email":"orders@fourstarindustries.com"},"vendor_snapshot":self._party_snapshot(supplier),"ship_to_snapshot":{"name":"Four Star Industries Private Limited D9","address1":"Plot No.D9, Chakan MIDC PH II","address2":"Bhamboli, Khed","address3":"Pune 410501","tax_identifier":"27AAGCF3769A1ZP","phone":"022 40104412","email":"orders@fourstarindustries.com"},"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"OPEN"})
+        header=self.repo.insert("supply_purchase_orders", {"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":p.get("order_date") or date.today().isoformat(),"delivery_date":p.get("delivery_date"),"requisitioner":requisitioner_name,"requisitioner_employee_id":requisitioner_employee_id,"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":p.get("currency") or "INR","plant_snapshot":{"name":"Four Star Industries Private Limited D9","address1":"Plot No.D9, Chakan MIDC PH II","address2":"Bhamboli, Khed","address3":"Pune 410501","tax_identifier":"27AAGCF3769A1ZP","phone":"022 40104412","email":"orders@fourstarindustries.com"},"vendor_snapshot":self._party_snapshot(supplier),"ship_to_party_id":ship_to_party_id,"ship_to_source_type":ship_to_source_type,"ship_to_snapshot":ship_to_snapshot,"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"OPEN"})
         item=self.repo.insert("supply_purchase_order_items", {"purchase_order_id":header.get("id"),"customer_order_id":order_id,"part_id":part.get("id"),"material_grade_id":raw.get("material_grade_id") or part.get("material_grade_id"),"raw_material_detail_id":raw.get("id"),"item_no":fsi,"fsi_part_number_snapshot":fsi,"original_part_number_snapshot":part.get("part_number"),"hsn_sac_code":str(p.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip() or None,"item_description":part.get("part_name") or "","rm_section":raw.get("section_size") or part.get("section_size"),"quantity":quantity,"uom":p.get("uom") or "NOS","unit_price":unit_price,"gst_percent":gst_percent,"gst_amount":gst_amount,"line_total":subtotal,"forging_weight_kg":raw.get("forging_weight_kg") or part.get("forging_weight_kg"),"gross_weight_kg":raw.get("gross_weight_kg") or part.get("gross_weight_kg"),"technical_data_snapshot":self.technical_data_snapshot(raw,part),"price_history_snapshot":self.price_history_for_po(str(part.get("id")),supplier_id,po_date=header.get("order_date"),uom="NOS")[:250],"remarks":p.get("item_remarks")})
         self._record_purchase_price(part_id=str(part.get("id")),supplier_id=supplier_id,raw_material_detail_id=str(raw.get("id") or "") or None,po_date=header.get("order_date"),price=unit_price,uom="NOS",currency=str(header.get("currency") or "INR"),source_item_id=str(item.get("id")))
         refreshed_history = self.price_history_for_po(str(part.get("id")), supplier_id, po_date=header.get("order_date"), uom="NOS")

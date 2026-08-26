@@ -1,3 +1,11 @@
+# QCMS v4.14.10
+
+Current controlled build: `41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER`
+
+Purchase Order master-address control release. Ship-To is selected from Customer Master, Supplier Master or Vendor/OSP Master and snapshotted into the controlled PO so the exact address/contact/tax details print on the PO PDF. Requisitioner is automatically derived from the currently logged-in Employee Master record and is read-only on the PO. Existing v4.14.9 deployment, notification, Supply Chain, RMTC, MetLAB, Dimensional, Opening Stock and price-history controls are preserved.
+
+---
+
 # QCMS v4.14.9
 
 Current controlled build: `4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY`

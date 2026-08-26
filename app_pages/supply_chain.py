@@ -10,6 +10,7 @@ import streamlit as st
 from core.ui import portal_table
 
 from core.access import current_permissions
+from core.auth import current_profile
 from core.attachments import AttachmentSlot, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
@@ -57,6 +58,44 @@ def _maps(service: SupplyChainService):
     parties = {str(r["id"]): r for r in service.parties()}
     grades = {str(r["id"]): r for r in service.material_grades()}
     return parts, parties, grades
+
+
+SHIP_TO_SOURCE_LABELS = {
+    "CUSTOMER": "Customer Master",
+    "SUPPLIER": "Supplier Master",
+    "VENDOR": "Vendor / OSP Master",
+}
+
+
+def _ship_to_candidates(parties: Mapping[str, Mapping[str, Any]], source_type: str) -> dict[str, Mapping[str, Any]]:
+    source = str(source_type or "").upper()
+    result: dict[str, Mapping[str, Any]] = {}
+    for party_id, row in parties.items():
+        types = {str(v).upper() for v in (row.get("party_types") or [])}
+        if source == "CUSTOMER":
+            match = "CUSTOMER" in types
+        elif source == "SUPPLIER":
+            match = bool(types & {"SUPPLIER", "STEEL_MILL"})
+        else:
+            match = bool(types & {"OSP_VENDOR", "FORGING_SUPPLIER"})
+        if match:
+            result[str(party_id)] = row
+    return dict(sorted(result.items(), key=lambda kv: str((kv[1] or {}).get("party_name") or "").casefold()))
+
+
+def _party_address_preview(row: Mapping[str, Any] | None) -> str:
+    r = dict(row or {})
+    locality = ", ".join(v for v in (str(r.get("city") or "").strip(), str(r.get("state") or "").strip(), str(r.get("country") or "").strip()) if v)
+    lines = [
+        str(r.get("party_name") or "").strip(),
+        str(r.get("address") or "").strip(),
+        locality,
+        f"GST / Tax ID: {str(r.get('tax_identifier') or '').strip()}" if r.get("tax_identifier") else "",
+        f"Contact: {str(r.get('contact_person') or '').strip()}" if r.get("contact_person") else "",
+        f"Phone: {str(r.get('phone') or '').strip()}" if r.get("phone") else "",
+        f"Email: {str(r.get('email') or '').strip()}" if r.get("email") else "",
+    ]
+    return "\n".join(v for v in lines if v)
 
 
 def _iso_date(value: Any) -> date:
@@ -667,6 +706,12 @@ def render_purchase_orders() -> None:
             else:
                 supplier_options=list(supplier_labels)
             default_supplier=str(selected_orders[0].get("forging_supplier_id") or "") if po_type=="FORGING" and selected_orders else ""
+            profile=current_profile() or {}
+            login_employee_id=str(profile.get("employee_id") or "")
+            login_employee=service.repo.get("employees",login_employee_id) if login_employee_id else {}
+            requisitioner_name=" ".join(v for v in (str((login_employee or {}).get("first_name") or "").strip(),str((login_employee or {}).get("last_name") or "").strip()) if v).strip()
+            if not requisitioner_name:
+                requisitioner_name=str(profile.get("full_name") or "").strip()
             c=st.columns(4,gap="small")
             supplier_id=c[0].selectbox("Supplier",supplier_options,index=supplier_options.index(default_supplier) if default_supplier in supplier_options else 0,format_func=lambda v:supplier_labels[v],key="controlled_po_supplier") if supplier_options else None
             order_date=c[1].date_input("PO Date",value=date.today(),format="DD-MM-YYYY",key="controlled_po_date")
@@ -682,8 +727,44 @@ def render_purchase_orders() -> None:
             delivery_default=(order_date+timedelta(days=lead_days)) if lead_days>0 else (min(due_dates) if due_dates else order_date)
             delivery_key=f"controlled_po_delivery_{po_type}_{str(supplier_id or 'none')[:8]}_{order_date.isoformat()}_{'_'.join(str(v)[:6] for v in source_order_ids)}"
             delivery_date=c[2].date_input("Delivery Date",value=delivery_default,format="DD-MM-YYYY",key=delivery_key,help="Automatically defaults from the longest supplier Raw Material Lead Time for the selected PO items. You may edit the date before creating the PO.")
-            requisitioner=c[3].text_input("Requisitioner",value="",key="controlled_po_requisitioner")
+            c[3].text_input("Requisitioner (Logged-in Employee)",value=requisitioner_name or "Employee link required",disabled=True,key="controlled_po_requisitioner")
+            if not login_employee_id:
+                st.error("Your login is not linked to an ACTIVE Employee Master record. Link the user to Employee Master before creating a Purchase Order so Requisitioner is controlled.")
             if lead_days>0: st.caption(f"Delivery default calculated from Part Master supplier lead time: {lead_days} day(s) from PO Date. The displayed Delivery Date remains editable.")
+
+            section_bar("SHIP-TO ADDRESS · MASTER CONTROLLED")
+            ship_cols=st.columns(2,gap="small")
+            ship_to_source=ship_cols[0].selectbox(
+                "Ship-To Source",
+                ["CUSTOMER","SUPPLIER","VENDOR"],
+                format_func=lambda v:SHIP_TO_SOURCE_LABELS[v],
+                key="controlled_po_ship_to_source",
+                help="Select the Ship-To party from Customer Master, Supplier Master or Vendor / OSP Master. The exact master address is snapshotted into the PO.",
+            )
+            ship_candidates=_ship_to_candidates(parties,ship_to_source)
+            ship_labels={pid:f"{row.get('party_code') or '-'} · {row.get('party_name') or '-'} · {row.get('city') or '-'}" for pid,row in ship_candidates.items()}
+            default_ship_to=""
+            if ship_to_source=="CUSTOMER" and selected_orders:
+                candidate_customer=str(selected_orders[0].get("customer_id") or "")
+                if candidate_customer in ship_labels:
+                    default_ship_to=candidate_customer
+            if ship_to_source=="SUPPLIER" and str(supplier_id or "") in ship_labels:
+                default_ship_to=str(supplier_id)
+            ship_ids=list(ship_labels)
+            ship_index=ship_ids.index(default_ship_to) if default_ship_to in ship_ids else 0
+            ship_to_party_id=ship_cols[1].selectbox(
+                "Ship-To Party / Address",
+                ship_ids,
+                index=ship_index if ship_ids else 0,
+                format_func=lambda v:ship_labels[v],
+                key=f"controlled_po_ship_to_party_{ship_to_source}",
+            ) if ship_ids else None
+            selected_ship_to=ship_candidates.get(str(ship_to_party_id or "")) or {}
+            if selected_ship_to:
+                st.text_area("Selected Ship-To Address Preview",value=_party_address_preview(selected_ship_to),height=125,disabled=True,key=f"controlled_po_ship_to_preview_{ship_to_source}_{str(ship_to_party_id)[:8]}")
+            else:
+                st.warning(f"No ACTIVE records are available in {SHIP_TO_SOURCE_LABELS[ship_to_source]}. Add the address in the corresponding master before creating the PO.")
+
             c=st.columns(4,gap="small")
             ship_via=c[0].text_input("Ship Via",value="Road",key="controlled_po_ship_via"); incoterm=c[1].text_input("Incoterm",value="DAP, CHAKAN",key="controlled_po_incoterm"); payment=c[2].text_input("Payment Term",value="NET 30 DAYS AFTER GRN",key="controlled_po_payment"); quote_date=c[3].date_input("Quotation Date",value=date.today(),format="DD-MM-YYYY",key="controlled_po_quote_date")
             c=st.columns(2,gap="small"); quote_ref=c[0].text_input("Quotation Reference",key="controlled_po_quote_ref"); old_po=c[1].text_input("Old PO Details",key="controlled_po_old_po")
@@ -742,10 +823,10 @@ def render_purchase_orders() -> None:
 
             remarks=st.text_area("Remarks",value="PART WILL BE SUPPLIED AS PER DRAWING.",height=70,key="controlled_po_remarks")
             instructions=st.text_area("Comments / Special Instructions",value=DEFAULT_SPECIAL_INSTRUCTIONS,height=135,key="controlled_po_instructions")
-            create_disabled=not perms["can_create"] or not supplier_id or not all_lines_valid
+            create_disabled=not perms["can_create"] or not supplier_id or not all_lines_valid or not ship_to_party_id or not login_employee_id
             if st.button("Create Controlled Purchase Order",type="primary",width="stretch",disabled=create_disabled):
                 try:
-                    payload={"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date.isoformat(),"delivery_date":delivery_date.isoformat(),"requisitioner":requisitioner.strip() or None,"ship_via":ship_via.strip(),"incoterm":incoterm.strip(),"payment_term":payment.strip(),"quotation_reference":quote_ref.strip() or None,"quotation_date":quote_date.isoformat(),"old_po_reference":old_po.strip() or None,"gst_percent":gst,"remarks":remarks.strip() or None,"special_instructions":instructions.strip() or None}
+                    payload={"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date.isoformat(),"delivery_date":delivery_date.isoformat(),"requisitioner":requisitioner_name or None,"requisitioner_employee_id":login_employee_id or None,"ship_to_party_id":str(ship_to_party_id or "") or None,"ship_to_source_type":ship_to_source,"ship_via":ship_via.strip(),"incoterm":incoterm.strip(),"payment_term":payment.strip(),"quotation_reference":quote_ref.strip() or None,"quotation_date":quote_date.isoformat(),"old_po_reference":old_po.strip() or None,"gst_percent":gst,"remarks":remarks.strip() or None,"special_instructions":instructions.strip() or None}
                     if po_type=="RAW_MATERIAL": payload.update({"customer_order_ids":source_order_ids,"allocations":allocations,"line_prices":line_prices,"line_hsn_sac":line_hsn,"line_fsi_part_numbers":line_fsi})
                     else: payload.update({"customer_order_id":source_order_id,"quantity":qty,"uom":"NOS","unit_price":unit_price,"hsn_sac_code":hsn_sac_code.strip() or None,"fsi_part_number":str(fsi_part_number or "").strip(),"rm_dispatch":rm_dispatch})
                     result=service.create_purchase_order(payload)

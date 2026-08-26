@@ -11,7 +11,7 @@ import streamlit as st
 from core.config import get_settings
 from core.ui import page_header, stage_section, portal_table
 
-BUILD = "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY"
+BUILD = "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER"
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -66,11 +66,11 @@ def render() -> None:
             {"Check": "Runtime host", "Value": os.environ.get("HOSTNAME", "-")},
         ]
         portal_table(pd.DataFrame(rows), hide_index=True, width="stretch", height=320)
-        proof_path = ROOT / "STREAMLIT_DEPLOY_TARGET_PROOF_v4.14.8.txt"
+        proof_path = ROOT / "STREAMLIT_DEPLOY_TARGET_PROOF_v4.14.10.txt"
         if proof_path.exists():
             st.code(proof_path.read_text(encoding="utf-8", errors="ignore"), language="text")
         else:
-            st.warning("Deployment target proof file is not present in this runtime. The v4.14.8 updater creates it before the Git commit/push.")
+            st.warning("Deployment target proof file is not present in this runtime. The v4.14.10 updater creates it before the Git commit/push.")
 
     checks = [
         ("MetLAB direct edit", "app_pages/metlab_report.py", "Select Existing MetLAB Report to Edit"),
@@ -89,6 +89,8 @@ def render() -> None:
         ("Automatic overdue email schedules", "app_pages/email_settings.py", "AUTOMATIC OPEN / OVERDUE REPORT EMAILS"),
         ("Email PDF/document attachments", "core/notification_service.py", "attachment_manifest"),
         ("Supplier notification addresses", "core/master_definitions.py", "notification_emails"),
+        ("PO Ship-To master selector", "app_pages/supply_chain.py", "SHIP-TO ADDRESS · MASTER CONTROLLED"),
+        ("PO login employee requisitioner", "app_pages/supply_chain.py", "Requisitioner (Logged-in Employee)"),
     ]
     with stage_section("B", "REQUESTED FEATURE PROOF", key="deployment_diag_features"):
         data = []
