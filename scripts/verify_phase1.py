@@ -767,7 +767,7 @@ if "535 5.7.139" not in v4144_email or "Authenticated SMTP" not in v4144_email:
 # QCMS 4.14.5 deployment / direct-edit verification.
 v4145_dashboard = (ROOT / "app_pages" / "dashboard.py").read_text(encoding="utf-8")
 v4145_manifest = (ROOT / "DEPLOYMENT_MANIFEST.json").read_text(encoding="utf-8")
-if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD")):
+if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM")):
     errors.append("QCMS live release verification banner is missing")
 if "Select Existing MetLAB Report to Edit" not in v4144_metlab or "Select Existing Dimensional Report to Edit" not in v4144_dimensional or "Select Existing RMTC to Edit" not in v4144_rmtc:
     errors.append("QCMS 4.14.5 direct report edit selectors are incomplete")
@@ -822,7 +822,7 @@ if "Current Price" not in v41411_supply or 'raw.get("hsn_sac_code") or part.get(
     errors.append("QCMS 4.14.11 master-driven PO Current Price / HSN is incomplete")
 if "with st.form(form_key)" not in v41411_supply or 'form_submit_button("Create Controlled Purchase Order"' not in v41411_supply:
     errors.append("QCMS 4.14.11 no-per-field-refresh PO form is incomplete")
-if "Confirm notification recipient(s)" not in v41411_notify_ui or "Email notification after save" not in v41411_notify_ui:
+if not any(token in v41411_notify_ui for token in ("Confirm notification recipient(s)", "Review & Confirm Email Recipients")) or "Email notification after save" not in v41411_notify_ui:
     errors.append("QCMS 4.14.11 entry-level email confirmation is incomplete")
 if "return 'PD9'||to_char(current_date,'DDMM')||lpad(next_value::text,5,'0')" not in v41411_sql:
     errors.append("QCMS 4.14.11 Purchase Order series is incomplete")
@@ -848,8 +848,42 @@ if '"Material Grade":grade_row.get("grade_code")' not in v41412_supply or '"Raw 
 if "part.rm_type" not in v41412_sql or "Round Black Bar" not in v41412_sql or "Bright Bar" not in v41412_sql:
     errors.append("QCMS 4.14.12 Raw Material Type seed migration is incomplete")
 
+# QCMS 4.14.13 MetLAB Case Depth Traverse / record email / template test / modal confirmation.
+v41413_metlab = (ROOT / "app_pages" / "metlab_report.py").read_text(encoding="utf-8")
+v41413_reporting = (ROOT / "core" / "reporting.py").read_text(encoding="utf-8")
+v41413_inspection = (ROOT / "core" / "inspection_service.py").read_text(encoding="utf-8")
+v41413_notify_ui = (ROOT / "core" / "notification_ui.py").read_text(encoding="utf-8")
+v41413_email = (ROOT / "app_pages" / "email_settings.py").read_text(encoding="utf-8")
+v41413_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v41413_dim = (ROOT / "app_pages" / "dimensional_report.py").read_text(encoding="utf-8")
+v41413_rmtc = (ROOT / "app_pages" / "rmtc_pages.py").read_text(encoding="utf-8")
+v41413_osp = (ROOT / "app_pages" / "osp_transactions.py").read_text(encoding="utf-8")
+if "CASE_DEPTH_DEFAULT_DISTANCES = [0.05" not in v41413_metlab or "CASE DEPTH / MICROHARDNESS TRAVERSE" not in v41413_metlab:
+    errors.append("QCMS 4.14.13 MetLAB Case Depth Traverse entry is incomplete")
+if "Case Depth Locations" not in v41413_metlab or all(token not in v41413_metlab for token in ("Ground Face", "ID", "OD")):
+    errors.append("QCMS 4.14.13 MetLAB Case Depth Location control is incomplete")
+if '"case_depth_traverse"' not in v41413_inspection or '"case_depth_locations"' not in v41413_inspection:
+    errors.append("QCMS 4.14.13 MetLAB Case Depth result persistence is incomplete")
+if "def _case_depth_chart" not in v41413_reporting or "CASE DEPTH TRAVERSE · Distance (mm) vs Hardness (HV)" not in v41413_reporting:
+    errors.append("QCMS 4.14.13 MetLAB Case Depth PDF chart is incomplete")
+if "@st.dialog" not in v41413_notify_ui or "Notification To" not in v41413_notify_ui or "Notification CC" not in v41413_notify_ui:
+    errors.append("QCMS 4.14.13 entry-level editable recipient / modal confirmation is incomplete")
+if "def record_email_sender" not in v41413_notify_ui or "Review & Send Email" not in v41413_notify_ui:
+    errors.append("QCMS 4.14.13 saved-record email sender is incomplete")
+if "def template_test_sender" not in v41413_notify_ui or "Manual Test Recipient" not in v41413_notify_ui or "template_test_sender(" not in v41413_email:
+    errors.append("QCMS 4.14.13 manual email-template test is incomplete")
+if not all("record_email_sender(" in text for text in (v41413_metlab, v41413_dim, v41413_rmtc, v41413_supply, v41413_osp)):
+    errors.append("QCMS 4.14.13 record-level email actions are not available across the controlled modules")
+if "notification_overrides" not in v41413_notify_ui or not all("notification_overrides(" in text for text in (v41413_metlab, v41413_dim, v41413_rmtc, v41413_supply, v41413_osp)):
+    errors.append("QCMS 4.14.13 entry-recipient overrides are incomplete")
+
 report = {
-    "release": "QCMS 4.14.12 Raw Material Type / RM PO Detail Print / Forging Filter / Duplicate Guard",
+    "release": "QCMS 4.14.13 MetLAB Case Depth / Record Email / Template Test / Confirmation",
+    "v41413_metlab_case_depth": "CASE DEPTH / MICROHARDNESS TRAVERSE" in v41413_metlab and "0.05" in v41413_metlab,
+    "v41413_case_depth_locations_chart": "Case Depth Locations" in v41413_metlab and "def _case_depth_chart" in v41413_reporting,
+    "v41413_record_email": "def record_email_sender" in v41413_notify_ui,
+    "v41413_template_test": "def template_test_sender" in v41413_notify_ui and "template_test_sender(" in v41413_email,
+    "v41413_email_confirm_edit_recipient": "@st.dialog" in v41413_notify_ui and "Notification To" in v41413_notify_ui and "Notification CC" in v41413_notify_ui,
     "v41412_raw_material_type": "Raw Material Type" in v41412_part and "part.rm_type" in v41412_sql,
     "v41412_rm_po_details": "RAW MATERIAL DETAILS" in v41412_po and "rm_allowed" in v41412_po,
     "v41412_rm_po_forging_filter": 'po_kind == "RAW_MATERIAL"' in v41412_po,
@@ -877,7 +911,7 @@ report = {
     "v4144_identity_duplicate_policy": '"customer_standards": ("standard_code", "standard_name")' in v4144_master and '"parts": ("fsi_part_number",)' in v4144_master,
     "v4144_opening_stock_import": "OPENING STOCK IMPORT / EXPORT UTILITY" in v4144_supply and "opening_stock_import_preview" in v4144_supply_service and "apply_opening_stock_import" in v4144_supply_service,
     "v4144_smtp_auth_guidance": "535 5.7.139" in v4144_email and "Authenticated SMTP" in v4144_email,
-    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD")),
+    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM")),
     "v4146_runtime_diagnostics": "deployment-diagnostics" in app_text and "LIVE BUILD · QCMS" in app_text and (ROOT / "app_pages" / "deployment_diagnostics.py").exists(),
     "v4147_deploy_target_proof": "Git origin" in v4147_diag and "Streamlit main file" in v4147_diag,
     "v4147_next_stage_email": "NEXT-STAGE RESPONSIBILITY ROUTING" in v4147_email and "department_emails" in v4147_notify,
@@ -891,7 +925,7 @@ report = {
     "v41411_raw_material_hsn": '"HSN / SAC Code": r.get("hsn_sac_code")' in v41411_part and "hsn_sac_code" in v41411_sql,
     "v41411_master_price_hsn_po": "Current Price" in v41411_supply and 'raw.get("hsn_sac_code") or part.get("hsn_sac_code")' in v41411_supply,
     "v41411_po_form_no_field_refresh": "with st.form(form_key)" in v41411_supply,
-    "v41411_entry_email_confirmation": "Confirm notification recipient(s)" in v41411_notify_ui,
+    "v41411_entry_email_confirmation": any(token in v41411_notify_ui for token in ("Confirm notification recipient(s)", "Review & Confirm Email Recipients")),
     "v41411_po_series": "PD9" in v41411_sql and "DDMM" in v41411_sql and "lpad(next_value::text,5,'0')" in v41411_sql,
     "v41411_centered_po_footer": "drawCentredString(w/2,47" in v41411_po,
     "v4145_direct_report_edit": all(token in combined for token, combined in (("Select Existing MetLAB Report to Edit", v4144_metlab), ("Select Existing Dimensional Report to Edit", v4144_dimensional), ("Select Existing RMTC to Edit", v4144_rmtc))),

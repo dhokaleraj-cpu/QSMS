@@ -1,3 +1,5 @@
+# QCMS 4.14.13 — METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM
+# BUILD 41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM
 # QCMS 4.14.12 — RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD
 # BUILD 41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD
 # QCMS 4.14.6 — LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY
@@ -384,7 +386,7 @@ RAIL_NAV = (
 if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
     logout()
 
-st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD")
+st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM")
 
 # v4.12.9 keeps the real two-column Streamlit workspace and hardens component styling.
 # v4.12.8 uses a real two-column Streamlit workspace. The charcoal navigation

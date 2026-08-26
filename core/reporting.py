@@ -15,6 +15,10 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
+from reportlab.graphics.shapes import Drawing, String
+from reportlab.graphics.charts.lineplots import LinePlot
+from reportlab.graphics.charts.legends import Legend
+from reportlab.graphics.widgets.markers import makeMarker
 from reportlab.platypus import CondPageBreak, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, Image as RLImage
 
 from core.config import get_settings
@@ -126,7 +130,11 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
                 ("Jominy", list(result_map.get("jominy_rows") or [])),
                 ("Requirements", list(result_map.get("requirement_rows") or [])),
             )
+            case_locations = [dict(row) for row in (result_map.get("case_depth_locations") or [])]
+            case_traverse = [dict(row) for row in (result_map.get("case_depth_traverse") or [])]
         else:
+            case_locations = []
+            case_traverse = []
             sections = (("Inspection Results", list(payload.get("results") or [])),)
         for title, rows in sections:
             frame = pd.DataFrame([dict(row) for row in rows])
@@ -137,6 +145,15 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
             if frame.empty:
                 frame = pd.DataFrame([{"Information": "No result rows recorded"}])
             frame.to_excel(writer, index=False, sheet_name=safe_excel_sheet_name(title, used_names=used))
+        if is_metlab and case_locations and case_traverse:
+            location_names = [str(row.get("location") or row.get("name") or "").strip() for row in case_locations if str(row.get("location") or row.get("name") or "").strip()]
+            case_rows = []
+            for row in case_traverse:
+                item = {"Distance (mm)": row.get("distance_mm")}
+                readings = dict(row.get("readings") or {})
+                item.update({name: readings.get(name) for name in location_names})
+                case_rows.append(item)
+            pd.DataFrame(case_rows).to_excel(writer, index=False, sheet_name=safe_excel_sheet_name("Case Depth Traverse", used_names=used))
         decision = pd.DataFrame([
             {"Conclusion": conclusion, "Final Decision": final_decision, "Decision Reason": decision_reason, "Status": record.get("status")}
         ])
@@ -913,6 +930,76 @@ def _controlled_styles() -> dict[str, ParagraphStyle]:
     }
 
 
+
+
+def _case_depth_chart(locations: list[dict], traverse: list[dict], width: float, height: float = 58 * mm) -> Drawing | None:
+    names = [str(row.get("location") or row.get("name") or "").strip() for row in locations]
+    names = [name for name in names if name]
+    if not names or not traverse:
+        return None
+    series = []
+    active_names = []
+    all_values: list[float] = []
+    all_distances: list[float] = []
+    for name in names:
+        points = []
+        for row in traverse:
+            try:
+                distance = float(row.get("distance_mm"))
+            except (TypeError, ValueError):
+                continue
+            value = (row.get("readings") or {}).get(name)
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                continue
+            points.append((distance, numeric)); all_values.append(numeric); all_distances.append(distance)
+        if points:
+            series.append(points); active_names.append(name)
+    if not series:
+        return None
+
+    drawing = Drawing(width, height)
+    plot = LinePlot()
+    plot.x = 36
+    plot.y = 22
+    plot.width = max(80, width - 128)
+    plot.height = max(70, height - 38)
+    plot.data = series
+    palette = [NAVY, BLUE, colors.HexColor("#2E8B57"), colors.HexColor("#7B3FB8"), colors.HexColor("#C55A11"), colors.HexColor("#5B6573")]
+    for index, _name in enumerate(active_names):
+        line = plot.lines[index]
+        line.strokeColor = palette[index % len(palette)]
+        line.strokeWidth = 1.3
+        line.symbol = makeMarker("FilledCircle")
+        line.symbol.size = 3.5
+        line.symbol.fillColor = palette[index % len(palette)]
+        line.symbol.strokeColor = palette[index % len(palette)]
+    min_x, max_x = min(all_distances), max(all_distances)
+    plot.xValueAxis.valueMin = max(0.0, min_x)
+    plot.xValueAxis.valueMax = max_x if max_x > min_x else min_x + 0.1
+    plot.xValueAxis.valueStep = 0.1 if plot.xValueAxis.valueMax <= 2 else None
+    min_y, max_y = min(all_values), max(all_values)
+    padding = max(20.0, (max_y - min_y) * 0.1)
+    plot.yValueAxis.valueMin = max(0.0, min_y - padding)
+    plot.yValueAxis.valueMax = max_y + padding
+    plot.xValueAxis.labelTextFormat = "%.2f"
+    plot.yValueAxis.labelTextFormat = "%d"
+    drawing.add(plot)
+    drawing.add(String(plot.x + plot.width / 2, 2, "Distance (mm)", fontName="Helvetica-Bold", fontSize=6, fillColor=TEXT, textAnchor="middle"))
+    drawing.add(String(2, height - 12, "Hardness (HV)", fontName="Helvetica-Bold", fontSize=6, fillColor=TEXT))
+    legend = Legend()
+    legend.x = width - 86
+    legend.y = height - 18
+    legend.fontName = "Helvetica"
+    legend.fontSize = 5.5
+    legend.dx = 8
+    legend.dy = 6
+    legend.deltay = 8
+    legend.colorNamePairs = [(palette[i % len(palette)], name) for i, name in enumerate(active_names)]
+    drawing.add(legend)
+    return drawing
+
 def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     """Controlled A4 portrait MetLAB report for Material Inward and OSP modules."""
     record = dict(payload.get("record") or {})
@@ -988,6 +1075,27 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     story.append(Spacer(1, 1.4 * mm))
     story.append(_rmtc_section_bar("METALLURGICAL TEST RESULTS", content_width, sty["section"]))
     story.append(_rmtc_grid(test_rows, [12*mm, 54*mm, 50*mm, 46*mm, 14*mm, 18*mm], sty["header"], sty["small"], status_columns=(5,)))
+
+    case_locations = [dict(row) for row in (results.get("case_depth_locations") or [])]
+    case_traverse = [dict(row) for row in (results.get("case_depth_traverse") or [])]
+    if bool(results.get("case_depth_applicable")) and case_locations and case_traverse:
+        location_names = [str(row.get("location") or row.get("name") or "").strip() for row in case_locations if str(row.get("location") or row.get("name") or "").strip()]
+        story.append(Spacer(1, 1.4 * mm))
+        story.append(_rmtc_section_bar("CASE DEPTH / MICROHARDNESS TRAVERSE", content_width, sty["section"]))
+        table_rows = [["Distance (mm)", *location_names]]
+        for row in case_traverse:
+            readings = dict(row.get("readings") or {})
+            table_rows.append([row.get("distance_mm"), *[readings.get(name) for name in location_names]])
+        widths = [28 * mm] + [(content_width - 28 * mm) / max(1, len(location_names))] * len(location_names)
+        story.append(_rmtc_grid(table_rows, widths, sty["header"], sty["small"]))
+        chart = _case_depth_chart(case_locations, case_traverse, content_width)
+        if chart is not None:
+            story.append(Spacer(1, 1.2 * mm))
+            story.append(_rmtc_section_bar("CASE DEPTH TRAVERSE · Distance (mm) vs Hardness (HV)", content_width, sty["sub"], light=True))
+            story.append(chart)
+    elif results.get("case_depth_na_reason"):
+        story.append(_rmtc_section_bar("CASE DEPTH / MICROHARDNESS TRAVERSE", content_width, sty["sub"], light=True))
+        story.append(Paragraph(f"Not Applicable: {results.get('case_depth_na_reason')}", sty["cell"]))
 
     chemistry_rows = [dict(row) for row in (results.get("chemistry_rows") or [])]
     if chemistry_rows:

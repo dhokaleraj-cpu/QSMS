@@ -8,11 +8,11 @@ def text(path: str) -> str:
 
 
 def test_v4147_release_identity_and_runtime_proof():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13"}
     app = text("streamlit_app.py")
     diag = text("app_pages/deployment_diagnostics.py")
     manifest = text("DEPLOYMENT_MANIFEST.json")
-    assert any(token in app for token in ("4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD"))
+    assert any(token in app for token in ("4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM"))
     assert "Git origin" in diag and "Git HEAD" in diag and "Streamlit main file" in diag
     assert '"streamlit_deploy_target_proof"' in manifest
 

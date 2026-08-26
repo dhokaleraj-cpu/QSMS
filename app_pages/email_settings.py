@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from core.notification_service import NotificationService
+from core.notification_ui import template_test_sender
 from core.permissions import is_admin
 from core.repository import Repository
 from core.ui import page_header, portal_table, save_success_popup, stage_section, subpage_navigation
@@ -136,6 +137,11 @@ def render() -> None:
                 repo.upsert_by("qcms_email_templates", {"template_key": template_event, "module_key": EVENT_MODULE.get(template_event,"QCMS"), "template_name": template_name.strip() or EVENT_LABEL.get(template_event,template_event), "subject_template": subject_template.strip(), "body_template": body_template.strip(), "include_generated_pdf": include_pdf, "include_record_attachments": include_docs, "include_supplier": include_supplier, "enabled": template_enabled}, natural_key={"tenant_id": repo.tenant_id, "template_key": template_event})
                 save_success_popup("Email template saved.", queue_for_rerun=True); st.rerun()
             except Exception as exc: st.error(str(exc))
+        st.divider()
+        template_test_sender(
+            notifier, template_event, key=f"email_template_manual_test_{template_event}",
+            default_recipient=str(profile.get("email") or ""),
+        )
 
     with stage_section("D", "AUTOMATIC OPEN / OVERDUE REPORT EMAILS", "Supabase Cron checks every hour. Each schedule sends once per local day at the configured hour, with a generated PDF list. Supplier/vendor copies are sent only when Party Master contains an email address.", key="email_auto_schedules"):
         schedules = repo.select("qcms_notification_schedules", order_by="schedule_key", limit=100)

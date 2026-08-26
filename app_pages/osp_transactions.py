@@ -10,7 +10,7 @@ from core.access import current_permissions
 from core.delete_service import password_delete_panel
 from core.osp_service import OSPService
 from core.notification_service import NotificationService
-from core.notification_ui import notification_confirmation
+from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes, dimensional_record_pdf_bytes, metlab_record_pdf_bytes
 from core.selection_labels import party_label, process_label
@@ -109,13 +109,13 @@ def render_sample_receipt() -> None:
     service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS")
     job = _job_selector(service.jobs_for_sample_receipt(), "OSP Material Out", "osp_sample_job")
     if not job: return
+    osp_notify_pref = notification_confirmation(NotificationService(service.repo), "OSP_SAMPLE_PENDING", key=f"osp_sample_notify_{job.get('id')}", context={"supplier_id":str(job.get("vendor_id") or ""),"supplier_name":job.get("vendor_name"),"part_number":job.get("part_number"),"next_task":"OSP Sample Dimensional / MetLAB"}, include_supplier=True, default_send=True)
     with st.form("osp_sample_receipt_form"):
         c = st.columns(4, gap="small")
         received_date = c[0].date_input("Sample Received Date", value=date.today(), format="DD-MM-YYYY")
         reference = c[1].text_input("Sample Reference", value=str(job.get("sample_reference") or ""))
         vendor_batch = c[2].text_input("OSP Vendor Batch Number", value=str(job.get("vendor_batch_number") or ""))
         sample_qty = c[3].number_input("Sample Quantity (pcs)", min_value=1, max_value=int(float(job.get("quantity_dispatched") or 1)), value=int(float(job.get("sample_quantity") or 1)), step=1)
-        osp_notify_pref = notification_confirmation(NotificationService(service.repo), "OSP_SAMPLE_PENDING", key=f"osp_sample_notify_{job.get('id')}", context={"supplier_id":str(job.get("vendor_id") or ""),"supplier_name":job.get("vendor_name"),"part_number":job.get("part_number"),"next_task":"OSP Sample Dimensional / MetLAB"}, include_supplier=True, default_send=True)
         submitted = st.form_submit_button("Save Sample Receipt", type="primary", disabled=not perms["can_edit"] or (osp_notify_pref["send"] and not osp_notify_pref["confirmed"]), width="stretch")
     if submitted:
         try:
@@ -131,6 +131,7 @@ def render_sample_receipt() -> None:
                            "Complete OSP Dimensional and MetLAB sample inspections."),
                 related_table="osp_jobs",related_id=str(job.get("id")),
                 context={"osp_job_id":str(job.get("id")),"next_task":"OSP Sample Dimensional / MetLAB"},
+                **notification_overrides(osp_notify_pref),
             )
             save_success_popup("OSP sample receipt saved successfully. Complete both OSP Dimensional and MetLAB inspections.", queue_for_rerun=True); st.rerun()
         except Exception as exc: st.error(str(exc))
@@ -234,6 +235,12 @@ def render_records() -> None:
                             st.download_button(f"Dimensional PDF · {report.get('report_number')}", pdf, file_name=f"{report.get('report_number') or selected_row.get('osp_job_number')}_Dimensional.pdf", mime="application/pdf", key=f"osp_dim_pdf_{report['id']}", width="stretch")
                         except Exception as exc:
                             st.error(f"Dimensional PDF could not be generated: {exc}")
+        record_email_sender(
+            NotificationService(service.repo), "OSP_SAMPLE_PENDING",
+            related_table="osp_jobs", related_id=selected, key=f"osp_record_email_{selected}",
+            context={"supplier_id": str(selected_row.get("vendor_id") or ""), "supplier_name": selected_row.get("vendor_name"), "part_number": selected_row.get("part_number"), "next_task": "OSP Sample / Receipt Quality Follow-up"},
+            include_supplier=True,
+        )
         with stage_section("B", "DELETE OSP RECORD", key="osp_records_b"):
             if metlab_rows or dimensional_rows:
                 st.caption("Delete linked OSP MetLAB / Dimensional inspection records first; then delete the parent OSP transaction.")

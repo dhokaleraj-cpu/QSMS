@@ -6,7 +6,7 @@ def text(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 def test_release_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13"}
     marker = "4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA"
     for rel in ("streamlit_app.py", "core/ui.py", "core/auth.py"):
         assert marker in text(rel)

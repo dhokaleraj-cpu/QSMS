@@ -1,9 +1,9 @@
-# QCMS / QSMS New-Chat Handover — v4.14.0
+# QCMS / QSMS New-Chat Handover — v4.14.13
 
 ## Continuation instruction
 Start a new ChatGPT conversation, attach/reference this file and say:
 
-> Continue QCMS development from v4.14.0. Preserve all existing data, workflows, UI contracts and deployment conventions in this handover.
+> Continue QCMS development from v4.14.13. Preserve all existing data, workflows, UI contracts and deployment conventions in this handover.
 
 This file is the controlled continuity baseline for subsequent QCMS development.
 
@@ -11,8 +11,8 @@ This file is the controlled continuity baseline for subsequent QCMS development.
 
 ## Current release
 - Product name: **QUALITY CONTROL MONITORING SYSTEM (QCMS/QSMS)**
-- Version: **4.14.0**
-- Build: **4140-PO-SOURCE-RMTC-VALIDATION-HSN-EMAIL**
+- Version: **4.14.13**
+- Build: **41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM**
 - Live local project folder: `/Users/dhokaleraj/QSMS`
 - Git deployment: existing repository/branch must always be preserved.
 - Supabase project: **QSMS** (`xxrxopzxzyjnzumrwuwy`)
@@ -226,6 +226,7 @@ These rows were verified against live Supabase after v4.14.0 Supply Flow migrati
 - v4.13.9: RM procurement visibility correction, incremental RMTC Part release guard, item-wise PO technical print.
 - **v4.14.0: explicit Supply Flow + always-visible PO eligibility/reasons, added-Part validation/decision from approval screen, HSN/SAC + cleaner PO item print, Email Server & Responsibility Routing + server-side notification outbox.**
 - **v4.14.12: Raw Material Type control, RM PO item-specific Raw Material Type/Grade/Section Size print, forging-parameter removal from RM PO, and Section Size/Forging Route duplicate-word guards.**
+- **v4.14.13: MetLAB Case Depth Locations + 0.05 mm multi-location Microhardness Traverse/chart; saved-record email action; manual template recipient test; editable entry To/CC with confirmation dialog.**
 
 ---
 

@@ -167,7 +167,7 @@ required = [
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.12 - Raw Material Type / RM PO Detail Print / Forging Filter / Duplicate Guard",
+    "phase": "QCMS 4.14.13 - MetLAB Case Depth / Record Email / Template Test / Confirm",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

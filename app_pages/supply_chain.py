@@ -16,7 +16,7 @@ from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
 from core.purchase_order_reporting import purchase_order_pdf_bytes, DEFAULT_SPECIAL_INSTRUCTIONS
 from core.notification_service import NotificationService
-from core.notification_ui import notification_confirmation
+from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
 from core.selection_labels import part_label, party_label
 from core.supply_chain_service import (
     FLOW_DIRECT_FORGING,
@@ -368,6 +368,7 @@ def render_customer_orders() -> None:
                             ),
                             related_table="supply_customer_orders", related_id=str(saved_order.get("id")),
                             context={"customer_order_id":str(saved_order.get("id")),"next_task":"RM Procurement"},
+                            **notification_overrides(order_notify_pref),
                         )
                     st.session_state["last_supply_customer_order_id"] = str(saved_order.get("id") or "")
                     save_success_popup(f"Customer Order {order_no} / Pos {position} created.",queue_for_rerun=True); st.rerun()
@@ -421,6 +422,7 @@ def render_customer_orders() -> None:
                                        f"Part: {fp_map.get(str(part_id), '-')}\n"
                                        f"First 3-month demand: {number(schedule_check.get('three_month_schedule_pcs')):,.0f} pcs"),
                             context={"customer_order_refs":created,"next_task":"RM Procurement"},
+                            **notification_overrides(schedule_notify_pref),
                         )
                     if created_ids: st.session_state["last_supply_customer_order_id"] = created_ids[-1]
                     save_success_popup(f"{len(created)} monthly schedule record(s) created.",queue_for_rerun=True); st.rerun()
@@ -763,6 +765,11 @@ def render_purchase_orders() -> None:
 
             allocations: dict[str,float]={}; line_prices: dict[str,float]={}; line_hsn: dict[str,str]={}; line_fsi: dict[str,str]={}; all_lines_valid=bool(supplier_id)
             po_event="RM_PO_CREATED" if po_type=="RAW_MATERIAL" else "FORGING_PO_CREATED"
+            notify_pref=notification_confirmation(
+                NotificationService(service.repo), po_event, key=f"po_entry_notify_{po_type}_{str(supplier_id or 'none')[:8]}",
+                context={"supplier_id":str(supplier_id or ""),"supplier_name":supplier_labels.get(str(supplier_id),"Supplier"),"next_task":"Raw Material Receipt / Material Inward" if po_type=="RAW_MATERIAL" else "Forging Receipt"},
+                include_supplier=True, default_send=True,
+            )
             form_key=f"controlled_po_form_{po_type}_{str(supplier_id or 'none')[:8]}_{ship_to_source}_{'_'.join(str(v)[:6] for v in source_order_ids)}"
             with st.form(form_key):
                 c=st.columns(2,gap="small")
@@ -840,11 +847,6 @@ def render_purchase_orders() -> None:
 
                 remarks=st.text_area("Remarks",value="PART WILL BE SUPPLIED AS PER DRAWING.",height=70)
                 instructions=st.text_area("Comments / Special Instructions",value=DEFAULT_SPECIAL_INSTRUCTIONS,height=135)
-                notify_pref=notification_confirmation(
-                    NotificationService(service.repo), po_event, key=f"po_entry_notify_{po_type}_{str(supplier_id or 'none')[:8]}",
-                    context={"supplier_id":str(supplier_id or ""),"supplier_name":supplier_labels.get(str(supplier_id),"Supplier"),"next_task":"Raw Material Receipt / Material Inward" if po_type=="RAW_MATERIAL" else "Forging Receipt"},
-                    include_supplier=True, default_send=True,
-                )
                 create_disabled=not perms["can_create"] or not supplier_id or not all_lines_valid or not ship_to_party_id or not login_employee_id or (notify_pref["send"] and not notify_pref["confirmed"])
                 create_po=st.form_submit_button("Create Controlled Purchase Order",type="primary",width="stretch",disabled=create_disabled)
 
@@ -857,7 +859,7 @@ def render_purchase_orders() -> None:
                     st.session_state["last_supply_purchase_order_id"]=str((result.get("header") or {}).get("id") or "")
                     header_result=result.get("header") or {}
                     if notify_pref["send"] and notify_pref["confirmed"]:
-                        NotificationService(service.repo).notify(po_event,related_table="supply_purchase_orders",related_id=str(header_result.get("id") or ""),context={"po_number":header_result.get("po_number"),"po_type":po_type,"customer_order_ids":source_order_ids,"supplier_id":str(supplier_id or ""),"supplier_name":supplier_labels.get(str(supplier_id),"Supplier"),"entry_email_confirmed":True,"next_task":"Raw Material Receipt / Material Inward" if po_type=="RAW_MATERIAL" else "Forging Receipt"})
+                        NotificationService(service.repo).notify(po_event,related_table="supply_purchase_orders",related_id=str(header_result.get("id") or ""),context={"po_number":header_result.get("po_number"),"po_type":po_type,"customer_order_ids":source_order_ids,"supplier_id":str(supplier_id or ""),"supplier_name":supplier_labels.get(str(supplier_id),"Supplier"),"entry_email_confirmed":True,"next_task":"Raw Material Receipt / Material Inward" if po_type=="RAW_MATERIAL" else "Forging Receipt"},**notification_overrides(notify_pref))
                     save_success_popup(f"Purchase Order {header_result.get('po_number')} created with {len(result.get('items') or [])} vendor line(s) and {len(result.get('stages') or [])} linked Supply Chain allocation(s).",queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
 
@@ -878,6 +880,13 @@ def render_purchase_orders() -> None:
             service.sync_purchase_order_status(selected_po); header=service.purchase_order(selected_po) or {}; items=service.purchase_order_items_for_print(selected_po); c=st.columns(2,gap="small")
             try: c[0].download_button("Download / Print Selected PO",purchase_order_pdf_bytes(header,items),file_name=f"{header.get('po_number')}.pdf",mime="application/pdf",width="stretch",key=f"selected_po_pdf_{selected_po}")
             except Exception as exc: c[0].error(str(exc))
+            po_record_event = "RM_PO_CREATED" if str(header.get("po_type")) == "RAW_MATERIAL" else "FORGING_PO_CREATED"
+            record_email_sender(
+                NotificationService(service.repo), po_record_event,
+                related_table="supply_purchase_orders", related_id=selected_po, key=f"po_record_email_{selected_po}",
+                context={"po_number": header.get("po_number"), "supplier_id": str(header.get("supplier_id") or ""), "next_task": "Raw Material Receipt / Material Inward" if str(header.get("po_type")) == "RAW_MATERIAL" else "Forging Receipt"},
+                include_supplier=True,
+            )
             if c[1].button("Cancel Selected PO",width="stretch",disabled=not perms["can_edit"] or str(header.get("status"))=="CLOSED"):
                 service.repo.update("supply_purchase_orders",selected_po,{"status":"CANCELLED"}); save_success_popup("Purchase Order cancelled.",queue_for_rerun=True); st.rerun()
 

@@ -14,7 +14,7 @@ from core.access import current_permissions
 from core.password_edit import password_reopen_for_edit
 from core.delete_service import password_delete_panel
 from core.notification_service import NotificationService
-from core.notification_ui import notification_confirmation
+from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
 from core.inspection_service import FINAL_DISPOSITIONS, RESULT_OPTIONS, InspectionService
 from core.reporting import metlab_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
@@ -131,6 +131,141 @@ def _layout_rows(service: InspectionService, plan_id: str | None, existing: dict
     } for position, row in enumerate(service.plan_characteristics(plan_id), start=1)]
 
 
+CASE_DEPTH_DEFAULT_DISTANCES = [0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]
+CASE_DEPTH_DEFAULT_LOCATIONS = ["Ground Face", "ID", "OD"]
+
+
+def _has_case_depth_characteristic(rows: list[dict]) -> bool:
+    for row in rows:
+        text = " ".join(str(row.get(key) or "") for key in ("parameter", "characteristic", "requirement_name", "specification", "requirement_value"))
+        if "case depth" in text.casefold():
+            return True
+    return False
+
+
+def _case_depth_payload(existing: dict | None) -> dict[str, Any]:
+    results = dict((existing or {}).get("results") or {})
+    return {
+        "applicable": bool(results.get("case_depth_applicable", False)),
+        "locations": [dict(row) for row in (results.get("case_depth_locations") or [])],
+        "traverse": [dict(row) for row in (results.get("case_depth_traverse") or [])],
+        "na_reason": str(results.get("case_depth_na_reason") or ""),
+    }
+
+
+def _render_case_depth_traverse(existing: dict | None, *, key: str, required_hint: bool) -> tuple[dict[str, Any], bool]:
+    """Render controlled multi-location case-depth traverse entry.
+
+    Distances start at 0.05 mm and support multiple named locations such as
+    Ground Face / ID / OD. The saved structure is normalized inside lab_tests.results.
+    """
+    saved = _case_depth_payload(existing)
+    default_applicable = bool(saved["applicable"] or required_hint)
+    applicable = st.toggle(
+        "Case Depth Traverse Applicable",
+        value=default_applicable,
+        disabled=required_hint,
+        key=f"{key}_applicable",
+        help="Automatically required when the selected MetLAB layout contains a Case Depth characteristic.",
+    )
+    if required_hint:
+        st.caption("Required by the selected MetLAB layout because a Case Depth characteristic is present.")
+    if not applicable:
+        reason = st.text_input(
+            "Case Depth Traverse Not Applicable Reason",
+            value=saved["na_reason"],
+            key=f"{key}_na_reason",
+        )
+        return {
+            "case_depth_applicable": False,
+            "case_depth_locations": [],
+            "case_depth_traverse": [],
+            "case_depth_na_reason": reason.strip() or None,
+        }, bool(reason.strip()) if required_hint else True
+
+    saved_locations = saved["locations"] or [
+        {"sequence_no": i, "location": name, "remark": ""}
+        for i, name in enumerate(CASE_DEPTH_DEFAULT_LOCATIONS, start=1)
+    ]
+    location_frame = pd.DataFrame([{
+        "Sr No": row.get("sequence_no") or idx,
+        "Case Depth Location": row.get("location") or row.get("name") or "",
+        "Remark": row.get("remark") or "",
+    } for idx, row in enumerate(saved_locations, start=1)])
+    st.markdown("**Case Depth Locations**")
+    location_edit = st.data_editor(
+        location_frame,
+        hide_index=True,
+        width="stretch",
+        num_rows="dynamic",
+        column_config={"Sr No": st.column_config.NumberColumn(disabled=True)},
+        key=f"{key}_locations",
+    )
+    location_names: list[str] = []
+    location_rows: list[dict] = []
+    for _, row in location_edit.iterrows():
+        name = str(row.get("Case Depth Location") or "").strip()
+        if not name:
+            continue
+        location_rows.append({"sequence_no": len(location_rows) + 1, "location": name, "remark": str(row.get("Remark") or "").strip() or None})
+        location_names.append(name)
+    duplicate_locations = len({name.casefold() for name in location_names}) != len(location_names)
+    if duplicate_locations:
+        st.error("Case Depth Location names must be unique.")
+
+    saved_traverse = saved["traverse"] or [{"distance_mm": distance, "readings": {}} for distance in CASE_DEPTH_DEFAULT_DISTANCES]
+    traverse_rows = []
+    for row in saved_traverse:
+        readings = dict(row.get("readings") or {})
+        out = {"Distance (mm)": row.get("distance_mm")}
+        for name in location_names:
+            out[name] = readings.get(name)
+        traverse_rows.append(out)
+    if not traverse_rows:
+        traverse_rows = [{"Distance (mm)": distance, **{name: None for name in location_names}} for distance in CASE_DEPTH_DEFAULT_DISTANCES]
+    traverse_frame = pd.DataFrame(traverse_rows)
+    st.markdown("**Case Depth / Microhardness Traverse Readings (HV)**")
+    traverse_edit = st.data_editor(
+        traverse_frame,
+        hide_index=True,
+        width="stretch",
+        num_rows="dynamic",
+        key=f"{key}_traverse",
+        column_config={
+            "Distance (mm)": st.column_config.NumberColumn(min_value=0.01, step=0.05, format="%.2f"),
+            **{name: st.column_config.NumberColumn(min_value=0.0, step=1.0, format="%.1f") for name in location_names},
+        },
+    )
+    normalized: list[dict] = []
+    distances: list[float] = []
+    for _, row in traverse_edit.iterrows():
+        distance = _number(row.get("Distance (mm)"))
+        if distance is None:
+            continue
+        readings = {name: _number(row.get(name)) for name in location_names}
+        normalized.append({"distance_mm": round(float(distance), 4), "readings": readings})
+        distances.append(round(float(distance), 4))
+    normalized.sort(key=lambda row: row["distance_mm"])
+    duplicate_distances = len(set(distances)) != len(distances)
+    starts_at_005 = bool(normalized) and abs(float(normalized[0]["distance_mm"]) - 0.05) < 1e-9
+    has_reading = any(value is not None for row in normalized for value in (row.get("readings") or {}).values())
+    if duplicate_distances:
+        st.error("Case Depth traverse distance values must be unique.")
+    if normalized and not starts_at_005:
+        st.error("The first Case Depth traverse reading must start at 0.05 mm.")
+    if not location_names:
+        st.error("Add at least one Case Depth Location.")
+    if not has_reading:
+        st.warning("Enter at least one Case Depth / Microhardness reading.")
+    valid = bool(location_names and not duplicate_locations and normalized and starts_at_005 and not duplicate_distances and has_reading)
+    return {
+        "case_depth_applicable": True,
+        "case_depth_locations": location_rows,
+        "case_depth_traverse": normalized,
+        "case_depth_na_reason": None,
+    }, valid
+
+
 
 STANDALONE_STAGES = {
     "RAW_MATERIAL_STAGE": "Raw Material Stage",
@@ -244,6 +379,8 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
         layout_source = _layout_rows(service, plan_id, existing)
         frame = pd.DataFrame([{"Sr No": r.get("sequence_no"), "Parameter": r.get("parameter"), "Specification": r.get("specification"), "Min": r.get("lower_spec"), "Max": r.get("upper_spec"), "Method / Aid": r.get("checking_method"), "Actual Value": r.get("actual_value"), "Unit": r.get("unit"), "NA": r.get("applicability") == "NOT_APPLICABLE", "Result": r.get("result"), "Remark": r.get("remarks"), "_characteristic_id": r.get("inspection_plan_characteristic_id"), "_type": r.get("characteristic_type")} for r in layout_source])
         edited = st.data_editor(frame, hide_index=True, width="stretch", height=min(620, max(220, 80 + len(frame) * 30)), disabled=["Sr No", "Parameter", "Specification", "Min", "Max", "Method / Aid", "Result", "_characteristic_id", "_type"], column_config={"NA": st.column_config.CheckboxColumn(), "_characteristic_id": None, "_type": None}, key=f"standalone_metlab_grid_{existing_id or 'new'}_{plan_id}")
+        section_bar("CASE DEPTH / MICROHARDNESS TRAVERSE")
+        case_depth_results, case_depth_valid = _render_case_depth_traverse(existing, key=f"standalone_case_depth_{existing_id or 'new'}_{plan_id}", required_hint=_has_case_depth_characteristic(layout_source))
         employee_options = [""] + list(employee_map)
         c1, c2, c3 = st.columns(3, gap="small")
         current_prepared = str((existing or {}).get("prepared_by_employee_id") or "")
@@ -260,7 +397,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type")})
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
         metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"standalone_metlab_notify_{existing_id or 'new'}", context={"part_number":(parts.get(str(part_id)) or {}).get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing_id)) if not existing_id else {"send":False,"confirmed":True,"preview":{}}
-        if st.button("Save Standalone MetLAB Report", type="primary", width="stretch", disabled=not writable or not prepared or not sample_ref.strip() or (metlab_notify_pref["send"] and not metlab_notify_pref["confirmed"])):
+        if st.button("Save Standalone MetLAB Report", type="primary", width="stretch", disabled=not writable or not prepared or not sample_ref.strip() or not case_depth_valid or (metlab_notify_pref["send"] and not metlab_notify_pref["confirmed"])):
             try:
                 final_number = report_no.strip() or service.next_number("METLAB")
                 payload = {
@@ -281,7 +418,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                     "vendor_batch_number_snapshot": vendor_batch_number.strip() or None,
                     **{f"microstructure_caption_{slot}": micro_captions[slot - 1].strip() or None for slot in range(1, 5)},
                 }
-                saved = service.save_metlab(payload, {"rows": layout_rows}, existing_id or None)
+                saved = service.save_metlab(payload, {"rows": layout_rows, "chemistry_rows": [], "jominy_rows": [], "requirement_rows": [], **case_depth_results}, existing_id or None)
                 # Save report copy / microstructure evidence BEFORE notifying so first approval email carries the documents.
                 if attachment is not None:
                     service.upload_attachment("METLAB_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "lab_tests", "attachment_path")
@@ -297,6 +434,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                                    f"Test Date: {saved.get('test_date') or test_date}"),
                         related_table="lab_tests",related_id=str(saved.get("id")),
                         context={"lab_test_id":str(saved.get("id")),"next_task":"MetLAB Approval"},
+                        **notification_overrides(metlab_notify_pref),
                     )
                 st.session_state["edit_metlab_id"] = str(saved["id"]); save_success_popup(f"Standalone MetLAB Report {final_number} saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
@@ -511,6 +649,10 @@ def render_entry() -> None:
         else:
             layout_edit = pd.DataFrame()
 
+        section_bar("CASE DEPTH / MICROHARDNESS TRAVERSE")
+        case_depth_source_rows = [*layout_source, *[dict(row) for row in (snapshot.get("requirements") or [])]]
+        case_depth_results, case_depth_valid = _render_case_depth_traverse(existing, key=f"linked_case_depth_{existing_id or 'new'}_{inward_id}", required_hint=_has_case_depth_characteristic(case_depth_source_rows))
+
         employee_options = [""] + list(employee_map)
         c1, c2, c3, c4 = st.columns(4, gap="small")
         prepared_current = str((existing or {}).get("prepared_by_employee_id") or "")
@@ -540,11 +682,11 @@ def render_entry() -> None:
 
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
         linked_metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"linked_metlab_notify_{str((existing or {}).get('id') or inward_id or 'new')}", context={"part_number":part.get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing)) if not existing else {"send":False,"confirmed":True,"preview":{}}
-        if st.button("Save Raw Material MetLAB Draft", type="primary", disabled=not writable or not prepared or not sample_ref.strip() or (linked_metlab_notify_pref["send"] and not linked_metlab_notify_pref["confirmed"]), width="stretch"):
+        if st.button("Save Raw Material MetLAB Draft", type="primary", disabled=not writable or not prepared or not sample_ref.strip() or not case_depth_valid or (linked_metlab_notify_pref["send"] and not linked_metlab_notify_pref["confirmed"]), width="stretch"):
             try:
                 final_number = report_no.strip() or service.next_number("METLAB")
                 payload = {"report_number": final_number, "test_type": "METLAB", "layout_plan_id": plan_id, "process_id": plan.get("process_id"), "inspection_stage_id": plan.get("inspection_stage_id"), "part_id": part_id, "inward_lot_id": inward_id, "rmtc_approval_id": inward.get("rmtc_approval_id"), "supplier_id": inward.get("supplier_id"), "steel_mill_id": rmtc.get("steel_mill_id"), "material_grade_id": part.get("material_grade_id"), "test_date": test_date.isoformat(), "sample_reference": sample_ref.strip(), "specification_reference": spec_ref.strip() or None, "overall_result": "NOT_EVALUATED", "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None, "disposition": disposition, "disposition_reason": reason.strip() or None, "heat_number": inward.get("heat_number"), "heat_code": inward.get("heat_code"), "prepared_by_employee_id": prepared, "layout_name_snapshot": layout_name, "layout_type_name": layout_type, "steel_quantity_kg": inward.get("steel_quantity_kg") or inward.get("quantity_received"), "production_quantity_pcs": inward.get("production_quantity_pcs"), **{f"microstructure_caption_{slot}": micro_captions[slot-1].strip() or None for slot in range(1,5)}}
-                results = {"rows": layout_rows, "chemistry_rows": chemistry_rows, "jominy_rows": jominy_rows, "requirement_rows": requirement_rows}
+                results = {"rows": layout_rows, "chemistry_rows": chemistry_rows, "jominy_rows": jominy_rows, "requirement_rows": requirement_rows, **case_depth_results}
                 with st.spinner("Saving RMTC verification sections…"):
                     saved = service.save_metlab(payload, results, str(existing["id"]) if existing else None)
                     # Save report copy / microstructure evidence BEFORE notifying so first approval email carries the documents.
@@ -562,6 +704,7 @@ def render_entry() -> None:
                                        f"Source: {inward.get('inward_number') or inward.get('heat_number') or '-'}"),
                             related_table="lab_tests",related_id=str(saved.get("id")),
                             context={"lab_test_id":str(saved.get("id")),"inward_lot_id":str(inward_id),"next_task":"MetLAB Approval"},
+                            **notification_overrides(linked_metlab_notify_pref),
                         )
                 st.session_state["edit_metlab_id"] = str(saved["id"])
                 save_success_popup(f"Raw Material MetLAB Report {final_number} saved successfully.", queue_for_rerun=True)
@@ -612,6 +755,11 @@ def render_records() -> None:
                 st.download_button("Download Excel Report", data=quality_record_excel_bytes(selected_payload, "METLAB"), file_name=f"{selected_row.get('report_number') or 'MetLAB_Report'}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"metlab_xlsx_{selected}", icon=":material/download:", width="stretch")
         except Exception as exc:
             st.error(f"Report export could not be generated: {exc}")
+        record_email_sender(
+            NotificationService(service.repo), "METLAB_APPROVAL_PENDING",
+            related_table="lab_tests", related_id=selected, key=f"metlab_record_email_{selected}",
+            context={"part_number": (parts.get(str(selected_row.get("part_id"))) or {}).get("part_number"), "next_task": "MetLAB Review / Approval"},
+        )
         with c4:
             if password_delete_panel(repo=service.repo, table="lab_tests", rows=[selected_row], labeler=lambda row: row.get("report_number"), key=f"delete_metlab_{selected}", can_delete=perms["can_archive"], title="Delete Selected MetLAB Report"):
                 st.rerun()

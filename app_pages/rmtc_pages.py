@@ -18,7 +18,7 @@ from core.calculations import band_status, calculate_di, calculate_jominy_curve
 from core.permissions import normalized_role
 from core.rmtc_service import RMTCService
 from core.notification_service import NotificationService
-from core.notification_ui import notification_confirmation
+from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
 from core.reporting import rmtc_record_pdf_bytes
 from core.selection_labels import employee_label, part_label, party_label
 from core.steel_balance import remaining_planned_steel
@@ -400,6 +400,7 @@ def render_entry()->None:
                                        f"Supplier RMTC: {existing.get('certificate_reference') or '-'}"),
                             related_table='rmtc_approvals', related_id=str(existing['id']),
                             context={'rmtc_id':str(existing['id']),'next_task':'RMTC Approval'},
+                            **notification_overrides(rmtc_entry_notify_pref),
                         )
                         save_success_popup('RMTC moved to Approval Pending.', queue_for_rerun=True);st.rerun()
                     except Exception as exc:st.error(str(exc))
@@ -442,6 +443,7 @@ def render_entry()->None:
                                 subject=f"QCMS · Added Part worksheet pending · {existing.get('rmtc_number')}",
                             body_text=f"A new Part Number was added to approved RMTC {existing.get('rmtc_number')}. Complete its Part Worksheet, validation and final decision.",
                             related_table='rmtc_approvals',related_id=str(existing['id']),context={'rmtc_id':str(existing['id']),'part_id':str(add_part_id),'next_task':'Added Part Worksheet / RMTC Approval'},
+                            **notification_overrides(added_part_notify_pref),
                         )
                         st.session_state['part_rmtc_id']=str(existing['id']); st.session_state['rmtc_part_choice']=add_part_id
                         save_success_popup('Part Number added to the approved RMTC. Complete the new Part Worksheet and validation; previously accepted Parts remain released.',queue_for_rerun=True)
@@ -692,6 +694,11 @@ def render_records()->None:
             )
         except Exception as exc:
             st.warning(f'RMTC PDF could not be prepared: {exc}')
+        record_email_sender(
+            NotificationService(svc.repo), 'RMTC_APPROVAL_PENDING',
+            related_table='rmtc_approvals', related_id=selected, key=f'rmtc_record_email_{selected}',
+            context={'rmtc_id': selected, 'heat_number': selected_row.get('heat_number'), 'next_task': 'RMTC Review / Approval'},
+        )
         if password_delete_panel(
             repo=svc.repo,table='rmtc_approvals',rows=[selected_row],
             labeler=lambda r:f"{r.get('rmtc_number')} · {r.get('heat_number')}",
@@ -849,6 +856,7 @@ def render_approval()->None:
                                f"Covered Parts: {len(details.get('parts') or [])}"),
                     related_table='rmtc_approvals', related_id=rid,
                     context={'rmtc_id':rid,'next_task':'RMTC Approval'},
+                    **notification_overrides(approval_notify_pref),
                 )
                 save_success_popup('RMTC submitted and moved to Approval Pending.', queue_for_rerun=True);st.rerun()
             except Exception as exc:st.error(str(exc))

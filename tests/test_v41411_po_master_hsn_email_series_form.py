@@ -20,7 +20,7 @@ def test_v41411_source_contracts():
     assert "Current Price" in supply
     assert 'raw.get("hsn_sac_code") or part.get("hsn_sac_code")' in supply
     assert "with st.form(form_key)" in supply
-    assert "Confirm notification recipient(s)" in notify_ui
+    assert any(token in notify_ui for token in ("Confirm notification recipient(s)", "Review & Confirm Email Recipients"))
     assert "Email notification after save" in notify_ui
     assert "drawCentredString(w/2,47" in reporting
     assert "return 'PD9'||to_char(current_date,'DDMM')||lpad(next_value::text,5,'0')" in migration

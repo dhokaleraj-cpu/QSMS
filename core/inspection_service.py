@@ -394,9 +394,13 @@ class InspectionService:
                 "chemistry_rows": [dict(row) for row in results.get("chemistry_rows", [])],
                 "jominy_rows": [dict(row) for row in results.get("jominy_rows", [])],
                 "requirement_rows": [dict(row) for row in results.get("requirement_rows", [])],
+                "case_depth_locations": [dict(row) for row in results.get("case_depth_locations", [])],
+                "case_depth_traverse": [dict(row) for row in results.get("case_depth_traverse", [])],
+                "case_depth_applicable": bool(results.get("case_depth_applicable", False)),
+                "case_depth_na_reason": str(results.get("case_depth_na_reason") or "").strip() or None,
             }
         else:
-            full_payload["results"] = {"rows": [dict(row) for row in results], "chemistry_rows": [], "jominy_rows": [], "requirement_rows": []}
+            full_payload["results"] = {"rows": [dict(row) for row in results], "chemistry_rows": [], "jominy_rows": [], "requirement_rows": [], "case_depth_locations": [], "case_depth_traverse": [], "case_depth_applicable": False, "case_depth_na_reason": None}
         return self.repo.update("lab_tests", report_id, full_payload) if report_id else self.repo.insert("lab_tests", full_payload)
 
     def _report_employees(self, record: Mapping[str, Any]) -> dict[str, dict]:

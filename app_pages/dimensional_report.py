@@ -12,7 +12,7 @@ from core.access import current_permissions
 from core.password_edit import password_reopen_for_edit
 from core.delete_service import password_delete_panel
 from core.notification_service import NotificationService
-from core.notification_ui import notification_confirmation
+from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
 from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
 from core.reporting import dimensional_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
@@ -272,6 +272,7 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
                                    f"Inspection Date: {saved.get('inspection_date') or test_date}"),
                         related_table="inspection_reports",related_id=str(saved.get("id")),
                         context={"inspection_report_id":str(saved.get("id")),"next_task":"Dimensional Approval"},
+                        **notification_overrides(dim_notify_pref),
                     )
                 st.session_state["edit_dimensional_id"] = str(saved["id"]); save_success_popup(f"Standalone Dimensional Report {final_number} saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
@@ -471,6 +472,7 @@ def render_entry() -> None:
                                        f"Source: {inward.get('inward_number') or inward.get('heat_number') or '-'}"),
                             related_table="inspection_reports",related_id=str(saved.get("id")),
                             context={"inspection_report_id":str(saved.get("id")),"inward_lot_id":str(inward_id),"next_task":"Dimensional Approval"},
+                            **notification_overrides(linked_dim_notify_pref),
                         )
                 st.session_state["edit_dimensional_id"] = str(saved["id"])
                 save_success_popup(f"Dimensional Report {final_number} saved successfully.", queue_for_rerun=True)
@@ -522,6 +524,11 @@ def render_records() -> None:
                 st.download_button("Download Excel Report", data=quality_record_excel_bytes(selected_payload, "DIMENSIONAL"), file_name=f"{selected_row.get('report_number') or 'Dimensional_Report'}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"dimensional_xlsx_{selected}", icon=":material/download:", width="stretch")
         except Exception as exc:
             st.error(f"Report export could not be generated: {exc}")
+        record_email_sender(
+            NotificationService(service.repo), "DIMENSIONAL_APPROVAL_PENDING",
+            related_table="inspection_reports", related_id=selected, key=f"dimensional_record_email_{selected}",
+            context={"part_number": (parts.get(str(selected_row.get("part_id"))) or {}).get("part_number"), "next_task": "Dimensional Review / Approval"},
+        )
         with c4:
             if password_delete_panel(repo=service.repo, table="inspection_reports", rows=[selected_row], labeler=lambda row: row.get("report_number"), key=f"delete_dimensional_{selected}", can_delete=perms["can_archive"], title="Delete Selected Dimensional Report"):
                 st.rerun()

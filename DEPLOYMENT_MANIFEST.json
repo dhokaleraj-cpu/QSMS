@@ -1,6 +1,6 @@
 {
-  "version": "4.14.12",
-  "build": "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD",
+  "version": "4.14.13",
+  "build": "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -35,7 +35,14 @@
     "section_size_forging_route_duplicate_word_guard",
     "rm_po_item_raw_material_details",
     "rm_po_no_forging_parameters",
-    "forging_po_full_parameters_retained"
+    "forging_po_full_parameters_retained",
+    "metlab_case_depth_location_grid",
+    "metlab_case_depth_traverse_005mm",
+    "metlab_case_depth_multilocation_chart",
+    "saved_record_manual_email",
+    "email_template_manual_recipient_test",
+    "email_send_confirmation_dialog",
+    "entry_level_editable_email_recipient"
   ],
   "source": "controlled_release"
 }
