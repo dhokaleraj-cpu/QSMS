@@ -9,7 +9,7 @@ def read(path: str) -> str:
 
 
 def test_release_identity_and_v4142_regression_marker():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12"}
     for path in ("streamlit_app.py", "core/auth.py", "core/ui.py"):
         text = read(path)
         assert BUILD in text
@@ -36,7 +36,7 @@ def test_multiple_grades_sections_and_supplier_lead_time():
     assert "lead_time_days" in sql
     assert "drop constraint if exists part_raw_material_details_tenant_id_part_id_supplier_id_key" in sql
     assert "Approved / Alternate Material Grades" in part
-    assert "Raw Material Section" in part
+    assert "Raw Material Type" in part
     assert "Lead Time (Days)" in part
 
 

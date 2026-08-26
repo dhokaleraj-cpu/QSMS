@@ -11,7 +11,7 @@ def text(path: str) -> str:
 
 
 def test_v4142_version_build_and_purchase_order_source_contract():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12"}
     marker = "4142-PO-ORDER-VISIBILITY-FULL-PRICE-HISTORY"
     assert marker in text("core/ui.py")
     assert marker in text("core/auth.py")

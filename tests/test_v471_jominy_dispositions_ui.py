@@ -19,7 +19,7 @@ def test_reusable_section_route_and_simplified_metlab_requirements():
     page = (ROOT / "app_pages" / "part_master.py").read_text()
     for token in [
         "part.rm_section", "part.forging_route",
-        "Manage reusable Section and Forging Route lists",
+        "Manage reusable Raw Material Type, Section Size and Forging Route lists",
         "OSP INSPECTION FOR METLAB", "METALLURGICAL REQUIREMENTS",
         "Minimum Specification", "Maximum Specification",
     ]:

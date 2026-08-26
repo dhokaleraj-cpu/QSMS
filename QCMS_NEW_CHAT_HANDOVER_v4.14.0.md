@@ -225,6 +225,7 @@ These rows were verified against live Supabase after v4.14.0 Supply Flow migrati
 - v4.13.8: multi-source RM PO, Supplier+FSI Part price history, supplier-specific PO technical data.
 - v4.13.9: RM procurement visibility correction, incremental RMTC Part release guard, item-wise PO technical print.
 - **v4.14.0: explicit Supply Flow + always-visible PO eligibility/reasons, added-Part validation/decision from approval screen, HSN/SAC + cleaner PO item print, Email Server & Responsibility Routing + server-side notification outbox.**
+- **v4.14.12: Raw Material Type control, RM PO item-specific Raw Material Type/Grade/Section Size print, forging-parameter removal from RM PO, and Section Size/Forging Route duplicate-word guards.**
 
 ---
 

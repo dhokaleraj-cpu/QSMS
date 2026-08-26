@@ -143,20 +143,30 @@ CONT_HISTORY_ROWS = 28
 HISTORY_ONLY_ROWS = 42
 
 
-def _technical_pairs(item: Mapping[str, Any], *, limit: int = 12) -> list[tuple[str, str]]:
+def _technical_pairs(item: Mapping[str, Any], *, po_type: str = "FORGING", limit: int = 12) -> list[tuple[str, str]]:
     raw = item.get("technical_data_snapshot") or []
     if not isinstance(raw, list):
         return []
-    priority = {name.casefold(): idx for idx, name in enumerate((
-        "Raw Material Section", "Forge wt", "Gross wt", "Input wt", "Section Size", "Forging Route",
-    ))}
+    po_kind = _s(po_type).upper()
+    rm_allowed = {"raw material type", "raw material section", "material grade", "section size"}
+    priority_names = (
+        "Raw Material Type", "Raw Material Section", "Material Grade", "Section Size",
+        "Forge wt", "Gross wt", "Input wt", "Forging Route", "Supplier Lead Time",
+    )
+    priority = {name.casefold(): idx for idx, name in enumerate(priority_names)}
     prepared: list[tuple[int, str, str]] = []
     for idx, row in enumerate(raw):
         if not isinstance(row, Mapping):
             continue
         heading = _s(row.get("heading")); value = _s(row.get("value"))
-        if heading and value:
-            prepared.append((priority.get(heading.casefold(), 100 + idx), heading, value))
+        if not heading or not value:
+            continue
+        heading_key = heading.casefold()
+        if po_kind == "RAW_MATERIAL" and heading_key not in rm_allowed:
+            continue
+        if heading_key == "raw material section":
+            heading = "Raw Material Type"; heading_key = "raw material type"
+        prepared.append((priority.get(heading_key, 100 + idx), heading, value))
     prepared.sort(key=lambda v: v[0])
     return [(h, v) for _, h, v in prepared[:limit]]
 
@@ -212,10 +222,12 @@ def _draw_item_row(c: canvas.Canvas, item: Mapping[str, Any], *, y_top: float, l
     return row_bottom
 
 
-def _draw_technical(c: canvas.Canvas, item: Mapping[str, Any], *, top: float, bottom: float, left: float, right: float, page_width: float) -> None:
+def _draw_technical(c: canvas.Canvas, item: Mapping[str, Any], *, po_type: str, top: float, bottom: float, left: float, right: float, page_width: float) -> None:
     c.setFillColor(HexColor("#F3F4F6")); c.rect(left, bottom, page_width-left-right, max(top-bottom, 0), stroke=1, fill=1)
-    _draw_text(c, left+5, top-11, "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA", size=6.1, bold=True, color=NAVY, max_width=290)
-    pairs = _technical_pairs(item, limit=12)
+    is_rm = _s(po_type).upper() == "RAW_MATERIAL"
+    title = "RAW MATERIAL DETAILS" if is_rm else "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA"
+    _draw_text(c, left+5, top-11, title, size=6.1, bold=True, color=NAVY, max_width=360)
+    pairs = _technical_pairs(item, po_type=po_type, limit=3 if is_rm else 12)
     if not pairs:
         _draw_text(c, left+5, top-25, "No controlled supplier technical data configured", size=5.8, color=HexColor("#6B7280"), max_width=310)
         return
@@ -330,8 +342,9 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     item = dict(items[0])
     y_item_top = y_strip-45
     row_bottom = _draw_item_row(c, item, y_top=y_item_top, left=left, right=right, page_width=w)
-    tech_bottom = row_bottom-68
-    _draw_technical(c, item, top=row_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
+    po_type = _s(header.get("po_type") or "FORGING").upper()
+    tech_bottom = row_bottom-(42 if po_type == "RAW_MATERIAL" else 68)
+    _draw_technical(c, item, po_type=po_type, top=row_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
     history = _price_history_rows(item)
     _draw_price_history(c, item, history, top=tech_bottom-4, bottom=245, left=left, right=right, page_width=w, max_rows=FIRST_HISTORY_ROWS)
 
@@ -355,8 +368,9 @@ def _continuation_items_bytes(header: Mapping[str, Any], items: Sequence[Mapping
         item = dict(item_src)
         w,h,left,right = _draw_continuation_header(c, header, title="PURCHASE ORDER · ITEM CONTINUED")
         row_bottom = _draw_item_row(c, item, y_top=h-92, left=left, right=right, page_width=w)
-        tech_bottom = row_bottom-92
-        _draw_technical(c, item, top=row_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
+        po_type = _s(header.get("po_type") or "FORGING").upper()
+        tech_bottom = row_bottom-(55 if po_type == "RAW_MATERIAL" else 92)
+        _draw_technical(c, item, po_type=po_type, top=row_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
         history = _price_history_rows(item)
         rendered = _draw_price_history(c, item, history, top=tech_bottom-6, bottom=50, left=left, right=right, page_width=w, max_rows=CONT_HISTORY_ROWS)
         c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",5.8); c.drawCentredString(w/2,27,"QCMS controlled continuation · Technical data and Price Revision History are item-specific and supplier-specific.")

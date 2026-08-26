@@ -736,9 +736,11 @@ for token in ("part_material_grade_links", "lead_time_days", "supply_opening_sto
         errors.append(f"QCMS 4.14.3 schema contract missing: {token}")
 if "Duplicate Part Number is not allowed" not in v4143_part or "Duplicate Part Description" in v4143_part:
     errors.append("QCMS 4.14.3 Part Description duplicate policy is incorrect")
-for token in ("Approved / Alternate Material Grades", "Lead Time (Days)", "Raw Material Section"):
+for token in ("Approved / Alternate Material Grades", "Lead Time (Days)"):
     if token not in v4143_part:
         errors.append(f"QCMS 4.14.3 Part Master control missing: {token}")
+if "Raw Material Type" not in v4143_part and "Raw Material Section" not in v4143_part:
+    errors.append("QCMS 4.14.3 Part Master raw-material identity control is missing")
 for token in ("render_opening_stock", "SUPPLY_CUSTOMER_ORDER", "Delivery default calculated from Part Master supplier lead time"):
     if token not in v4143_supply:
         errors.append(f"QCMS 4.14.3 Supply Chain control missing: {token}")
@@ -765,7 +767,7 @@ if "535 5.7.139" not in v4144_email or "Authenticated SMTP" not in v4144_email:
 # QCMS 4.14.5 deployment / direct-edit verification.
 v4145_dashboard = (ROOT / "app_pages" / "dashboard.py").read_text(encoding="utf-8")
 v4145_manifest = (ROOT / "DEPLOYMENT_MANIFEST.json").read_text(encoding="utf-8")
-if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES")):
+if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD")):
     errors.append("QCMS live release verification banner is missing")
 if "Select Existing MetLAB Report to Edit" not in v4144_metlab or "Select Existing Dimensional Report to Edit" not in v4144_dimensional or "Select Existing RMTC to Edit" not in v4144_rmtc:
     errors.append("QCMS 4.14.5 direct report edit selectors are incomplete")
@@ -827,8 +829,31 @@ if "return 'PD9'||to_char(current_date,'DDMM')||lpad(next_value::text,5,'0')" no
 if "drawCentredString(w/2,47" not in v41411_po:
     errors.append("QCMS 4.14.11 centered Purchase Order footer is incomplete")
 
+# QCMS 4.14.12 Raw Material Type / PO-type-specific technical print.
+v41412_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
+v41412_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v41412_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v41412_po = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
+v41412_sql = (ROOT / "supabase" / "migrations" / "20260826183000_qcms_raw_material_type_po_v41412.sql").read_text(encoding="utf-8")
+if 'RAW_MATERIAL_TYPE_DEFAULTS = ("Round Black Bar", "Bright Bar")' not in v41412_part or '"Raw Material Type"' not in v41412_part:
+    errors.append("QCMS 4.14.12 controlled Raw Material Type list is incomplete")
+if "duplicate_word_check=True" not in v41412_part or "MasterService._fuzzy_word_duplicate" not in v41412_part:
+    errors.append("QCMS 4.14.12 Section Size/Forging Route duplicate-word guard is incomplete")
+if 'title = "RAW MATERIAL DETAILS" if is_rm else "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA"' not in v41412_po:
+    errors.append("QCMS 4.14.12 PO-type-specific technical print title is incomplete")
+if 'po_kind == "RAW_MATERIAL"' not in v41412_po or 'rm_allowed' not in v41412_po:
+    errors.append("QCMS 4.14.12 RM PO forging-parameter filter is incomplete")
+if '"Material Grade":grade_row.get("grade_code")' not in v41412_supply or '"Raw Material Type":raw.get("material_section_name")' not in v41412_supply:
+    errors.append("QCMS 4.14.12 RM PO Part Master detail grid is incomplete")
+if "part.rm_type" not in v41412_sql or "Round Black Bar" not in v41412_sql or "Bright Bar" not in v41412_sql:
+    errors.append("QCMS 4.14.12 Raw Material Type seed migration is incomplete")
+
 report = {
-    "release": "QCMS 4.14.11 PO Master HSN/Price / Form Entry / Email Confirmation / New Series",
+    "release": "QCMS 4.14.12 Raw Material Type / RM PO Detail Print / Forging Filter / Duplicate Guard",
+    "v41412_raw_material_type": "Raw Material Type" in v41412_part and "part.rm_type" in v41412_sql,
+    "v41412_rm_po_details": "RAW MATERIAL DETAILS" in v41412_po and "rm_allowed" in v41412_po,
+    "v41412_rm_po_forging_filter": 'po_kind == "RAW_MATERIAL"' in v41412_po,
+    "v41412_duplicate_word_guard": "duplicate_word_check=True" in v41412_part,
     "po_source_visibility": "def purchase_order_source_status" in v4140_service and "PO Eligibility" in v4140_supply,
     "explicit_supply_flow": 'explicit = str(order.get("supply_flow")' in v4140_service and "supply_flow" in v4140_sql,
     "added_part_validate_decide": "incremental_part_review" in v4140_rmtc and "Validate Added Part Against Masters" in v4140_rmtc,
@@ -852,7 +877,7 @@ report = {
     "v4144_identity_duplicate_policy": '"customer_standards": ("standard_code", "standard_name")' in v4144_master and '"parts": ("fsi_part_number",)' in v4144_master,
     "v4144_opening_stock_import": "OPENING STOCK IMPORT / EXPORT UTILITY" in v4144_supply and "opening_stock_import_preview" in v4144_supply_service and "apply_opening_stock_import" in v4144_supply_service,
     "v4144_smtp_auth_guidance": "535 5.7.139" in v4144_email and "Authenticated SMTP" in v4144_email,
-    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES")),
+    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD")),
     "v4146_runtime_diagnostics": "deployment-diagnostics" in app_text and "LIVE BUILD · QCMS" in app_text and (ROOT / "app_pages" / "deployment_diagnostics.py").exists(),
     "v4147_deploy_target_proof": "Git origin" in v4147_diag and "Streamlit main file" in v4147_diag,
     "v4147_next_stage_email": "NEXT-STAGE RESPONSIBILITY ROUTING" in v4147_email and "department_emails" in v4147_notify,

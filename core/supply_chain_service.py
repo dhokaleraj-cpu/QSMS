@@ -224,7 +224,7 @@ class SupplyChainService:
             heat_number = str(raw.get("Heat Number") or "").strip()
             grade_text = str(raw.get("Material Grade") or "").strip()
             supplier_text = str(raw.get("Supplier Code") or raw.get("Supplier") or "").strip()
-            section_text = str(raw.get("Raw Material Section") or "").strip()
+            section_text = str(raw.get("Raw Material Type") or raw.get("Raw Material Section") or "").strip()
             section_size = str(raw.get("Section Size") or "").strip()
             error = ""
             if not part:
@@ -258,7 +258,7 @@ class SupplyChainService:
                 if len(candidates) == 1:
                     raw_detail = candidates[0]
                 elif (section_text or section_size) and not candidates and not error:
-                    error = "Raw Material Section / Supplier combination was not found for this Part."
+                    error = "Raw Material Type / Supplier combination was not found for this Part."
                 elif len(candidates) > 1 and not error:
                     error = "Multiple Raw Material rows match. Add Supplier Code and Section Size to identify one row."
 
@@ -292,7 +292,7 @@ class SupplyChainService:
                 "FSI Part Number": (part or {}).get("fsi_part_number") or fsi_number, "Stage": stage,
                 "Material Grade": (grade or {}).get("grade_code") or grade_text,
                 "Supplier": (supplier or {}).get("party_name") or supplier_text,
-                "Raw Material Section": (raw_detail or {}).get("material_section_name") or section_text,
+                "Raw Material Type": (raw_detail or {}).get("material_section_name") or section_text,
                 "Opening Reference": reference, "Heat Number": heat_number,
                 "Opening Qty pcs": qty_pcs, "Available Qty pcs": available_pcs, "Opening Qty kg": qty_kg,
                 "Action": action, "Error": error, "_payload": payload, "_signature": signature,
@@ -356,10 +356,20 @@ class SupplyChainService:
 
     def technical_data_snapshot(self, raw: Mapping[str, Any], part: Mapping[str, Any]) -> list[dict[str, str]]:
         custom = self.raw_material_technical_data(str(raw.get("id") or ""))
-        custom_map = {normalize_match(r.get("heading")): {"heading": str(r.get("heading") or "").strip(), "value": str(r.get("value_text") or "").strip()} for r in custom if bool(r.get("include_on_po", True)) and str(r.get("heading") or "").strip() and str(r.get("value_text") or "").strip()}
+        custom_map: dict[str, dict[str, str]] = {}
+        for r in custom:
+            if not bool(r.get("include_on_po", True)):
+                continue
+            heading = str(r.get("heading") or "").strip(); value = str(r.get("value_text") or "").strip()
+            if not heading or not value:
+                continue
+            key = normalize_match(heading)
+            if key == normalize_match("Raw Material Section"):
+                key = normalize_match("Raw Material Type"); heading = "Raw Material Type"
+            custom_map[key] = {"heading": heading, "value": value}
         grade = self.repo.get("material_grades", str(raw.get("material_grade_id") or part.get("material_grade_id") or "")) or {}
         standard = [
-            ("Raw Material Section", raw.get("material_section_name")),
+            ("Raw Material Type", raw.get("material_section_name")),
             ("Material Grade", grade.get("grade_code")),
             ("Supplier Lead Time", f"{int(raw.get('lead_time_days') or 0)} Days" if int(raw.get("lead_time_days") or 0) > 0 else ""),
             ("Forge wt", f"{number(raw.get('forging_weight_kg') or part.get('forging_weight_kg')):g} Kgs" if (raw.get("forging_weight_kg") is not None or part.get("forging_weight_kg") is not None) else ""),

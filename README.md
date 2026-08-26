@@ -1,15 +1,15 @@
-# QCMS v4.14.11
+# QCMS v4.14.12
 
-Current controlled build: `41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES`
+Current controlled build: `41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD`
 
 This additive release retains every earlier QCMS workflow and adds:
 
-- Purchase Order source selectors showing Customer Name + Customer Part Number + reference/position.
-- Supplier/raw-material HSN/SAC directly in Part Master Raw Material Details next to Supplier.
-- PO Current Price and HSN/SAC inherited read-only from supplier-specific Part Master data / price history.
-- Purchase Order entry submitted as one Streamlit form so normal field edits do not rerun the page individually.
-- Centered controlled PO footer.
-- Entry-level email notification tick, recipient/CC preview and explicit confirmation on all existing workflow notification entry points.
-- New PO number format `PD9DDMM00001` with a continuous five-digit sequence for permanent uniqueness.
+- Part Master `Raw Material Section` renamed in the UI to **Raw Material Type** while preserving the existing database column for backward compatibility.
+- Controlled Raw Material Type list starts with **Round Black Bar** and **Bright Bar** and retains existing values.
+- Reusable **Section Size** and **Forging Route** additions reject exact/fuzzy 2-3-word duplicates.
+- Raw Material PO item details now print **Raw Material Type + Material Grade + Section Size** immediately beneath each item.
+- Forging-specific parameters/weights/routes are intentionally removed from Raw Material procurement PO printouts.
+- Forging Purchase Orders retain the full Raw Material / Forging Parameters & FSI Technical Data section.
+- RM Purchase Order entry grids show Raw Material Type, Material Grade and Section Size from Part Master.
 
 Existing production/master/quality/Supply Chain/RMTC/OSP data is preserved.

@@ -32,6 +32,8 @@ DRAWING_TYPES = (
     ("HEAT_TREATMENT_DRAWING", "Heat Treatment Drawing"),
 )
 
+RAW_MATERIAL_TYPE_DEFAULTS = ("Round Black Bar", "Bright Bar")
+
 
 def _labels(rows: list[dict], code: str, name: str) -> dict[str, str]:
     return {str(r["id"]): " · ".join(str(v) for v in (r.get(code), r.get(name)) if v not in (None, "")) for r in rows}
@@ -143,17 +145,29 @@ def _catalog_options(catalog: LearnedValueCatalog, field_key: str, current_value
     return sorted(set(values), key=str.casefold)
 
 
-def _catalog_add_control(catalog: LearnedValueCatalog, field_key: str, label: str, options: list[str], key: str) -> None:
+def _catalog_add_control(
+    catalog: LearnedValueCatalog, field_key: str, label: str, options: list[str], key: str, *, duplicate_word_check: bool = False,
+) -> None:
     cols = st.columns([4, 1], gap="small")
     value = cols[0].selectbox(label, options or [""], accept_new_options=True, key=f"catalog_value_{key}")
     if cols[1].button("Add", key=f"catalog_add_{key}", width="stretch"):
         text = str(value or "").strip()
         if not text:
             st.warning(f"Enter {label.lower()} first.")
-        else:
-            catalog.remember(field_key, text)
-            save_success_popup(f"{text} added to the reusable list.", queue_for_rerun=True)
-            st.rerun()
+            return
+        normalized = " ".join(re.findall(r"[a-z0-9]+", text.casefold()))
+        for existing in options:
+            existing_text = str(existing or "").strip()
+            existing_normalized = " ".join(re.findall(r"[a-z0-9]+", existing_text.casefold()))
+            if normalized and normalized == existing_normalized:
+                st.warning(f"{label} already exists in the reusable list: {existing_text}")
+                return
+            if duplicate_word_check and MasterService._fuzzy_word_duplicate(text, existing_text):
+                st.warning(f"Duplicate {label} is not allowed. 2-3 matching words already exist in: {existing_text}")
+                return
+        catalog.remember(field_key, text)
+        save_success_popup(f"{text} added to the reusable list.", queue_for_rerun=True)
+        st.rerun()
 
 
 
@@ -863,7 +877,7 @@ def render_entry() -> None:
                 'Valid From':r.get('valid_from'),'Valid To':r.get('valid_to'),'Approved':bool(r.get('approved'))
             } for r in existing_source_links]),hide_index=True,width='stretch',height=min(300,80+len(existing_source_links)*34))
 
-        section_bar('RAW MATERIAL / FORGING PARAMETERS')
+        section_bar('RAW MATERIAL DETAILS / FORGING PARAMETERS')
         raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=200)
         if password_delete_panel(repo=repo, table="part_raw_material_details", rows=raw, labeler=lambda r: f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · {r.get('section_size') or '-'} · {r.get('forging_route') or '-'}", key=f"delete_raw_{part_id}", can_delete=perms["can_archive"], title="Delete Raw Material row"):
             st.rerun()
@@ -871,7 +885,7 @@ def render_entry() -> None:
         # ("supplier_id", "material_section_name", "section_size", "forging_route")
         grade_by_name = {label: gid for gid, label in grade_map.items()}
         raw_df = pd.DataFrame([{
-            "Raw Material Section": r.get("material_section_name") or "Primary Raw Material",
+            "Raw Material Type": r.get("material_section_name") or "Round Black Bar",
             "Material Grade": grade_map.get(str(r.get("material_grade_id")), grade_map.get(str(existing.get("material_grade_id")), "")),
             "Supplier Name / Location": supplier_map.get(str(r.get("supplier_id")), ""),
             "HSN / SAC Code": r.get("hsn_sac_code") or existing.get("hsn_sac_code") or "",
@@ -881,17 +895,19 @@ def render_entry() -> None:
             "Input Weight kg/part": r.get("input_weight_kg") or r.get("gross_weight_kg") or r.get("forging_weight_kg"),
             "Section Size": r.get("section_size"), "Forging Route": r.get("forging_route"),
             "Status": r.get("status") or "ACTIVE"
-        } for r in raw], columns=["Raw Material Section", "Material Grade", "Supplier Name / Location", "HSN / SAC Code", "Lead Time (Days)", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
+        } for r in raw], columns=["Raw Material Type", "Material Grade", "Supplier Name / Location", "HSN / SAC Code", "Lead Time (Days)", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
+        rm_type_options = _catalog_options(catalog, "part.rm_type", [*RAW_MATERIAL_TYPE_DEFAULTS, *[r.get("material_section_name") for r in raw]])
         section_options = _catalog_options(catalog, "part.rm_section", [r.get("section_size") for r in raw])
         route_options = _catalog_options(catalog, "part.forging_route", [r.get("forging_route") for r in raw])
-        with st.expander("Manage reusable Section and Forging Route lists", expanded=False):
-            _catalog_add_control(catalog, "part.rm_section", "Section", section_options, f"section_{part_id}")
-            _catalog_add_control(catalog, "part.forging_route", "Forging Route", route_options, f"route_{part_id}")
+        with st.expander("Manage reusable Raw Material Type, Section Size and Forging Route lists", expanded=False):
+            _catalog_add_control(catalog, "part.rm_type", "Raw Material Type", rm_type_options, f"rm_type_{part_id}")
+            _catalog_add_control(catalog, "part.rm_section", "Section Size", section_options, f"section_{part_id}", duplicate_word_check=True)
+            _catalog_add_control(catalog, "part.forging_route", "Forging Route", route_options, f"route_{part_id}", duplicate_word_check=True)
         with st.form(f"raw_material_grid_form_{part_id}"):
             raw_edit = st.data_editor(
                 raw_df, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"raw_{part_id}", disabled=not writable,
                 column_config={
-                    "Raw Material Section": st.column_config.TextColumn(required=True, help="Multiple raw-material sections are allowed for the same Part and Supplier."),
+                    "Raw Material Type": st.column_config.SelectboxColumn(options=rm_type_options or list(RAW_MATERIAL_TYPE_DEFAULTS), required=True, help="Controlled material form/type for this supplier row, e.g. Round Black Bar or Bright Bar."),
                     "Material Grade": st.column_config.SelectboxColumn(options=list(grade_by_name), required=True),
                     "Supplier Name / Location": st.column_config.SelectboxColumn(options=list(supplier_by_name), required=True),
                     "HSN / SAC Code": st.column_config.TextColumn(help="Supplier/raw-material specific HSN or SAC. Purchase Orders inherit this value automatically; Part Master header HSN is used only as fallback."),
@@ -912,11 +928,11 @@ def render_entry() -> None:
                     grade_name = str(row.get("Material Grade") or "").strip(); row_grade_id = grade_by_name.get(grade_name)
                     if not sid: return {}
                     if not row_grade_id: raise ValueError(f"Material Grade is required for {name}.")
-                    catalog.remember_many("part.rm_section", [row.get("Section Size")]); catalog.remember_many("part.forging_route", [row.get("Forging Route")])
+                    catalog.remember_many("part.rm_type", [row.get("Raw Material Type")]); catalog.remember_many("part.rm_section", [row.get("Section Size")]); catalog.remember_many("part.forging_route", [row.get("Forging Route")])
                     input_weight = None if pd.isna(row.get("Input Weight kg/part")) else row.get("Input Weight kg/part")
                     if input_weight is None or float(input_weight) <= 0:
                         raise ValueError(f"Input Weight kg/part is required for {name}.")
-                    material_section = str(row.get("Raw Material Section") or "").strip() or "Primary Raw Material"
+                    material_section = str(row.get("Raw Material Type") or "").strip() or "Round Black Bar"
                     return {"supplier_id": sid, "material_grade_id": row_grade_id, "hsn_sac_code": str(row.get("HSN / SAC Code") or "").strip() or None, "lead_time_days": int(row.get("Lead Time (Days)") or 0), "material_section_name": material_section, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section Size") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
                 _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id", "material_grade_id", "material_section_name", "section_size", "forging_route"), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
@@ -927,7 +943,7 @@ def render_entry() -> None:
         # are controlled from Part Master and pulled automatically into the PO.
         current_raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=500)
         raw_labels = {
-            str(r["id"]): f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · HSN {r.get('hsn_sac_code') or existing.get('hsn_sac_code') or '-'} · {grade_map.get(str(r.get('material_grade_id')), 'Grade -')} · {r.get('material_section_name') or 'Raw Material'} · {r.get('section_size') or '-'} · LT {int(r.get('lead_time_days') or 0)}d"
+            str(r["id"]): f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · HSN {r.get('hsn_sac_code') or existing.get('hsn_sac_code') or '-'} · {grade_map.get(str(r.get('material_grade_id')), 'Grade -')} · {r.get('material_section_name') or 'Raw Material Type -'} · {r.get('section_size') or '-'} · LT {int(r.get('lead_time_days') or 0)}d"
             for r in current_raw
         }
         section_bar("SUPPLIER TECHNICAL DATA & PRICE HISTORY", "Select the supplier-specific Raw Material record. Heading/value technical rows are copied automatically to the Purchase Order; price history is matched by Supplier + FSI Part Number.")

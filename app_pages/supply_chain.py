@@ -532,7 +532,7 @@ def render_opening_stock() -> None:
             data.append({
                 "Part Number":part.get("part_number"),"FSI Part Number":part.get("fsi_part_number"),"Part Description":part.get("part_name"),
                 "Stage":OPENING_STOCK_STAGES.get(str(r.get("stage")),str(r.get("stage"))),"Material Grade":grade_labels.get(str(r.get("material_grade_id")),"-"),
-                "Raw Material Section":raw.get("material_section_name") or "-","Supplier":supplier_labels.get(str(r.get("supplier_id")),"-"),
+                "Raw Material Type":raw.get("material_section_name") or "-","Supplier":supplier_labels.get(str(r.get("supplier_id")),"-"),
                 "Opening Reference":r.get("lot_reference"),"Heat Number":r.get("heat_number"),"Heat Code":r.get("heat_code"),
                 "Opening Qty pcs":r.get("quantity_pcs"),"Available Qty pcs":r.get("available_quantity_pcs"),"Opening Qty kg":r.get("quantity_kg"),
                 "Status":r.get("status"),"Remarks":r.get("remarks"),"_id":str(r.get("id")),
@@ -543,7 +543,7 @@ def render_opening_stock() -> None:
     with stage_section("B","OPENING STOCK IMPORT / EXPORT UTILITY","Download a controlled template, preview the import, skip exact duplicate Opening References, and export the complete current register.",key="supply_opening_stock_import_export"):
         template=pd.DataFrame([{
             "Part Number":"","FSI Part Number":"","Stage":"FINISHED_GOODS","Material Grade":"","Supplier Code":"",
-            "Raw Material Section":"","Section Size":"","Opening Reference":"OPEN-001","Heat Number":"","Heat Code":"",
+            "Raw Material Type":"","Section Size":"","Opening Reference":"OPEN-001","Heat Number":"","Heat Code":"",
             "Opening Qty pcs":0,"Available Qty pcs":0,"Opening Qty kg":0,"Remarks":"",
         }])
         c1,c2=st.columns(2,gap="small")
@@ -789,10 +789,11 @@ def render_purchase_orders() -> None:
                         raw=service.raw_material_for_supplier(str(part.get("id") or ""),supplier_id,str(order.get("raw_material_detail_id") or "")); raw_for_order[oid]=raw
                         group_key=f"{part.get('id')}|{(raw or {}).get('id') or ''}"; group_order_ids.setdefault(group_key,[]).append(oid)
                         customer=parties.get(str(order.get("customer_id"))) or {}
-                        allocation_rows.append({"Order ID":oid,"Customer Order / Schedule":order.get("master_reference_no"),"Customer":customer.get("party_name"),"Part Number":part.get("part_number"),"Position":order.get("order_position"),"FSI Part Number":part.get("fsi_part_number") or "ENTER IN ITEM GRID","Part Description":part.get("part_name"),"RM Section":(raw or {}).get("section_size") or "NO SUPPLIER RM DETAIL","Pending RM kg":balance,"PO Allocation kg":balance})
+                        grade_row=grades.get(str((raw or {}).get("material_grade_id") or part.get("material_grade_id") or "")) or {}
+                        allocation_rows.append({"Order ID":oid,"Customer Order / Schedule":order.get("master_reference_no"),"Customer":customer.get("party_name"),"Part Number":part.get("part_number"),"Position":order.get("order_position"),"FSI Part Number":part.get("fsi_part_number") or "ENTER IN ITEM GRID","Part Description":part.get("part_name"),"Raw Material Type":(raw or {}).get("material_section_name") or "NO SUPPLIER RM DETAIL","Material Grade":grade_row.get("grade_code") or "-","Section Size":(raw or {}).get("section_size") or "-","Pending RM kg":balance,"PO Allocation kg":balance})
                         if not raw: all_lines_valid=False
                     alloc_df=pd.DataFrame(allocation_rows)
-                    alloc_edit=st.data_editor(alloc_df,hide_index=True,width="stretch",height=min(360,90+len(alloc_df)*38),key="controlled_po_allocations_form",disabled=["Order ID","Customer Order / Schedule","Customer","Part Number","Position","FSI Part Number","Part Description","RM Section","Pending RM kg"],column_config={"Order ID":None,"Pending RM kg":st.column_config.NumberColumn(format="%.3f"),"PO Allocation kg":st.column_config.NumberColumn(min_value=0.001,format="%.3f",required=True)})
+                    alloc_edit=st.data_editor(alloc_df,hide_index=True,width="stretch",height=min(360,90+len(alloc_df)*38),key="controlled_po_allocations_form",disabled=["Order ID","Customer Order / Schedule","Customer","Part Number","Position","FSI Part Number","Part Description","Raw Material Type","Material Grade","Section Size","Pending RM kg"],column_config={"Order ID":None,"Pending RM kg":st.column_config.NumberColumn(format="%.3f"),"PO Allocation kg":st.column_config.NumberColumn(min_value=0.001,format="%.3f",required=True)})
                     for _,row in alloc_edit.iterrows(): allocations[str(row.get("Order ID"))]=number(row.get("PO Allocation kg"))
 
                     line_rows=[]; group_data={}
@@ -801,23 +802,25 @@ def render_purchase_orders() -> None:
                         group=group_data.setdefault(key,{"part":part,"raw":raw,"qty":0.0}); group["qty"]+=allocations.get(oid,0.0)
                     for key,group in group_data.items():
                         part,raw=group["part"],group["raw"]; current=service.current_price(str(part.get("id") or ""),supplier_id,on_date=order_date,uom="KGS"); master_hsn=str(raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip()
-                        line_rows.append({"Line Key":key,"FSI Part Number":part.get("fsi_part_number"),"HSN / SAC":master_hsn,"Part Description":part.get("part_name"),"Raw Material Section":raw.get("material_section_name"),"Section Size":raw.get("section_size"),"PO Qty kg":round(group["qty"],3),"Current Price":current})
+                        grade_row=grades.get(str(raw.get("material_grade_id") or part.get("material_grade_id") or "")) or {}
+                        line_rows.append({"Line Key":key,"FSI Part Number":part.get("fsi_part_number"),"HSN / SAC":master_hsn,"Part Description":part.get("part_name"),"Raw Material Type":raw.get("material_section_name"),"Material Grade":grade_row.get("grade_code") or "-","Section Size":raw.get("section_size"),"PO Qty kg":round(group["qty"],3),"Current Price":current})
                         if current<=0 or not master_hsn: all_lines_valid=False
                     line_df=pd.DataFrame(line_rows)
-                    line_edit=st.data_editor(line_df,hide_index=True,width="stretch",height=min(330,90+len(line_df)*38),key="controlled_po_lines_form",disabled=["Line Key","HSN / SAC","Part Description","Raw Material Section","Section Size","PO Qty kg","Current Price"],column_config={"Line Key":None,"FSI Part Number":st.column_config.TextColumn(required=True,help="Supplier-facing FSI identity. If Part Master is blank, enter it here; the original Customer Part Number is never printed."),"HSN / SAC":st.column_config.TextColumn(help="Read-only supplier/raw-material HSN from Part Master."),"PO Qty kg":st.column_config.NumberColumn(format="%.3f"),"Current Price":st.column_config.NumberColumn(format="%.2f",help="Read-only current supplier price from Part Master price history.")})
+                    line_edit=st.data_editor(line_df,hide_index=True,width="stretch",height=min(330,90+len(line_df)*38),key="controlled_po_lines_form",disabled=["Line Key","HSN / SAC","Part Description","Raw Material Type","Material Grade","Section Size","PO Qty kg","Current Price"],column_config={"Line Key":None,"FSI Part Number":st.column_config.TextColumn(required=True,help="Supplier-facing FSI identity. If Part Master is blank, enter it here; the original Customer Part Number is never printed."),"HSN / SAC":st.column_config.TextColumn(help="Read-only supplier/raw-material HSN from Part Master."),"PO Qty kg":st.column_config.NumberColumn(format="%.3f"),"Current Price":st.column_config.NumberColumn(format="%.2f",help="Read-only current supplier price from Part Master price history.")})
                     for _,row in line_edit.iterrows():
                         key=str(row.get("Line Key")); line_prices[key]=number(row.get("Current Price")); line_hsn[key]=str(row.get("HSN / SAC") or "").strip(); line_fsi[key]=str(row.get("FSI Part Number") or "").strip()
                         if not line_fsi[key] or line_prices[key]<=0 or not line_hsn[key]: all_lines_valid=False
                     if any(number(r.get("Current Price"))<=0 for _,r in line_edit.iterrows()): st.warning("Current Price is missing in Part Master price history for one or more items. Add the current supplier price before creating the PO.")
                     if any(not str(r.get("HSN / SAC") or "").strip() for _,r in line_edit.iterrows()): st.warning("HSN / SAC is missing in Part Master Raw Material Details for one or more items. Add it in Part Master before creating the PO.")
 
-                    section_bar("PART MASTER TECHNICAL DATA & PRICE HISTORY","Read-only PO source data. Current Price and HSN/SAC are master-controlled.")
+                    section_bar("RAW MATERIAL DETAILS & PRICE HISTORY","RM Purchase Orders show only Raw Material Type, Material Grade and Section Size beneath each item. Forging-specific parameters are intentionally excluded from RM procurement POs.")
                     for key,group in group_data.items():
                         part,raw=group["part"],group["raw"]
                         with st.container(border=True):
                             st.markdown(f"**FSI {part.get('fsi_part_number') or '-'} · {part.get('part_name') or '-'} · {supplier_labels.get(supplier_id,'Supplier')}**")
-                            tech=service.technical_data_snapshot(raw,part)
-                            if tech: portal_table(pd.DataFrame([{"Heading":r.get("heading"),"Value":r.get("value")} for r in tech]),hide_index=True,width="stretch",height=min(300,70+len(tech)*34))
+                            allowed_rm_headings={"raw material type","raw material section","material grade","section size"}
+                            tech=[r for r in service.technical_data_snapshot(raw,part) if str(r.get("heading") or "").strip().casefold() in allowed_rm_headings]
+                            if tech: portal_table(pd.DataFrame([{"Heading":("Raw Material Type" if str(r.get("heading") or "").casefold()=="raw material section" else r.get("heading")),"Value":r.get("value")} for r in tech]),hide_index=True,width="stretch",height=min(220,70+len(tech)*34))
                             hist=service.price_history(str(part.get("id") or ""),supplier_id,uom="KGS")
                             if hist: portal_table(pd.DataFrame([{"Start Date":r.get("start_date"),"End Date":r.get("end_date") or "Current","Basic Rate":r.get("price"),"Freight":r.get("freight"),"Tool Cost":r.get("tool_cost"),"P&F":r.get("packing_forwarding"),"Profit":r.get("profit"),"ICC/Rej.":r.get("icc_rejection"),"Currency":r.get("currency"),"UOM":r.get("uom"),"Remark":r.get("remarks") or "","Status":r.get("status") or "ACTIVE"} for r in reversed(hist)]),hide_index=True,width="stretch",height=min(320,70+len(hist)*34))
                 elif po_type=="FORGING" and supplier_id:

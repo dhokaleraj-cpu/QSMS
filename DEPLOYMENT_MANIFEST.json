@@ -1,6 +1,6 @@
 {
-  "version": "4.14.11",
-  "build": "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES",
+  "version": "4.14.12",
+  "build": "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -30,7 +30,12 @@
     "po_entry_form_no_per_field_refresh",
     "entry_email_recipient_confirmation",
     "po_series_pd9_ddmm_5digit",
-    "po_centered_footer"
+    "po_centered_footer",
+    "part_raw_material_type_controlled_list",
+    "section_size_forging_route_duplicate_word_guard",
+    "rm_po_item_raw_material_details",
+    "rm_po_no_forging_parameters",
+    "forging_po_full_parameters_retained"
   ],
   "source": "controlled_release"
 }

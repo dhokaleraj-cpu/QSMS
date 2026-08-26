@@ -7,7 +7,7 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 def test_release_identity_and_prior_builds_preserved():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12"}
     for path in ("streamlit_app.py", "core/auth.py", "core/ui.py"):
         text = read(path)
         assert BUILD in text

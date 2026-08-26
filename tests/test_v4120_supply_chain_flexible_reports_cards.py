@@ -54,7 +54,7 @@ def test_flexible_dimensional_and_metlab_stages_without_rmtc_linkage():
 
 def test_part_raw_material_multiple_sections_and_supplier_location():
     part = (ROOT / "app_pages/part_master.py").read_text()
-    assert "Raw Material Section" in part
+    assert "Raw Material Type" in part
     assert "Supplier Name / Location" in part
     assert "material_section_name" in part
     assert '("supplier_id", "material_section_name", "section_size", "forging_route")' in part
