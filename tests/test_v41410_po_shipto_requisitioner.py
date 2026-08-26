@@ -11,12 +11,12 @@ def text(path: str) -> str:
 
 
 def test_v41410_version_and_po_ship_to_controls():
-    assert (ROOT / "VERSION").read_text().strip() == "4.14.10"
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.10", "4.14.11"}
     app = text("streamlit_app.py")
     page = text("app_pages/supply_chain.py")
     service = text("core/supply_chain_service.py")
     sql = text("supabase/migrations/20260826152000_qcms_po_shipto_requisitioner_v41410.sql")
-    assert "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER" in app
+    assert any(token in app for token in ("41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES"))
     assert "SHIP-TO ADDRESS · MASTER CONTROLLED" in page
     assert "Customer Master" in page and "Supplier Master" in page and "Vendor / OSP Master" in page
     assert "ship_to_party_id" in page and "ship_to_source_type" in page

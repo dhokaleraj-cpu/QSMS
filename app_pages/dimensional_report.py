@@ -12,6 +12,7 @@ from core.access import current_permissions
 from core.password_edit import password_reopen_for_edit
 from core.delete_service import password_delete_panel
 from core.notification_service import NotificationService
+from core.notification_ui import notification_confirmation
 from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
 from core.reporting import dimensional_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
@@ -235,7 +236,8 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
             observations = [row.get(f"Actual {i + 1}") for i in range(int(sample_size))]; na = bool(row.get("NA")); result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, observations, na)
             saved_rows.append({"sequence_no": int(row.get("_sequence") or len(saved_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "characteristic_no": row.get("Sr No"), "characteristic": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "unit": row.get("_unit"), "checking_aid": row.get("Checking Aid"), "observations": observations, "result": result, "remarks": row.get("Remark"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "report_section": section_name})
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
-        if st.button("Save Standalone Dimensional Report", type="primary", width="stretch", disabled=not writable or not prepared):
+        dim_notify_pref = notification_confirmation(NotificationService(service.repo), "DIMENSIONAL_APPROVAL_PENDING", key=f"standalone_dim_notify_{existing_id or 'new'}", context={"part_number":(parts.get(str(part_id)) or {}).get("part_number"),"next_task":"Dimensional Approval"}, default_send=not bool(existing_id)) if not existing_id else {"send":False,"confirmed":True,"preview":{}}
+        if st.button("Save Standalone Dimensional Report", type="primary", width="stretch", disabled=not writable or not prepared or (dim_notify_pref["send"] and not dim_notify_pref["confirmed"])):
             try:
                 final_number = report_no.strip() or service.next_number("DIMENSIONAL")
                 payload = {
@@ -261,7 +263,7 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
                 # Save controlled supporting document BEFORE notifying so it is attached to the first approval email.
                 if attachment is not None:
                     service.upload_attachment("DIMENSIONAL_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "inspection_reports", "attachment_path")
-                if not existing_id:
+                if not existing_id and dim_notify_pref["send"] and dim_notify_pref["confirmed"]:
                     NotificationService(service.repo).notify(
                         "DIMENSIONAL_APPROVAL_PENDING",
                         subject=f"QCMS · Dimensional approval pending · {saved.get('report_number') or final_number}",
@@ -450,7 +452,8 @@ def render_entry() -> None:
             saved_rows.append({"sequence_no": int(row.get("_sequence") or len(saved_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "characteristic_no": row.get("Sr No"), "characteristic": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "unit": row.get("_unit"), "checking_aid": row.get("Checking Aid"), "observations": observations, "result": result, "remarks": row.get("Remark"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "report_section": section_name})
 
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
-        if st.button("Save Dimensional Report Draft", type="primary", disabled=not writable or not prepared, width="stretch"):
+        linked_dim_notify_pref = notification_confirmation(NotificationService(service.repo), "DIMENSIONAL_APPROVAL_PENDING", key=f"linked_dim_notify_{str((existing or {}).get('id') or inward_id or 'new')}", context={"part_number":part.get("part_number"),"next_task":"Dimensional Approval"}, default_send=not bool(existing)) if not existing else {"send":False,"confirmed":True,"preview":{}}
+        if st.button("Save Dimensional Report Draft", type="primary", disabled=not writable or not prepared or (linked_dim_notify_pref["send"] and not linked_dim_notify_pref["confirmed"]), width="stretch"):
             try:
                 final_number = report_no.strip() or service.next_number("DIMENSIONAL")
                 payload = {"report_number": final_number, "report_type": "DIMENSIONAL", "inspection_plan_id": plan_id, "inspection_stage_id": plan.get("inspection_stage_id"), "process_id": plan.get("process_id"), "part_id": part_id, "inward_lot_id": inward_id, "inspection_date": inspection_date.isoformat(), "sample_size": int(sample_size), "accepted_quantity": 0, "rejected_quantity": 0, "inspector": employee_map.get(prepared), "overall_result": "NOT_EVALUATED", "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None, "disposition": disposition, "disposition_reason": reason.strip() or None, "heat_number": inward.get("heat_number"), "heat_code": inward.get("heat_code"), "lot_quantity": lot_qty, "supplier_id": inward.get("supplier_id"), "drawing_number": part.get("drawing_number"), "drawing_revision": part.get("drawing_revision"), "prepared_by_employee_id": prepared, "source_layout_revision": plan.get("revision"), "layout_name_snapshot": plan.get("layout_name"), "layout_type_name": section_name, "steel_quantity_kg": inward.get("steel_quantity_kg") or inward.get("quantity_received"), "production_quantity_pcs": inward.get("production_quantity_pcs")}
@@ -459,7 +462,7 @@ def render_entry() -> None:
                     # Save controlled supporting document BEFORE notifying so it is attached to the first approval email.
                     if attachment is not None:
                         service.upload_attachment("DIMENSIONAL_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "inspection_reports", "attachment_path")
-                    if not existing:
+                    if not existing and linked_dim_notify_pref["send"] and linked_dim_notify_pref["confirmed"]:
                         NotificationService(service.repo).notify(
                             "DIMENSIONAL_APPROVAL_PENDING",
                             subject=f"QCMS · Dimensional approval pending · {saved.get('report_number') or final_number}",

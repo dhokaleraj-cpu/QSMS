@@ -1,6 +1,6 @@
 {
-  "version": "4.14.10",
-  "build": "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER",
+  "version": "4.14.11",
+  "build": "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -23,7 +23,14 @@
     "forced_streamlit_redeploy_commit",
     "po_ship_to_customer_supplier_vendor_master",
     "po_logged_in_employee_requisitioner",
-    "po_ship_to_snapshot_pdf"
+    "po_ship_to_snapshot_pdf",
+    "po_order_selector_customer_part_identity",
+    "part_raw_material_hsn",
+    "po_master_current_price_hsn",
+    "po_entry_form_no_per_field_refresh",
+    "entry_email_recipient_confirmation",
+    "po_series_pd9_ddmm_5digit",
+    "po_centered_footer"
   ],
   "source": "controlled_release"
 }

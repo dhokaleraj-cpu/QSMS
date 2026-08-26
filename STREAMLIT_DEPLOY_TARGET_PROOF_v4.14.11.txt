@@ -1,0 +1,10 @@
+QCMS controlled release: v4.14.11
+Build: 41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES
+Generated: 2026-08-26 16:09:04 +0530
+Git origin expected by this updater: https://github.com/dhokaleraj-cpu/QSMS.git
+Git branch expected by this updater: main
+Streamlit main file expected: streamlit_app.py
+Local project folder: /Users/dhokaleraj/QSMS
+Pre-deployment Git HEAD: c32918c6e724ae137096d28149b3216f2058afaf
+Automatic safety stash: NONE
+Backup folder: /Users/dhokaleraj/QSMS_BACKUPS/QSMS_before_v4.14.11_20260826_160904

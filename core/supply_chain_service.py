@@ -790,13 +790,19 @@ class SupplyChainService:
                 if price is None or price <= 0:
                     price = self.current_price(str(part.get("id")), supplier_id, on_date=order_date_value, uom="KGS")
                 price = max(number(price), 0.0)
+                if price <= 0:
+                    raise ValueError(f"{part.get('fsi_part_number') or part.get('part_number') or 'Part'}: current supplier price is missing in Part Master Price History.")
                 qty = round(number(group["quantity"]), 3)
                 line_total = round(qty * price, 2); subtotal += line_total
                 fsi = line_fsi.get(key) or str(part.get("fsi_part_number") or "").strip()
                 if not fsi:
                     raise ValueError(f"Enter an FSI Part Number for {part.get('part_number') or 'the selected Part'} in the PO item grid before creating the supplier PO.")
                 history = self.price_history_for_po(str(part.get("id")), supplier_id, po_date=order_date_value, uom="KGS")
-                line_data.append({"key": key, "part": part, "raw": raw, "fsi_part_number": fsi, "quantity": qty, "unit_price": price, "hsn_sac_code": line_hsn.get(key) or str(part.get("hsn_sac_code") or "").strip(), "line_total": line_total, "gst_amount": round(line_total*gst_percent/100.0,2), "technical": self.technical_data_snapshot(raw, part), "price_history": history[:250], "orders": group["orders"]})
+                master_hsn = str(raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip()
+                hsn_value = line_hsn.get(key) or master_hsn
+                if not hsn_value:
+                    raise ValueError(f"{part.get('fsi_part_number') or part.get('part_number') or 'Part'}: HSN / SAC is missing in Part Master Raw Material Details.")
+                line_data.append({"key": key, "part": part, "raw": raw, "fsi_part_number": fsi, "quantity": qty, "unit_price": price, "hsn_sac_code": hsn_value, "line_total": line_total, "gst_amount": round(line_total*gst_percent/100.0,2), "technical": self.technical_data_snapshot(raw, part), "price_history": history[:250], "orders": group["orders"]})
             subtotal = round(subtotal, 2)
             gst_amount = round(subtotal * gst_percent / 100.0, 2)
             state = str(supplier.get("state") or "").strip().casefold(); intra_state = not state or state in {"maharashtra", "mh"}
@@ -835,12 +841,20 @@ class SupplyChainService:
         raw = self.raw_material_for_supplier(str(part.get("id") or ""), supplier_id, str(order.get("raw_material_detail_id") or "")) or self.repo.get("part_raw_material_details", str(order.get("raw_material_detail_id") or "")) or {}
         quantity = number(p.get("quantity"));
         if quantity <= 0: raise ValueError("Purchase Order quantity must be greater than zero.")
-        unit_price = max(number(p.get("unit_price")),0.0); gst_percent=max(number(p.get("gst_percent")),0.0); subtotal=round(quantity*unit_price,2); gst_amount=round(subtotal*gst_percent/100.0,2)
+        unit_price = max(number(p.get("unit_price")),0.0)
+        if unit_price <= 0:
+            unit_price = self.current_price(str(part.get("id") or ""), supplier_id, on_date=p.get("order_date") or date.today().isoformat(), uom=str(p.get("uom") or "NOS"))
+        if unit_price <= 0:
+            raise ValueError("Current supplier price is missing in Part Master Price History for this Part.")
+        gst_percent=max(number(p.get("gst_percent")),0.0); subtotal=round(quantity*unit_price,2); gst_amount=round(subtotal*gst_percent/100.0,2)
         state=str(supplier.get("state") or "").strip().casefold(); intra_state=not state or state in {"maharashtra","mh"}; cgst=round(gst_amount/2,2) if intra_state else 0.0; sgst=round(gst_amount/2,2) if intra_state else 0.0; igst=gst_amount if not intra_state else 0.0; other=max(number(p.get("other_amount")),0.0); grand_total=round(subtotal+cgst+sgst+igst+other,2)
         po_number=str(self.repo.rpc("qcms_next_supply_po_number") or "").strip();
         if not po_number: raise RuntimeError("QCMS could not allocate the next Purchase Order number.")
         header=self.repo.insert("supply_purchase_orders", {"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":p.get("order_date") or date.today().isoformat(),"delivery_date":p.get("delivery_date"),"requisitioner":requisitioner_name,"requisitioner_employee_id":requisitioner_employee_id,"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":p.get("currency") or "INR","plant_snapshot":{"name":"Four Star Industries Private Limited D9","address1":"Plot No.D9, Chakan MIDC PH II","address2":"Bhamboli, Khed","address3":"Pune 410501","tax_identifier":"27AAGCF3769A1ZP","phone":"022 40104412","email":"orders@fourstarindustries.com"},"vendor_snapshot":self._party_snapshot(supplier),"ship_to_party_id":ship_to_party_id,"ship_to_source_type":ship_to_source_type,"ship_to_snapshot":ship_to_snapshot,"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"OPEN"})
-        item=self.repo.insert("supply_purchase_order_items", {"purchase_order_id":header.get("id"),"customer_order_id":order_id,"part_id":part.get("id"),"material_grade_id":raw.get("material_grade_id") or part.get("material_grade_id"),"raw_material_detail_id":raw.get("id"),"item_no":fsi,"fsi_part_number_snapshot":fsi,"original_part_number_snapshot":part.get("part_number"),"hsn_sac_code":str(p.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip() or None,"item_description":part.get("part_name") or "","rm_section":raw.get("section_size") or part.get("section_size"),"quantity":quantity,"uom":p.get("uom") or "NOS","unit_price":unit_price,"gst_percent":gst_percent,"gst_amount":gst_amount,"line_total":subtotal,"forging_weight_kg":raw.get("forging_weight_kg") or part.get("forging_weight_kg"),"gross_weight_kg":raw.get("gross_weight_kg") or part.get("gross_weight_kg"),"technical_data_snapshot":self.technical_data_snapshot(raw,part),"price_history_snapshot":self.price_history_for_po(str(part.get("id")),supplier_id,po_date=header.get("order_date"),uom="NOS")[:250],"remarks":p.get("item_remarks")})
+        master_hsn = str(raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip()
+        if not master_hsn:
+            raise ValueError("HSN / SAC is missing in Part Master Raw Material Details for this Part/Supplier.")
+        item=self.repo.insert("supply_purchase_order_items", {"purchase_order_id":header.get("id"),"customer_order_id":order_id,"part_id":part.get("id"),"material_grade_id":raw.get("material_grade_id") or part.get("material_grade_id"),"raw_material_detail_id":raw.get("id"),"item_no":fsi,"fsi_part_number_snapshot":fsi,"original_part_number_snapshot":part.get("part_number"),"hsn_sac_code":master_hsn,"item_description":part.get("part_name") or "","rm_section":raw.get("section_size") or part.get("section_size"),"quantity":quantity,"uom":p.get("uom") or "NOS","unit_price":unit_price,"gst_percent":gst_percent,"gst_amount":gst_amount,"line_total":subtotal,"forging_weight_kg":raw.get("forging_weight_kg") or part.get("forging_weight_kg"),"gross_weight_kg":raw.get("gross_weight_kg") or part.get("gross_weight_kg"),"technical_data_snapshot":self.technical_data_snapshot(raw,part),"price_history_snapshot":self.price_history_for_po(str(part.get("id")),supplier_id,po_date=header.get("order_date"),uom="NOS")[:250],"remarks":p.get("item_remarks")})
         self._record_purchase_price(part_id=str(part.get("id")),supplier_id=supplier_id,raw_material_detail_id=str(raw.get("id") or "") or None,po_date=header.get("order_date"),price=unit_price,uom="NOS",currency=str(header.get("currency") or "INR"),source_item_id=str(item.get("id")))
         refreshed_history = self.price_history_for_po(str(part.get("id")), supplier_id, po_date=header.get("order_date"), uom="NOS")
         if refreshed_history:

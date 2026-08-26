@@ -14,6 +14,7 @@ from core.access import current_permissions
 from core.password_edit import password_reopen_for_edit
 from core.delete_service import password_delete_panel
 from core.notification_service import NotificationService
+from core.notification_ui import notification_confirmation
 from core.inspection_service import FINAL_DISPOSITIONS, RESULT_OPTIONS, InspectionService
 from core.reporting import metlab_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
@@ -258,7 +259,8 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             na = bool(row.get("NA")); result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, [row.get("Actual Value")], na)
             layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type")})
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
-        if st.button("Save Standalone MetLAB Report", type="primary", width="stretch", disabled=not writable or not prepared or not sample_ref.strip()):
+        metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"standalone_metlab_notify_{existing_id or 'new'}", context={"part_number":(parts.get(str(part_id)) or {}).get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing_id)) if not existing_id else {"send":False,"confirmed":True,"preview":{}}
+        if st.button("Save Standalone MetLAB Report", type="primary", width="stretch", disabled=not writable or not prepared or not sample_ref.strip() or (metlab_notify_pref["send"] and not metlab_notify_pref["confirmed"])):
             try:
                 final_number = report_no.strip() or service.next_number("METLAB")
                 payload = {
@@ -286,7 +288,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                 for slot, image in enumerate(micro_files, start=1):
                     if image is not None:
                         service.upload_attachment("METLAB_REPORT", str(saved["id"]), f"MICROSTRUCTURE_{slot}", image, "lab_tests", f"microstructure_image_{slot}_path")
-                if not existing_id:
+                if not existing_id and metlab_notify_pref["send"] and metlab_notify_pref["confirmed"]:
                     NotificationService(service.repo).notify(
                         "METLAB_APPROVAL_PENDING",
                         subject=f"QCMS · MetLAB approval pending · {saved.get('report_number') or final_number}",
@@ -537,7 +539,8 @@ def render_entry() -> None:
             layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type")})
 
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
-        if st.button("Save Raw Material MetLAB Draft", type="primary", disabled=not writable or not prepared or not sample_ref.strip(), width="stretch"):
+        linked_metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"linked_metlab_notify_{str((existing or {}).get('id') or inward_id or 'new')}", context={"part_number":part.get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing)) if not existing else {"send":False,"confirmed":True,"preview":{}}
+        if st.button("Save Raw Material MetLAB Draft", type="primary", disabled=not writable or not prepared or not sample_ref.strip() or (linked_metlab_notify_pref["send"] and not linked_metlab_notify_pref["confirmed"]), width="stretch"):
             try:
                 final_number = report_no.strip() or service.next_number("METLAB")
                 payload = {"report_number": final_number, "test_type": "METLAB", "layout_plan_id": plan_id, "process_id": plan.get("process_id"), "inspection_stage_id": plan.get("inspection_stage_id"), "part_id": part_id, "inward_lot_id": inward_id, "rmtc_approval_id": inward.get("rmtc_approval_id"), "supplier_id": inward.get("supplier_id"), "steel_mill_id": rmtc.get("steel_mill_id"), "material_grade_id": part.get("material_grade_id"), "test_date": test_date.isoformat(), "sample_reference": sample_ref.strip(), "specification_reference": spec_ref.strip() or None, "overall_result": "NOT_EVALUATED", "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None, "disposition": disposition, "disposition_reason": reason.strip() or None, "heat_number": inward.get("heat_number"), "heat_code": inward.get("heat_code"), "prepared_by_employee_id": prepared, "layout_name_snapshot": layout_name, "layout_type_name": layout_type, "steel_quantity_kg": inward.get("steel_quantity_kg") or inward.get("quantity_received"), "production_quantity_pcs": inward.get("production_quantity_pcs"), **{f"microstructure_caption_{slot}": micro_captions[slot-1].strip() or None for slot in range(1,5)}}
@@ -550,7 +553,7 @@ def render_entry() -> None:
                     for slot, image in enumerate(micro_files, start=1):
                         if image is not None:
                             service.upload_attachment("METLAB_REPORT", str(saved["id"]), f"MICROSTRUCTURE_{slot}", image, "lab_tests", f"microstructure_image_{slot}_path")
-                    if not existing:
+                    if not existing and linked_metlab_notify_pref["send"] and linked_metlab_notify_pref["confirmed"]:
                         NotificationService(service.repo).notify(
                             "METLAB_APPROVAL_PENDING",
                             subject=f"QCMS · MetLAB approval pending · {saved.get('report_number') or final_number}",

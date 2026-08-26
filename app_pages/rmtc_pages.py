@@ -18,6 +18,7 @@ from core.calculations import band_status, calculate_di, calculate_jominy_curve
 from core.permissions import normalized_role
 from core.rmtc_service import RMTCService
 from core.notification_service import NotificationService
+from core.notification_ui import notification_confirmation
 from core.reporting import rmtc_record_pdf_bytes
 from core.selection_labels import employee_label, part_label, party_label
 from core.steel_balance import remaining_planned_steel
@@ -384,13 +385,15 @@ def render_entry()->None:
             w1.text_input('Current Status',value=str(existing.get('status') or 'DRAFT').replace('_',' ').title(),disabled=True)
             validator=w2.selectbox('Validator',validator_options,index=validator_options.index(current_validator) if current_validator in validator_options else 0,format_func=lambda x:validator_map.get(x,'— Select —'),key=f'entry_validator_{existing.get("id")}')
             approver=w3.selectbox('Approver',approver_options,index=approver_options.index(current_approver) if current_approver in approver_options else 0,format_func=lambda x:approver_map.get(x,'— Select —'),key=f'entry_approver_{existing.get("id")}')
+            rmtc_entry_notify_pref = notification_confirmation(NotificationService(repo), 'RMTC_APPROVAL_PENDING', key=f"rmtc_entry_notify_{existing.get('id')}", context={'rmtc_id':str(existing.get('id')),'next_task':'RMTC Approval'}, default_send=str(existing.get('status'))=='DRAFT') if str(existing.get('status'))=='DRAFT' else {'send':False,'confirmed':True,'preview':{}}
             if str(existing.get('status'))=='DRAFT':
-                if w4.button('Submit Draft → Pending',type='primary',disabled=not validator or not approver,width='stretch'):
+                if w4.button('Submit Draft → Pending',type='primary',disabled=not validator or not approver or (rmtc_entry_notify_pref['send'] and not rmtc_entry_notify_pref['confirmed']),width='stretch'):
                     try:
                         repo.update('rmtc_approvals',str(existing['id']),{'validated_by_employee_id':validator,'approved_by_employee_id':approver})
                         repo.rpc('qsms_submit_rmtc',{'p_rmtc_id':str(existing['id'])})
-                        NotificationService(repo).notify(
-                            'RMTC_APPROVAL_PENDING',
+                        if rmtc_entry_notify_pref['send'] and rmtc_entry_notify_pref['confirmed']:
+                            NotificationService(repo).notify(
+                                'RMTC_APPROVAL_PENDING',
                             subject=f"QCMS · RMTC approval pending · {existing.get('rmtc_number')}",
                             body_text=(f"RMTC {existing.get('rmtc_number')} is pending validation / approval.\n"
                                        f"Heat Number: {existing.get('heat_number') or '-'}\n"
@@ -429,12 +432,14 @@ def render_entry()->None:
                     'Inward Used kg':heat_bal.get('inward_steel_quantity_kg'),
                     'Available / Unallocated kg':heat_bal.get('available_unallocated_steel_quantity_kg') or heat_bal.get('available_steel_quantity_kg'),
                 }]),hide_index=True,width='stretch',height=105)
-                if st.button('Add Part Number to Approved RMTC',type='primary',width='stretch',disabled=not perms['can_edit'],key=f"rmtc_add_part_button_{existing.get('id')}"):
+                added_part_notify_pref = notification_confirmation(NotificationService(repo), 'RMTC_APPROVAL_PENDING', key=f"rmtc_added_part_notify_{existing.get('id')}", context={'rmtc_id':str(existing.get('id')),'part_id':str(add_part_id),'next_task':'Added Part Worksheet / RMTC Approval'}, default_send=True)
+                if st.button('Add Part Number to Approved RMTC',type='primary',width='stretch',disabled=not perms['can_edit'] or (added_part_notify_pref['send'] and not added_part_notify_pref['confirmed']),key=f"rmtc_add_part_button_{existing.get('id')}"):
                     try:
                         svc.add_part_to_approved_rmtc(str(existing['id']),add_part_id)
-                        NotificationService(repo).notify(
-                            'RMTC_APPROVAL_PENDING',
-                            subject=f"QCMS · Added Part worksheet pending · {existing.get('rmtc_number')}",
+                        if added_part_notify_pref['send'] and added_part_notify_pref['confirmed']:
+                            NotificationService(repo).notify(
+                                'RMTC_APPROVAL_PENDING',
+                                subject=f"QCMS · Added Part worksheet pending · {existing.get('rmtc_number')}",
                             body_text=f"A new Part Number was added to approved RMTC {existing.get('rmtc_number')}. Complete its Part Worksheet, validation and final decision.",
                             related_table='rmtc_approvals',related_id=str(existing['id']),context={'rmtc_id':str(existing['id']),'part_id':str(add_part_id),'next_task':'Added Part Worksheet / RMTC Approval'},
                         )
@@ -828,15 +833,17 @@ def render_approval()->None:
                     save_success_popup('Added Part final decision saved. Existing accepted Parts remain released.',queue_for_rerun=True);st.rerun()
                 except Exception as exc:st.error(str(exc))
 
+        approval_notify_pref = notification_confirmation(NotificationService(repo), 'RMTC_APPROVAL_PENDING', key=f"rmtc_approval_notify_{rid}", context={'rmtc_id':rid,'next_task':'RMTC Approval'}, default_send=record.get('status')=='DRAFT') if record.get('status')=='DRAFT' else {'send':False,'confirmed':True,'preview':{}}
         workflow=st.columns(3,gap='small')
-        submit_disabled=record.get('status')!='DRAFT' or not validated or not approved
+        submit_disabled=record.get('status')!='DRAFT' or not validated or not approved or (approval_notify_pref['send'] and not approval_notify_pref['confirmed'])
         if workflow[0].button('1 · Submit for Validation',disabled=submit_disabled,width='stretch'):
             try:
                 repo.update('rmtc_approvals',rid,{'validated_by_employee_id':validated,'approved_by_employee_id':approved})
                 repo.rpc('qsms_submit_rmtc',{'p_rmtc_id':rid})
-                NotificationService(repo).notify(
-                    'RMTC_APPROVAL_PENDING',
-                    subject=f"QCMS · RMTC approval pending · {record.get('rmtc_number')}",
+                if approval_notify_pref['send'] and approval_notify_pref['confirmed']:
+                    NotificationService(repo).notify(
+                        'RMTC_APPROVAL_PENDING',
+                        subject=f"QCMS · RMTC approval pending · {record.get('rmtc_number')}",
                     body_text=(f"RMTC {record.get('rmtc_number')} is pending validation / approval.\n"
                                f"Heat Number: {record.get('heat_number') or '-'}\n"
                                f"Covered Parts: {len(details.get('parts') or [])}"),

@@ -295,7 +295,7 @@ def _history_continuation_pages(c: canvas.Canvas, header: Mapping[str, Any], ite
         if rendered <= 0:
             break
         remaining = remaining[rendered:]
-        _draw_text(c, left, 27, "QCMS controlled Purchase Order · Price revision history is item-specific and supplier-specific.", size=5.8, color=HexColor("#6B7280"))
+        c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",5.8); c.drawCentredString(w/2,27,"QCMS controlled Purchase Order · Price revision history is item-specific and supplier-specific.")
         c.showPage()
 
 
@@ -341,7 +341,10 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     for label,val in [("SUBTOTAL",header.get("subtotal")),("CGST 9%",header.get("cgst_amount")),("SGST 9%",header.get("sgst_amount")),("IGST",header.get("igst_amount")),("OTHER",header.get("other_amount"))]:
         _draw_text(c,total_x,ytot,label,size=6.9); c.rect(total_x+55,ytot-5,95,13,stroke=1,fill=0); _draw_text(c,total_x+61,ytot-1,_money(val),size=6.8); ytot -= 16
     c.setFont("Helvetica-Bold",8.0); c.drawString(total_x,ytot,"TOTAL"); c.drawString(total_x+61,ytot,f"INR {_money(header.get('grand_total'))}")
-    _draw_text(c,w-143,81,"Authorised Signatory",size=7.0,bold=True); _draw_text(c,w-174,67,PLANT["name"],size=6.2); _draw_text(c,left+318,47,"If you have any questions about this purchase order, please contact",size=6.0); _draw_text(c,left+375,36,"FSI, connect@fourstarindustries.com",size=6.0)
+    _draw_text(c,w-143,81,"Authorised Signatory",size=7.0,bold=True); _draw_text(c,w-174,67,PLANT["name"],size=6.2)
+    c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",6.0)
+    c.drawCentredString(w/2,47,"If you have any questions about this purchase order, please contact")
+    c.drawCentredString(w/2,36,"FSI · connect@fourstarindustries.com")
     c.showPage(); c.save(); return out.getvalue()
 
 
@@ -356,7 +359,7 @@ def _continuation_items_bytes(header: Mapping[str, Any], items: Sequence[Mapping
         _draw_technical(c, item, top=row_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
         history = _price_history_rows(item)
         rendered = _draw_price_history(c, item, history, top=tech_bottom-6, bottom=50, left=left, right=right, page_width=w, max_rows=CONT_HISTORY_ROWS)
-        _draw_text(c,left,27,"QCMS controlled continuation · Technical data and Price Revision History are item-specific and supplier-specific.",size=5.8,color=HexColor("#6B7280"))
+        c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",5.8); c.drawCentredString(w/2,27,"QCMS controlled continuation · Technical data and Price Revision History are item-specific and supplier-specific.")
         c.showPage()
         if rendered < len(history):
             _history_continuation_pages(c, header, item, history[rendered:])

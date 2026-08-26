@@ -765,7 +765,7 @@ if "535 5.7.139" not in v4144_email or "Authenticated SMTP" not in v4144_email:
 # QCMS 4.14.5 deployment / direct-edit verification.
 v4145_dashboard = (ROOT / "app_pages" / "dashboard.py").read_text(encoding="utf-8")
 v4145_manifest = (ROOT / "DEPLOYMENT_MANIFEST.json").read_text(encoding="utf-8")
-if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER")):
+if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES")):
     errors.append("QCMS live release verification banner is missing")
 if "Select Existing MetLAB Report to Edit" not in v4144_metlab or "Select Existing Dimensional Report to Edit" not in v4144_dimensional or "Select Existing RMTC to Edit" not in v4144_rmtc:
     errors.append("QCMS 4.14.5 direct report edit selectors are incomplete")
@@ -804,8 +804,31 @@ if 'ship_to_snapshot = self._party_snapshot(ship_to_party)' not in v41410_servic
 if "qcms_control_supply_po_identity" not in v41410_sql or "ship_to_party_id" not in v41410_sql:
     errors.append("QCMS 4.14.10 database identity control is incomplete")
 
+
+# QCMS 4.14.11 controlled PO master HSN/current price/form/email confirmation/series.
+v41411_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v41411_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
+v41411_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v41411_po = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
+v41411_notify_ui = (ROOT / "core" / "notification_ui.py").read_text(encoding="utf-8")
+v41411_sql = (ROOT / "supabase" / "migrations" / "20260826170500_qcms_po_master_hsn_series_entry_email_v41411.sql").read_text(encoding="utf-8")
+if "Customer" not in v41411_supply or "Part Number" not in v41411_supply or "Select ELIGIBLE Customer Orders" not in v41411_supply:
+    errors.append("QCMS 4.14.11 PO order selection Customer/Part identity is incomplete")
+if '"HSN / SAC Code": r.get("hsn_sac_code")' not in v41411_part or "part_raw_material_details" not in v41411_sql:
+    errors.append("QCMS 4.14.11 supplier Raw Material HSN control is incomplete")
+if "Current Price" not in v41411_supply or 'raw.get("hsn_sac_code") or part.get("hsn_sac_code")' not in v41411_supply:
+    errors.append("QCMS 4.14.11 master-driven PO Current Price / HSN is incomplete")
+if "with st.form(form_key)" not in v41411_supply or 'form_submit_button("Create Controlled Purchase Order"' not in v41411_supply:
+    errors.append("QCMS 4.14.11 no-per-field-refresh PO form is incomplete")
+if "Confirm notification recipient(s)" not in v41411_notify_ui or "Email notification after save" not in v41411_notify_ui:
+    errors.append("QCMS 4.14.11 entry-level email confirmation is incomplete")
+if "return 'PD9'||to_char(current_date,'DDMM')||lpad(next_value::text,5,'0')" not in v41411_sql:
+    errors.append("QCMS 4.14.11 Purchase Order series is incomplete")
+if "drawCentredString(w/2,47" not in v41411_po:
+    errors.append("QCMS 4.14.11 centered Purchase Order footer is incomplete")
+
 report = {
-    "release": "QCMS 4.14.10 PO Ship-To Master / Logged-in Employee Requisitioner",
+    "release": "QCMS 4.14.11 PO Master HSN/Price / Form Entry / Email Confirmation / New Series",
     "po_source_visibility": "def purchase_order_source_status" in v4140_service and "PO Eligibility" in v4140_supply,
     "explicit_supply_flow": 'explicit = str(order.get("supply_flow")' in v4140_service and "supply_flow" in v4140_sql,
     "added_part_validate_decide": "incremental_part_review" in v4140_rmtc and "Validate Added Part Against Masters" in v4140_rmtc,
@@ -829,7 +852,7 @@ report = {
     "v4144_identity_duplicate_policy": '"customer_standards": ("standard_code", "standard_name")' in v4144_master and '"parts": ("fsi_part_number",)' in v4144_master,
     "v4144_opening_stock_import": "OPENING STOCK IMPORT / EXPORT UTILITY" in v4144_supply and "opening_stock_import_preview" in v4144_supply_service and "apply_opening_stock_import" in v4144_supply_service,
     "v4144_smtp_auth_guidance": "535 5.7.139" in v4144_email and "Authenticated SMTP" in v4144_email,
-    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER")),
+    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES")),
     "v4146_runtime_diagnostics": "deployment-diagnostics" in app_text and "LIVE BUILD · QCMS" in app_text and (ROOT / "app_pages" / "deployment_diagnostics.py").exists(),
     "v4147_deploy_target_proof": "Git origin" in v4147_diag and "Streamlit main file" in v4147_diag,
     "v4147_next_stage_email": "NEXT-STAGE RESPONSIBILITY ROUTING" in v4147_email and "department_emails" in v4147_notify,
@@ -839,6 +862,13 @@ report = {
     "v41410_po_ship_to_master": "SHIP-TO ADDRESS · MASTER CONTROLLED" in v41410_supply and "ship_to_party_id" in v41410_service,
     "v41410_login_employee_requisitioner": "Requisitioner (Logged-in Employee)" in v41410_supply and "requisitioner_employee_id" in v41410_service,
     "v41410_ship_to_pdf_snapshot": "_party_lines(ship)" in v41410_po and "qcms_control_supply_po_identity" in v41410_sql,
+    "v41411_po_order_customer_part": "Customer" in v41411_supply and "Part Number" in v41411_supply,
+    "v41411_raw_material_hsn": '"HSN / SAC Code": r.get("hsn_sac_code")' in v41411_part and "hsn_sac_code" in v41411_sql,
+    "v41411_master_price_hsn_po": "Current Price" in v41411_supply and 'raw.get("hsn_sac_code") or part.get("hsn_sac_code")' in v41411_supply,
+    "v41411_po_form_no_field_refresh": "with st.form(form_key)" in v41411_supply,
+    "v41411_entry_email_confirmation": "Confirm notification recipient(s)" in v41411_notify_ui,
+    "v41411_po_series": "PD9" in v41411_sql and "DDMM" in v41411_sql and "lpad(next_value::text,5,'0')" in v41411_sql,
+    "v41411_centered_po_footer": "drawCentredString(w/2,47" in v41411_po,
     "v4145_direct_report_edit": all(token in combined for token, combined in (("Select Existing MetLAB Report to Edit", v4144_metlab), ("Select Existing Dimensional Report to Edit", v4144_dimensional), ("Select Existing RMTC to Edit", v4144_rmtc))),
     "v4145_remote_push_manifest": '"remote_push_verification"' in v4145_manifest,
 

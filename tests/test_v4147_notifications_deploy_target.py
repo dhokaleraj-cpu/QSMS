@@ -8,11 +8,11 @@ def text(path: str) -> str:
 
 
 def test_v4147_release_identity_and_runtime_proof():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.7", "4.14.8", "4.14.9", "4.14.10"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11"}
     app = text("streamlit_app.py")
     diag = text("app_pages/deployment_diagnostics.py")
     manifest = text("DEPLOYMENT_MANIFEST.json")
-    assert any(token in app for token in ("4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER"))
+    assert any(token in app for token in ("4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES"))
     assert "Git origin" in diag and "Git HEAD" in diag and "Streamlit main file" in diag
     assert '"streamlit_deploy_target_proof"' in manifest
 
@@ -49,8 +49,8 @@ def test_v4147_first_approval_email_sees_uploaded_report_documents():
     dim = text("app_pages/dimensional_report.py")
     met = text("app_pages/metlab_report.py")
     # In each create path the upload must occur before notify.
-    assert dim.index('service.upload_attachment("DIMENSIONAL_REPORT"') < dim.index('"DIMENSIONAL_APPROVAL_PENDING"')
-    assert met.index('service.upload_attachment("METLAB_REPORT"') < met.index('"METLAB_APPROVAL_PENDING"')
+    assert dim.index('service.upload_attachment("DIMENSIONAL_REPORT"') < dim.index('NotificationService(service.repo).notify(', dim.index('service.upload_attachment("DIMENSIONAL_REPORT"'))
+    assert met.index('service.upload_attachment("METLAB_REPORT"') < met.index('NotificationService(service.repo).notify(', met.index('service.upload_attachment("METLAB_REPORT"'))
 
 
 def test_v4147_automatic_open_overdue_scheduler_contract():

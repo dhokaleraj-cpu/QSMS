@@ -303,6 +303,62 @@ class NotificationService:
                 seen.add(key); unique.append(row)
         return unique
 
+
+    def preview(
+        self,
+        event_key: str,
+        *,
+        context: Mapping[str, Any] | None = None,
+        include_supplier: bool | None = None,
+    ) -> dict[str, Any]:
+        """Return the entry-page notification recipients/template before a record is saved.
+
+        This is deliberately side-effect free: no outbox row is created and no email is
+        sent.  Entry pages use it to show To / CC / next-stage details and require the
+        user to confirm the notification before the business transaction is posted.
+        """
+        event = str(event_key or "").strip().upper()
+        route = self.route(event) if event else None
+        template = self.template((route or {}).get("template_key"), event) if event else None
+        enriched = dict(context or {})
+        enriched.setdefault("event_key", event)
+        enriched.setdefault("next_stage", str((route or {}).get("next_stage") or enriched.get("next_task") or "Next QCMS stage"))
+        enriched.setdefault("department", str((route or {}).get("department") or ""))
+        email = name = ""
+        if route:
+            email, name = self.recipient_for_route(route)
+        cc: list[str] = []
+        if route and bool(route.get("department_cc")):
+            cc.extend(self.department_emails(str(route.get("department") or ""), exclude=[email]))
+        supplier_flag = bool((template or {}).get("include_supplier")) if include_supplier is None else bool(include_supplier)
+        if route and include_supplier is None:
+            supplier_flag = supplier_flag or bool(route.get("send_to_supplier"))
+        if supplier_flag:
+            supplier_id = str(enriched.get("supplier_id") or "").strip()
+            if supplier_id:
+                supplier = self.repo.get("parties", supplier_id) or {}
+                cc.extend(self._party_notification_emails(supplier))
+            elif str(enriched.get("supplier_email") or "").strip():
+                cc.append(str(enriched.get("supplier_email") or "").strip())
+        final_cc: list[str] = []
+        for value in cc:
+            value = str(value or "").strip()
+            if value and value.casefold() != email.casefold() and value.casefold() not in {x.casefold() for x in final_cc}:
+                final_cc.append(value)
+        subject_template = (template or {}).get("subject_template") or (route or {}).get("subject_template")
+        return {
+            "event_key": event,
+            "enabled": bool(route),
+            "recipient_email": email,
+            "recipient_name": name,
+            "cc_emails": final_cc,
+            "department": str((route or {}).get("department") or ""),
+            "next_stage": enriched.get("next_stage"),
+            "template_key": str((template or {}).get("template_key") or (route or {}).get("template_key") or event),
+            "subject": _template_text(subject_template, enriched) if subject_template else f"QCMS · {event.replace('_', ' ').title()}",
+            "include_supplier": supplier_flag,
+        }
+
     # ---------------------------------------------------------------- enqueue/send
     def enqueue(
         self,

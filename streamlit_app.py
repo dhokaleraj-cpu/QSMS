@@ -1,5 +1,5 @@
-# QCMS 4.14.10 — PO-SHIPTO-MASTER-LOGIN-REQUISITIONER
-# BUILD 41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER
+# QCMS 4.14.11 — PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES
+# BUILD 41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES
 # QCMS 4.14.6 — LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY
 # BUILD 4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY
 # QCMS 4.14.5 — DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE
@@ -384,7 +384,7 @@ RAIL_NAV = (
 if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
     logout()
 
-st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER")
+st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES")
 
 # v4.12.9 keeps the real two-column Streamlit workspace and hardens component styling.
 # v4.12.8 uses a real two-column Streamlit workspace. The charcoal navigation

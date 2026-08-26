@@ -874,13 +874,14 @@ def render_entry() -> None:
             "Raw Material Section": r.get("material_section_name") or "Primary Raw Material",
             "Material Grade": grade_map.get(str(r.get("material_grade_id")), grade_map.get(str(existing.get("material_grade_id")), "")),
             "Supplier Name / Location": supplier_map.get(str(r.get("supplier_id")), ""),
+            "HSN / SAC Code": r.get("hsn_sac_code") or existing.get("hsn_sac_code") or "",
             "Lead Time (Days)": int(r.get("lead_time_days") or 0),
             "Forging Weight": r.get("forging_weight_kg"),
             "Gross Weight": r.get("gross_weight_kg"),
             "Input Weight kg/part": r.get("input_weight_kg") or r.get("gross_weight_kg") or r.get("forging_weight_kg"),
             "Section Size": r.get("section_size"), "Forging Route": r.get("forging_route"),
             "Status": r.get("status") or "ACTIVE"
-        } for r in raw], columns=["Raw Material Section", "Material Grade", "Supplier Name / Location", "Lead Time (Days)", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
+        } for r in raw], columns=["Raw Material Section", "Material Grade", "Supplier Name / Location", "HSN / SAC Code", "Lead Time (Days)", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
         section_options = _catalog_options(catalog, "part.rm_section", [r.get("section_size") for r in raw])
         route_options = _catalog_options(catalog, "part.forging_route", [r.get("forging_route") for r in raw])
         with st.expander("Manage reusable Section and Forging Route lists", expanded=False):
@@ -893,6 +894,7 @@ def render_entry() -> None:
                     "Raw Material Section": st.column_config.TextColumn(required=True, help="Multiple raw-material sections are allowed for the same Part and Supplier."),
                     "Material Grade": st.column_config.SelectboxColumn(options=list(grade_by_name), required=True),
                     "Supplier Name / Location": st.column_config.SelectboxColumn(options=list(supplier_by_name), required=True),
+                    "HSN / SAC Code": st.column_config.TextColumn(help="Supplier/raw-material specific HSN or SAC. Purchase Orders inherit this value automatically; Part Master header HSN is used only as fallback."),
                     "Lead Time (Days)": st.column_config.NumberColumn(min_value=0, step=1, required=True, help="Used to calculate the default PO delivery date; it remains editable in the PO."),
                     "Forging Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
                     "Gross Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
@@ -915,7 +917,7 @@ def render_entry() -> None:
                     if input_weight is None or float(input_weight) <= 0:
                         raise ValueError(f"Input Weight kg/part is required for {name}.")
                     material_section = str(row.get("Raw Material Section") or "").strip() or "Primary Raw Material"
-                    return {"supplier_id": sid, "material_grade_id": row_grade_id, "lead_time_days": int(row.get("Lead Time (Days)") or 0), "material_section_name": material_section, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section Size") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
+                    return {"supplier_id": sid, "material_grade_id": row_grade_id, "hsn_sac_code": str(row.get("HSN / SAC Code") or "").strip() or None, "lead_time_days": int(row.get("Lead Time (Days)") or 0), "material_section_name": material_section, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section Size") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
                 _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id", "material_grade_id", "material_section_name", "section_size", "forging_route"), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
                 st.error(str(exc))
@@ -925,7 +927,7 @@ def render_entry() -> None:
         # are controlled from Part Master and pulled automatically into the PO.
         current_raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=500)
         raw_labels = {
-            str(r["id"]): f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · {grade_map.get(str(r.get('material_grade_id')), 'Grade -')} · {r.get('material_section_name') or 'Raw Material'} · {r.get('section_size') or '-'} · LT {int(r.get('lead_time_days') or 0)}d"
+            str(r["id"]): f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · HSN {r.get('hsn_sac_code') or existing.get('hsn_sac_code') or '-'} · {grade_map.get(str(r.get('material_grade_id')), 'Grade -')} · {r.get('material_section_name') or 'Raw Material'} · {r.get('section_size') or '-'} · LT {int(r.get('lead_time_days') or 0)}d"
             for r in current_raw
         }
         section_bar("SUPPLIER TECHNICAL DATA & PRICE HISTORY", "Select the supplier-specific Raw Material record. Heading/value technical rows are copied automatically to the Purchase Order; price history is matched by Supplier + FSI Part Number.")

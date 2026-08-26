@@ -10,6 +10,7 @@ from core.access import current_permissions
 from core.delete_service import password_delete_panel
 from core.osp_service import OSPService
 from core.notification_service import NotificationService
+from core.notification_ui import notification_confirmation
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes, dimensional_record_pdf_bytes, metlab_record_pdf_bytes
 from core.selection_labels import party_label, process_label
@@ -114,12 +115,14 @@ def render_sample_receipt() -> None:
         reference = c[1].text_input("Sample Reference", value=str(job.get("sample_reference") or ""))
         vendor_batch = c[2].text_input("OSP Vendor Batch Number", value=str(job.get("vendor_batch_number") or ""))
         sample_qty = c[3].number_input("Sample Quantity (pcs)", min_value=1, max_value=int(float(job.get("quantity_dispatched") or 1)), value=int(float(job.get("sample_quantity") or 1)), step=1)
-        submitted = st.form_submit_button("Save Sample Receipt", type="primary", disabled=not perms["can_edit"], width="stretch")
+        osp_notify_pref = notification_confirmation(NotificationService(service.repo), "OSP_SAMPLE_PENDING", key=f"osp_sample_notify_{job.get('id')}", context={"supplier_id":str(job.get("vendor_id") or ""),"supplier_name":job.get("vendor_name"),"part_number":job.get("part_number"),"next_task":"OSP Sample Dimensional / MetLAB"}, include_supplier=True, default_send=True)
+        submitted = st.form_submit_button("Save Sample Receipt", type="primary", disabled=not perms["can_edit"] or (osp_notify_pref["send"] and not osp_notify_pref["confirmed"]), width="stretch")
     if submitted:
         try:
             service.record_sample({"osp_job_id": job["id"], "sample_received_date": received_date.isoformat(), "sample_reference": reference, "vendor_batch_number": vendor_batch, "sample_quantity": sample_qty})
-            NotificationService(service.repo).notify(
-                "OSP_SAMPLE_PENDING",
+            if osp_notify_pref["send"] and osp_notify_pref["confirmed"]:
+                NotificationService(service.repo).notify(
+                    "OSP_SAMPLE_PENDING",
                 subject=f"QCMS · OSP sample inspection pending · {job.get('osp_job_number')}",
                 body_text=(f"OSP sample receipt is recorded for {job.get('osp_job_number')}.\n"
                            f"Part: {job.get('part_number') or '-'} · FSI {job.get('fsi_part_number') or '-'}\n"
