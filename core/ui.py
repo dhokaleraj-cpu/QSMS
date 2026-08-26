@@ -111,6 +111,8 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from core.branch_context import resolve_current_branch
+from core.repository import Repository
 from core.config import get_settings, is_preview_session
 from core.permissions import role_label
 from core.portal import PortalApp, app_registry
@@ -1344,10 +1346,15 @@ def render_shell_header(
             initials = "".join(part[:1] for part in str(profile.get("full_name") or "QCMS User").split()[:2]).upper() or "Q"
             u1, u2 = st.columns([5.0, 1.0], gap="small", vertical_alignment="center")
             with u1:
+                try:
+                    branch = resolve_current_branch(Repository(), profile)
+                    branch_code = str(branch.get("branch_code") or branch.get("plant_code") or s.plant_code)
+                except Exception:
+                    branch_code = str(s.plant_code)
                 st.markdown(
                     f'<div class="fsi-user"><div class="fsi-user-avatar">{safe(initials)}</div>'
                     f'<div class="fsi-user-copy"><div class="fsi-user-name">{safe(profile.get("full_name") or "Quality User")}</div>'
-                    f'<div class="fsi-user-meta">{safe(role_label(profile))} · v{safe(s.version)}</div></div></div>',
+                    f'<div class="fsi-user-meta">{safe(role_label(profile))} · Branch {safe(branch_code)} · v{safe(s.version)}</div></div></div>',
                     unsafe_allow_html=True,
                 )
             with u2:

@@ -16,7 +16,7 @@ from core.demo_data import DEMO_TENANT_ID, demo_store
 
 
 TENANT_SCOPED_TABLES = {
-    "parties", "material_grades", "material_grade_elements", "parts", "part_supplier_links",
+    "company_branches", "parties", "material_grades", "material_grade_elements", "parts", "part_supplier_links",
     "processes", "inspection_stages", "quality_assets", "inspection_plans",
     "inspection_plan_characteristics", "test_plans", "rmtc_approvals", "inward_lots",
     "production_batches", "batch_movements", "osp_jobs", "inspection_reports",

@@ -1,17 +1,15 @@
-# QCMS v4.14.13
+# QCMS v4.14.14
 
-Current controlled build: `41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM`
+Current controlled build: `41414-LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH`
 
 This additive release retains every earlier QCMS workflow and adds:
 
-- MetLAB **Case Depth / Microhardness Traverse** entry with controlled Case Depth Locations.
-- Default traverse starts at **0.05 mm**, then 0.10, 0.20, 0.30 mm and onward; users can add/edit distance rows.
-- Multiple Case Depth Locations per report (for example Ground Face, ID and OD), with duplicate-location validation.
-- MetLAB PDF and Excel output include the Case Depth Traverse table; PDF includes a multi-location Distance-vs-Hardness chart.
-- Case Depth Traverse becomes mandatory when the selected MetLAB layout contains a case-depth characteristic; otherwise it may be explicitly marked Not Applicable with a reason.
-- Saved RMTC, MetLAB, Dimensional, Purchase Order and OSP records expose a controlled **Send Email Notification for This Record** action.
-- Entry-level email **To / CC are editable**, with a modal confirmation required before the notification can be released.
-- Admin Email Templates can be tested with a **manually entered test recipient / CC**, again with a confirmation dialog.
-- Normal generated QCMS PDFs and controlled record documents remain available as email attachments according to the selected template.
-
-No database reset is required; MetLAB traverse data is stored inside the existing controlled MetLAB results JSON structure. Existing production/master/quality/Supply Chain/RMTC/OSP data is preserved.
+- MetLAB Case Depth / Microhardness Traverse is driven strictly by **Additional Layout Characteristics** whose **Parameter** contains the words `Case Depth`.
+- Case Depth locations (for example Ground Face / ID / OD) and their specifications are read-only in MetLAB and are derived from the matching layout characteristics; only distance-wise traverse readings are entered by the user.
+- Specification text alone cannot activate the Case Depth Traverse.
+- Raw Material Purchase Order current price resolves by **Part + Supplier + selected Raw Material Detail**, with UOM as a preference/fallback rather than a hard blocker, so valid RM price-history rows saved as PCS/NOS remain usable on KGS RM POs.
+- Complete PO price revision history remains tied to the exact Raw Material Detail.
+- New **Company Branch Master** stores reusable company/plant/address/GST/contact data.
+- Logged-in Employee Master `Plant` resolves to the active Company Branch context shown across authenticated QCMS modules.
+- Purchase Orders use Company Branch as the controlled issuing plant and Company Branch is also available as a Ship-To source alongside Customer, Supplier and Vendor/OSP masters.
+- Existing PO snapshots and production/master/quality/Supply Chain/RMTC/OSP data are preserved.

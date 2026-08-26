@@ -1082,6 +1082,16 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         location_names = [str(row.get("location") or row.get("name") or "").strip() for row in case_locations if str(row.get("location") or row.get("name") or "").strip()]
         story.append(Spacer(1, 1.4 * mm))
         story.append(_rmtc_section_bar("CASE DEPTH / MICROHARDNESS TRAVERSE", content_width, sty["section"]))
+        location_specs = [["Location", "Controlled Parameter", "Specification", "Unit"]]
+        for row in case_locations:
+            location_specs.append([
+                row.get("location") or row.get("name"),
+                row.get("parameter") or "Case Depth",
+                row.get("specification") or "-",
+                row.get("unit") or "",
+            ])
+        story.append(_rmtc_grid(location_specs, [34*mm, 66*mm, 72*mm, 22*mm], sty["header"], sty["small"]))
+        story.append(Spacer(1, 1.0 * mm))
         table_rows = [["Distance (mm)", *location_names]]
         for row in case_traverse:
             readings = dict(row.get("readings") or {})

@@ -8,7 +8,7 @@ def text(path: str) -> str:
 
 
 def test_v4147_release_identity_and_runtime_proof():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14"}
     app = text("streamlit_app.py")
     diag = text("app_pages/deployment_diagnostics.py")
     manifest = text("DEPLOYMENT_MANIFEST.json")

@@ -323,7 +323,8 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     _draw_text(c, w-137, h-65, "PO #", size=7.4); c.rect(w-91, h-72, 62, 12, stroke=1, fill=0); _draw_text(c, w-86, h-69, header.get("po_number"), size=7.2)
 
     col_w = 230; left_x = left; right_x = w-right-184; y0 = h-62
-    _block(c, left_x, y0, col_w, "PLANT", [PLANT["name"], PLANT["address1"], PLANT["address2"], PLANT["address3"], PLANT["tax_identifier"], PLANT["phone"], PLANT["email"]])
+    plant = dict(header.get("plant_snapshot") or PLANT)
+    _block(c, left_x, y0, col_w, "PLANT / COMPANY BRANCH", [plant.get("name") or plant.get("branch_name"), plant.get("address1"), plant.get("address2"), plant.get("address3"), plant.get("tax_identifier") or plant.get("gstin"), plant.get("phone"), plant.get("email")])
     vendor = dict(header.get("vendor_snapshot") or {}); _block(c, left_x, h-154, col_w, "VENDOR", _party_lines(vendor), max_lines=7)
     _block(c, right_x, h-86, 184, "REFERENCE DETAILS", [f"QUOTATION DATE: {_date(header.get('quotation_date'))}", _s(header.get("quotation_reference"))], max_lines=3)
     _block(c, right_x, h-136, 184, "OLD PO DETAILS", [_s(header.get("old_po_reference"))], max_lines=2)
@@ -354,7 +355,7 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     for label,val in [("SUBTOTAL",header.get("subtotal")),("CGST 9%",header.get("cgst_amount")),("SGST 9%",header.get("sgst_amount")),("IGST",header.get("igst_amount")),("OTHER",header.get("other_amount"))]:
         _draw_text(c,total_x,ytot,label,size=6.9); c.rect(total_x+55,ytot-5,95,13,stroke=1,fill=0); _draw_text(c,total_x+61,ytot-1,_money(val),size=6.8); ytot -= 16
     c.setFont("Helvetica-Bold",8.0); c.drawString(total_x,ytot,"TOTAL"); c.drawString(total_x+61,ytot,f"INR {_money(header.get('grand_total'))}")
-    _draw_text(c,w-143,81,"Authorised Signatory",size=7.0,bold=True); _draw_text(c,w-174,67,PLANT["name"],size=6.2)
+    _draw_text(c,w-143,81,"Authorised Signatory",size=7.0,bold=True); _draw_text(c,w-174,67,plant.get("name") or plant.get("branch_name") or PLANT["name"],size=6.2)
     c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",6.0)
     c.drawCentredString(w/2,47,"If you have any questions about this purchase order, please contact")
     c.drawCentredString(w/2,36,"FSI · connect@fourstarindustries.com")

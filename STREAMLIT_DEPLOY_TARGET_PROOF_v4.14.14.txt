@@ -1,0 +1,10 @@
+QCMS controlled release: v4.14.14
+Build: 41414-LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH
+Generated: 2026-08-26 18:14:16 +0530
+Git origin expected by this updater: https://github.com/dhokaleraj-cpu/QSMS.git
+Git branch expected by this updater: main
+Streamlit main file expected: streamlit_app.py
+Local project folder: /Users/dhokaleraj/QSMS
+Pre-deployment Git HEAD: c38a76126328f20849de6bead9b33cacde330bfe
+Automatic safety stash: NONE
+Backup folder: /Users/dhokaleraj/QSMS_BACKUPS/QSMS_before_v4.14.14_20260826_181415

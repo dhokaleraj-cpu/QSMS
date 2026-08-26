@@ -11,6 +11,7 @@ from core.ui import portal_table
 
 from core.access import current_permissions
 from core.auth import current_profile
+from core.branch_context import branch_label, branch_snapshot, resolve_current_branch
 from core.attachments import AttachmentSlot, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
@@ -62,6 +63,7 @@ def _maps(service: SupplyChainService):
 
 
 SHIP_TO_SOURCE_LABELS = {
+    "BRANCH": "Company Branch Master",
     "CUSTOMER": "Customer Master",
     "SUPPLIER": "Supplier Master",
     "VENDOR": "Vendor / OSP Master",
@@ -97,6 +99,17 @@ def _party_address_preview(row: Mapping[str, Any] | None) -> str:
         f"Email: {str(r.get('email') or '').strip()}" if r.get("email") else "",
     ]
     return "\n".join(v for v in lines if v)
+
+
+def _branch_address_preview(row: Mapping[str, Any] | None) -> str:
+    snap = branch_snapshot(row)
+    lines = [
+        f"{snap.get('branch_code') or '-'} · {snap.get('branch_name') or snap.get('name') or '-'}",
+        str(snap.get('address') or '').strip(),
+        f"GSTIN / Tax ID: {snap.get('gstin') or snap.get('tax_identifier') or '-'}",
+        f"Contact: {snap.get('contact_person') or '-'} · {snap.get('phone') or '-'} · {snap.get('email') or '-'}",
+    ]
+    return "\n".join(line for line in lines if line)
 
 
 def _iso_date(value: Any) -> date:
@@ -730,13 +743,22 @@ def render_purchase_orders() -> None:
             if not requisitioner_name:
                 requisitioner_name=str(profile.get("full_name") or "").strip()
 
-            # Only the three driver controls below rerun the page because they change
-            # the available master-driven values. All normal PO fields are inside the
-            # form below and therefore do not refresh the page on every edit.
-            driver=st.columns(3,gap="small")
+            branches={str(r.get("id")):r for r in service.company_branches()}
+            branch_labels={bid:branch_label(row) for bid,row in branches.items()}
+            current_branch=resolve_current_branch(service.repo,profile)
+            default_branch_id=str(current_branch.get("id") or "")
+            if default_branch_id not in branch_labels and branch_labels:
+                default_branch_id=next(iter(branch_labels))
+
+            # Only the four driver controls below rerun because they change dependent
+            # master data. Normal PO entry fields remain inside one form.
+            driver=st.columns(4,gap="small")
             supplier_id=driver[0].selectbox("Supplier",supplier_options,index=supplier_options.index(default_supplier) if default_supplier in supplier_options else 0,format_func=lambda v:supplier_labels[v],key="controlled_po_supplier") if supplier_options else None
             order_date=driver[1].date_input("PO Date",value=date.today(),format="DD-MM-YYYY",key="controlled_po_date")
-            ship_to_source=driver[2].selectbox("Ship-To Source",["CUSTOMER","SUPPLIER","VENDOR"],format_func=lambda v:SHIP_TO_SOURCE_LABELS[v],key="controlled_po_ship_to_source",help="Driver selection: changing it refreshes the controlled address list. Other PO entry fields are submitted together without per-field refresh.")
+            company_branch_id=driver[2].selectbox("Company Branch / Plant",list(branch_labels),index=list(branch_labels).index(default_branch_id) if default_branch_id in branch_labels else 0,format_func=lambda v:branch_labels[v],key="controlled_po_company_branch") if branch_labels else None
+            ship_to_source=driver[3].selectbox("Ship-To Source",["BRANCH","CUSTOMER","SUPPLIER","VENDOR"],format_func=lambda v:SHIP_TO_SOURCE_LABELS[v],key="controlled_po_ship_to_source",help="Company Branch Master, Customer Master, Supplier Master or Vendor / OSP Master. Changing this driver refreshes only the controlled address list.")
+            if not company_branch_id:
+                st.error("No ACTIVE Company Branch is available. Add one in Masters → Company Branch before creating a PO.")
 
             due_dates=[_iso_date(o.get("customer_delivery_date")) for o in selected_orders if o.get("customer_delivery_date")]
             lead_days=0
@@ -753,13 +775,18 @@ def render_purchase_orders() -> None:
             if not login_employee_id:
                 st.error("Your login is not linked to an ACTIVE Employee Master record. Link the user to Employee Master before creating a Purchase Order so Requisitioner is controlled.")
 
-            ship_candidates=_ship_to_candidates(parties,ship_to_source)
-            ship_labels={pid:f"{row.get('party_code') or '-'} · {row.get('party_name') or '-'} · {row.get('city') or '-'}" for pid,row in ship_candidates.items()}
-            default_ship_to=""
-            if ship_to_source=="CUSTOMER" and selected_orders:
-                candidate_customer=str(selected_orders[0].get("customer_id") or "")
-                if candidate_customer in ship_labels: default_ship_to=candidate_customer
-            if ship_to_source=="SUPPLIER" and str(supplier_id or "") in ship_labels: default_ship_to=str(supplier_id)
+            if ship_to_source=="BRANCH":
+                ship_candidates=branches
+                ship_labels={bid:f"{row.get('branch_code') or '-'} · {row.get('branch_name') or '-'} · {row.get('city') or '-'}" for bid,row in branches.items()}
+                default_ship_to=str(company_branch_id or default_branch_id or "")
+            else:
+                ship_candidates=_ship_to_candidates(parties,ship_to_source)
+                ship_labels={pid:f"{row.get('party_code') or '-'} · {row.get('party_name') or '-'} · {row.get('city') or '-'}" for pid,row in ship_candidates.items()}
+                default_ship_to=""
+                if ship_to_source=="CUSTOMER" and selected_orders:
+                    candidate_customer=str(selected_orders[0].get("customer_id") or "")
+                    if candidate_customer in ship_labels: default_ship_to=candidate_customer
+                if ship_to_source=="SUPPLIER" and str(supplier_id or "") in ship_labels: default_ship_to=str(supplier_id)
             ship_ids=list(ship_labels)
             ship_index=ship_ids.index(default_ship_to) if default_ship_to in ship_ids else 0
 
@@ -777,10 +804,13 @@ def render_purchase_orders() -> None:
                 c[1].text_input("Requisitioner (Logged-in Employee)",value=requisitioner_name or "Employee link required",disabled=True)
 
                 section_bar("SHIP-TO ADDRESS · MASTER CONTROLLED")
-                ship_to_party_id=st.selectbox("Ship-To Party / Address",ship_ids,index=ship_index if ship_ids else 0,format_func=lambda v:ship_labels[v]) if ship_ids else None
-                selected_ship_to=ship_candidates.get(str(ship_to_party_id or "")) or {}
+                selected_ship_to_id=st.selectbox("Ship-To Branch / Party / Address",ship_ids,index=ship_index if ship_ids else 0,format_func=lambda v:ship_labels[v]) if ship_ids else None
+                selected_ship_to=ship_candidates.get(str(selected_ship_to_id or "")) or {}
+                ship_to_branch_id=str(selected_ship_to_id or "") if ship_to_source=="BRANCH" else ""
+                ship_to_party_id=str(selected_ship_to_id or "") if ship_to_source!="BRANCH" else ""
                 if selected_ship_to:
-                    st.text_area("Selected Ship-To Address Preview",value=_party_address_preview(selected_ship_to),height=125,disabled=True)
+                    preview=_branch_address_preview(selected_ship_to) if ship_to_source=="BRANCH" else _party_address_preview(selected_ship_to)
+                    st.text_area("Selected Ship-To Address Preview",value=preview,height=125,disabled=True)
                 else:
                     st.warning(f"No ACTIVE records are available in {SHIP_TO_SOURCE_LABELS[ship_to_source]}. Add the address in the corresponding master before creating the PO.")
 
@@ -808,7 +838,7 @@ def render_purchase_orders() -> None:
                         oid=str(order.get("id")); part=parts.get(str(order.get("part_id"))) or {}; raw=raw_for_order.get(oid) or {}; key=f"{part.get('id')}|{raw.get('id') or ''}"
                         group=group_data.setdefault(key,{"part":part,"raw":raw,"qty":0.0}); group["qty"]+=allocations.get(oid,0.0)
                     for key,group in group_data.items():
-                        part,raw=group["part"],group["raw"]; current=service.current_price(str(part.get("id") or ""),supplier_id,on_date=order_date,uom="KGS"); master_hsn=str(raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip()
+                        part,raw=group["part"],group["raw"]; current=service.current_price(str(part.get("id") or ""),supplier_id,on_date=order_date,uom="KGS",raw_material_detail_id=str(raw.get("id") or "") or None); master_hsn=str(raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip()
                         grade_row=grades.get(str(raw.get("material_grade_id") or part.get("material_grade_id") or "")) or {}
                         line_rows.append({"Line Key":key,"FSI Part Number":part.get("fsi_part_number"),"HSN / SAC":master_hsn,"Part Description":part.get("part_name"),"Raw Material Type":raw.get("material_section_name"),"Material Grade":grade_row.get("grade_code") or "-","Section Size":raw.get("section_size"),"PO Qty kg":round(group["qty"],3),"Current Price":current})
                         if current<=0 or not master_hsn: all_lines_valid=False
@@ -828,17 +858,17 @@ def render_purchase_orders() -> None:
                             allowed_rm_headings={"raw material type","raw material section","material grade","section size"}
                             tech=[r for r in service.technical_data_snapshot(raw,part) if str(r.get("heading") or "").strip().casefold() in allowed_rm_headings]
                             if tech: portal_table(pd.DataFrame([{"Heading":("Raw Material Type" if str(r.get("heading") or "").casefold()=="raw material section" else r.get("heading")),"Value":r.get("value")} for r in tech]),hide_index=True,width="stretch",height=min(220,70+len(tech)*34))
-                            hist=service.price_history(str(part.get("id") or ""),supplier_id,uom="KGS")
+                            hist=service.price_history(str(part.get("id") or ""),supplier_id,uom="KGS",raw_material_detail_id=str(raw.get("id") or "") or None)
                             if hist: portal_table(pd.DataFrame([{"Start Date":r.get("start_date"),"End Date":r.get("end_date") or "Current","Basic Rate":r.get("price"),"Freight":r.get("freight"),"Tool Cost":r.get("tool_cost"),"P&F":r.get("packing_forwarding"),"Profit":r.get("profit"),"ICC/Rej.":r.get("icc_rejection"),"Currency":r.get("currency"),"UOM":r.get("uom"),"Remark":r.get("remarks") or "","Status":r.get("status") or "ACTIVE"} for r in reversed(hist)]),hide_index=True,width="stretch",height=min(320,70+len(hist)*34))
                 elif po_type=="FORGING" and supplier_id:
                     order=selected_orders[0]; source_order_id=str(order.get("id") or ""); part=parts.get(str(order.get("part_id"))) or {}; raw=service.raw_material_for_supplier(str(part.get("id") or ""),supplier_id,str(order.get("raw_material_detail_id") or "")) or {}
                     customer=parties.get(str(order.get("customer_id"))) or {}
                     st.info(f"Customer: **{customer.get('party_name') or '-'}** · Part Number: **{part.get('part_number') or '-'}** · Customer Ref: **{order.get('master_reference_no') or '-'}**")
                     totals=service.totals(source_order_id); default_qty=max(number(order.get("order_qty_pcs"))-totals["forging_ordered_pcs"],1.0)
-                    current_price=service.current_price(str(part.get("id") or ""),supplier_id,on_date=order_date,uom="NOS"); hsn_sac_code=str(raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip(); fsi_default=str(part.get("fsi_part_number") or "")
+                    current_price=service.current_price(str(part.get("id") or ""),supplier_id,on_date=order_date,uom="NOS",raw_material_detail_id=str(raw.get("id") or "") or None); hsn_sac_code=str(raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip(); fsi_default=str(part.get("fsi_part_number") or "")
                     c=st.columns(5,gap="small"); qty=c[0].number_input("Order Quantity",min_value=0.001,value=float(default_qty),step=1.0); c[1].text_input("UOM",value="NOS",disabled=True); unit_price=c[2].number_input("Current Price",min_value=0.0,value=float(current_price),step=0.01,disabled=True,help="Read-only current supplier price from Part Master price history."); c[3].text_input("HSN / SAC Code",value=hsn_sac_code,disabled=True,help="Read-only HSN/SAC from supplier Raw Material Detail; Part Master header HSN is fallback."); fsi_part_number=c[4].text_input("FSI Part Number",value=fsi_default,help="Required supplier-facing identity; Customer Part Number is not printed.")
                     section_bar("PART MASTER TECHNICAL DATA & PRICE HISTORY")
-                    tech=service.technical_data_snapshot(raw,part); hist=service.price_history(str(part.get("id") or ""),supplier_id,uom="NOS")
+                    tech=service.technical_data_snapshot(raw,part); hist=service.price_history(str(part.get("id") or ""),supplier_id,uom="NOS",raw_material_detail_id=str(raw.get("id") or "") or None)
                     if tech: portal_table(pd.DataFrame([{"Heading":r.get("heading"),"Value":r.get("value")} for r in tech]),hide_index=True,width="stretch")
                     if hist: portal_table(pd.DataFrame([{"Start Date":r.get("start_date"),"End Date":r.get("end_date") or "Current","Basic Rate":r.get("price"),"Freight":r.get("freight"),"Tool Cost":r.get("tool_cost"),"P&F":r.get("packing_forwarding"),"Profit":r.get("profit"),"ICC/Rej.":r.get("icc_rejection"),"Currency":r.get("currency"),"UOM":r.get("uom"),"Remark":r.get("remarks") or "","Status":r.get("status") or "ACTIVE"} for r in reversed(hist)]),hide_index=True,width="stretch")
                     all_lines_valid=bool(str(fsi_part_number or "").strip()) and current_price>0 and bool(hsn_sac_code)
@@ -847,12 +877,12 @@ def render_purchase_orders() -> None:
 
                 remarks=st.text_area("Remarks",value="PART WILL BE SUPPLIED AS PER DRAWING.",height=70)
                 instructions=st.text_area("Comments / Special Instructions",value=DEFAULT_SPECIAL_INSTRUCTIONS,height=135)
-                create_disabled=not perms["can_create"] or not supplier_id or not all_lines_valid or not ship_to_party_id or not login_employee_id or (notify_pref["send"] and not notify_pref["confirmed"])
+                create_disabled=not perms["can_create"] or not supplier_id or not company_branch_id or not all_lines_valid or not selected_ship_to_id or not login_employee_id or (notify_pref["send"] and not notify_pref["confirmed"])
                 create_po=st.form_submit_button("Create Controlled Purchase Order",type="primary",width="stretch",disabled=create_disabled)
 
             if create_po:
                 try:
-                    payload={"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date.isoformat(),"delivery_date":delivery_date.isoformat(),"requisitioner":requisitioner_name or None,"requisitioner_employee_id":login_employee_id or None,"ship_to_party_id":str(ship_to_party_id or "") or None,"ship_to_source_type":ship_to_source,"ship_via":ship_via.strip(),"incoterm":incoterm.strip(),"payment_term":payment.strip(),"quotation_reference":quote_ref.strip() or None,"quotation_date":quote_date.isoformat(),"old_po_reference":old_po.strip() or None,"gst_percent":gst,"remarks":remarks.strip() or None,"special_instructions":instructions.strip() or None}
+                    payload={"po_type":po_type,"supplier_id":supplier_id,"company_branch_id":str(company_branch_id or "") or None,"order_date":order_date.isoformat(),"delivery_date":delivery_date.isoformat(),"requisitioner":requisitioner_name or None,"requisitioner_employee_id":login_employee_id or None,"ship_to_party_id":str(ship_to_party_id or "") or None,"ship_to_branch_id":str(ship_to_branch_id or "") or None,"ship_to_source_type":ship_to_source,"ship_via":ship_via.strip(),"incoterm":incoterm.strip(),"payment_term":payment.strip(),"quotation_reference":quote_ref.strip() or None,"quotation_date":quote_date.isoformat(),"old_po_reference":old_po.strip() or None,"gst_percent":gst,"remarks":remarks.strip() or None,"special_instructions":instructions.strip() or None}
                     if po_type=="RAW_MATERIAL": payload.update({"customer_order_ids":source_order_ids,"allocations":allocations,"line_prices":line_prices,"line_hsn_sac":line_hsn,"line_fsi_part_numbers":line_fsi})
                     else: payload.update({"customer_order_id":source_order_id,"quantity":qty,"uom":"NOS","unit_price":unit_price,"hsn_sac_code":hsn_sac_code or None,"fsi_part_number":str(fsi_part_number or "").strip(),"rm_dispatch":rm_dispatch})
                     result=service.create_purchase_order(payload)

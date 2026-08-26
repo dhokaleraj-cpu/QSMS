@@ -17,6 +17,7 @@ def render() -> None:
     page_header("Master Data Centre", context="Controlled data")
     repo = Repository()
     counts = {
+        "branches": _count(repo, "company_branches"),
         "parts": _count(repo, "parts"), "grades": _count(repo, "material_grades"),
         "employees": _count(repo, "employees"),
         "processes": _count(repo, "processes"),
@@ -25,6 +26,7 @@ def render() -> None:
         "standards": _count(repo, "customer_standards"),
     }
     kpi_grid([
+        {"label": "Company Branches", "value": counts["branches"], "foot": "Shared branch / plant identity"},
         {"label": "Parts", "value": counts["parts"], "foot": "Controlled"},
         {"label": "Material Grades", "value": counts["grades"], "foot": "Chemistry included"},
         {"label": "Processes", "value": counts["processes"], "foot": "In-house and OSP"},
@@ -35,6 +37,7 @@ def render() -> None:
     ])
     section_bar("MASTER WORKSPACES")
     cards = [
+        ("Company Branch Master", counts["branches"], "⌂", "#7C2D12", "company-branch-entry", "company-branch-records", "REFERENCE_MASTERS"),
         ("Part Master", counts["parts"], "⚙", "#1469A8", "part-entry", "part-records", "PART_MASTER"),
         ("Process Master", counts["processes"], "↻", "#0F766E", "process-entry", "process-records", "REFERENCE_MASTERS"),
         ("Material Grade", counts["grades"], "◈", "#7C3AED", "grade-entry", "grade-records", "MATERIAL_GRADE"),

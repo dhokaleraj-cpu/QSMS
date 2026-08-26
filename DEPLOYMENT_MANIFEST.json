@@ -1,6 +1,6 @@
 {
-  "version": "4.14.13",
-  "build": "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM",
+  "version": "4.14.14",
+  "build": "41414-LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -42,7 +42,15 @@
     "saved_record_manual_email",
     "email_template_manual_recipient_test",
     "email_send_confirmation_dialog",
-    "entry_level_editable_email_recipient"
+    "entry_level_editable_email_recipient",
+    "metlab_case_depth_layout_parameter_only",
+    "metlab_case_depth_layout_locations_specifications",
+    "rm_price_raw_material_detail_identity",
+    "rm_price_uom_fallback",
+    "company_branch_master",
+    "company_branch_global_context",
+    "po_company_branch_issuing_plant",
+    "po_company_branch_ship_to"
   ],
   "source": "controlled_release"
 }

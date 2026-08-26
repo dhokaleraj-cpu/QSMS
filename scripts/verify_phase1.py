@@ -138,7 +138,7 @@ for item in required:
 app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
-    "dashboard", "deployment-diagnostics", "masters", "rmtc-entry", "rmtc-approved-worksheet", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-opening-stock", "supply-rm-procurement", "supply-purchase-orders", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "supply-order-mis", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "inspection-home", "records-center", "heat-ledger",
+    "dashboard", "deployment-diagnostics", "masters", "company-branch-entry", "company-branch-records", "rmtc-entry", "rmtc-approved-worksheet", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-opening-stock", "supply-rm-procurement", "supply-purchase-orders", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "supply-order-mis", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "inspection-home", "records-center", "heat-ledger",
     "reports-home", "heat-transaction-report", "osp-balance-report", "supply-chain-report", "rmtc-report", "inward-report", "dimensional-report", "metlab-report", "complaints-report", "traceability-report", "npd-report", "apqp-report", "qc-report", "inspection-layout-report", "standards-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
@@ -767,7 +767,7 @@ if "535 5.7.139" not in v4144_email or "Authenticated SMTP" not in v4144_email:
 # QCMS 4.14.5 deployment / direct-edit verification.
 v4145_dashboard = (ROOT / "app_pages" / "dashboard.py").read_text(encoding="utf-8")
 v4145_manifest = (ROOT / "DEPLOYMENT_MANIFEST.json").read_text(encoding="utf-8")
-if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM")):
+if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM", "41414-LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH")):
     errors.append("QCMS live release verification banner is missing")
 if "Select Existing MetLAB Report to Edit" not in v4144_metlab or "Select Existing Dimensional Report to Edit" not in v4144_dimensional or "Select Existing RMTC to Edit" not in v4144_rmtc:
     errors.append("QCMS 4.14.5 direct report edit selectors are incomplete")
@@ -858,10 +858,15 @@ v41413_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf
 v41413_dim = (ROOT / "app_pages" / "dimensional_report.py").read_text(encoding="utf-8")
 v41413_rmtc = (ROOT / "app_pages" / "rmtc_pages.py").read_text(encoding="utf-8")
 v41413_osp = (ROOT / "app_pages" / "osp_transactions.py").read_text(encoding="utf-8")
+v41414_branch = (ROOT / "app_pages" / "company_branch.py").read_text(encoding="utf-8")
+v41414_supply_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v41414_migration = (ROOT / "supabase" / "migrations" / "20260826173000_qcms_case_depth_price_branch_v41414.sql").read_text(encoding="utf-8")
 if "CASE_DEPTH_DEFAULT_DISTANCES = [0.05" not in v41413_metlab or "CASE DEPTH / MICROHARDNESS TRAVERSE" not in v41413_metlab:
     errors.append("QCMS 4.14.13 MetLAB Case Depth Traverse entry is incomplete")
-if "Case Depth Locations" not in v41413_metlab or all(token not in v41413_metlab for token in ("Ground Face", "ID", "OD")):
-    errors.append("QCMS 4.14.13 MetLAB Case Depth Location control is incomplete")
+if "Case Depth Locations" not in v41413_metlab and "Case Depth Locations from Additional Layout Characteristics" not in v41413_metlab:
+    errors.append("QCMS MetLAB Case Depth Location control is incomplete")
+if "def _case_depth_layout_locations" not in v41413_metlab or "CASE_DEPTH_PARAMETER_RE" not in v41413_metlab:
+    errors.append("QCMS 4.14.14 layout-driven Case Depth Parameter validation is incomplete")
 if '"case_depth_traverse"' not in v41413_inspection or '"case_depth_locations"' not in v41413_inspection:
     errors.append("QCMS 4.14.13 MetLAB Case Depth result persistence is incomplete")
 if "def _case_depth_chart" not in v41413_reporting or "CASE DEPTH TRAVERSE · Distance (mm) vs Hardness (HV)" not in v41413_reporting:
@@ -878,12 +883,15 @@ if "notification_overrides" not in v41413_notify_ui or not all("notification_ove
     errors.append("QCMS 4.14.13 entry-recipient overrides are incomplete")
 
 report = {
-    "release": "QCMS 4.14.13 MetLAB Case Depth / Record Email / Template Test / Confirmation",
+    "release": "QCMS 4.14.14 Layout Case Depth / RM Price / Company Branch",
     "v41413_metlab_case_depth": "CASE DEPTH / MICROHARDNESS TRAVERSE" in v41413_metlab and "0.05" in v41413_metlab,
     "v41413_case_depth_locations_chart": "Case Depth Locations" in v41413_metlab and "def _case_depth_chart" in v41413_reporting,
     "v41413_record_email": "def record_email_sender" in v41413_notify_ui,
     "v41413_template_test": "def template_test_sender" in v41413_notify_ui and "template_test_sender(" in v41413_email,
     "v41413_email_confirm_edit_recipient": "@st.dialog" in v41413_notify_ui and "Notification To" in v41413_notify_ui and "Notification CC" in v41413_notify_ui,
+    "v41414_layout_case_depth": "def _case_depth_layout_locations" in v41413_metlab and "CASE_DEPTH_PARAMETER_RE" in v41413_metlab and "layout_rows=layout_source" in v41413_metlab,
+    "v41414_rm_price_raw_detail": "raw_material_detail_id: str | None = None" in v41414_supply_service and "exact_uom" in v41414_supply_service,
+    "v41414_company_branch": "Company Branch Master" in v41414_branch and "create table if not exists public.company_branches" in v41414_migration,
     "v41412_raw_material_type": "Raw Material Type" in v41412_part and "part.rm_type" in v41412_sql,
     "v41412_rm_po_details": "RAW MATERIAL DETAILS" in v41412_po and "rm_allowed" in v41412_po,
     "v41412_rm_po_forging_filter": 'po_kind == "RAW_MATERIAL"' in v41412_po,
@@ -911,7 +919,7 @@ report = {
     "v4144_identity_duplicate_policy": '"customer_standards": ("standard_code", "standard_name")' in v4144_master and '"parts": ("fsi_part_number",)' in v4144_master,
     "v4144_opening_stock_import": "OPENING STOCK IMPORT / EXPORT UTILITY" in v4144_supply and "opening_stock_import_preview" in v4144_supply_service and "apply_opening_stock_import" in v4144_supply_service,
     "v4144_smtp_auth_guidance": "535 5.7.139" in v4144_email and "Authenticated SMTP" in v4144_email,
-    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM")),
+    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM", "41414-LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH")),
     "v4146_runtime_diagnostics": "deployment-diagnostics" in app_text and "LIVE BUILD · QCMS" in app_text and (ROOT / "app_pages" / "deployment_diagnostics.py").exists(),
     "v4147_deploy_target_proof": "Git origin" in v4147_diag and "Streamlit main file" in v4147_diag,
     "v4147_next_stage_email": "NEXT-STAGE RESPONSIBILITY ROUTING" in v4147_email and "department_emails" in v4147_notify,

@@ -946,7 +946,7 @@ def render_entry() -> None:
             str(r["id"]): f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · HSN {r.get('hsn_sac_code') or existing.get('hsn_sac_code') or '-'} · {grade_map.get(str(r.get('material_grade_id')), 'Grade -')} · {r.get('material_section_name') or 'Raw Material Type -'} · {r.get('section_size') or '-'} · LT {int(r.get('lead_time_days') or 0)}d"
             for r in current_raw
         }
-        section_bar("SUPPLIER TECHNICAL DATA & PRICE HISTORY", "Select the supplier-specific Raw Material record. Heading/value technical rows are copied automatically to the Purchase Order; price history is matched by Supplier + FSI Part Number.")
+        section_bar("SUPPLIER TECHNICAL DATA & PRICE HISTORY", "Select the supplier-specific Raw Material record. Heading/value technical rows are copied automatically to the Purchase Order; price history is matched by the selected Supplier + Raw Material Detail + FSI Part Number.")
         selected_raw_id = st.selectbox("Raw Material / Supplier Record", list(raw_labels), format_func=lambda v: raw_labels[v], key=f"rm_supplier_detail_select_{part_id}") if raw_labels else None
         if not selected_raw_id:
             st.info("Save at least one Raw Material Detail row before adding supplier technical data or price history.")
@@ -987,7 +987,7 @@ def render_entry() -> None:
                     save_success_popup("Supplier technical data saved. Active rows will populate Purchase Orders automatically.", queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
 
-            price_rows = repo.select("part_supplier_price_history", eq={"part_id": part_id, "supplier_id": selected_supplier_id}, order_by="start_date", limit=500)
+            price_rows = repo.select("part_supplier_price_history", eq={"part_id": part_id, "supplier_id": selected_supplier_id, "raw_material_detail_id": selected_raw_id}, order_by="start_date", limit=500)
             if password_delete_panel(repo=repo, table="part_supplier_price_history", rows=price_rows, labeler=lambda r: f"{r.get('start_date')} to {r.get('end_date') or 'Current'} · {r.get('price')} {r.get('currency') or 'INR'}/{r.get('uom') or 'KGS'}", key=f"delete_price_history_{selected_raw_id}", can_delete=perms["can_archive"], title="Delete Price History row"):
                 st.rerun()
             price_df = pd.DataFrame([{
@@ -1048,7 +1048,7 @@ def render_entry() -> None:
                             "currency": str(row.get("Currency") or "INR"), "uom": str(row.get("UOM") or "KGS"),
                             "remarks": str(row.get("Remark") or "").strip() or None, "status": str(row.get("Status") or "ACTIVE")
                         }
-                    _save_rows(repo, "part_supplier_price_history", part_id, frame, ("part_id", "supplier_id", "uom", "start_date"), price_mapper)
+                    _save_rows(repo, "part_supplier_price_history", part_id, frame, ("part_id", "supplier_id", "raw_material_detail_id", "uom", "start_date"), price_mapper)
                     save_success_popup("Supplier / FSI Part price history saved successfully.", queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
     with stage_section("F", 'JOMINY REQUIREMENT', 'Controlled 1/16 inch to millimetre conversion and HRC requirement band.', key="part_master_render_entry_f"):

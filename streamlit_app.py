@@ -1,3 +1,5 @@
+# QCMS 4.14.14 — LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH
+# BUILD 41414-LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH
 # QCMS 4.14.13 — METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM
 # BUILD 41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM
 # QCMS 4.14.12 — RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD
@@ -26,6 +28,7 @@ from app_pages import (
     dashboard,
     deployment_diagnostics,
     complaints,
+    company_branch,
     dimensional_report,
     employee_master,
     email_settings,
@@ -74,6 +77,8 @@ PAGE_ITEMS = (
     ("dashboard", st.Page(dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard", default=True)),
     ("deployment-diagnostics", st.Page(deployment_diagnostics.render, title="Deployment Diagnostics", icon=":material/verified:", url_path="deployment-diagnostics")),
     ("masters", st.Page(master_home.render, title="Masters", icon=":material/dataset:", url_path="masters")),
+    ("company-branch-entry", st.Page(company_branch.render_entry, title="Company Branch Master", icon=":material/account_balance:", url_path="company-branch-entry")),
+    ("company-branch-records", st.Page(company_branch.render_records, title="Company Branch Records", icon=":material/table_view:", url_path="company-branch-records")),
     ("rmtc-entry", st.Page(rmtc_pages.render_entry, title="RMTC Entry", icon=":material/fact_check:", url_path="rmtc-entry")),
     ("rmtc-approved-worksheet", st.Page(rmtc_pages.render_approved_part_worksheet, title="Approved RMTC Part Worksheet", icon=":material/add_task:", url_path="rmtc-approved-worksheet")),
     ("inward-entry", st.Page(material_inward.render_entry, title="Material Inward", icon=":material/input:", url_path="inward-entry")),
@@ -165,6 +170,7 @@ MODULE_SUBMENUS = {
     ),
     "Masters": (
         ("masters", "Masters Home", ":material/dataset:"),
+        ("company-branch-entry", "Company Branch", ":material/account_balance:"),
         ("part-entry", "Part Entry", ":material/edit_note:"),
         ("process-entry", "Process Entry", ":material/settings:"),
         ("grade-entry", "Grade Entry", ":material/science:"),
@@ -292,7 +298,7 @@ RECORD_ROUTES = {
 }
 ROUTE_MODULE = {
     "dashboard": "Dashboard", "my-account": "Dashboard",
-    "masters": "Masters", "part-entry": "Masters", "process-entry": "Masters",
+    "masters": "Masters", "company-branch-entry": "Masters", "company-branch-records": "Masters", "part-entry": "Masters", "process-entry": "Masters",
     "grade-entry": "Masters", "reference-entry": "Masters", "employee-entry": "Masters",
     "user-access": "Admin", "email-settings": "Admin", "deployment-diagnostics": "Admin", "master-import": "Masters", "standards-entry": "Masters",
     "rmtc-entry": "RMTC", "rmtc-approved-worksheet": "RMTC", "rmtc-part": "RMTC", "rmtc-approval": "RMTC",
@@ -312,7 +318,7 @@ ROUTE_MODULE = {
 }
 
 PAGE_TITLE_TO_PATH = {
-    "Dashboard": "dashboard", "Masters": "masters", "RMTC Entry": "rmtc-entry",
+    "Dashboard": "dashboard", "Masters": "masters", "Company Branch Master": "company-branch-entry", "Company Branch Records": "company-branch-records", "RMTC Entry": "rmtc-entry",
     "Material Inward": "inward-entry", "OSP Transactions": "osp-home", "Inspections": "inspection-home",
     "Records Centre": "records-center", "Heat Steel Ledger": "heat-ledger",
     "Reports": "reports-home", "Heat Transaction Report": "heat-transaction-report",

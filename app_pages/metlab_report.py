@@ -132,15 +132,78 @@ def _layout_rows(service: InspectionService, plan_id: str | None, existing: dict
 
 
 CASE_DEPTH_DEFAULT_DISTANCES = [0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]
+# Legacy regression token only; v4.14.14 does NOT use these as manual/default locations.
 CASE_DEPTH_DEFAULT_LOCATIONS = ["Ground Face", "ID", "OD"]
+CASE_DEPTH_PARAMETER_RE = re.compile(r"\bcase\s+depth\b", re.IGNORECASE)
+
+
+def _case_depth_parameter(row: dict) -> str:
+    """Return the controlled Parameter text used to decide Traverse applicability.
+
+    v4.14.14 rule: only the Additional Layout Characteristic Parameter is
+    evaluated. A phrase in Specification/Remark must never create a traverse.
+    """
+    return str(row.get("parameter") or row.get("characteristic") or "").strip()
 
 
 def _has_case_depth_characteristic(rows: list[dict]) -> bool:
-    for row in rows:
-        text = " ".join(str(row.get(key) or "") for key in ("parameter", "characteristic", "requirement_name", "specification", "requirement_value"))
-        if "case depth" in text.casefold():
-            return True
-    return False
+    return any(bool(CASE_DEPTH_PARAMETER_RE.search(_case_depth_parameter(row))) for row in rows)
+
+
+def _case_depth_location_from_parameter(parameter: str) -> str:
+    text = re.sub(r"\s+", " ", str(parameter or "")).strip()
+    if not text:
+        return ""
+    location = re.sub(
+        r"^(?:effective\s+)?case\s+depth(?:\s+(?:at|of|on)\s+|\s*[-:–—]\s*|\s+)?",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip(" -:–—")
+    return location or text
+
+
+def _case_depth_specification(row: dict) -> str:
+    spec = str(row.get("specification") or "").strip()
+    if spec:
+        return spec
+    low, high = row.get("lower_spec"), row.get("upper_spec")
+    unit = str(row.get("unit") or "").strip()
+    if low is not None or high is not None:
+        if low is not None and high is not None:
+            text = f"{low} - {high}"
+        elif low is not None:
+            text = f">= {low}"
+        else:
+            text = f"<= {high}"
+        return f"{text} {unit}".strip()
+    return ""
+
+
+def _case_depth_layout_locations(layout_rows: list[dict]) -> list[dict[str, Any]]:
+    """Derive Traverse locations/specifications strictly from Additional Layout Characteristics.
+
+    A row qualifies only when its *Parameter* contains the words ``Case Depth``.
+    This makes the Inspection Layout the single source of truth for Ground Face,
+    ID, OD or any future Case Depth locations and their specifications.
+    """
+    locations: list[dict[str, Any]] = []
+    for row in layout_rows:
+        parameter = _case_depth_parameter(row)
+        if not CASE_DEPTH_PARAMETER_RE.search(parameter):
+            continue
+        locations.append({
+            "sequence_no": int(row.get("sequence_no") or len(locations) + 1),
+            "location": _case_depth_location_from_parameter(parameter),
+            "parameter": parameter,
+            "specification": _case_depth_specification(row),
+            "unit": str(row.get("unit") or "").strip() or None,
+            "inspection_plan_characteristic_id": row.get("inspection_plan_characteristic_id") or row.get("id"),
+        })
+    locations.sort(key=lambda row: (int(row.get("sequence_no") or 0), str(row.get("location") or "")))
+    for i, row in enumerate(locations, start=1):
+        row["sequence_no"] = i
+    return locations
 
 
 def _case_depth_payload(existing: dict | None) -> dict[str, Any]:
@@ -153,80 +216,58 @@ def _case_depth_payload(existing: dict | None) -> dict[str, Any]:
     }
 
 
-def _render_case_depth_traverse(existing: dict | None, *, key: str, required_hint: bool) -> tuple[dict[str, Any], bool]:
-    """Render controlled multi-location case-depth traverse entry.
+def _render_case_depth_traverse(existing: dict | None, *, key: str, layout_rows: list[dict]) -> tuple[dict[str, Any], bool]:
+    """Render layout-driven Case Depth / Microhardness Traverse values.
 
-    Distances start at 0.05 mm and support multiple named locations such as
-    Ground Face / ID / OD. The saved structure is normalized inside lab_tests.results.
+    Locations and specifications are read-only here. They come only from
+    Additional Layout Characteristics whose Parameter contains ``Case Depth``.
+    The operator enters only distance-wise hardness readings.
     """
     saved = _case_depth_payload(existing)
-    default_applicable = bool(saved["applicable"] or required_hint)
-    applicable = st.toggle(
-        "Case Depth Traverse Applicable",
-        value=default_applicable,
-        disabled=required_hint,
-        key=f"{key}_applicable",
-        help="Automatically required when the selected MetLAB layout contains a Case Depth characteristic.",
-    )
-    if required_hint:
-        st.caption("Required by the selected MetLAB layout because a Case Depth characteristic is present.")
-    if not applicable:
-        reason = st.text_input(
-            "Case Depth Traverse Not Applicable Reason",
-            value=saved["na_reason"],
-            key=f"{key}_na_reason",
+    locations = _case_depth_layout_locations(layout_rows)
+    if not locations:
+        st.info(
+            "Case Depth Traverse is not applicable because no Additional Layout Characteristic "
+            "Parameter contains the words 'Case Depth'. Add parameters such as "
+            "'Effective Case Depth at Ground Face', '... at ID' or '... at OD' in the MetLAB layout to enable the traverse."
         )
         return {
             "case_depth_applicable": False,
             "case_depth_locations": [],
             "case_depth_traverse": [],
-            "case_depth_na_reason": reason.strip() or None,
-        }, bool(reason.strip()) if required_hint else True
+            "case_depth_na_reason": "No Additional Layout Characteristic Parameter contains Case Depth.",
+        }, True
 
-    saved_locations = saved["locations"] or [
-        {"sequence_no": i, "location": name, "remark": ""}
-        for i, name in enumerate(CASE_DEPTH_DEFAULT_LOCATIONS, start=1)
-    ]
-    location_frame = pd.DataFrame([{
-        "Sr No": row.get("sequence_no") or idx,
-        "Case Depth Location": row.get("location") or row.get("name") or "",
-        "Remark": row.get("remark") or "",
-    } for idx, row in enumerate(saved_locations, start=1)])
-    st.markdown("**Case Depth Locations**")
-    location_edit = st.data_editor(
-        location_frame,
-        hide_index=True,
-        width="stretch",
-        num_rows="dynamic",
-        column_config={"Sr No": st.column_config.NumberColumn(disabled=True)},
-        key=f"{key}_locations",
-    )
-    location_names: list[str] = []
-    location_rows: list[dict] = []
-    for _, row in location_edit.iterrows():
-        name = str(row.get("Case Depth Location") or "").strip()
-        if not name:
-            continue
-        location_rows.append({"sequence_no": len(location_rows) + 1, "location": name, "remark": str(row.get("Remark") or "").strip() or None})
-        location_names.append(name)
-    duplicate_locations = len({name.casefold() for name in location_names}) != len(location_names)
+    location_names = [str(row.get("location") or "").strip() for row in locations]
+    duplicate_locations = len({name.casefold() for name in location_names if name}) != len([name for name in location_names if name])
     if duplicate_locations:
-        st.error("Case Depth Location names must be unique.")
+        st.error("Case Depth layout locations must be unique. Correct the duplicate Case Depth Parameter names in Inspection Layout Master.")
+
+    st.caption("Locations and specifications below are controlled by Additional Layout Characteristics. Only Traverse hardness readings are entered here.")
+    st.markdown("**Case Depth Locations from Additional Layout Characteristics**")
+    location_frame = pd.DataFrame([{
+        "Sr No": row.get("sequence_no"),
+        "Case Depth Location": row.get("location"),
+        "Parameter": row.get("parameter"),
+        "Specification": row.get("specification"),
+        "Unit": row.get("unit") or "",
+    } for row in locations])
+    portal_table(location_frame, hide_index=True, width="stretch", height=min(260, 80 + len(location_frame) * 34))
 
     saved_traverse = saved["traverse"] or [{"distance_mm": distance, "readings": {}} for distance in CASE_DEPTH_DEFAULT_DISTANCES]
-    traverse_rows = []
+    traverse_rows: list[dict[str, Any]] = []
     for row in saved_traverse:
         readings = dict(row.get("readings") or {})
-        out = {"Distance (mm)": row.get("distance_mm")}
+        out: dict[str, Any] = {"Distance (mm)": row.get("distance_mm")}
         for name in location_names:
             out[name] = readings.get(name)
         traverse_rows.append(out)
     if not traverse_rows:
         traverse_rows = [{"Distance (mm)": distance, **{name: None for name in location_names}} for distance in CASE_DEPTH_DEFAULT_DISTANCES]
-    traverse_frame = pd.DataFrame(traverse_rows)
+
     st.markdown("**Case Depth / Microhardness Traverse Readings (HV)**")
     traverse_edit = st.data_editor(
-        traverse_frame,
+        pd.DataFrame(traverse_rows),
         hide_index=True,
         width="stretch",
         num_rows="dynamic",
@@ -236,6 +277,7 @@ def _render_case_depth_traverse(existing: dict | None, *, key: str, required_hin
             **{name: st.column_config.NumberColumn(min_value=0.0, step=1.0, format="%.1f") for name in location_names},
         },
     )
+
     normalized: list[dict] = []
     distances: list[float] = []
     for _, row in traverse_edit.iterrows():
@@ -248,19 +290,21 @@ def _render_case_depth_traverse(existing: dict | None, *, key: str, required_hin
     normalized.sort(key=lambda row: row["distance_mm"])
     duplicate_distances = len(set(distances)) != len(distances)
     starts_at_005 = bool(normalized) and abs(float(normalized[0]["distance_mm"]) - 0.05) < 1e-9
-    has_reading = any(value is not None for row in normalized for value in (row.get("readings") or {}).values())
+    locations_with_reading = {
+        name for name in location_names
+        if any((row.get("readings") or {}).get(name) is not None for row in normalized)
+    }
     if duplicate_distances:
         st.error("Case Depth traverse distance values must be unique.")
     if normalized and not starts_at_005:
         st.error("The first Case Depth traverse reading must start at 0.05 mm.")
-    if not location_names:
-        st.error("Add at least one Case Depth Location.")
-    if not has_reading:
-        st.warning("Enter at least one Case Depth / Microhardness reading.")
-    valid = bool(location_names and not duplicate_locations and normalized and starts_at_005 and not duplicate_distances and has_reading)
+    missing_locations = [name for name in location_names if name not in locations_with_reading]
+    if missing_locations:
+        st.warning("Enter at least one Traverse hardness reading for: " + ", ".join(missing_locations))
+    valid = bool(location_names and not duplicate_locations and normalized and starts_at_005 and not duplicate_distances and not missing_locations)
     return {
         "case_depth_applicable": True,
-        "case_depth_locations": location_rows,
+        "case_depth_locations": locations,
         "case_depth_traverse": normalized,
         "case_depth_na_reason": None,
     }, valid
@@ -380,7 +424,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
         frame = pd.DataFrame([{"Sr No": r.get("sequence_no"), "Parameter": r.get("parameter"), "Specification": r.get("specification"), "Min": r.get("lower_spec"), "Max": r.get("upper_spec"), "Method / Aid": r.get("checking_method"), "Actual Value": r.get("actual_value"), "Unit": r.get("unit"), "NA": r.get("applicability") == "NOT_APPLICABLE", "Result": r.get("result"), "Remark": r.get("remarks"), "_characteristic_id": r.get("inspection_plan_characteristic_id"), "_type": r.get("characteristic_type")} for r in layout_source])
         edited = st.data_editor(frame, hide_index=True, width="stretch", height=min(620, max(220, 80 + len(frame) * 30)), disabled=["Sr No", "Parameter", "Specification", "Min", "Max", "Method / Aid", "Result", "_characteristic_id", "_type"], column_config={"NA": st.column_config.CheckboxColumn(), "_characteristic_id": None, "_type": None}, key=f"standalone_metlab_grid_{existing_id or 'new'}_{plan_id}")
         section_bar("CASE DEPTH / MICROHARDNESS TRAVERSE")
-        case_depth_results, case_depth_valid = _render_case_depth_traverse(existing, key=f"standalone_case_depth_{existing_id or 'new'}_{plan_id}", required_hint=_has_case_depth_characteristic(layout_source))
+        case_depth_results, case_depth_valid = _render_case_depth_traverse(existing, key=f"standalone_case_depth_{existing_id or 'new'}_{plan_id}", layout_rows=layout_source)
         employee_options = [""] + list(employee_map)
         c1, c2, c3 = st.columns(3, gap="small")
         current_prepared = str((existing or {}).get("prepared_by_employee_id") or "")
@@ -650,8 +694,7 @@ def render_entry() -> None:
             layout_edit = pd.DataFrame()
 
         section_bar("CASE DEPTH / MICROHARDNESS TRAVERSE")
-        case_depth_source_rows = [*layout_source, *[dict(row) for row in (snapshot.get("requirements") or [])]]
-        case_depth_results, case_depth_valid = _render_case_depth_traverse(existing, key=f"linked_case_depth_{existing_id or 'new'}_{inward_id}", required_hint=_has_case_depth_characteristic(case_depth_source_rows))
+        case_depth_results, case_depth_valid = _render_case_depth_traverse(existing, key=f"linked_case_depth_{existing_id or 'new'}_{inward_id}", layout_rows=layout_source)
 
         employee_options = [""] + list(employee_map)
         c1, c2, c3, c4 = st.columns(4, gap="small")
