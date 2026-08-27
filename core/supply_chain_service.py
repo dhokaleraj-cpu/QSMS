@@ -21,11 +21,14 @@ SUPPLY_TABLES = (
 
 FLOW_FSI_RM = "FSI_RM"
 FLOW_DIRECT_FORGING = "DIRECT_FORGING"
+FLOW_FSI_RM_DIRECT_PRODUCTION = "FSI_RM_DIRECT_PRODUCTION"
 FLOW_LABELS = {
-    FLOW_FSI_RM: "Flow 1 · RM Responsible FSI",
-    FLOW_DIRECT_FORGING: "Flow 2 · RM Responsible Forger / Supplier",
+    FLOW_FSI_RM: "Flow 1 · FSI RM → Forging → Production",
+    FLOW_DIRECT_FORGING: "Flow 2 · Direct Forging → Production",
+    FLOW_FSI_RM_DIRECT_PRODUCTION: "Flow 3 · FSI RM → Direct Production",
 }
-_FLOW_RE = re.compile(r"\s*\[\[QCMS_SUPPLY_FLOW=(FSI_RM|DIRECT_FORGING)\]\]\s*", re.I)
+FLOW_REQUIRES_FSI_RM = {FLOW_FSI_RM, FLOW_FSI_RM_DIRECT_PRODUCTION}
+_FLOW_RE = re.compile(r"\s*\[\[QCMS_SUPPLY_FLOW=(FSI_RM|DIRECT_FORGING|FSI_RM_DIRECT_PRODUCTION)\]\]\s*", re.I)
 
 
 def clean_flow_remarks(value: Any) -> str:
@@ -1039,7 +1042,7 @@ class SupplyChainService:
         qty = number(p.get("order_qty_pcs")); gross = number(p.get("gross_weight_kg_snapshot"))
         if qty <= 0 or gross <= 0:
             raise ValueError("Order Quantity and Forging Supplier Gross Weight must be greater than zero.")
-        p["required_rm_kg"] = round(qty * gross, 3) if flow == FLOW_FSI_RM else 0.0
+        p["required_rm_kg"] = round(qty * gross, 3) if flow in FLOW_REQUIRES_FSI_RM else 0.0
         check_override = p.pop("_procurement_check", None)
         check = dict(check_override) if isinstance(check_override, Mapping) else self.procurement_check(str(p.get("part_id") or ""), str(p.get("customer_id") or ""), anchor=p.get("schedule_month") or p.get("customer_delivery_date") or p.get("order_date"), proposed_three_month_qty=number(p.pop("proposed_three_month_qty", qty if str(p.get("order_type")) == "PURCHASE_ORDER" else 0)))
         requested = bool(p.get("rm_procurement_required", check["rm_procurement_allowed"]))
@@ -1090,9 +1093,9 @@ class SupplyChainService:
         qty = number(merged.get("order_qty_pcs")); gross = number(merged.get("gross_weight_kg_snapshot"))
         if qty <= 0 or gross <= 0:
             raise ValueError("Order Quantity and Gross Weight must be greater than zero.")
-        p["required_rm_kg"] = round(qty * gross, 3) if flow == FLOW_FSI_RM else 0.0
+        p["required_rm_kg"] = round(qty * gross, 3) if flow in FLOW_REQUIRES_FSI_RM else 0.0
         check = self.procurement_check(str(merged.get("part_id") or ""), str(merged.get("customer_id") or ""), anchor=merged.get("schedule_month") or merged.get("customer_delivery_date") or merged.get("order_date"), proposed_three_month_qty=number(p.pop("proposed_three_month_qty", 0)), exclude_order_id=record_id)
-        requested = bool(merged.get("rm_procurement_required", check["rm_procurement_allowed"])) if flow == FLOW_FSI_RM else False
+        requested = bool(merged.get("rm_procurement_required", check["rm_procurement_allowed"])) if flow in FLOW_REQUIRES_FSI_RM else False
         if flow == FLOW_DIRECT_FORGING:
             decision = "DIRECT_FORGING"
         elif not check["rm_procurement_allowed"]:
@@ -1169,7 +1172,7 @@ class SupplyChainService:
             flow = self.flow_for_order(order)
             eligible = False; reason = ""
             if po_type == "RAW_MATERIAL":
-                if flow != FLOW_FSI_RM:
+                if flow not in FLOW_REQUIRES_FSI_RM:
                     reason = "Direct Forging flow · RM PO not required"
                 elif not bool(order.get("rm_procurement_required", True)):
                     reason = str(order.get("procurement_decision") or "RM not required").replace("_", " ").title()
@@ -1184,6 +1187,8 @@ class SupplyChainService:
                     reason = "Eligible · Direct Customer Order" if str(src.get("_source_type")) == "CUSTOMER_ORDER" else "Eligible · RM dispatched to Forger"
                 elif flow == FLOW_FSI_RM:
                     reason = "Waiting for RM Receipt / RM to Forger"
+                elif flow == FLOW_FSI_RM_DIRECT_PRODUCTION:
+                    reason = "Direct Production flow · Forging PO not required"
                 else:
                     reason = "Forging requirement already ordered"
             row = dict(order); row["_po_eligible"] = eligible; row["_po_reason"] = reason
@@ -1198,7 +1203,7 @@ class SupplyChainService:
         for order in self.customer_orders():
             if str(order.get("status")) in {"COMPLETED", "CANCELLED"}:
                 continue
-            if self.flow_for_order(order) != FLOW_FSI_RM:
+            if self.flow_for_order(order) not in FLOW_REQUIRES_FSI_RM:
                 continue
             if not bool(order.get("rm_procurement_required", True)):
                 continue
@@ -1240,6 +1245,9 @@ class SupplyChainService:
                 sent_by_receipt[key] = sent_by_receipt.get(key,0.0) + number(d.get("qty_kg"))
         rows=[]
         for rec in self.rm_receipts():
+            order = self.order(str(rec.get("customer_order_id") or "")) or {}
+            if self.flow_for_order(order) != FLOW_FSI_RM:
+                continue
             sent = sent_by_receipt.get(str(rec.get("id")),0.0)
             received = number(rec.get("received_qty_kg"))
             if sent + 0.0001 < received:
@@ -1284,8 +1292,37 @@ class SupplyChainService:
         event_type=str(event_type).upper()
         downstream=self.downstream_events()
         if event_type=="MACHINING":
-            used={str(e.get("source_forging_receipt_id")) for e in downstream if e.get("event_type")=="MACHINING" and e.get("source_forging_receipt_id")}
-            return [r for r in self.forging_receipts() if str(r.get("id")) not in used and number(r.get("received_qty_pcs"))>0]
+            used_forging={str(e.get("source_forging_receipt_id")) for e in downstream if e.get("event_type")=="MACHINING" and e.get("source_forging_receipt_id")}
+            used_rm={str(e.get("source_rm_receipt_id")) for e in downstream if e.get("event_type")=="MACHINING" and e.get("source_rm_receipt_id")}
+            rows: list[dict] = []
+            for receipt in self.forging_receipts():
+                if str(receipt.get("id")) in used_forging or number(receipt.get("received_qty_pcs")) <= 0:
+                    continue
+                row=dict(receipt); row["_source_type"]="FORGING_RECEIPT"; row["_source_id"]=str(receipt.get("id")); rows.append(row)
+            # Flow 3 enters production directly from Material Inward / RM Receipt.
+            for receipt in self.rm_receipts():
+                rid=str(receipt.get("id") or "")
+                if not rid or rid in used_rm:
+                    continue
+                order=self.order(str(receipt.get("customer_order_id") or "")) or {}
+                if self.flow_for_order(order) != FLOW_FSI_RM_DIRECT_PRODUCTION:
+                    continue
+                inward=self.repo.get("inward_lots",str(receipt.get("inward_lot_id") or "")) or {}
+                production_qty=number(inward.get("accepted_production_quantity_pcs") or inward.get("production_quantity_pcs"))
+                if production_qty <= 0:
+                    continue
+                row=dict(receipt)
+                row.update({
+                    "_source_type":"RM_RECEIPT", "_source_id":rid,
+                    "received_qty_pcs":production_qty,
+                    "receipt_number":receipt.get("receipt_number") or inward.get("inward_number"),
+                    "inward_lot_id":receipt.get("inward_lot_id") or inward.get("id"),
+                    "heat_number":receipt.get("heat_number") or inward.get("heat_number"),
+                    "heat_code":receipt.get("heat_code") or inward.get("heat_code"),
+                })
+                rows.append(row)
+            rows.sort(key=lambda r:(str(r.get("receipt_date") or "9999-12-31"),str(r.get("receipt_number") or "")))
+            return rows
         previous="MACHINING" if event_type=="FINISHED_GOODS" else "FINISHED_GOODS"
         used={str(e.get("source_event_id")) for e in downstream if e.get("event_type")==event_type and e.get("source_event_id")}
         return [e for e in downstream if e.get("event_type")==previous and str(e.get("id")) not in used and number(e.get("qty_pcs"))>0]
@@ -1498,7 +1535,7 @@ class SupplyChainService:
 
     def supplier_balances(self, order_id: str) -> list[dict]:
         order = self.order(order_id) or {}
-        if self.flow_for_order(order) == FLOW_DIRECT_FORGING:
+        if self.flow_for_order(order) in {FLOW_DIRECT_FORGING, FLOW_FSI_RM_DIRECT_PRODUCTION}:
             return []
         suppliers = {str(r["id"]): r for r in self.parties()}
         dispatches = self.repo.select("supply_rm_dispatches", eq={"customer_order_id": order_id}, limit=5000)

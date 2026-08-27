@@ -398,7 +398,7 @@ for token in ("supply_rm_purchase_order_id", "inward_lot_id", "rmtc_number", "rm
 
 material_inward_text = (ROOT / "app_pages/material_inward.py").read_text(encoding="utf-8")
 streamlit_app_text = (ROOT / "streamlit_app.py").read_text(encoding="utf-8")
-for token in ("FLOW_FSI_RM", "FLOW_DIRECT_FORGING", "pending_direct_forging_orders", "Flow 1 · RM Responsible FSI", "Flow 2 · RM Responsible Forger / Supplier", "Part Production", "render_order_mis", "Monthly Schedule / Order MIS"):
+for token in ("FLOW_FSI_RM", "FLOW_DIRECT_FORGING", "FLOW_FSI_RM_DIRECT_PRODUCTION", "pending_direct_forging_orders", "Flow 1 · FSI RM → Forging → Production", "Flow 2 · Direct Forging → Production", "Flow 3 · FSI RM → Direct Production", "Part Production", "render_order_mis", "Monthly Schedule / Order MIS"):
     if token not in supply_text and token not in supply_service_text:
         errors.append(f"QCMS 4.12.4 dual Supply Chain flow / MIS token missing: {token}")
 for token in ("Enable Supply Chain Link", "pending_rm_purchase_orders", "unlink_inward_supply_chain"):
@@ -767,7 +767,7 @@ if "535 5.7.139" not in v4144_email or "Authenticated SMTP" not in v4144_email:
 # QCMS 4.14.5 deployment / direct-edit verification.
 v4145_dashboard = (ROOT / "app_pages" / "dashboard.py").read_text(encoding="utf-8")
 v4145_manifest = (ROOT / "DEPLOYMENT_MANIFEST.json").read_text(encoding="utf-8")
-if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM", "41414-LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH")):
+if "LIVE RELEASE VERIFICATION" not in v4145_dashboard or not any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM", "41414-LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH", "41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST")):
     errors.append("QCMS live release verification banner is missing")
 if "Select Existing MetLAB Report to Edit" not in v4144_metlab or "Select Existing Dimensional Report to Edit" not in v4144_dimensional or "Select Existing RMTC to Edit" not in v4144_rmtc:
     errors.append("QCMS 4.14.5 direct report edit selectors are incomplete")
@@ -883,7 +883,7 @@ if "notification_overrides" not in v41413_notify_ui or not all("notification_ove
     errors.append("QCMS 4.14.13 entry-recipient overrides are incomplete")
 
 report = {
-    "release": "QCMS 4.14.14 Layout Case Depth / RM Price / Company Branch",
+    "release": "QCMS 4.14.15 Direct Production Flow / Email Template Test",
     "v41413_metlab_case_depth": "CASE DEPTH / MICROHARDNESS TRAVERSE" in v41413_metlab and "0.05" in v41413_metlab,
     "v41413_case_depth_locations_chart": "Case Depth Locations" in v41413_metlab and "def _case_depth_chart" in v41413_reporting,
     "v41413_record_email": "def record_email_sender" in v41413_notify_ui,
@@ -892,6 +892,8 @@ report = {
     "v41414_layout_case_depth": "def _case_depth_layout_locations" in v41413_metlab and "CASE_DEPTH_PARAMETER_RE" in v41413_metlab and "layout_rows=layout_source" in v41413_metlab,
     "v41414_rm_price_raw_detail": "raw_material_detail_id: str | None = None" in v41414_supply_service and "exact_uom" in v41414_supply_service,
     "v41414_company_branch": "Company Branch Master" in v41414_branch and "create table if not exists public.company_branches" in v41414_migration,
+    "v41415_direct_production_flow": "FLOW_FSI_RM_DIRECT_PRODUCTION" in supply_service_text and "Direct Production flow · Forging PO not required" in supply_service_text and "source_rm_receipt_id" in (ROOT / "supabase/migrations/20260827081500_qcms_direct_production_flow_v41415.sql").read_text(encoding="utf-8"),
+    "v41415_email_template_test": '"D", "TEST EMAIL TEMPLATE"' in v4140_email and "Manual Test Recipient" in (ROOT / "core/notification_ui.py").read_text(encoding="utf-8"),
     "v41412_raw_material_type": "Raw Material Type" in v41412_part and "part.rm_type" in v41412_sql,
     "v41412_rm_po_details": "RAW MATERIAL DETAILS" in v41412_po and "rm_allowed" in v41412_po,
     "v41412_rm_po_forging_filter": 'po_kind == "RAW_MATERIAL"' in v41412_po,
@@ -919,7 +921,7 @@ report = {
     "v4144_identity_duplicate_policy": '"customer_standards": ("standard_code", "standard_name")' in v4144_master and '"parts": ("fsi_part_number",)' in v4144_master,
     "v4144_opening_stock_import": "OPENING STOCK IMPORT / EXPORT UTILITY" in v4144_supply and "opening_stock_import_preview" in v4144_supply_service and "apply_opening_stock_import" in v4144_supply_service,
     "v4144_smtp_auth_guidance": "535 5.7.139" in v4144_email and "Authenticated SMTP" in v4144_email,
-    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM", "41414-LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH")),
+    "v4145_live_release_banner": "LIVE RELEASE VERIFICATION" in v4145_dashboard and any(token in v4145_dashboard for token in ("4145-DEPLOY-VERIFY-DIRECT-REPORT-EDIT-SMTP-TENANT-GUIDE", "4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM", "41414-LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH", "41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST")),
     "v4146_runtime_diagnostics": "deployment-diagnostics" in app_text and "LIVE BUILD · QCMS" in app_text and (ROOT / "app_pages" / "deployment_diagnostics.py").exists(),
     "v4147_deploy_target_proof": "Git origin" in v4147_diag and "Streamlit main file" in v4147_diag,
     "v4147_next_stage_email": "NEXT-STAGE RESPONSIBILITY ROUTING" in v4147_email and "department_emails" in v4147_notify,

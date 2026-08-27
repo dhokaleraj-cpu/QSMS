@@ -11,8 +11,8 @@ def _text(path: str) -> str:
 
 
 def test_v41414_version_and_build() -> None:
-    assert (ROOT / "VERSION").read_text().strip() == "4.14.14"
-    assert BUILD in _text("streamlit_app.py")
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.14", "4.14.15"}
+    assert BUILD in _text("streamlit_app.py") or "41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST" in _text("streamlit_app.py")
 
 
 def test_case_depth_is_derived_only_from_additional_layout_parameter() -> None:

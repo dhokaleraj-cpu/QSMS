@@ -4,19 +4,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_and_visible_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.12.4", "4.12.5", "4.12.6", "4.12.7", "4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.12.4", "4.12.5", "4.12.6", "4.12.7", "4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15"}
     assert "4124-DUAL-SUPPLY-FLOW-MIS" in (ROOT / "core/ui.py").read_text()
     assert "4124-DUAL-SUPPLY-FLOW-MIS" in (ROOT / "core/auth.py").read_text()
 
 
-def test_two_supply_flow_contracts_are_present():
+def test_supply_flow_contracts_are_present():
     service = (ROOT / "core/supply_chain_service.py").read_text()
     page = (ROOT / "app_pages/supply_chain.py").read_text()
     for token in (
         'FLOW_FSI_RM = "FSI_RM"',
         'FLOW_DIRECT_FORGING = "DIRECT_FORGING"',
-        '"Flow 1 · RM Responsible FSI"',
-        '"Flow 2 · RM Responsible Forger / Supplier"',
+        'FLOW_FSI_RM_DIRECT_PRODUCTION = "FSI_RM_DIRECT_PRODUCTION"',
+        '"Flow 1 · FSI RM → Forging → Production"',
+        '"Flow 2 · Direct Forging → Production"',
+        '"Flow 3 · FSI RM → Direct Production"',
         "pending_direct_forging_orders",
     ):
         assert token in service
@@ -24,10 +26,10 @@ def test_two_supply_flow_contracts_are_present():
         assert token in page
 
 
-def test_flow_storage_is_backward_compatible_without_new_database_columns():
+def test_flow_storage_remains_backward_compatible_with_explicit_flow_column():
     service = (ROOT / "core/supply_chain_service.py").read_text()
     assert "QCMS_SUPPLY_FLOW=" in service
-    assert 'p["required_rm_kg"] = round(qty * gross, 3) if flow == FLOW_FSI_RM else 0.0' in service
+    assert 'p["required_rm_kg"] = round(qty * gross, 3) if flow in FLOW_REQUIRES_FSI_RM else 0.0' in service
     assert "Backwards compatibility" not in service or "Backward compatibility" in service
     assert "clean_flow_remarks" in service
 

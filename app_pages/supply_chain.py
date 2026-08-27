@@ -22,6 +22,7 @@ from core.selection_labels import part_label, party_label
 from core.supply_chain_service import (
     FLOW_DIRECT_FORGING,
     FLOW_FSI_RM,
+    FLOW_FSI_RM_DIRECT_PRODUCTION,
     FLOW_LABELS,
     MONTHS,
     SupplyChainService,
@@ -200,9 +201,9 @@ def _order_display_rows(service: SupplyChainService, orders: Sequence[Mapping[st
             "Supply Flow":FLOW_LABELS.get(flow,flow),
             "Customer":party_label(customer), "Part Number":part.get("part_number"), "FSI Part Number":part.get("fsi_part_number"), "Part Description":part.get("part_name"),
             "Material Grade":grade.get("grade_code"), "Order Qty pcs":r.get("order_qty_pcs"),
-            "RM Required kg":r.get("required_rm_kg") if flow==FLOW_FSI_RM else None,
-            "RM Ordered kg":r.get("rm_ordered_kg") if flow==FLOW_FSI_RM else None,
-            "RM Balance kg":r.get("rm_balance_kg") if flow==FLOW_FSI_RM else None, "Available Stock pcs":r.get("available_stock_pcs_snapshot"), "3 Month Schedule pcs":r.get("three_month_schedule_pcs_snapshot"), "RM Procurement Required":r.get("rm_procurement_required"), "Procurement Decision":r.get("procurement_decision"), "Delivery Date":r.get("customer_delivery_date"),
+            "RM Required kg":r.get("required_rm_kg") if flow in {FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION} else None,
+            "RM Ordered kg":r.get("rm_ordered_kg") if flow in {FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION} else None,
+            "RM Balance kg":r.get("rm_balance_kg") if flow in {FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION} else None, "Available Stock pcs":r.get("available_stock_pcs_snapshot"), "3 Month Schedule pcs":r.get("three_month_schedule_pcs_snapshot"), "RM Procurement Required":r.get("rm_procurement_required"), "Procurement Decision":r.get("procurement_decision"), "Delivery Date":r.get("customer_delivery_date"),
             "Display Status":_due_status(r.get("status"),r.get("customer_delivery_date")), "_id":str(r.get("id")),
         })
     return pd.DataFrame(rows)
@@ -242,10 +243,18 @@ def _order_progress(service: SupplyChainService, order: dict) -> list[dict]:
     ]
     if flow==FLOW_DIRECT_FORGING:
         return [{"label":"Customer Order", "state":"complete", "detail":str(order.get("master_reference_no"))}, *common_tail]
-    return [
+    rm_head=[
         {"label":"Customer Order", "state":"complete", "detail":str(order.get("master_reference_no"))},
         {"label":"RM Procurement", "state":state(totals["rm_ordered_kg"],required), "detail":f"{totals['rm_ordered_kg']:,.1f}/{required:,.1f} kg"},
         {"label":"RM Receipt", "state":state(totals["rm_received_kg"],min(totals["rm_ordered_kg"],required) if totals["rm_ordered_kg"] else required), "detail":f"{totals['rm_received_kg']:,.1f} kg"},
+    ]
+    if flow==FLOW_FSI_RM_DIRECT_PRODUCTION:
+        return [*rm_head,
+            {"label":"Part Production", "state":state(part_production,qty), "detail":f"{part_production:,.0f}/{qty:,.0f} pcs"},
+            {"label":"Dispatch", "state":state(totals["customer_dispatched_pcs"],qty), "detail":f"{totals['customer_dispatched_pcs']:,.0f}/{qty:,.0f} pcs"},
+        ]
+    return [
+        *rm_head,
         {"label":"RM to Forger", "state":state(totals["rm_dispatched_kg"],min(totals["rm_received_kg"],required) if totals["rm_received_kg"] else required), "detail":f"{totals['rm_dispatched_kg']:,.1f} kg"},
         *common_tail,
     ]
@@ -329,9 +338,9 @@ def render_customer_orders() -> None:
     with stage_section("A","CUSTOMER ORDER / SCHEDULE ENTRY","Monthly Schedule shows six months horizontally in one row. Part/customer/supplier/weight data comes from Masters.",key="supply_customer_order_entry"):
         order_type=st.radio("Order Source",["PURCHASE_ORDER","MONTHLY_SCHEDULE"],horizontal=True,format_func=lambda v:"Customer Purchase Order" if v=="PURCHASE_ORDER" else "Monthly Schedule · 6 Months")
         supply_flow=st.radio(
-            "Supply Chain Flow", [FLOW_FSI_RM,FLOW_DIRECT_FORGING], horizontal=True,
+            "Supply Chain Flow", [FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION,FLOW_DIRECT_FORGING], horizontal=True,
             format_func=lambda v: FLOW_LABELS[v], key="supply_customer_flow",
-            help="Flow 1 follows Customer Order → RM Procurement → RM Receipt → RM to Forger → Forging Order → Forging Receipt → Part Production → Dispatch. Flow 2 is RM Responsible Forger / Supplier: it starts directly from Forging Order and bypasses FSI RM Procurement, RM Receipt and RM-to-Forger."
+            help="Flow 1: Customer Order → RM Procurement → RM Receipt → RM to Forger → Forging → Production → Dispatch. Flow 2: Direct Forging → Production. Flow 3: Customer Order → RM Procurement → RM Receipt → Direct Production/Machining → Dispatch; no forging stage is created."
         )
         c1,c2=st.columns(2,gap="small"); customer_id=c1.selectbox("Customer",list(customer_map),format_func=lambda v:customer_map[v]) if customer_map else None
         filtered_parts=[r for r in parts if not customer_id or str(r.get("customer_id") or "") in {"",str(customer_id)}]; fp_map={str(r["id"]):part_map[str(r["id"])] for r in filtered_parts}; part_id=c2.selectbox("Part Number",list(fp_map),format_func=lambda v:fp_map[v]) if fp_map else None
@@ -346,7 +355,7 @@ def render_customer_orders() -> None:
             c=st.columns(5,gap="small"); order_no=c[0].text_input("Customer Order No."); position=c[1].text_input("PosNr / Position"); qty=c[2].number_input("Order Qty pcs",min_value=1.0,step=1.0); order_date=c[3].date_input("Order Date",value=date.today(),format="DD-MM-YYYY"); delivery=c[4].date_input("Delivery / Arrival Date",value=date.today(),format="DD-MM-YYYY")
             remarks=st.text_input("Order Remarks")
             procurement_check = service.procurement_check(str(part_id or ""), str(customer_id or ""), anchor=delivery, proposed_three_month_qty=qty) if part_id else {"available_stock_pcs":0,"three_month_schedule_pcs":qty,"shortage_pcs":qty,"rm_procurement_allowed":True}
-            if supply_flow==FLOW_FSI_RM:
+            if supply_flow in {FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION}:
                 kpi_grid([
                     {"label":"System Available Qty","value":f"{number(procurement_check.get('available_stock_pcs')):,.0f} pcs","color":"#0B6FAE","background":"#FFFFFF"},
                     {"label":"3-Month Schedule / Demand","value":f"{number(procurement_check.get('three_month_schedule_pcs')):,.0f} pcs","color":"#B0003A","background":"#FFFFFF"},
@@ -360,7 +369,7 @@ def render_customer_orders() -> None:
                     st.success("Available system quantity covers the rolling three-month demand. RM Procurement is not required for this Customer Order.")
             else:
                 rm_procurement_required=False
-                st.metric("Estimated RM at Forging Supplier",f"{qty*gross:,.3f} kg",help="Reference only. FSI RM Procurement / Receipt / RM-to-Forger stages are bypassed for this flow.")
+                st.metric("Estimated RM at Forging Supplier",f"{qty*gross:,.3f} kg",help="Reference only. FSI RM Procurement / Receipt stages are bypassed for the Direct Forging flow.")
             order_notify_pref = notification_confirmation(
                 NotificationService(service.repo), "RM_PROCUREMENT_PENDING", key="customer_po_rm_notification",
                 context={"customer_name":customer_map.get(str(customer_id),"-"),"part_number":fp_map.get(str(part_id),"-"),"next_task":"RM Procurement"},
@@ -401,7 +410,7 @@ def render_customer_orders() -> None:
             remarks=st.text_input("Schedule Remarks")
             proposed_three_month=sum(number(row[2]) for row in month_data[:3])
             schedule_check=service.procurement_check(str(part_id or ""),str(customer_id or ""),anchor=date(int(start_year),int(start_month),1),proposed_three_month_qty=proposed_three_month) if part_id else {"available_stock_pcs":0,"three_month_schedule_pcs":proposed_three_month,"shortage_pcs":proposed_three_month,"rm_procurement_allowed":True}
-            if supply_flow==FLOW_FSI_RM:
+            if supply_flow in {FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION}:
                 kpi_grid([
                     {"label":"System Available Qty","value":f"{number(schedule_check.get('available_stock_pcs')):,.0f} pcs","color":"#0B6FAE","background":"#FFFFFF"},
                     {"label":"3-Month Schedule","value":f"{number(schedule_check.get('three_month_schedule_pcs')):,.0f} pcs","color":"#B0003A","background":"#FFFFFF"},
@@ -443,7 +452,7 @@ def render_customer_orders() -> None:
     with stage_section("B","CUSTOMER ORDER IMPORT · COLUMNS A TO F","Reads rows after the detected header. Existing Item / Order No. / PosNr combinations are skipped; only database-missing orders are imported.",key="supply_customer_import"):
         c_import=st.columns(2,gap="small")
         import_customer=c_import[0].selectbox("Import Customer",list(customer_map),format_func=lambda v:customer_map[v],key="supply_import_customer") if customer_map else None
-        import_flow=c_import[1].selectbox("Imported Order Supply Flow",[FLOW_FSI_RM,FLOW_DIRECT_FORGING],format_func=lambda v:FLOW_LABELS[v],key="supply_import_flow")
+        import_flow=c_import[1].selectbox("Imported Order Supply Flow",[FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION,FLOW_DIRECT_FORGING],format_func=lambda v:FLOW_LABELS[v],key="supply_import_flow")
         uploaded=st.file_uploader("Customer Order / Schedule Excel",type=["xlsx","xlsm","xls"],key="supply_order_import_file")
         if uploaded is not None and import_customer:
             try:
@@ -475,7 +484,7 @@ def render_customer_orders() -> None:
                 key_prefix=f"supply_customer_order_{attachment_order_id}",can_add_or_replace=perms["can_edit"] or perms["can_create"],can_delete=perms["can_archive"],title="ATTACHMENT FILE",
             )
         else: st.info("Create a Customer Order / Schedule before adding an attachment.")
-    _edit_delete_panel(service,table="supply_customer_orders",rows=service.customer_orders(),title="CUSTOMER ORDER EDIT / DELETE",stage="E",key="supply_customer_order",labeler=lambda r:f"{r.get('master_reference_no')} · Pos {r.get('order_position') or '-'}",fields=(("supply_flow","Supply Chain Flow","select",(FLOW_FSI_RM,FLOW_DIRECT_FORGING)),("customer_order_no","Customer Order No.","text"),("order_position","PosNr / Position","text"),("order_date","Order Date","date"),("customer_delivery_date","Delivery Date","date"),("order_qty_pcs","Order Qty pcs","number"),("status","Status","select",("OPEN","IN_PROGRESS","COMPLETED","CANCELLED")),("remarks","Remarks","text")),perms=perms)
+    _edit_delete_panel(service,table="supply_customer_orders",rows=service.customer_orders(),title="CUSTOMER ORDER EDIT / DELETE",stage="E",key="supply_customer_order",labeler=lambda r:f"{r.get('master_reference_no')} · Pos {r.get('order_position') or '-'}",fields=(("supply_flow","Supply Chain Flow","select",(FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION,FLOW_DIRECT_FORGING)),("customer_order_no","Customer Order No.","text"),("order_position","PosNr / Position","text"),("order_date","Order Date","date"),("customer_delivery_date","Delivery Date","date"),("order_qty_pcs","Order Qty pcs","number"),("status","Status","select",("OPEN","IN_PROGRESS","COMPLETED","CANCELLED")),("remarks","Remarks","text")),perms=perms)
 
 
 
@@ -1083,18 +1092,20 @@ def render_downstream() -> None:
         with stage_section(letter,title,f"Pending source records from the immediately previous Supply Chain stage. Global search + PDF/Excel export are included.",key=f"supply_downstream_{event_type.lower()}"):
             sources=service.pending_sources_for_downstream(event_type); data=[]
             for s in sources:
-                order=orders.get(str(s.get("customer_order_id"))) or {}; ctx=service.order_context(order); ref=s.get("receipt_number") if event_type=="MACHINING" else s.get("reference_no"); qty=number(s.get("received_qty_pcs") if event_type=="MACHINING" else s.get("qty_pcs")); data.append({**ctx,"Previous Stage Reference":ref,"Heat Number":s.get("heat_number"),"Heat Code":s.get("heat_code"),"Available Qty pcs":qty,"Status":"PENDING","_id":str(s.get("id"))})
+                order=orders.get(str(s.get("customer_order_id"))) or {}; ctx=service.order_context(order); ref=s.get("receipt_number") if event_type=="MACHINING" else s.get("reference_no"); qty=number(s.get("received_qty_pcs") if event_type=="MACHINING" else s.get("qty_pcs")); data.append({**ctx,"Previous Stage":("RM Receipt · Direct Production" if s.get("_source_type")=="RM_RECEIPT" else "Forging Receipt") if event_type=="MACHINING" else str(s.get("event_type") or "").replace("_"," ").title(),"Previous Stage Reference":ref,"Heat Number":s.get("heat_number"),"Heat Code":s.get("heat_code"),"Available Qty pcs":qty,"Status":"PENDING","_id":str(s.get("_source_id") or s.get("id"))})
             _searchable_grid(pd.DataFrame(data).drop(columns=["_id"],errors="ignore"),title=f"Pending {title.title()}",key=f"supply_pending_{event_type.lower()}",height=330)
-            labels={str(s["id"]):f"{(s.get('receipt_number') if event_type=='MACHINING' else s.get('reference_no'))} · Heat {s.get('heat_number') or '-'} · {number(s.get('received_qty_pcs') if event_type=='MACHINING' else s.get('qty_pcs')):,.0f} pcs" for s in sources}; source_id=st.selectbox("Select Previous Stage Record",list(labels),format_func=lambda v:labels[v],key=f"supply_source_{event_type}") if labels else None
+            labels={str(s.get("_source_id") or s["id"]):f"{(s.get('receipt_number') if event_type=='MACHINING' else s.get('reference_no'))} · {('Direct RM → Production' if s.get('_source_type')=='RM_RECEIPT' else 'Forging → Production') if event_type=='MACHINING' else ''} · Heat {s.get('heat_number') or '-'} · {number(s.get('received_qty_pcs') if event_type=='MACHINING' else s.get('qty_pcs')):,.0f} pcs" for s in sources}; source_id=st.selectbox("Select Previous Stage Record",list(labels),format_func=lambda v:labels[v],key=f"supply_source_{event_type}") if labels else None
             if not source_id: st.info(f"No record is pending for {title.title()}."); continue
-            source=next(s for s in sources if str(s["id"])==source_id); order_id=str(source.get("customer_order_id")); _show_order_context(service,order_id,key=f"down_context_{event_type}",export=True); max_qty=number(source.get("received_qty_pcs") if event_type=="MACHINING" else source.get("qty_pcs")); c=st.columns(4,gap="small"); ref=c[0].text_input("Reference No.",key=f"down_ref_{event_type}"); ed=c[1].date_input("Date",value=date.today(),format="DD-MM-YYYY",key=f"down_date_{event_type}"); qty=c[2].number_input("Quantity pcs",min_value=1.0,max_value=float(max(max_qty,1)),value=float(max(max_qty,1)),step=1.0,key=f"down_qty_{event_type}"); rej=c[3].number_input("Rejected Qty pcs",min_value=0.0,step=1.0,key=f"down_rej_{event_type}")
+            source=next(s for s in sources if str(s.get("_source_id") or s["id"])==source_id); order_id=str(source.get("customer_order_id")); _show_order_context(service,order_id,key=f"down_context_{event_type}",export=True); max_qty=number(source.get("received_qty_pcs") if event_type=="MACHINING" else source.get("qty_pcs")); c=st.columns(4,gap="small"); ref=c[0].text_input("Reference No.",key=f"down_ref_{event_type}"); ed=c[1].date_input("Date",value=date.today(),format="DD-MM-YYYY",key=f"down_date_{event_type}"); qty=c[2].number_input("Quantity pcs",min_value=1.0,max_value=float(max(max_qty,1)),value=float(max(max_qty,1)),step=1.0,key=f"down_qty_{event_type}"); rej=c[3].number_input("Rejected Qty pcs",min_value=0.0,step=1.0,key=f"down_rej_{event_type}")
             invoice=None; invoice_date=None; asn=None
             if event_type=="CUSTOMER_DISPATCH":
                 c=st.columns(3,gap="small"); invoice=c[0].text_input("Invoice No.",key="supply_invoice"); invoice_date=c[1].date_input("Invoice Date",value=date.today(),format="DD-MM-YYYY",key="supply_invoice_date"); asn=c[2].text_input("ASN No.",key="supply_asn")
             remarks=st.text_input("Remarks",key=f"down_rem_{event_type}")
             if st.button(f"Post {title.title()}",type="primary",width="stretch",key=f"down_save_{event_type}",disabled=not perms["can_create"] or not ref.strip()):
                 payload={"customer_order_id":order_id,"event_type":event_type,"reference_no":ref.strip(),"event_date":ed.isoformat(),"qty_pcs":qty,"rejected_qty_pcs":rej,"inward_lot_id":source.get("inward_lot_id"),"heat_number":source.get("heat_number"),"heat_code":source.get("heat_code"),"invoice_no":invoice.strip() if invoice else None,"invoice_date":invoice_date.isoformat() if invoice_date else None,"asn_no":asn.strip() if asn else None,"remarks":remarks.strip() or None}
-                if event_type=="MACHINING": payload["source_forging_receipt_id"]=source_id
+                if event_type=="MACHINING":
+                    if source.get("_source_type")=="RM_RECEIPT": payload["source_rm_receipt_id"]=source_id
+                    else: payload["source_forging_receipt_id"]=source_id
                 else: payload["source_event_id"]=source_id
                 try: service.save_transaction("supply_downstream_events",payload); service.sync_order_status(order_id); save_success_popup(f"{title.title()} linked to previous stage with Heat traceability.",queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))

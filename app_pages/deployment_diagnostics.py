@@ -66,11 +66,11 @@ def render() -> None:
             {"Check": "Runtime host", "Value": os.environ.get("HOSTNAME", "-")},
         ]
         portal_table(pd.DataFrame(rows), hide_index=True, width="stretch", height=320)
-        proof_path = ROOT / "STREAMLIT_DEPLOY_TARGET_PROOF_v4.14.14.txt"
+        proof_path = ROOT / "STREAMLIT_DEPLOY_TARGET_PROOF_v4.14.15.txt"
         if proof_path.exists():
             st.code(proof_path.read_text(encoding="utf-8", errors="ignore"), language="text")
         else:
-            st.warning("Deployment target proof file is not present in this runtime. The v4.14.14 updater creates it before the Git commit/push.")
+            st.warning("Deployment target proof file is not present in this runtime. The v4.14.15 updater creates it before the Git commit/push.")
 
     checks = [
         ("MetLAB direct edit", "app_pages/metlab_report.py", "Select Existing MetLAB Report to Edit"),

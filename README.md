@@ -1,6 +1,12 @@
-# QCMS v4.14.14
+# QCMS v4.14.15
 
-Current controlled build: `41414-LAYOUT-CASE-DEPTH-RM-PRICE-COMPANY-BRANCH`
+## v4.14.15 controlled changes
+- Adds Flow 3: Customer Order → RM Procurement → RM PO → RM Receipt → Direct Production/Machining → Dispatch, with all forging stages bypassed.
+- RM Procurement and RM PO remain available for both FSI-RM flows; Forging PO/RM-to-Forger lists exclude the direct-production route.
+- Material Inward/RM Receipt can become the Machining source for Flow 3 with Heat/Inward genealogy retained.
+- Admin Email Settings now exposes a dedicated **TEST EMAIL TEMPLATE** section with manual To/CC and popup confirmation.
+
+Current controlled build: `41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST`
 
 This additive release retains every earlier QCMS workflow and adds:
 
