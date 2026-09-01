@@ -1,21 +1,19 @@
-# QCMS v4.14.15
+# QCMS v4.14.23
 
-## v4.14.15 controlled changes
-- Adds Flow 3: Customer Order → RM Procurement → RM PO → RM Receipt → Direct Production/Machining → Dispatch, with all forging stages bypassed.
-- RM Procurement and RM PO remain available for both FSI-RM flows; Forging PO/RM-to-Forger lists exclude the direct-production route.
-- Material Inward/RM Receipt can become the Machining source for Flow 3 with Heat/Inward genealogy retained.
-- Admin Email Settings now exposes a dedicated **TEST EMAIL TEMPLATE** section with manual To/CC and popup confirmation.
+Current controlled build: `41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE`
 
-Current controlled build: `41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST`
+This release is a deployment and master-entry reliability hotfix on top of v4.14.21.
 
-This additive release retains every earlier QCMS workflow and adds:
+- Public Supabase release verification uses the project publishable key and requires no `supabase login`.
+- Master Data Centre **New Record** opens a blank form; editing remains through Records / Edit.
+- Same-Heat **Add New RMTC / TC** clears the previous certificate widget state while retaining only Heat identity.
+- v4.14.21 transaction-delete routing remains preserved so OSP/MetLAB/Dimensional records never go through the master-delete RPC.
+- Existing production/master/RMTC/OSP/Supply Chain data is preserved.
 
-- MetLAB Case Depth / Microhardness Traverse is driven strictly by **Additional Layout Characteristics** whose **Parameter** contains the words `Case Depth`.
-- Case Depth locations (for example Ground Face / ID / OD) and their specifications are read-only in MetLAB and are derived from the matching layout characteristics; only distance-wise traverse readings are entered by the user.
-- Specification text alone cannot activate the Case Depth Traverse.
-- Raw Material Purchase Order current price resolves by **Part + Supplier + selected Raw Material Detail**, with UOM as a preference/fallback rather than a hard blocker, so valid RM price-history rows saved as PCS/NOS remain usable on KGS RM POs.
-- Complete PO price revision history remains tied to the exact Raw Material Detail.
-- New **Company Branch Master** stores reusable company/plant/address/GST/contact data.
-- Logged-in Employee Master `Plant` resolves to the active Company Branch context shown across authenticated QCMS modules.
-- Purchase Orders use Company Branch as the controlled issuing plant and Company Branch is also available as a Ship-To source alongside Customer, Supplier and Vendor/OSP masters.
-- Existing PO snapshots and production/master/quality/Supply Chain/RMTC/OSP data are preserved.
+
+## v4.14.23 source-only deployment recovery
+- No new Supabase migration is required; live database baseline remains v4.14.22 / `QCMS_V41422_FULL_READY`.
+- Online Supabase verification is non-blocking so a local Data API/DNS issue cannot prevent Git/Streamlit deployment.
+- Same-Heat **Add New RMTC / TC** uses a fresh selector/form nonce and preserves only Heat identity.
+- Master Data Centre **New Record** requests clear the prior edit selector and open blank forms.
+- Transaction delete routing sends OSP/MetLAB/Dimensional/RMTC/Material Inward/Supply Chain transactions to `qcms_delete_transaction_row`, not the master-delete RPC.

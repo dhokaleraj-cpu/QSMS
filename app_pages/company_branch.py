@@ -8,7 +8,7 @@ import streamlit as st
 from core.access import current_permissions
 from core.branch_context import branch_label
 from core.repository import Repository
-from core.ui import page_header, portal_table, save_success_popup, section_bar, subpage_navigation
+from core.ui import consume_master_blank_request, page_header, portal_table, save_success_popup, section_bar, subpage_navigation
 
 
 def _norm(value: object) -> str:
@@ -37,6 +37,9 @@ def render_entry() -> None:
     rows = _rows(repo)
     labels = {str(r["id"]): branch_label(r) for r in rows}
     options = [""] + list(labels)
+    force_new = consume_master_blank_request("company-branch-entry", widget_keys=("company_branch_edit_select",))
+    if force_new or st.session_state.get("company_branch_edit_select") not in options:
+        st.session_state["company_branch_edit_select"] = ""
     selected = st.selectbox("New / Edit Company Branch", options, format_func=lambda v: "— New Company Branch —" if not v else labels[v], key="company_branch_edit_select")
     existing = repo.get("company_branches", selected) if selected else None
     writable = perms["can_edit"] if existing else perms["can_create"]

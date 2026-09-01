@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.attachments import MICROSTRUCTURE_IMAGE_TYPES
 
 from datetime import date
 from typing import Any
@@ -8,6 +9,8 @@ import streamlit as st
 from core.ui import portal_table
 
 from core.access import current_permissions
+from core.delete_service import password_delete_panel
+from core.password_edit import password_reopen_for_edit
 from core.delete_service import password_delete_panel
 from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
 from core.osp_service import OSPService
@@ -89,16 +92,22 @@ def _render(report_type: str) -> None:
     requested_scope = str(st.session_state.get("osp_inspection_scope") or "OSP_SAMPLE")
     scope = st.radio("Inspection Stage", scope_options, index=scope_options.index(requested_scope) if requested_scope in scope_options else 0, horizontal=True, format_func=_scope_label)
     pending = osp.jobs_for_inspection(scope, report_type)
-    with stage_section("A", f'{_scope_label(scope).upper()} · PENDING LIST', key="osp_inspections__render_a"):
-        if not pending:
-            st.success(f"No {_scope_label(scope)} {report_type.title()} inspections are pending.")
+    report_table = "inspection_reports" if is_dimensional else "lab_tests"
+    existing_reports = inspection.repo.select(report_table, eq={"inspection_scope": scope}, order_by="updated_at", desc=True, limit=1000)
+    existing_job_ids = {str(r.get("osp_job_id")) for r in existing_reports if r.get("osp_job_id")}
+    existing_jobs = [r for r in osp.register() if str(r.get("id")) in existing_job_ids]
+    mode = st.radio("Record Mode", ["Pending / New", "Edit Existing"], horizontal=True, key=f"osp_{report_type}_{scope}_mode")
+    active_rows = pending if mode == "Pending / New" else existing_jobs
+    with stage_section("A", f'{_scope_label(scope).upper()} · {mode.upper()}', key="osp_inspections__render_a"):
+        if not active_rows:
+            st.info(f"No {_scope_label(scope)} {report_type.title()} records are available for {mode.lower()}.")
             return
-        _pending_table(pending, report_type, scope)
+        _pending_table(active_rows, report_type, scope)
 
-        labels = {str(r["id"]): _job_label(r) for r in pending}
+        labels = {str(r["id"]): _job_label(r) for r in active_rows}
         requested_job = str(st.session_state.get("osp_inspection_job_id") or "")
         job_id = st.selectbox("OSP Batch", list(labels), index=list(labels).index(requested_job) if requested_job in labels else 0, format_func=lambda value: labels[value])
-        job = next(r for r in pending if str(r["id"]) == job_id)
+        job = next(r for r in active_rows if str(r["id"]) == job_id)
         st.session_state["osp_inspection_job_id"] = job_id; st.session_state["osp_inspection_scope"] = scope
 
         plans = inspection.plans(report_type, str(job.get("part_id")), approved_only=True, process_id=str(job.get("process_id")), inward_type="OSP_PROCESS")
@@ -138,7 +147,7 @@ def _render(report_type: str) -> None:
                     if (existing or {}).get(f"microstructure_image_{slot}_path"):
                         st.caption(f"Photo {slot} already uploaded · upload another file to replace it")
                     micro_files.append(st.file_uploader(
-                        f"Microstructure Photo {slot}", type=["png", "jpg", "jpeg"],
+                        f"Microstructure Photo {slot}", type=MICROSTRUCTURE_IMAGE_TYPES,
                         key=f"osp_metlab_micro_{scope}_{job_id}_{slot}",
                     ))
                     micro_titles.append(st.text_input(
@@ -219,6 +228,13 @@ def _render(report_type: str) -> None:
             except Exception as exc: st.error(str(exc))
 
         if existing:
+            with stage_section("D", "EDIT / DELETE OSP INSPECTION RECORD", key=f"osp_inspection_manage_{report_type}_{scope}_{job_id}"):
+                if str(existing.get("status") or "").upper() == "FINAL":
+                    password_reopen_for_edit(repo=inspection.repo, table=report_table, record=existing, entity_type=f"OSP {report_type}", can_edit=perms["can_edit"], key=f"osp_reopen_{report_type}_{scope}_{report_id}", title=f"Reopen OSP {report_type.title()} for Edit")
+                else:
+                    st.caption("This record is editable with your assigned module Edit permission.")
+                if password_delete_panel(repo=inspection.repo, table=report_table, rows=[existing], labeler=lambda row:f"{row.get('report_number')} · {_scope_label(scope)}", key=f"osp_delete_{report_type}_{scope}_{report_id}", can_delete=perms["can_archive"], title=f"Delete OSP {report_type.title()} Record", help_text="Requires current QCMS password and Delete/Archive permission. Downstream dependencies can block unsafe deletion."):
+                    st.rerun()
             disposition_cards([{"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")}, {"label": "Decision", "value": existing.get("disposition")}, {"label": "Gate", "value": _scope_label(scope)}])
             c = st.columns(3, gap="small")
             validator = c[0].selectbox("Validated By", employee_options, format_func=lambda value: employees.get(value, "— Select —"), key=f"osp_validator_{report_type}_{scope}_{job_id}")

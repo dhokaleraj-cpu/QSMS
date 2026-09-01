@@ -73,6 +73,66 @@ def is_logged_in() -> bool:
     return current_profile() is not None
 
 
+def refresh_current_employee_link() -> dict[str, Any] | None:
+    """Resolve the signed-in Employee Master link from live Supabase and refresh session state.
+
+    This intentionally does not rely only on the profile snapshot created at login. User/Employee
+    links can be changed by an administrator while another session is open; PO and approval
+    workflows must therefore use the live relationship.
+    """
+    if is_preview_session():
+        return None
+    client = get_session_client()
+    profile = current_profile() or {}
+    if client is None or not profile:
+        return None
+    employee_id = ""
+    try:
+        response = client.rpc("qcms_current_login_employee_id").execute()
+        value = response.data
+        if isinstance(value, list):
+            value = value[0] if value else None
+            if isinstance(value, dict):
+                value = next(iter(value.values()), None)
+        employee_id = str(value or "").strip()
+    except Exception:
+        employee_id = ""
+    row: dict[str, Any] | None = None
+    try:
+        query = client.table("employees").select("id,employee_code,first_name,last_name,email,department,designation,approval_authorities,reports_to_employee_id,is_top_level_authority,status,profile_id").eq("status", "ACTIVE")
+        if employee_id:
+            response = query.eq("id", employee_id).limit(1).execute()
+        else:
+            response = query.eq("profile_id", str(profile.get("id") or "")).limit(1).execute()
+        if response.data:
+            row = dict(response.data[0])
+    except Exception:
+        row = None
+    if not row:
+        return None
+    refreshed = dict(profile)
+    refreshed.update({
+        "employee_id": row.get("id"),
+        "employee_code": row.get("employee_code"),
+        "department": row.get("department"),
+        "designation": row.get("designation"),
+        "approval_authorities": row.get("approval_authorities") or [],
+        "reports_to_employee_id": row.get("reports_to_employee_id"),
+        "is_top_level_authority": bool(row.get("is_top_level_authority")),
+    })
+    st.session_state["profile"] = refreshed
+    return row
+
+
+def current_employee_id(*, refresh: bool = True) -> str:
+    profile = current_profile() or {}
+    if refresh:
+        row = refresh_current_employee_link()
+        if row and row.get("id"):
+            return str(row.get("id"))
+    return str(profile.get("employee_id") or "").strip()
+
+
 def _friendly_error(exc: Exception, action: str) -> str:
     text = str(exc)
     lower = text.lower()

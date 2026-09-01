@@ -12,6 +12,7 @@ from core.calculations import band_status, calculate_di, calculate_jominy_curve
 from core.attachments import AttachmentService
 from core.database import get_session_client
 from core.repository import Repository
+from core.record_audit import annotate_transaction_rows
 
 
 class RMTCService:
@@ -118,6 +119,23 @@ class RMTCService:
         if not normalized:return []
         return self.repo.select('v_qsms_heat_steel_ledger',eq={'normalized_heat_number':normalized},order_by='created_at',desc=True,limit=500)
 
+    def canonical_heat_code(self, heat_number: str) -> str:
+        """Return the established internal Heat Code for an existing Heat Number.
+
+        Multiple supplier RMTC certificates may legitimately reference the same Heat.
+        QCMS must keep one internal Heat Code and one global Heat steel balance across
+        those certificate records.
+        """
+        normalized=self.normalize_heat_number(heat_number)
+        if not normalized:
+            return ''
+        rows=self.repo.select('rmtc_approvals',eq={'normalized_heat_number':normalized},order_by='created_at',desc=False,limit=100)
+        for row in rows:
+            value=str(row.get('heat_code') or '').strip()
+            if value:
+                return value
+        return ''
+
     def heat_ledger(self, heat_number: str | None = None) -> list[dict]:
         eq = {}
         normalized = self.normalize_heat_number(heat_number) if heat_number else ''
@@ -137,7 +155,7 @@ class RMTCService:
         return next((row for row in rows if str(row.get('id')) != str(exclude_rmtc_id or '')), None)
 
     def list(self):
-        return self.repo.select('rmtc_approvals',order_by='created_at',desc=True,limit=2000)
+        return annotate_transaction_rows(self.repo,self.repo.select('rmtc_approvals',order_by='created_at',desc=True,limit=2000))
 
     def get(self,rmtc_id):
         return self.repo.get('rmtc_approvals',rmtc_id)

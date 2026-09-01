@@ -778,7 +778,7 @@ if '"remote_push_verification"' not in v4145_manifest:
 v4147_email = (ROOT / "app_pages" / "email_settings.py").read_text(encoding="utf-8")
 v4147_notify = (ROOT / "core" / "notification_service.py").read_text(encoding="utf-8")
 v4147_migration = (ROOT / "supabase" / "migrations" / "20260826143000_qcms_notification_templates_overdue_v4147.sql").read_text(encoding="utf-8")
-v4147_overdue = (ROOT / "supabase" / "functions" / "qcms-overdue-notifier" / "index.ts").read_text(encoding="utf-8")
+v4147_overdue = (ROOT / "supabase" / "functions" / "qcms-po-confirmation-reminder" / "index.ts").read_text(encoding="utf-8")
 v4147_sender = (ROOT / "supabase" / "functions" / "qcms-send-email" / "index.ts").read_text(encoding="utf-8")
 v4147_diag = (ROOT / "app_pages" / "deployment_diagnostics.py").read_text(encoding="utf-8")
 if "NEXT-STAGE RESPONSIBILITY ROUTING" not in v4147_email or "MODULE EMAIL TEMPLATES" not in v4147_email:
@@ -882,8 +882,134 @@ if not all("record_email_sender(" in text for text in (v41413_metlab, v41413_dim
 if "notification_overrides" not in v41413_notify_ui or not all("notification_overrides(" in text for text in (v41413_metlab, v41413_dim, v41413_rmtc, v41413_supply, v41413_osp)):
     errors.append("QCMS 4.14.13 entry-recipient overrides are incomplete")
 
+# v4.14.16 permission / PO approval / cancellation / stage notification controls
+v41416_access = (ROOT / "core" / "access.py").read_text(encoding="utf-8")
+v41416_user_access = (ROOT / "app_pages" / "user_access.py").read_text(encoding="utf-8")
+v41416_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v41416_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v41416_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
+v41416_sql = (ROOT / "supabase" / "migrations" / "20260828120000_qcms_permissions_po_approval_supply_notifications_v41416.sql").read_text(encoding="utf-8")
+if "department_module_defaults" not in v41416_sql or "user_section_permissions" not in v41416_sql or "can_validate" not in v41416_sql:
+    errors.append("v4.14.16 three-layer department/user/section permission schema missing")
+if "Explicit user permission is authoritative" not in v41416_sql or "qcms_current_department" not in v41416_sql:
+    errors.append("v4.14.16 permission precedence hardening missing")
+if "PENDING_APPROVAL" not in v41416_service or "Approve Purchase Order" not in v41416_supply or "qcms_approve_purchase_order" not in v41416_sql:
+    errors.append("v4.14.16 PO manager approval workflow missing")
+if "Cancel & Reissue with New Supplier" not in v41416_supply or "qcms_cancel_purchase_order" not in v41416_sql or "replacement_purchase_order_id" not in v41416_service:
+    errors.append("v4.14.16 PO cancel/reissue workflow missing")
+if '"Raw Material Type":' not in v41416_supply or '"Material Grade":' not in v41416_supply or '"Section Size":' not in v41416_supply:
+    errors.append("v4.14.16 RM PO controlled item identity missing")
+if "PENDING STAGE RESPONSIBILITY & NOTIFICATIONS" not in v41416_supply or "PatternFill" not in v41416_supply:
+    errors.append("v4.14.16 pending stage employee notification / coloured Excel missing")
+if "SUPPLIER_TECHNICAL" not in v41416_part or "PRICE_HISTORY" not in v41416_part or "SECTION VISIBILITY / EDIT CONTROL" not in v41416_user_access:
+    errors.append("v4.14.16 section-level confidential visibility controls missing")
+
+# v4.14.17 automatic Supabase schema guard / tenant persistence / configured PO approval routes
+v41417_repo = (ROOT / "core" / "repository.py").read_text(encoding="utf-8")
+v41417_user_access = (ROOT / "app_pages" / "user_access.py").read_text(encoding="utf-8")
+v41417_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v41417_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v41417_sql = (ROOT / "supabase" / "migrations" / "20260828130000_qcms_auto_migration_approval_routes_v41417.sql").read_text(encoding="utf-8")
+v41417_guard = (ROOT / "scripts" / "qcms_remote_schema_guard.py").read_text(encoding="utf-8")
+v41417_manifest = json.loads((ROOT / "DEPLOYMENT_MANIFEST.json").read_text(encoding="utf-8"))
+for _table in ("department_module_defaults", "user_section_permissions", "qcms_module_approval_routes", "supply_stage_responsibilities"):
+    if f'"{_table}"' not in v41417_repo:
+        errors.append(f"v4.14.17 repository tenant scope missing: {_table}")
+if "MODULE APPROVAL ROUTES" not in v41417_user_access or "Save Approval Route" not in v41417_user_access:
+    errors.append("v4.14.17 Module Approval Routes admin UI missing")
+if "qcms_purchase_order_approval_target" not in v41417_sql or "CONFIGURED_ROUTE" not in v41417_sql or "REPORTS_TO" not in v41417_sql or "PERMISSION_FALLBACK" not in v41417_sql:
+    errors.append("v4.14.17 configured PO approval-route precedence missing")
+if "Self-approval is not permitted" not in v41417_sql:
+    errors.append("v4.14.17 PO self-approval guard missing")
+if "purchase_order_approval_target" not in v41417_service or "Required Approver" not in v41417_supply:
+    errors.append("v4.14.17 PO approval target display/service missing")
+if "QCMS_V41416_READY" not in v41417_guard or "QCMS_V41417_READY" not in v41417_guard or "/database/query" not in v41417_guard or "/rest/v1/rpc/qcms_release_schema_version" not in v41417_guard:
+    errors.append("v4.14.17 automatic Supabase verify/apply guard missing")
+if "db reset" in v41417_guard or "db push" in v41417_guard:
+    errors.append("v4.14.17 remote schema guard contains destructive/history-replay command")
+try:
+    v41417_manifest_version = tuple(int(part) for part in str(v41417_manifest.get("version") or "0.0.0").split("."))
+except Exception:
+    v41417_manifest_version = (0, 0, 0)
+if v41417_manifest_version < (4, 14, 17):
+    errors.append("v4.14.17 deployment manifest baseline is not retained")
+
+# v4.14.18 user/role/department permissions, employee recovery, audit and universal PDF
+v41418_sql = "\n".join((ROOT / "supabase" / "migrations" / name).read_text(encoding="utf-8") for name in (
+    "20260831161000_qcms_v41418_permissions_employee_access.sql",
+    "20260831161100_qcms_v41418_osp_same_heat_master_delete.sql",
+    "20260831161200_qcms_v41418_audit_metlab_rls_release.sql",
+))
+v41418_access = (ROOT / "core" / "access.py").read_text(encoding="utf-8")
+v41418_activity = (ROOT / "core" / "activity.py").read_text(encoding="utf-8")
+v41418_records = (ROOT / "app_pages" / "records_center.py").read_text(encoding="utf-8")
+v41418_employee = (ROOT / "app_pages" / "employee_master.py").read_text(encoding="utf-8")
+v41418_edge = (ROOT / "supabase" / "functions" / "qsms-user-admin" / "index.ts").read_text(encoding="utf-8")
+if not all(token in v41418_sql for token in ("role_module_defaults","qcms_effective_module_permission","qcms_user_activity_log","QSMS-ADMIN-001","supply_purchase_orders','supply_purchase_order_items','supply_purchase_order_sources','supply_opening_stock")):
+    errors.append("v4.14.18 permission / audit / employee recovery migration incomplete")
+if "ROLE → MODULE DEFAULTS" not in v41417_user_access or "SECTION VIEW / CREATE / EDIT" not in v41417_user_access:
+    errors.append("v4.14.18 Role/Department or section permission UI missing")
+if "authority_options=list(AUTHORITIES)+" not in v41418_employee or "Top-level authority / No Reports-To required" not in v41418_employee:
+    errors.append("v4.14.18 Employee Master legacy authority/top-level fix missing")
+if "UNIVERSAL RECORD PDF DOWNLOAD" not in v41418_records or "PASSWORD-PROTECTED MASTER DELETE" not in v41418_records:
+    errors.append("v4.14.18 universal PDF/master delete centre missing")
+if '.update({ profile_id: userId, email' in v41418_edge or "currentEmployeeId && currentEmployeeId !== employeeId" not in v41418_edge:
+    errors.append("v4.14.18 user-admin employee email/link preservation missing")
+if "QCMS_V41418_READY" not in v41417_guard:
+    errors.append("v4.14.18 automatic Supabase schema guard missing")
+if tuple(int(x) for x in str(v41417_manifest.get("version") or "0.0.0").split(".")) < (4,14,18):
+    errors.append("deployment manifest is older than v4.14.18")
+
+
+# v4.14.19 live Employee PO gate, supplier confirmation, universal transaction delete and image coverage
+v41419_sql = (ROOT / "supabase" / "migrations" / "20260901170000_qcms_v41419_po_enable_delete_audit_confirmation_images.sql").read_text(encoding="utf-8")
+v41419_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v41419_auth = (ROOT / "core" / "auth.py").read_text(encoding="utf-8")
+v41419_delete = (ROOT / "core" / "delete_service.py").read_text(encoding="utf-8")
+v41419_attach = (ROOT / "core" / "attachments.py").read_text(encoding="utf-8")
+v41419_rmtc = (ROOT / "app_pages" / "rmtc_pages.py").read_text(encoding="utf-8")
+v41419_notifier = (ROOT / "supabase" / "functions" / "qcms-po-confirmation-reminder" / "index.ts").read_text(encoding="utf-8")
+if not all(token in v41419_auth for token in ("refresh_current_employee_link", "qcms_current_login_employee_id", "current_employee_id")):
+    errors.append("v4.14.19 live Employee resolver missing")
+if not all(token in v41419_supply for token in ("po_blockers", "Supplier PO Confirmation", "PO_CONFIRMATION_REQUIRED", "SUPPLIER_PO_CONFIRMATION")):
+    errors.append("v4.14.19 PO gate / supplier confirmation UI incomplete")
+if not all(token in v41419_sql for token in ("supply_po_confirmations", "qcms_confirm_purchase_order", "qcms_delete_transaction_row", "PO_CONFIRMATION_DAILY", "SUPPLIER_PO_CONFIRMATION", "qcms_enforce_same_heat_code")):
+    errors.append("v4.14.19 database migration incomplete")
+if "MICROSTRUCTURE_IMAGE_TYPES" not in v41419_attach or "bmp" not in v41419_attach or "tiff" not in v41419_attach:
+    errors.append("v4.14.19 microstructure image coverage incomplete")
+if "rmtc_new_form_nonce" not in v41419_rmtc or "rmtc_direct_edit_selector" not in v41419_rmtc:
+    errors.append("v4.14.19 same-Heat new TC fresh form control missing")
+if "PO_CONFIRMATION_DAILY" not in v41419_notifier or "reminder_count" not in v41419_notifier:
+    errors.append("v4.14.19 daily supplier PO confirmation reminder missing")
+
 report = {
-    "release": "QCMS 4.14.15 Direct Production Flow / Email Template Test",
+    "release": "QCMS 4.14.19 PO Employee Gate / Delete / User Status / Same Heat / Supplier Confirmation / Images",
+    "v41419_live_employee_po_gate": "refresh_current_employee_link" in v41419_auth and "po_blockers" in v41419_supply,
+    "v41419_supplier_po_confirmation": "supply_po_confirmations" in v41419_sql and "PO_CONFIRMATION_DAILY" in v41419_notifier,
+    "v41419_universal_transaction_delete": "qcms_delete_transaction_row" in v41419_sql and "password_transaction_delete_panel" in v41419_delete,
+    "v41419_same_heat_new_tc": "qcms_enforce_same_heat_code" in v41419_sql and "rmtc_new_form_nonce" in v41419_rmtc,
+    "v41419_microstructure_images": "bmp" in v41419_attach and "tiff" in v41419_attach,
+    "v41418_permission_precedence": "role_module_defaults" in v41418_access and "qcms_effective_module_permission" in v41418_sql,
+    "v41418_po_permission_mapping": "supply_purchase_orders','supply_purchase_order_items','supply_purchase_order_sources','supply_opening_stock" in v41418_sql,
+    "v41418_employee_restore": "first_employee_email" in v41418_sql and "profile_matches=1 and employee_matches=1" in v41418_sql,
+    "v41418_activity_audit": "qcms_user_activity_log" in v41418_sql and "log_route_view" in v41418_activity,
+    "v41418_universal_pdf_delete": "UNIVERSAL RECORD PDF DOWNLOAD" in v41418_records and "PASSWORD-PROTECTED MASTER DELETE" in v41418_records,
+    "v41418_manifest_sync": tuple(int(x) for x in str(v41417_manifest.get("version") or "0.0.0").split(".")) >= (4,14,18),
+    "v41417_tenant_scoped_configuration": all(f'"{t}"' in v41417_repo for t in ("department_module_defaults", "user_section_permissions", "qcms_module_approval_routes", "supply_stage_responsibilities")),
+    "v41417_approval_route_admin": "MODULE APPROVAL ROUTES" in v41417_user_access and "Save Approval Route" in v41417_user_access,
+    "v41417_configured_route_precedence": all(token in v41417_sql for token in ("qcms_purchase_order_approval_target", "CONFIGURED_ROUTE", "REPORTS_TO", "PERMISSION_FALLBACK")),
+    "v41417_self_approval_guard": "Self-approval is not permitted" in v41417_sql,
+    "v41417_po_approval_target_ui": "purchase_order_approval_target" in v41417_service and "Required Approver" in v41417_supply,
+    "v41417_auto_supabase_schema_guard": "QCMS_V41416_READY" in v41417_guard and "QCMS_V41417_READY" in v41417_guard and "/database/query" in v41417_guard and "/rest/v1/rpc/qcms_release_schema_version" in v41417_guard,
+    "v41417_manifest_sync": v41417_manifest_version >= (4, 14, 17),
+    "v41416_permission_precedence": "Explicit user permission is authoritative" in v41416_sql and "department_module_defaults" in v41416_access,
+    "v41416_three_layer_permissions": "Validate/Review" in v41416_user_access and "Approve" in v41416_user_access and "DEPARTMENT → MODULE DEFAULTS" in v41416_user_access,
+    "v41416_section_permissions": "SECTION VISIBILITY / EDIT CONTROL" in v41416_user_access and "SUPPLIER_TECHNICAL" in v41416_part and "PRICE_HISTORY" in v41416_part,
+    "v41416_po_pending_approval": "PENDING_APPROVAL" in v41416_service and "Approve Purchase Order" in v41416_supply,
+    "v41416_po_cancel_reissue": "Cancel & Reissue with New Supplier" in v41416_supply and "replacement_purchase_order_id" in v41416_service,
+    "v41416_po_rm_item_identity": "Raw Material Type" in v41416_supply and "Material Grade" in v41416_supply and "Section Size" in v41416_supply,
+    "v41416_supply_stage_notifications": "PENDING STAGE RESPONSIBILITY & NOTIFICATIONS" in v41416_supply and "Send Current-Stage Notifications" in v41416_supply,
+    "v41416_coloured_supply_excel": "PatternFill" in v41416_supply and "PENDING_APPROVAL" in v41416_supply,
     "v41413_metlab_case_depth": "CASE DEPTH / MICROHARDNESS TRAVERSE" in v41413_metlab and "0.05" in v41413_metlab,
     "v41413_case_depth_locations_chart": "Case Depth Locations" in v41413_metlab and "def _case_depth_chart" in v41413_reporting,
     "v41413_record_email": "def record_email_sender" in v41413_notify_ui,

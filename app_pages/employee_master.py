@@ -13,7 +13,7 @@ from core.delete_service import password_delete_panel
 from core.employee_service import AUTHORITIES, EmployeeService
 from core.reporting import controlled_record_pdf_bytes
 from core.selection_labels import employee_label
-from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 
 DEPARTMENT_OPTIONS = ["Quality", "Production", "Stores", "MetLAB", "Engineering", "Supply Chain", "Management", "Business Development", "Procurement", "HR", "Accounts"]
@@ -38,15 +38,19 @@ def render_entry()->None:
     template_download_row([("Employee_Master_Template.xlsx", "Download Employee Master Template")], key_prefix="employee_master")
     svc=EmployeeService(); repo=svc.repo; catalog=LearnedValueCatalog(repo); perms=current_permissions("EMPLOYEE_MASTER")
     rows=svc.list(False); labels=_labels(rows)
+    force_new=consume_master_blank_request("employee-entry", edit_keys=("edit_employee_id",), widget_keys=("employee_record_selector",))
     requested=str(st.session_state.pop('edit_employee_id','') or '')
-    options=['__new__']+list(labels); index=options.index(requested) if requested in options else 0
-    selected=st.selectbox('Employee record',options,index=index,format_func=lambda x:'＋ New Employee' if x=='__new__' else labels[x])
+    options=['__new__']+list(labels); selector_key="employee_record_selector"
+    if force_new: st.session_state[selector_key]='__new__'
+    elif requested in options: st.session_state[selector_key]=requested
+    elif st.session_state.get(selector_key) not in options: st.session_state[selector_key]='__new__'
+    selected=st.selectbox('Employee record',options,format_func=lambda x:'＋ New Employee' if x=='__new__' else labels[x],key=selector_key)
     existing=next((r for r in rows if str(r['id'])==selected),{})
     writable=perms['can_edit'] if existing else perms['can_create']
     managers={'': '— No reporting manager —',**labels}
 
     section_bar('EMPLOYEE DETAILS','Employee code is generated automatically when blank and remains manually editable.')
-    with st.form('employee_entry_form'):
+    with st.form(f'employee_entry_form_{selected}'):
         c=st.columns(4,gap='small')
         code=c[0].text_input('Employee Code',value=str(existing.get('employee_code') or ''),placeholder='Auto on save (EMP-0001)')
         first=c[1].text_input('First Name',value=str(existing.get('first_name') or ''))
@@ -65,7 +69,10 @@ def render_entry()->None:
         start_value=date.fromisoformat(str(existing.get('experience_start_date'))[:10]) if existing.get('experience_start_date') else date.today()
         exp_start=c[1].date_input('Experience Start Date',value=start_value,format='DD-MM-YYYY')
         status=c[2].selectbox('Status',['ACTIVE','INACTIVE','LEFT'],index=['ACTIVE','INACTIVE','LEFT'].index(str(existing.get('status') or 'ACTIVE')))
-        authorities=st.multiselect('Authority for Approval',AUTHORITIES,default=existing.get('approval_authorities') or [])
+        existing_authorities=[str(value) for value in (existing.get('approval_authorities') or []) if str(value).strip()]
+        authority_options=list(AUTHORITIES)+[value for value in existing_authorities if value not in AUTHORITIES]
+        authorities=st.multiselect('Authority for Approval',authority_options,default=existing_authorities,help='Legacy/custom authorities already stored on an employee remain selectable and will never crash or be silently removed.')
+        top_level=st.checkbox('Top-level authority / No Reports-To required',value=bool(existing.get('is_top_level_authority')),help='Use for the highest authorised employee / Super Admin. When enabled, Reports To is stored blank.')
         remarks=st.text_area('Remarks',value=str(existing.get('remarks') or ''),height=70)
         save=st.form_submit_button('Save Employee',type='primary',disabled=not writable,width='stretch')
     st.caption(f"Experience automatically calculated: {svc.years(exp_start.isoformat())} completed years")
@@ -75,7 +82,7 @@ def render_entry()->None:
             final_code=code.strip()
             if not final_code:
                 final_code=str(repo.rpc('qsms_next_employee_code') or '')
-            payload={'employee_code':final_code,'first_name':first.strip(),'last_name':last.strip(),'email':email.strip().lower(),'department':str(department).strip(),'designation':str(designation).strip(),'plant':str(plant).strip(),'mobile_number':mobile.strip() or None,'approval_authorities':authorities,'reports_to_employee_id':reports or None,'experience_start_date':exp_start.isoformat(),'status':status,'remarks':remarks.strip() or None,'source_system':'QSMS'}
+            payload={'employee_code':final_code,'first_name':first.strip(),'last_name':last.strip(),'email':email.strip().lower(),'department':str(department).strip(),'designation':str(designation).strip(),'plant':str(plant).strip(),'mobile_number':mobile.strip() or None,'approval_authorities':authorities,'is_top_level_authority':bool(top_level),'reports_to_employee_id':None if top_level else (reports or None),'experience_start_date':exp_start.isoformat(),'status':status,'remarks':remarks.strip() or None,'source_system':'QSMS'}
             saved=svc.save(payload,None if selected=='__new__' else selected)
             catalog.remember_many('employee.department',[department]);catalog.remember_many('employee.designation',[designation]);catalog.remember_many('employee.plant',[plant])
             st.session_state['edit_employee_id']=str(saved['id']);save_success_popup(f"Employee saved with code {saved.get('employee_code')}.", queue_for_rerun=True);st.rerun()
@@ -119,7 +126,7 @@ def render_records()->None:
         with c2:
             pdf=controlled_record_pdf_bytes(
                 'EMPLOYEE MASTER RECORD',
-                {'Employee Code':selected_row.get('employee_code'),'Employee':f"{selected_row.get('first_name') or ''} {selected_row.get('last_name') or ''}".strip(),'Email':selected_row.get('email'),'Department':selected_row.get('department'),'Designation':selected_row.get('designation'),'Plant':selected_row.get('plant'),'Mobile':selected_row.get('mobile_number'),'Reports To':manager.get(str(selected_row.get('reports_to_employee_id')),''),'Experience Start Date':selected_row.get('experience_start_date'),'Experience Years':svc.years(selected_row.get('experience_start_date')),'Approval Authorities':', '.join(selected_row.get('approval_authorities') or []),'Status':selected_row.get('status'),'Remarks':selected_row.get('remarks')},
+                {'Employee Code':selected_row.get('employee_code'),'Employee':f"{selected_row.get('first_name') or ''} {selected_row.get('last_name') or ''}".strip(),'Email':selected_row.get('email'),'Department':selected_row.get('department'),'Designation':selected_row.get('designation'),'Plant':selected_row.get('plant'),'Mobile':selected_row.get('mobile_number'),'Reports To':manager.get(str(selected_row.get('reports_to_employee_id')),''),'Experience Start Date':selected_row.get('experience_start_date'),'Experience Years':svc.years(selected_row.get('experience_start_date')),'Approval Authorities':', '.join(selected_row.get('approval_authorities') or []),'Top-level Authority':'YES' if selected_row.get('is_top_level_authority') else 'NO','Status':selected_row.get('status'),'Remarks':selected_row.get('remarks')},
                 record_number=str(selected_row.get('employee_code') or ''),
             )
             st.download_button('Download Employee PDF',pdf,file_name=f"Employee_{selected_row.get('employee_code')}.pdf",mime='application/pdf',width='stretch')

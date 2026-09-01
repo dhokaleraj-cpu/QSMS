@@ -40,8 +40,8 @@ def _source_label(row: dict, part: dict | None = None) -> str:
     part = part or {}
     fsi = part.get("fsi_part_number") or row.get("fsi_part_number")
     return (
-        f"{row.get('rmtc_number')} · {row.get('part_number')} · FSI {fsi or '-'} · {row.get('supplier_name')} · "
-        f"Heat {row.get('heat_number')} · RMTC balance "
+        f"{row.get('rmtc_number')} · Supplier RMTC {row.get('certificate_reference') or '-'} · {row.get('part_number')} · FSI {fsi or '-'} · {row.get('supplier_name')} · "
+        f"Heat {row.get('heat_number')} · Heat Code {row.get('heat_code') or '-'} · RMTC balance "
         f"{float(row.get('available_steel_quantity_kg') or row.get('available_quantity') or 0):,.3f} kg"
     )
 

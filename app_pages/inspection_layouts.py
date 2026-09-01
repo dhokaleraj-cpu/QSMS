@@ -12,7 +12,7 @@ from core.attachments import AttachmentService
 from core.delete_service import password_delete_panel
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes
-from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 from core.selection_labels import part_label
 
 
@@ -59,13 +59,22 @@ def render_entry() -> None:
         st.warning("Create an active Part Master first.")
         return
 
+    force_new = consume_master_blank_request("inspection-layout-entry", edit_keys=("edit_inspection_layout_id",), widget_keys=("inspection_layout_selector", "inspection_layout_type_selector"))
     requested = str(st.session_state.get("edit_inspection_layout_id") or "")
     existing = service.get_plan(requested) if requested else None
-    layout_type = st.selectbox("Layout Type", ["DIMENSIONAL", "METLAB"], index=0 if not existing or existing.get("layout_type") == "DIMENSIONAL" else 1)
+    type_key = "inspection_layout_type_selector"
+    if force_new:
+        st.session_state[type_key] = "DIMENSIONAL"
+    elif existing and st.session_state.get(type_key) not in {"DIMENSIONAL","METLAB"}:
+        st.session_state[type_key] = str(existing.get("layout_type") or "DIMENSIONAL")
+    layout_type = st.selectbox("Layout Type", ["DIMENSIONAL", "METLAB"], index=0 if not existing or existing.get("layout_type") == "DIMENSIONAL" else 1, key=type_key)
     all_plans = service.plans(layout_type)
     labels = {str(row["id"]): f"{row.get('plan_number')} Rev {row.get('revision')} · {part_map.get(str(row.get('part_id')), 'Part')}" for row in all_plans}
-    options = ["__new__"] + list(labels)
-    selected = st.selectbox("Select Layout", options, index=options.index(requested) if requested in options else 0, format_func=lambda value: "＋ New Layout" if value == "__new__" else labels[value])
+    options = ["__new__"] + list(labels); selector_key="inspection_layout_selector"
+    if force_new: st.session_state[selector_key]="__new__"
+    elif requested in options: st.session_state[selector_key]=requested
+    elif st.session_state.get(selector_key) not in options: st.session_state[selector_key]="__new__"
+    selected = st.selectbox("Select Layout", options, format_func=lambda value: "＋ New Layout" if value == "__new__" else labels[value], key=selector_key)
     if selected != "__new__" and selected != requested:
         st.session_state["edit_inspection_layout_id"] = selected
         st.rerun()
@@ -75,36 +84,37 @@ def render_entry() -> None:
     elif selected != "__new__":
         existing = service.get_plan(selected)
 
+    editor_token = str(selected or "__new__")
     current_part = str((existing or {}).get("part_id") or next(iter(part_map)))
     current_process = str((existing or {}).get("process_id") or "")
     current_stage = str((existing or {}).get("inspection_stage_id") or "")
     inward_type_options = ["MATERIAL_INWARD", "OSP_PROCESS"]
     current_inward_type = str((existing or {}).get("inward_type") or "MATERIAL_INWARD")
     c1, c2, c3, c4, c5 = st.columns(5, gap="small")
-    part_id = c1.selectbox("Part Number", list(part_map), index=list(part_map).index(current_part) if current_part in part_map else 0, format_func=lambda value: part_map[value])
-    inward_type = c2.selectbox("Inward Type", inward_type_options, index=inward_type_options.index(current_inward_type) if current_inward_type in inward_type_options else 0, format_func=lambda value: value.replace("_", " ").title())
+    part_id = c1.selectbox("Part Number", list(part_map), index=list(part_map).index(current_part) if current_part in part_map else 0, format_func=lambda value: part_map[value], key=f"layout_part_{editor_token}")
+    inward_type = c2.selectbox("Inward Type", inward_type_options, index=inward_type_options.index(current_inward_type) if current_inward_type in inward_type_options else 0, format_func=lambda value: value.replace("_", " ").title(), key=f"layout_inward_type_{editor_token}")
     allowed_process_ids = [pid for pid in process_map if inward_type != "OSP_PROCESS" or str((process_rows.get(pid) or {}).get("process_type")) == "OUTSOURCED"]
     process_options = [""] + allowed_process_ids
     if current_process and current_process not in process_options:
         process_options.append(current_process)
-    process_id = c3.selectbox("Process", process_options, index=process_options.index(current_process) if current_process in process_options else 0, format_func=lambda value: process_map.get(value, "— Not selected —"))
+    process_id = c3.selectbox("Process", process_options, index=process_options.index(current_process) if current_process in process_options else 0, format_func=lambda value: process_map.get(value, "— Not selected —"), key=f"layout_process_{editor_token}")
     stage_options = [""] + list(stage_map)
-    stage_id = c4.selectbox("Inspection Stage", stage_options, index=stage_options.index(current_stage) if current_stage in stage_options else 0, format_func=lambda value: stage_map.get(value, "— Not selected —"))
-    status = c5.selectbox("Status", ["DRAFT", "APPROVAL_PENDING", "APPROVED", "SUPERSEDED"], index=["DRAFT", "APPROVAL_PENDING", "APPROVED", "SUPERSEDED"].index(str((existing or {}).get("status") or "DRAFT")))
+    stage_id = c4.selectbox("Inspection Stage", stage_options, index=stage_options.index(current_stage) if current_stage in stage_options else 0, format_func=lambda value: stage_map.get(value, "— Not selected —"), key=f"layout_stage_{editor_token}")
+    status = c5.selectbox("Status", ["DRAFT", "APPROVAL_PENDING", "APPROVED", "SUPERSEDED"], index=["DRAFT", "APPROVAL_PENDING", "APPROVED", "SUPERSEDED"].index(str((existing or {}).get("status") or "DRAFT")), key=f"layout_status_{editor_token}")
     if inward_type == "OSP_PROCESS" and not process_id:
         st.warning("An OSP Process layout requires the outsourced Process selected in the Part Master specification.")
 
     c1, c2, c3, c4 = st.columns(4, gap="small")
-    plan_no = c1.text_input("Plan Number", value=str((existing or {}).get("plan_number") or ""))
-    revision = c2.text_input("Revision", value=str((existing or {}).get("revision") or "00"))
-    layout_name = c3.text_input("Layout Name", value=str((existing or {}).get("layout_name") or ""))
-    default_sample = c4.number_input("Default Sample Size", min_value=1, max_value=20, value=int((existing or {}).get("default_sample_size") or (6 if layout_type == "DIMENSIONAL" else 1)), step=1)
+    plan_no = c1.text_input("Plan Number", value=str((existing or {}).get("plan_number") or ""), key=f"layout_plan_no_{editor_token}")
+    revision = c2.text_input("Revision", value=str((existing or {}).get("revision") or "00"), key=f"layout_revision_{editor_token}")
+    layout_name = c3.text_input("Layout Name", value=str((existing or {}).get("layout_name") or ""), key=f"layout_name_{editor_token}")
+    default_sample = c4.number_input("Default Sample Size", min_value=1, max_value=20, value=int((existing or {}).get("default_sample_size") or (6 if layout_type == "DIMENSIONAL" else 1)), step=1, key=f"layout_sample_{editor_token}")
 
     c1, c2, c3, c4 = st.columns(4, gap="small")
-    report_title = c1.text_input("Report Title", value=str((existing or {}).get("report_title") or ("DIMENSIONAL INSPECTION REPORT" if layout_type == "DIMENSIONAL" else "METLAB REPORT")))
-    format_no = c2.text_input("Format Number", value=str((existing or {}).get("format_number") or ""))
-    format_rev = c3.text_input("Format Revision", value=str((existing or {}).get("format_revision") or "00"))
-    effective = c4.date_input("Effective Date", value=date.fromisoformat(str((existing or {}).get("effective_date"))[:10]) if (existing or {}).get("effective_date") else date.today(), format="DD-MM-YYYY")
+    report_title = c1.text_input("Report Title", value=str((existing or {}).get("report_title") or ("DIMENSIONAL INSPECTION REPORT" if layout_type == "DIMENSIONAL" else "METLAB REPORT")), key=f"layout_report_title_{editor_token}")
+    format_no = c2.text_input("Format Number", value=str((existing or {}).get("format_number") or ""), key=f"layout_format_no_{editor_token}")
+    format_rev = c3.text_input("Format Revision", value=str((existing or {}).get("format_revision") or "00"), key=f"layout_format_rev_{editor_token}")
+    effective = c4.date_input("Effective Date", value=date.fromisoformat(str((existing or {}).get("effective_date"))[:10]) if (existing or {}).get("effective_date") else date.today(), format="DD-MM-YYYY", key=f"layout_effective_{editor_token}")
 
     imported = None
     if layout_type == "DIMENSIONAL":

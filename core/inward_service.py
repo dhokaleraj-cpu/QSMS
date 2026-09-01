@@ -6,6 +6,7 @@ from typing import Any
 
 from core.database import get_session_client
 from core.repository import Repository
+from core.record_audit import annotate_transaction_rows
 
 
 class InwardService:
@@ -22,7 +23,15 @@ class InwardService:
         return rows
 
     def list(self) -> list[dict]:
-        return self.repo.select("v_qsms_inward_register", order_by="created_at", desc=True, limit=3000)
+        rows=self.repo.select("v_qsms_inward_register", order_by="created_at", desc=True, limit=3000)
+        ids=[str(r.get("id") or "") for r in rows if r.get("id")]
+        raw={str(r.get("id")):r for r in self.repo.select("inward_lots",in_={"id":ids},limit=max(100,len(ids)+10))} if ids else {}
+        merged=[]
+        for row in rows:
+            item=dict(row); source=raw.get(str(row.get("id"))) or {}
+            item.setdefault("created_by",source.get("created_by")); item.setdefault("updated_by",source.get("updated_by")); item.setdefault("status",source.get("status"))
+            merged.append(item)
+        return annotate_transaction_rows(self.repo,merged)
 
     def get(self, record_id: str) -> dict | None:
         return self.repo.get("inward_lots", record_id)

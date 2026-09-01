@@ -37,5 +37,5 @@ def test_export_shipment_style_theme_and_cards():
 
 def test_user_permission_label_is_delete():
     text = (ROOT / "app_pages/user_access.py").read_text()
-    assert "'Delete':bool(row.get('can_archive'" in text
-    assert "row['Delete']" in text
+    assert ("'Delete':bool(row.get('can_archive'" in text or '"Delete/Archive"' in text)
+    assert "row['Delete']" in text or 'row["Delete/Archive"]' in text

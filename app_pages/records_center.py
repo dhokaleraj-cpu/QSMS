@@ -6,7 +6,10 @@ import pandas as pd
 import streamlit as st
 from core.ui import portal_table
 
+from core.access import current_permissions
+from core.delete_service import password_delete_panel, password_transaction_delete_panel
 from core.repository import Repository
+from core.record_audit import annotate_transaction_rows
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
 from core.ui import disposition_cards, page_header, section_bar, style_status_dataframe, subpage_navigation
 
@@ -151,6 +154,184 @@ def render_heat_ledger(*, embedded: bool = False) -> None:
         )
 
 
+
+
+UNIVERSAL_RECORD_TABLES: dict[str, tuple[str, str]] = {
+    "Part Master": ("parts", "PART_MASTER"),
+    "Part Raw Material Details": ("part_raw_material_details", "PART_MASTER"),
+    "Part Supplier Technical Data": ("part_raw_material_technical_data", "PART_MASTER"),
+    "Part Supplier Price History": ("part_supplier_price_history", "PART_MASTER"),
+    "Material Grades": ("material_grades", "MATERIAL_GRADE"),
+    "Reference Parties / Suppliers / Customers": ("parties", "REFERENCE_MASTERS"),
+    "Processes": ("processes", "REFERENCE_MASTERS"),
+    "Inspection Stages": ("inspection_stages", "REFERENCE_MASTERS"),
+    "Company Branches": ("company_branches", "REFERENCE_MASTERS"),
+    "Employees": ("employees", "EMPLOYEE_MASTER"),
+    "Inspection Layouts": ("inspection_plans", "INSPECTION_LAYOUTS"),
+    "RMTC": ("rmtc_approvals", "RMTC_ENTRY"),
+    "RMTC Part Worksheets": ("rmtc_part_approvals", "RMTC_ENTRY"),
+    "Material Inward": ("inward_lots", "MATERIAL_INWARD"),
+    "OSP Jobs": ("osp_jobs", "OSP_TRANSACTIONS"),
+    "OSP Inward Receipts": ("osp_receipts", "OSP_TRANSACTIONS"),
+    "Production Batches": ("production_batches", "OSP_TRANSACTIONS"),
+    "Dimensional Reports": ("inspection_reports", "DIMENSIONAL_REPORT"),
+    "MetLAB Reports": ("lab_tests", "METLAB_REPORT"),
+    "NPD Process Flows": ("npd_process_flows", "NPD_APQP"),
+    "NPD Orders / Status": ("npd_orders", "NPD_APQP"),
+    "PPAP Projects": ("ppap_projects", "NPD_APQP"),
+    "QC Calculation Records": ("qc_calculation_records", "QC_CALCULATION_TOOLS"),
+    "Quality Complaints": ("quality_complaints", "COMPLAINT_MANAGEMENT"),
+    "Customer Orders / Schedules": ("supply_customer_orders", "SUPPLY_CHAIN"),
+    "Purchase Orders": ("supply_purchase_orders", "SUPPLY_CHAIN"),
+    "Purchase Order Items": ("supply_purchase_order_items", "SUPPLY_CHAIN"),
+    "Supplier PO Confirmations": ("supply_po_confirmations", "SUPPLY_CHAIN"),
+    "Opening Stock": ("supply_opening_stock", "SUPPLY_CHAIN"),
+    "RM Purchase Orders": ("supply_rm_purchase_orders", "SUPPLY_CHAIN"),
+    "RM Receipts": ("supply_rm_receipts", "SUPPLY_CHAIN"),
+    "RM Dispatch to Forging": ("supply_rm_dispatches", "SUPPLY_CHAIN"),
+    "Forging Orders": ("supply_forging_orders", "SUPPLY_CHAIN"),
+    "Forging Receipts": ("supply_forging_receipts", "SUPPLY_CHAIN"),
+    "Supply Chain Downstream Events": ("supply_downstream_events", "SUPPLY_CHAIN"),
+}
+
+MASTER_DELETE_TABLES: dict[str, tuple[str, str]] = {
+    "Part Master": ("parts", "PART_MASTER"),
+    "Material Grade": ("material_grades", "MATERIAL_GRADE"),
+    "Reference Party": ("parties", "REFERENCE_MASTERS"),
+    "Process": ("processes", "REFERENCE_MASTERS"),
+    "Inspection Stage": ("inspection_stages", "REFERENCE_MASTERS"),
+    "Company Branch": ("company_branches", "REFERENCE_MASTERS"),
+    "Employee": ("employees", "EMPLOYEE_MASTER"),
+    "Inspection Layout": ("inspection_plans", "INSPECTION_LAYOUTS"),
+}
+
+TRANSACTION_DELETE_TABLES: dict[str, tuple[str, str]] = {
+    "Customer Order / Schedule": ("supply_customer_orders", "SUPPLY_CHAIN"),
+    "Purchase Order": ("supply_purchase_orders", "SUPPLY_CHAIN"),
+    "Supplier PO Confirmation": ("supply_po_confirmations", "SUPPLY_CHAIN"),
+    "OSP Transaction / Job": ("osp_jobs", "OSP_TRANSACTIONS"),
+    "OSP Inward Receipt": ("osp_receipts", "OSP_TRANSACTIONS"),
+    "RM Purchase Order": ("supply_rm_purchase_orders", "SUPPLY_CHAIN"),
+    "RM Receipt": ("supply_rm_receipts", "SUPPLY_CHAIN"),
+    "RM Dispatch to Forging": ("supply_rm_dispatches", "SUPPLY_CHAIN"),
+    "Forging Order": ("supply_forging_orders", "SUPPLY_CHAIN"),
+    "Forging Receipt": ("supply_forging_receipts", "SUPPLY_CHAIN"),
+    "Supply Chain Event": ("supply_downstream_events", "SUPPLY_CHAIN"),
+    "RMTC": ("rmtc_approvals", "RMTC_ENTRY"),
+    "Material Inward": ("inward_lots", "MATERIAL_INWARD"),
+    "Dimensional Report": ("inspection_reports", "DIMENSIONAL_REPORT"),
+    "MetLAB Report": ("lab_tests", "METLAB_REPORT"),
+    "NPD Order": ("npd_orders", "NPD_APQP"),
+    "NPD Process Flow": ("npd_process_flows", "NPD_APQP"),
+    "PPAP Project": ("ppap_projects", "NPD_APQP"),
+    "Process Flow Diagram": ("pfd_headers", "NPD_APQP"),
+    "PFMEA": ("pfmea_headers", "NPD_APQP"),
+    "Control Plan": ("control_plan_headers", "NPD_APQP"),
+    "SPC Study": ("spc_studies", "NPD_APQP"),
+    "MSA Study": ("msa_studies", "NPD_APQP"),
+    "Capacity Study": ("capacity_studies", "NPD_APQP"),
+    "QC Calculation": ("qc_calculation_records", "QC_CALCULATION_TOOLS"),
+    "Quality Complaint": ("quality_complaints", "COMPLAINT_MANAGEMENT"),
+}
+
+
+def _generic_record_label(row: dict) -> str:
+    candidates = (
+        "part_number", "fsi_part_number", "po_number", "order_number", "customer_order_no", "rmtc_number",
+        "inward_number", "report_number", "osp_job_number", "employee_code", "grade_code", "party_code",
+        "process_code", "plan_number", "complaint_number", "flow_number", "project_number", "supplier_order_no",
+        "receipt_number", "event_reference", "name", "part_name", "party_name", "first_name",
+    )
+    values = [str(row.get(key) or "").strip() for key in candidates if str(row.get(key) or "").strip()]
+    label = " · ".join(values[:3])
+    return label or str(row.get("id") or "Record")
+
+
+def _pdf_safe_value(value: object) -> object:
+    if isinstance(value, dict):
+        return "; ".join(f"{key}: {item}" for key, item in value.items())
+    if isinstance(value, (list, tuple, set)):
+        return ", ".join(str(item) for item in value)
+    return value
+
+
+def render_universal_pdf_center(repo: Repository) -> None:
+    section_bar("UNIVERSAL RECORD PDF DOWNLOAD", "Select any business module register and download the selected record or the full register as a controlled QCMS PDF.")
+    names = list(UNIVERSAL_RECORD_TABLES)
+    selected_name = st.selectbox("Record / Entry Type", names, key="universal_pdf_table")
+    table, module_key = UNIVERSAL_RECORD_TABLES[selected_name]
+    perms = current_permissions(module_key)
+    if not perms.get("can_view", False):
+        st.warning("You do not have View permission for this record type.")
+        return
+    rows = annotate_transaction_rows(repo, _rows(repo, table, order_by="created_at", desc=True))
+    search = st.text_input("Search selected register", key=f"universal_search_{table}")
+    if search:
+        rows = [row for row in rows if search.casefold() in " ".join(str(value or "") for value in row.values()).casefold()]
+    if not rows:
+        st.info("No records are available for this selection.")
+        return
+    register = pd.DataFrame([{key: _pdf_safe_value(value) for key, value in row.items() if key not in {"tenant_id"}} for row in rows])
+    portal_table(register, hide_index=True, width="stretch", height=420)
+    register_pdf = controlled_record_pdf_bytes(
+        f"{selected_name.upper()} REGISTER", {"Record Count": len(register)}, {selected_name: register}
+    )
+    st.download_button(
+        "Download Full Register PDF", register_pdf, file_name=f"QCMS_{table}_Register.pdf",
+        mime="application/pdf", width="stretch", key=f"universal_register_pdf_{table}",
+    )
+    labels = {str(row.get("id")): _generic_record_label(row) for row in rows if row.get("id")}
+    if labels:
+        selected_id = st.selectbox("Selected Record", list(labels), format_func=lambda value: labels[value], key=f"universal_record_{table}")
+        record = next(row for row in rows if str(row.get("id")) == selected_id)
+        header = {
+            str(key).replace("_", " ").title(): _pdf_safe_value(value)
+            for key, value in record.items()
+            if key not in {"tenant_id"} and value not in (None, "", [], {})
+        }
+        record_pdf = controlled_record_pdf_bytes(
+            f"{selected_name.upper()} RECORD", header, record_number=_generic_record_label(record)
+        )
+        st.download_button(
+            "Download Selected Record PDF", record_pdf, file_name=f"QCMS_{table}_{selected_id}.pdf",
+            mime="application/pdf", width="stretch", key=f"universal_record_pdf_{table}_{selected_id}",
+        )
+
+
+def render_master_delete_center(repo: Repository) -> None:
+    section_bar("PASSWORD-PROTECTED MASTER DELETE", "Delete is available only when Delete/Archive permission is assigned. Current QCMS password and confirmation are always required.")
+    selection = st.selectbox("Master Type", list(MASTER_DELETE_TABLES), key="master_delete_type")
+    table, module_key = MASTER_DELETE_TABLES[selection]
+    rows = _rows(repo, table, order_by="created_at", desc=True)
+    perms = current_permissions(module_key)
+    password_delete_panel(
+        repo=repo, table=table, rows=rows, labeler=_generic_record_label,
+        key=f"records_center_delete_{table}", can_delete=bool(perms.get("can_archive")),
+        title=f"Delete {selection}",
+        help_text="Permanent deletion requires your current QCMS password. Linked records are protected by database foreign-key controls.",
+    )
+
+
+def render_transaction_delete_center(repo: Repository) -> None:
+    section_bar(
+        "PASSWORD-PROTECTED TRANSACTION DELETE",
+        "Delete/Archive permission is module-controlled. Deletion is audited and database genealogy prevents removal of a record that already has downstream usage.",
+    )
+    selection = st.selectbox("Transaction Type", list(TRANSACTION_DELETE_TABLES), key="transaction_delete_type")
+    table, module_key = TRANSACTION_DELETE_TABLES[selection]
+    rows = _rows(repo, table, order_by="created_at", desc=True)
+    perms = current_permissions(module_key)
+    password_transaction_delete_panel(
+        repo=repo, table=table, rows=rows, labeler=_generic_record_label,
+        key=f"records_center_transaction_delete_{table}", can_delete=bool(perms.get("can_archive")),
+        title=f"Delete {selection}",
+        help_text=(
+            "Current QCMS password and Delete/Archive permission are mandatory. "
+            "Records with dependent quality, receipt, production, dispatch or genealogy rows are not deleted; QCMS will tell you which linked stage must be handled first."
+        ),
+    )
+
+
 def render() -> None:
     subpage_navigation(
         ("dashboard", "Dashboard", ":material/arrow_back:"),
@@ -168,7 +349,7 @@ def render() -> None:
     part_name_map = _map(parts, "id", "part_name")
     party_map = _map(parties, "id", "party_name")
 
-    tabs = st.tabs(["RMTC", "Material Inward", "OSP Transactions", "Dimensional", "MetLAB", "Layouts", "Masters", "Heat Steel Ledger"])
+    tabs = st.tabs(["RMTC", "Material Inward", "OSP Transactions", "Dimensional", "MetLAB", "Layouts", "Masters", "Heat Steel Ledger", "Universal PDFs", "Delete Transactions"])
 
     with tabs[0]:
         rows = _rows(repo, "rmtc_approvals", order_by="created_at", desc=True)
@@ -307,7 +488,14 @@ def render() -> None:
         with c2: st.page_link(st.session_state["_qsms_pages"]["grade-records"], label="Grade Records", width="stretch")
         with c3: st.page_link(st.session_state["_qsms_pages"]["reference-records"], label="Reference Records", width="stretch")
         with c4: st.page_link(st.session_state["_qsms_pages"]["employee-records"], label="Employee Records", width="stretch")
+        render_master_delete_center(repo)
 
     with tabs[7]:
         render_heat_ledger(embedded=True)
+
+    with tabs[8]:
+        render_universal_pdf_center(repo)
+
+    with tabs[9]:
+        render_transaction_delete_center(repo)
 

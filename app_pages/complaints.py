@@ -13,6 +13,7 @@ from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, Attach
 from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes
 from core.repository import Repository
+from core.record_audit import annotate_transaction_rows
 from core.selection_labels import employee_label, part_label, party_label, process_label
 from core.ui import kpi_grid, page_header, save_success_popup, section_bar, stage_section, workflow_progress
 
@@ -633,7 +634,7 @@ def _complaint_pdf(repo: Repository, complaint: Mapping[str, Any]) -> bytes:
 def render_home() -> None:
     page_header("Complaint Management", "Customer and supplier complaints, follow-ups, closure and debit-note settlement.", "Complaints")
     repo = Repository()
-    rows = repo.select("quality_complaints", order_by="complaint_date", desc=True, limit=5000)
+    rows = annotate_transaction_rows(repo, repo.select("quality_complaints", order_by="complaint_date", desc=True, limit=5000))
     open_rows = [row for row in rows if not _is_closed(row)]
     followups = repo.select("quality_complaint_followups", order_by="followup_date", desc=True, limit=10000)
     latest_followup: dict[str, dict] = {}
@@ -694,6 +695,7 @@ def render_home() -> None:
                 "Next Follow-up": (latest_followup.get(str(row.get("id"))) or {}).get("next_followup_date") or "-",
                 "Root Cause": "CONFIRMED" if row.get("root_cause_confirmed") else "PENDING",
                 "Open Actions": open_action_count.get(str(row.get("id")), 0),
+                "User": row.get("Created By User"), "Data Entry Status": row.get("Data Entry Status"),
                 "Status": "OVERDUE" if _is_overdue(row) else str(row.get("status") or "").replace("_", " ").title(),
                 "Debit Note": str(row.get("debit_note_status") or "").replace("_", " ").title(),
             }
@@ -728,7 +730,7 @@ def _render_entry(complaint_type: str) -> None:
     if info_message:
         st.success(info_message)
 
-    records = repo.select("quality_complaints", eq={"complaint_type": complaint_type}, order_by="created_at", desc=True, limit=5000)
+    records = annotate_transaction_rows(repo, repo.select("quality_complaints", eq={"complaint_type": complaint_type}, order_by="created_at", desc=True, limit=5000))
     record_labels = {"": "＋ New Complaint", **{str(row["id"]): _complaint_label(row, {str(p["id"]): p for p in parties}) for row in records}}
     preferred = str(st.session_state.get(f"selected_{complaint_type.lower()}_complaint") or "")
     if preferred not in record_labels: preferred = ""
@@ -916,7 +918,7 @@ def render_analysis() -> None:
     )
     st.caption("QCMS 4.10.9 · Detailed RCA/CAPA workflow · Build 4109-LOGIN-IMPORT-GUARD")
     repo = Repository(); perms = current_permissions("COMPLAINT_MANAGEMENT")
-    complaints = repo.select("quality_complaints", order_by="complaint_date", desc=True, limit=10000)
+    complaints = annotate_transaction_rows(repo, repo.select("quality_complaints", order_by="complaint_date", desc=True, limit=10000))
     if not complaints:
         st.info("Create a Customer or Supplier Complaint before starting detailed analysis.")
         return
@@ -1159,7 +1161,7 @@ def render_analysis() -> None:
 def render_records() -> None:
     page_header("Complaint Records", "Search, review, print and follow up Customer and Supplier complaints.", "Complaints")
     repo = Repository(); perms = current_permissions("COMPLAINT_MANAGEMENT")
-    rows = repo.select("quality_complaints", order_by="complaint_date", desc=True, limit=10000)
+    rows = annotate_transaction_rows(repo, repo.select("quality_complaints", order_by="complaint_date", desc=True, limit=10000))
     parties = {str(row["id"]): row for row in repo.select("parties", limit=5000)}
     employees = {str(row["id"]): row for row in repo.select("employees", limit=5000)}
     c1, c2, c3 = st.columns([1.8, 1, 1], gap="small")
@@ -1203,6 +1205,7 @@ def render_records() -> None:
             "Four Star Responsible": employee_label(employees.get(str(row.get("fourstar_responsible_employee_id"))) or {}),
             "Root Cause": "CONFIRMED" if row.get("root_cause_confirmed") else "PENDING", "Open Actions": open_action_count.get(str(row.get("id")), 0),
             "Effectiveness": "VERIFIED" if row.get("effectiveness_verified") else "PENDING",
+            "User": row.get("Created By User"), "Data Entry Status": row.get("Data Entry Status"),
             "Target Closure": row.get("target_closure_date"), "Status": "OVERDUE" if _is_overdue(row) else str(row.get("status") or "").replace("_", " ").title(),
             "Debit Note Required": "YES" if row.get("debit_note_required") else "NO", "Debit Note Status": str(row.get("debit_note_status") or "").replace("_", " ").title(),
         }

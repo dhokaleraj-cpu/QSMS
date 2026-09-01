@@ -14,7 +14,7 @@ from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
 from core.selection_labels import reference_record_label
 from core.reporting import controlled_record_pdf_bytes
-from core.ui import page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 REFERENCE_KEYS = (
     "customers", "suppliers", "steel_mills", "osp_vendors",
@@ -77,6 +77,7 @@ def render_entry() -> None:
     page_header("Reference Masters · Entry", "Create and edit controlled reference data without separate micro-masters.", "New / edit")
     template_download_row([("Reference_Masters_Template.xlsx", "Download Reference Masters Template")], key_prefix="reference_master", import_master_key=None)
     perms = current_permissions("REFERENCE_MASTERS"); service = MasterService(); catalog = LearnedValueCatalog(service.repo)
+    force_new = consume_master_blank_request("reference-entry", edit_keys=("edit_reference_id","edit_reference_key"))
     key = _master_selector()
     import_page = (st.session_state.get("_qsms_pages") or {}).get("master-import")
     if import_page is not None and st.button(f"Import / Upload {MASTER_BY_KEY[key].label}", icon=":material/upload_file:", width="stretch", key=f"reference_import_{key}"):
@@ -86,8 +87,11 @@ def render_entry() -> None:
     lookup_maps = service.lookup_label_maps()
     labels = {str(row["id"]): _row_label(definition, row, lookup_maps) for row in rows}
     requested = str(st.session_state.pop("edit_reference_id", "") or ""); requested_key = str(st.session_state.pop("edit_reference_key", "") or "")
-    options = ["__new__"] + list(labels); index = options.index(requested) if requested_key == key and requested in options else 0
-    selected = st.selectbox("Record", options, index=index, format_func=lambda x: "＋ New record" if x == "__new__" else labels[x])
+    options = ["__new__"] + list(labels); selector_key=f"reference_record_selector_{key}"
+    if force_new: st.session_state[selector_key]="__new__"
+    elif requested_key == key and requested in options: st.session_state[selector_key]=requested
+    elif st.session_state.get(selector_key) not in options: st.session_state[selector_key]="__new__"
+    selected = st.selectbox("Record", options, format_func=lambda x: "＋ New record" if x == "__new__" else labels[x], key=selector_key)
     record = next((row for row in rows if str(row["id"]) == selected), {})
     writable = perms["can_edit"] if record else perms["can_create"]
     form_record = dict(record)

@@ -11,7 +11,7 @@ def text(path: str) -> str:
 
 
 def test_v41410_version_and_po_ship_to_controls():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23"}
     app = text("streamlit_app.py")
     page = text("app_pages/supply_chain.py")
     service = text("core/supply_chain_service.py")

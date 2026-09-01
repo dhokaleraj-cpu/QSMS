@@ -12,7 +12,7 @@ from core.delete_service import password_delete_panel
 from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
 from core.selection_labels import material_grade_label
-from core.ui import page_header, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
+from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
 
 DEFAULT_ELEMENTS = ["C", "Si", "Mn", "P", "S", "Cr", "Mo", "Ni"]
 
@@ -31,9 +31,13 @@ def render_entry() -> None:
     repo = Repository(); catalog = LearnedValueCatalog(repo); perms = current_permissions("MATERIAL_GRADE")
     grades = repo.select("material_grades", order_by="grade_code", limit=2000)
     labels = _grade_labels(grades)
+    force_new = consume_master_blank_request("grade-entry", edit_keys=("edit_grade_id",), widget_keys=("material_grade_record_selector",))
     requested = str(st.session_state.pop("edit_grade_id", "") or "")
-    options = ["__new__"] + list(labels); index = options.index(requested) if requested in options else 0
-    selected = st.selectbox("Material Grade record", options, index=index, format_func=lambda x: "＋ New Material Grade" if x == "__new__" else labels[x])
+    options = ["__new__"] + list(labels); selector_key="material_grade_record_selector"
+    if force_new: st.session_state[selector_key]="__new__"
+    elif requested in options: st.session_state[selector_key]=requested
+    elif st.session_state.get(selector_key) not in options: st.session_state[selector_key]="__new__"
+    selected = st.selectbox("Material Grade record", options, format_func=lambda x: "＋ New Material Grade" if x == "__new__" else labels[x], key=selector_key)
     existing = next((g for g in grades if str(g["id"]) == selected), {})
     writable = perms["can_edit"] if existing else perms["can_create"]
     material_number_key = "_qcms_new_material_number"
@@ -48,7 +52,7 @@ def render_entry() -> None:
             st.session_state[material_number_key] = ""
 
     with stage_section("A", 'MATERIAL GRADE DETAILS', 'Grade name, auto Material Number, specification and revision.', key="material_grade_render_entry_a"):
-        with st.form("material_grade_header"):
+        with st.form(f"material_grade_header_{selected}"):
             c = st.columns(4, gap="small")
             grade_code = c[0].text_input("Material Grade", value=str(existing.get("grade_code") or ""))
             material_number = c[1].text_input("Material Number", value=str(existing.get("material_number") or st.session_state.get(material_number_key) or ""), help="Generated automatically for new Material Grades and editable before save.")

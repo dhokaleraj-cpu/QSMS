@@ -14,6 +14,7 @@ from core.reporting import controlled_record_pdf_bytes, npd_pending_status_pdf_b
 from core.selection_labels import employee_label, part_label, party_label, process_label
 from core.ui import safe
 from core.repository import Repository
+from core.record_audit import annotate_transaction_rows
 from core.ui import kpi_grid, page_header, save_success_popup, section_bar, stage_section, status_chip
 
 
@@ -419,6 +420,8 @@ def _render_pending_order_matrix(repo: Repository, orders: list[dict], part_by_i
             f'<div class="npd-order-meta"><b>Order:</b> {safe(order.get("order_number"))}</div>'
             f'<div class="npd-order-meta"><b>Customer:</b> {safe(customer.get("party_code"))} · {safe(customer.get("party_name"))}</div>'
             f'<div class="npd-order-meta"><b>Delivery:</b> {delivery}</div>'
+            f'<div class="npd-order-meta"><b>User:</b> {safe(order.get("Created By User"))}</div>'
+            f'<div class="npd-order-meta"><b>Entry Status:</b> {safe(order.get("Data Entry Status"))}</div>'
             f'<div class="npd-order-progress">Progress {done}/{len(steps)}</div>'
             f'</div>'
         )
@@ -468,7 +471,7 @@ def render_npd_status() -> None:
     employee_labels = _employee_labels(employees)
     employee_options, employee_option_to_id = _employee_option_maps(employees)
     employee_id_to_option = {employee_id: label for label, employee_id in employee_option_to_id.items() if employee_id}
-    orders = repo.select("npd_orders", order_by="delivery_date", limit=3000)
+    orders = annotate_transaction_rows(repo, repo.select("npd_orders", order_by="delivery_date", limit=3000))
 
     tab1, tab2 = st.tabs(["Order Entry", "Order Status"])
     with tab1:
@@ -549,7 +552,7 @@ def render_npd_status() -> None:
                 frame = pd.DataFrame([{
                     "Order": row.get("order_number"), "Part": (part_by_id.get(str(row.get("part_id"))) or {}).get("part_number"),
                     "Customer": (customer_by_id.get(str(row.get("customer_id"))) or {}).get("party_name"), "Order Qty": row.get("order_qty"),
-                    "Start Date": row.get("start_date"), "Delivery Date": row.get("delivery_date"), "Status": str(row.get("status") or "").replace("_", " ").title(),
+                    "Start Date": row.get("start_date"), "Delivery Date": row.get("delivery_date"), "User": row.get("Created By User"), "Data Entry Status": row.get("Data Entry Status"), "Status": str(row.get("status") or "").replace("_", " ").title(),
                 } for row in orders])
                 portal_table(frame, hide_index=True, width="stretch", height=330)
 

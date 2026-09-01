@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from core.repository import Repository
+from core.record_audit import annotate_transaction_rows
 
 
 FINAL_ACCEPTED = {"ACCEPTED", "ACCEPTED_UNDER_RESERVE"}
@@ -29,7 +30,18 @@ class OSPService:
         return enriched
 
     def register(self) -> list[dict]:
-        return self._enrich_part_identity(self.repo.select("v_qsms_osp_register", order_by="created_at", desc=True, limit=5000))
+        rows = self._enrich_part_identity(self.repo.select("v_qsms_osp_register", order_by="created_at", desc=True, limit=5000))
+        ids = [str(row.get("id") or "") for row in rows if row.get("id")]
+        raw = self.repo.select("osp_jobs", in_={"id": ids}, limit=max(len(ids), 1) + 10) if ids else []
+        raw_map = {str(row.get("id")): row for row in raw}
+        merged=[]
+        for row in rows:
+            item=dict(row)
+            source=raw_map.get(str(item.get("id"))) or {}
+            for key in ("created_by","updated_by","created_at","updated_at"):
+                item[key]=source.get(key) or item.get(key)
+            merged.append(item)
+        return annotate_transaction_rows(self.repo, merged)
 
     def dispatch_candidates(self) -> list[dict]:
         inward_rows = self._enrich_part_identity(self.repo.select("v_qsms_osp_dispatch_candidates", order_by="inward_date", desc=True, limit=5000))
@@ -156,6 +168,34 @@ class OSPService:
             return self.repo.rpc("qsms_create_osp_dispatch_from_opening_stock", {"p_opening_stock_id": opening_stock_id, **common}) or {}
         return self.repo.rpc("qsms_create_osp_dispatch", {"p_inward_lot_id": payload["inward_lot_id"], **common}) or {}
 
+
+    def update_material_out(self, payload: Mapping[str, Any]) -> dict:
+        return self.repo.rpc("qcms_update_osp_material_out", {
+            "p_osp_job_id": payload["osp_job_id"],
+            "p_dispatch_date": payload["dispatch_date"],
+            "p_dispatch_challan": payload["dispatch_challan"],
+            "p_quantity_dispatched": payload["quantity_dispatched"],
+            "p_expected_return_date": payload.get("expected_return_date"),
+            "p_remarks": payload.get("remarks"),
+        }) or {}
+
+    def clear_sample(self, osp_job_id: str) -> dict:
+        return self.repo.rpc("qcms_clear_osp_sample", {"p_osp_job_id": osp_job_id}) or {}
+
+    def update_receipt(self, payload: Mapping[str, Any]) -> dict:
+        return self.repo.rpc("qcms_update_osp_receipt", {
+            "p_receipt_id": payload["receipt_id"],
+            "p_receipt_date": payload["receipt_date"],
+            "p_receipt_challan": payload["receipt_challan"],
+            "p_vendor_invoice_number": payload["vendor_invoice_number"],
+            "p_vendor_invoice_date": payload["vendor_invoice_date"],
+            "p_tc_number": payload["tc_number"],
+            "p_tc_date": payload["tc_date"],
+            "p_vendor_batch_number": payload["vendor_batch_number"],
+            "p_quantity_received": payload["quantity_received"],
+            "p_remarks": payload.get("remarks"),
+        }) or {}
+
     def record_sample(self, payload: Mapping[str, Any]) -> dict:
         return self.repo.rpc("qsms_record_osp_sample", {
             "p_osp_job_id": payload["osp_job_id"],
@@ -196,6 +236,12 @@ class OSPService:
 
     def receipts(self, osp_job_id: str) -> list[dict]:
         return self.repo.select("osp_receipts", eq={"osp_job_id": osp_job_id}, order_by="created_at", desc=True, limit=500)
+
+    def delete_receipt(self, receipt_id: str) -> dict:
+        return self.repo.rpc("qcms_delete_osp_receipt", {"p_receipt_id": receipt_id}) or {}
+
+    def delete_transaction(self, osp_job_id: str) -> dict:
+        return self.repo.rpc("qcms_delete_osp_transaction", {"p_osp_job_id": osp_job_id}) or {}
 
     def jobs_for_inspection(self, scope: str, report_type: str) -> list[dict]:
         disposition_key = (

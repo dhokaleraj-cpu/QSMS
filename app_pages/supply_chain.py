@@ -1,18 +1,19 @@
 # QCMS downstream notification route keys retained for receipt stages: RM_RECEIPT_PENDING / FORGING_RECEIPT_PENDING
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from typing import Any, Mapping, Sequence
 
 import pandas as pd
 import streamlit as st
+from openpyxl.styles import PatternFill, Font
 from core.ui import portal_table
 
-from core.access import current_permissions
-from core.auth import current_profile
+from core.access import current_permissions, section_permissions
+from core.auth import current_employee_id, current_profile
 from core.branch_context import branch_label, branch_snapshot, resolve_current_branch
-from core.attachments import AttachmentSlot, render_attachment_manager
+from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, AttachmentSlot, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
 from core.purchase_order_reporting import purchase_order_pdf_bytes, DEFAULT_SPECIAL_INSTRUCTIONS
@@ -150,6 +151,7 @@ def _style_supply_dataframe(frame: pd.DataFrame):
 
 
 def _excel_bytes(frame: pd.DataFrame, sheet_name: str) -> bytes:
+    """Supply Chain Excel with status-wise row colours matching the app."""
     output = BytesIO()
     safe_name = safe_excel_sheet_name(sheet_name)
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -157,6 +159,22 @@ def _excel_bytes(frame: pd.DataFrame, sheet_name: str) -> bytes:
         ws = writer.sheets[safe_name]
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = ws.dimensions
+        status_candidates = [c for c in ("Display Status", "Status", "Approval Status", "Decision", "Disposition", "Result") if c in frame.columns]
+        fills = {
+            "COMPLETED": "DCFCE7", "CLOSED": "DCFCE7", "ACCEPTED": "DCFCE7", "POSTED": "DCFCE7", "RECEIVED": "DCFCE7", "DISPATCHED": "DCFCE7",
+            "IN_PROGRESS": "DBEAFE", "APPROVED": "DCFCE7", "OPEN": "FFEDD5", "PENDING": "FEF3C7", "PENDING_APPROVAL": "FEF3C7",
+            "OVERDUE": "FEE2E2", "REJECTED": "FEE2E2", "CANCELLED": "E2E8F0",
+        }
+        if status_candidates:
+            status_col = frame.columns.get_loc(status_candidates[0]) + 1
+            for row_idx in range(2, ws.max_row + 1):
+                status = str(ws.cell(row=row_idx, column=status_col).value or "").upper().strip()
+                colour = fills.get(status)
+                if colour:
+                    fill = PatternFill("solid", fgColor=colour)
+                    for cell in ws[row_idx]:
+                        cell.fill = fill
+                        if status in {"OVERDUE", "REJECTED"}: cell.font = Font(bold=True, color="991B1B")
         for cells in ws.columns:
             width = min(max(len(str(cell.value or "")) for cell in cells) + 2, 38)
             ws.column_dimensions[cells[0].column_letter].width = max(width, 11)
@@ -204,6 +222,7 @@ def _order_display_rows(service: SupplyChainService, orders: Sequence[Mapping[st
             "RM Required kg":r.get("required_rm_kg") if flow in {FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION} else None,
             "RM Ordered kg":r.get("rm_ordered_kg") if flow in {FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION} else None,
             "RM Balance kg":r.get("rm_balance_kg") if flow in {FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION} else None, "Available Stock pcs":r.get("available_stock_pcs_snapshot"), "3 Month Schedule pcs":r.get("three_month_schedule_pcs_snapshot"), "RM Procurement Required":r.get("rm_procurement_required"), "Procurement Decision":r.get("procurement_decision"), "Delivery Date":r.get("customer_delivery_date"),
+            "Created By User":r.get("Created By User"), "Last Modified By User":r.get("Last Modified By User"), "Data Entry Status":r.get("Data Entry Status") or r.get("status"),
             "Display Status":_due_status(r.get("status"),r.get("customer_delivery_date")), "_id":str(r.get("id")),
         })
     return pd.DataFrame(rows)
@@ -234,30 +253,73 @@ def _order_progress(service: SupplyChainService, order: dict) -> list[dict]:
         if target > 0 and value >= target - .0001: return "complete"
         if value > 0: return "current"
         return "pending"
+
+    def po_confirmation(stage_po_type: str) -> dict:
+        po_rows=[r for r in service.purchase_orders() if str(r.get("po_type") or "").upper()==stage_po_type and str(r.get("status") or "").upper()!="CANCELLED"]
+        source_ids={str(r.get("purchase_order_id") or "") for r in service.repo.select("supply_purchase_order_sources",eq={"customer_order_id":str(order.get("id"))},limit=500)}
+        po=next((r for r in reversed(po_rows) if str(r.get("id")) in source_ids),None)
+        if not po:
+            # Older one-source PO rows can be reached through the legacy procurement/forging link.
+            if stage_po_type=="RAW_MATERIAL":
+                rm=next((r for r in service.rm_purchase_orders() if str(r.get("customer_order_id"))==str(order.get("id")) and str(r.get("status") or "").upper()!="CANCELLED"),None)
+                po=service.purchase_order(str((rm or {}).get("purchase_order_id") or "")) if rm else None
+            else:
+                fo=next((r for r in service.forging_orders() if str(r.get("customer_order_id"))==str(order.get("id")) and str(r.get("status") or "").upper()!="CANCELLED"),None)
+                po=service.purchase_order(str((fo or {}).get("purchase_order_id") or "")) if fo else None
+        if not po or str(po.get("approval_status") or "").upper()!="APPROVED":
+            return {"label":"Supplier PO Confirmation","state":"pending","detail":"After PO approval"}
+        conf=service.purchase_order_confirmation(str(po.get("id"))) or {}
+        status=str(conf.get("confirmation_status") or "PENDING").upper()
+        if status=="CONFIRMED":
+            return {"label":"Supplier PO Confirmation","state":"complete","detail":str(conf.get("confirmation_reference") or "Confirmed")}
+        return {"label":"Supplier PO Confirmation","state":"current","detail":f"{status.replace('_',' ').title()} · Daily priority reminder"}
+
     part_production=max(totals["finished_goods_pcs"],totals["machined_pcs"] if totals["finished_goods_pcs"]<=0 else 0)
-    common_tail=[
-        {"label":"Forging Order", "state":state(totals["forging_ordered_pcs"],qty), "detail":f"{totals['forging_ordered_pcs']:,.0f}/{qty:,.0f} pcs"},
-        {"label":"Forging Receipt", "state":state(totals["forging_received_pcs"],qty), "detail":f"{totals['forging_received_pcs']:,.0f}/{qty:,.0f} pcs"},
+    production_tail=[
         {"label":"Part Production", "state":state(part_production,qty), "detail":f"{part_production:,.0f}/{qty:,.0f} pcs"},
         {"label":"Dispatch", "state":state(totals["customer_dispatched_pcs"],qty), "detail":f"{totals['customer_dispatched_pcs']:,.0f}/{qty:,.0f} pcs"},
     ]
     if flow==FLOW_DIRECT_FORGING:
-        return [{"label":"Customer Order", "state":"complete", "detail":str(order.get("master_reference_no"))}, *common_tail]
+        return [
+            {"label":"Customer Order", "state":"complete", "detail":str(order.get("master_reference_no"))},
+            {"label":"Forging Order", "state":state(totals["forging_ordered_pcs"],qty), "detail":f"{totals['forging_ordered_pcs']:,.0f}/{qty:,.0f} pcs"},
+            po_confirmation("FORGING"),
+            {"label":"Forging Receipt", "state":state(totals["forging_received_pcs"],qty), "detail":f"{totals['forging_received_pcs']:,.0f}/{qty:,.0f} pcs"},
+            *production_tail,
+        ]
     rm_head=[
         {"label":"Customer Order", "state":"complete", "detail":str(order.get("master_reference_no"))},
         {"label":"RM Procurement", "state":state(totals["rm_ordered_kg"],required), "detail":f"{totals['rm_ordered_kg']:,.1f}/{required:,.1f} kg"},
+        po_confirmation("RAW_MATERIAL"),
         {"label":"RM Receipt", "state":state(totals["rm_received_kg"],min(totals["rm_ordered_kg"],required) if totals["rm_ordered_kg"] else required), "detail":f"{totals['rm_received_kg']:,.1f} kg"},
     ]
     if flow==FLOW_FSI_RM_DIRECT_PRODUCTION:
-        return [*rm_head,
-            {"label":"Part Production", "state":state(part_production,qty), "detail":f"{part_production:,.0f}/{qty:,.0f} pcs"},
-            {"label":"Dispatch", "state":state(totals["customer_dispatched_pcs"],qty), "detail":f"{totals['customer_dispatched_pcs']:,.0f}/{qty:,.0f} pcs"},
-        ]
+        return [*rm_head,*production_tail]
     return [
         *rm_head,
         {"label":"RM to Forger", "state":state(totals["rm_dispatched_kg"],min(totals["rm_received_kg"],required) if totals["rm_received_kg"] else required), "detail":f"{totals['rm_dispatched_kg']:,.1f} kg"},
-        *common_tail,
+        {"label":"Forging Order", "state":state(totals["forging_ordered_pcs"],qty), "detail":f"{totals['forging_ordered_pcs']:,.0f}/{qty:,.0f} pcs"},
+        po_confirmation("FORGING"),
+        {"label":"Forging Receipt", "state":state(totals["forging_received_pcs"],qty), "detail":f"{totals['forging_received_pcs']:,.0f}/{qty:,.0f} pcs"},
+        *production_tail,
     ]
+
+
+def _stage_key(label: str) -> str:
+    value=str(label or "").strip().casefold()
+    mapping={
+        "customer order":"CUSTOMER_ORDER",
+        "rm procurement":"RM_PROCUREMENT",
+        "supplier po confirmation":"SUPPLIER_PO_CONFIRMATION",
+        "rm receipt":"RM_RECEIPT",
+        "rm to forger":"RM_TO_FORGING",
+        "forging order":"FORGING_ORDER",
+        "forging receipt":"FORGING_RECEIPT",
+        "part production":"PART_PRODUCTION",
+        "finished goods":"FINISHED_GOODS",
+        "dispatch":"CUSTOMER_DISPATCH",
+    }
+    return mapping.get(value, value.upper().replace(" ","_"))
 
 
 def _show_order_context(service: SupplyChainService, order_id: str, *, key: str, export: bool = False) -> dict:
@@ -303,7 +365,7 @@ def _edit_delete_panel(
 
 def render_home() -> None:
     page_header("Supply Chain", "Master-linked Customer Order to final dispatch genealogy", "Supply Chain")
-    service=SupplyChainService(); orders=service.customer_orders(); active=[r for r in orders if str(r.get("status")) not in {"COMPLETED","CANCELLED"}]
+    service=SupplyChainService(); perms=current_permissions("SUPPLY_CHAIN"); orders=service.customer_orders(); active=[r for r in orders if str(r.get("status")) not in {"COMPLETED","CANCELLED"}]
     overdue=[r for r in active if _due_status(r.get("status"),r.get("customer_delivery_date"))=="OVERDUE"]
     dispatched=sum(service.totals(str(r["id"]))["customer_dispatched_pcs"] for r in orders)
     kpi_grid([
@@ -329,6 +391,60 @@ def render_home() -> None:
             balances=pd.DataFrame(service.supplier_balances(selected));
             if not balances.empty: _searchable_grid(balances,title="Forging Supplier RM Balance",key="supply_home_balance",height=260)
         else: st.success("All current Customer Orders are completed.")
+    with stage_section("C","PENDING STAGE RESPONSIBILITY & NOTIFICATIONS","Every Supply Chain stage can have its own responsible Department / Employee. The register includes all incomplete stages; the current actionable stage can send notifications. Excel export is status-coloured.",key="supply_home_responsibility"):
+        employees=service.repo.select("employees",eq={"status":"ACTIVE"},order_by="first_name",limit=5000)
+        employee_map={str(e.get("id")):e for e in employees}
+        employee_labels={eid:f"{e.get('employee_code') or '-'} · {e.get('first_name') or ''} {e.get('last_name') or ''} · {e.get('department') or '-'}" for eid,e in employee_map.items()}
+        departments=sorted({str(e.get("department") or "").strip() for e in employees if str(e.get("department") or "").strip()})
+        stage_cfg={str(r.get("stage_key")):r for r in service.repo.select("supply_stage_responsibilities",limit=200)}
+
+        with st.expander("Stage Responsibility Master · Department / Employee",expanded=False):
+            cfg_rows=[]
+            for key,label in [("CUSTOMER_ORDER","Customer Order / Schedule"),("RM_PROCUREMENT","RM Procurement / Purchase Order"),("SUPPLIER_PO_CONFIRMATION","Supplier Purchase Order Confirmation"),("RM_RECEIPT","RM Receipt / Material Inward"),("RM_TO_FORGING","RM to Forger"),("FORGING_ORDER","Forging Purchase Order"),("FORGING_RECEIPT","Forging Receipt"),("PART_PRODUCTION","Part Production / Machining"),("FINISHED_GOODS","Finished Goods"),("CUSTOMER_DISPATCH","Customer Dispatch")]:
+                row=stage_cfg.get(key,{})
+                cfg_rows.append({"Stage Key":key,"Stage":label,"Department":row.get("department") or "","Employee ID":str(row.get("employee_id") or ""),"Notify Supplier":bool(row.get("notify_supplier",False)),"Enabled":bool(row.get("enabled",True))})
+            cfg_df=pd.DataFrame(cfg_rows)
+            cfg_edit=st.data_editor(cfg_df,hide_index=True,width="stretch",height=390,disabled=["Stage Key","Stage"] if perms.get("can_approve") else list(cfg_df.columns),column_config={"Department":st.column_config.SelectboxColumn(options=[""]+departments),"Employee ID":st.column_config.SelectboxColumn(options=[""]+list(employee_labels),format_func=lambda v:employee_labels.get(v,"— Department default —")),"Notify Supplier":st.column_config.CheckboxColumn(),"Enabled":st.column_config.CheckboxColumn()})
+            if st.button("Save Stage Responsibility Matrix",type="primary",width="stretch",disabled=not perms.get("can_approve"),key="save_supply_stage_responsibility"):
+                try:
+                    for _,row in cfg_edit.iterrows():
+                        service.repo.upsert_by("supply_stage_responsibilities",{"stage_key":row["Stage Key"],"stage_label":row["Stage"],"department":str(row.get("Department") or "").strip() or None,"employee_id":str(row.get("Employee ID") or "").strip() or None,"notify_supplier":bool(row.get("Notify Supplier")),"enabled":bool(row.get("Enabled"))},natural_key={"stage_key":row["Stage Key"]})
+                    save_success_popup("Supply Chain stage responsibilities saved.",queue_for_rerun=True);st.rerun()
+                except Exception as exc: st.error(str(exc))
+
+        responsibility_rows=[]
+        for order in active:
+            progress=_order_progress(service,order)
+            actionable_index=next((i for i,sr in enumerate(progress) if str(sr.get("state")) in {"pending","current"} and str(sr.get("label"))!="Customer Order"),None)
+            part=(service.repo.get("parts",str(order.get("part_id") or "")) or {})
+            for i,stage in enumerate(progress):
+                if str(stage.get("label"))=="Customer Order" or str(stage.get("state"))=="complete":
+                    continue
+                stage_key=_stage_key(str(stage.get("label") or "")); cfg=stage_cfg.get(stage_key,{})
+                employee_id=str(cfg.get("employee_id") or "")
+                if not employee_id and cfg.get("department"):
+                    match=next((e for e in employees if str(e.get("department") or "").strip().casefold()==str(cfg.get("department") or "").strip().casefold()),None)
+                    employee_id=str((match or {}).get("id") or "")
+                if not employee_id:
+                    employee_id=str(order.get("responsible_employee_id") or "")
+                employee=employee_map.get(employee_id) or {}
+                emp_name=service.employee_label(employee_id) if employee_id else "UNASSIGNED"
+                action_status="CURRENT" if actionable_index is not None and i==actionable_index else "WAITING"
+                due_status=_due_status(order.get("status"),order.get("customer_delivery_date"))
+                status="OVERDUE" if action_status=="CURRENT" and due_status=="OVERDUE" else action_status
+                responsibility_rows.append({"Customer Order":order.get("master_reference_no"),"Part Number":part.get("part_number"),"Stage":stage.get("label"),"Stage Detail":stage.get("detail"),"Action Status":action_status,"Responsible Department":cfg.get("department") or employee.get("department") or "","Responsible Employee":emp_name or "UNASSIGNED","Responsible Email":employee.get("email") or "","Delivery Date":order.get("customer_delivery_date"),"Status":status,"_order_id":str(order.get("id")),"_employee_id":employee_id,"_stage_key":stage_key})
+        resp_frame=pd.DataFrame(responsibility_rows)
+        if not resp_frame.empty:
+            filtered=_searchable_grid(resp_frame.drop(columns=["_order_id","_employee_id","_stage_key"],errors="ignore"),title="Supply Chain Stage Responsibility · All Incomplete Stages",key="supply_pending_responsibility",height=470)
+            _exports(resp_frame.drop(columns=["_order_id","_employee_id","_stage_key"],errors="ignore"),"Supply Chain Pending Stage Responsibility","supply_pending_stage_responsibility")
+            sendable=[r for r in responsibility_rows if r.get("Responsible Email") and r.get("Action Status")=="CURRENT"]
+            if st.button("Send Current-Stage Notifications to Related Employees",type="primary",width="stretch",disabled=not sendable,key="send_pending_stage_notifications"):
+                sent=0
+                for row in sendable:
+                    NotificationService(service.repo).notify("CUSTOMER_ORDER_STAGE_PENDING",related_table="supply_customer_orders",related_id=row["_order_id"],recipient_email=row["Responsible Email"],recipient_name=row["Responsible Employee"],context={"customer_order":row["Customer Order"],"part_number":row["Part Number"],"stage":row["Stage"],"responsible_employee":row["Responsible Employee"],"due_date":row["Delivery Date"]})
+                    sent+=1
+                save_success_popup(f"{sent} current-stage notification(s) queued/sent to related employees.")
+        else: st.info("No open Supply Chain responsibility rows are available.")
 
 
 def render_customer_orders() -> None:
@@ -349,6 +465,9 @@ def render_customer_orders() -> None:
             supplier=parties.get(str(r.get("supplier_id"))) or {}; gross=number(r.get("gross_weight_kg") or r.get("input_weight_kg") or r.get("forging_weight_kg")); grade=(service.repo.get("material_grades",str(r.get("material_grade_id") or "")) or {}).get("grade_code") or "-"; raw_labels[str(r["id"])]=f"{r.get('material_section_name') or 'Raw Material'} · Grade {grade} · {party_label(supplier)} · Gross {gross:.3f} kg/pc · {r.get('section_size') or '-'} · Lead {int(r.get('lead_time_days') or 0)}d"
         raw_id=st.selectbox("Part Master Raw Material / Forging Source",list(raw_labels),format_func=lambda v:raw_labels[v]) if raw_labels else None
         selected_raw=next((r for r in raw_rows if str(r["id"])==str(raw_id)),{}) if raw_id else {}; gross=number(selected_raw.get("gross_weight_kg") or selected_raw.get("input_weight_kg") or selected_raw.get("forging_weight_kg"))
+        employees=service.repo.select("employees",eq={"status":"ACTIVE"},order_by="first_name",limit=5000)
+        employee_labels={str(e["id"]):f"{e.get('employee_code') or '-'} · {e.get('first_name') or ''} {e.get('last_name') or ''} · {e.get('department') or '-'}" for e in employees}
+        responsible_employee_id=st.selectbox("Responsible Employee",[""]+list(employee_labels),format_func=lambda v:employee_labels.get(v,"— Select responsible employee —"),key=f"customer_order_responsible_{order_type}") if employee_labels else ""
         if part_id: _show_order_context(service,str(next((r.get("id") for r in service.customer_orders() if False),"")),key="dummy") if False else None
         if not raw_labels: st.warning("Part Master E - Raw Material Details requires an active raw material / forging source and gross/input weight.")
         if order_type=="PURCHASE_ORDER":
@@ -377,7 +496,10 @@ def render_customer_orders() -> None:
             ) if rm_procurement_required else {"send":False,"confirmed":True,"preview":{}}
             if st.button("Create Customer Purchase Order",type="primary",width="stretch",disabled=not perms["can_create"] or not customer_id or not part_id or not raw_id or gross<=0 or not order_no.strip() or not position.strip() or (order_notify_pref["send"] and not order_notify_pref["confirmed"])):
                 try:
-                    saved_order=service.create_customer_order({"order_type":"PURCHASE_ORDER","customer_id":customer_id,"part_id":part_id,"customer_order_no":order_no.strip(),"order_position":position.strip(),"order_date":order_date.isoformat(),"customer_delivery_date":delivery.isoformat(),"order_qty_pcs":qty,"forging_supplier_id":selected_raw.get("supplier_id"),"raw_material_detail_id":raw_id,"gross_weight_kg_snapshot":gross,"status":"OPEN","remarks":remarks.strip() or None,"supply_flow":supply_flow,"rm_procurement_required":rm_procurement_required,"_procurement_check":procurement_check})
+                    saved_order=service.create_customer_order({"order_type":"PURCHASE_ORDER","customer_id":customer_id,"part_id":part_id,"customer_order_no":order_no.strip(),"order_position":position.strip(),"order_date":order_date.isoformat(),"customer_delivery_date":delivery.isoformat(),"order_qty_pcs":qty,"forging_supplier_id":selected_raw.get("supplier_id"),"raw_material_detail_id":raw_id,"gross_weight_kg_snapshot":gross,"status":"OPEN","remarks":remarks.strip() or None,"supply_flow":supply_flow,"rm_procurement_required":rm_procurement_required,"responsible_employee_id":responsible_employee_id or None,"_procurement_check":procurement_check})
+                    responsible=service.repo.get("employees",str(responsible_employee_id or "")) or {}
+                    if responsible.get("email"):
+                        NotificationService(service.repo).notify("CUSTOMER_ORDER_STAGE_PENDING",related_table="supply_customer_orders",related_id=str(saved_order.get("id")),recipient_email=str(responsible.get("email")),recipient_name=service.employee_label(str(responsible_employee_id)),context={"customer_order":saved_order.get("master_reference_no"),"part_number":fp_map.get(str(part_id),"-"),"stage":"RM Procurement" if bool(saved_order.get("rm_procurement_required")) else "Production / Dispatch Planning","responsible_employee":service.employee_label(str(responsible_employee_id)),"due_date":saved_order.get("customer_delivery_date")})
                     if bool(saved_order.get("rm_procurement_required")) and order_notify_pref["send"] and order_notify_pref["confirmed"]:
                         NotificationService(service.repo).notify(
                             "RM_PROCUREMENT_PENDING",
@@ -433,8 +555,13 @@ def render_customer_orders() -> None:
                     created=[]; created_ids=[]
                     for mm,yy,q,d in month_data:
                         if q<=0: continue
-                        saved=service.create_customer_order({"order_type":"MONTHLY_SCHEDULE","customer_id":customer_id,"part_id":part_id,"order_position":f"{mm:02d}-{yy}","schedule_month":date(yy,mm,1).isoformat(),"order_date":receipt_date.isoformat(),"customer_delivery_date":d.isoformat(),"order_qty_pcs":q,"forging_supplier_id":selected_raw.get("supplier_id"),"raw_material_detail_id":raw_id,"gross_weight_kg_snapshot":gross,"status":"OPEN","remarks":remarks.strip() or None,"supply_flow":supply_flow,"rm_procurement_required":schedule_rm_required,"_procurement_check":schedule_check}); created.append(saved.get("master_reference_no")); created_ids.append(str(saved.get("id") or ""))
+                        saved=service.create_customer_order({"order_type":"MONTHLY_SCHEDULE","customer_id":customer_id,"part_id":part_id,"order_position":f"{mm:02d}-{yy}","schedule_month":date(yy,mm,1).isoformat(),"order_date":receipt_date.isoformat(),"customer_delivery_date":d.isoformat(),"order_qty_pcs":q,"forging_supplier_id":selected_raw.get("supplier_id"),"raw_material_detail_id":raw_id,"gross_weight_kg_snapshot":gross,"status":"OPEN","remarks":remarks.strip() or None,"supply_flow":supply_flow,"rm_procurement_required":schedule_rm_required,"responsible_employee_id":responsible_employee_id or None,"_procurement_check":schedule_check}); created.append(saved.get("master_reference_no")); created_ids.append(str(saved.get("id") or ""))
                     if not created: raise ValueError("Enter quantity for at least one of the six months.")
+                    responsible=service.repo.get("employees",str(responsible_employee_id or "")) or {}
+                    if responsible.get("email"):
+                        for rid, ref in zip(created_ids, created):
+                            record=service.order(rid) or {}
+                            NotificationService(service.repo).notify("CUSTOMER_ORDER_STAGE_PENDING",related_table="supply_customer_orders",related_id=rid,recipient_email=str(responsible.get("email")),recipient_name=service.employee_label(str(responsible_employee_id)),context={"customer_order":ref,"part_number":fp_map.get(str(part_id),"-"),"stage":"RM Procurement" if schedule_rm_required else "Production / Dispatch Planning","responsible_employee":service.employee_label(str(responsible_employee_id)),"due_date":record.get("customer_delivery_date")})
                     if schedule_rm_required and schedule_notify_pref["send"] and schedule_notify_pref["confirmed"]:
                         NotificationService(service.repo).notify(
                             "RM_PROCUREMENT_PENDING",
@@ -663,12 +790,20 @@ def render_rm_procurement() -> None:
 def render_purchase_orders() -> None:
     page_header("Purchase Orders · Raw Material / Forging", "Controlled supplier Purchase Orders with multi-order RM consolidation, FSI Part confidentiality, supplier price history and Part Master technical data", "Supply Chain")
     service=SupplyChainService(); perms=current_permissions("SUPPLY_CHAIN")
+    profile=current_profile() or {}
+    # v4.14.19 resolves the Employee Master relationship live. A role/employee link may
+    # be updated by Admin while this browser session is already open; PO creation must
+    # not remain disabled because the login-time profile snapshot is stale.
+    login_employee_id=current_employee_id(refresh=True)
+    profile=current_profile() or profile
+    po_commercial_perm=section_permissions(st.session_state.get("profile") or {},"SUPPLY_CHAIN","PO_COMMERCIAL",service.repo)
+    po_reports_perm=section_permissions(st.session_state.get("profile") or {},"SUPPLY_CHAIN","PO_REPORTS",service.repo)
     parts,parties,grades=_maps(service)
     supplier_rows=service.suppliers(); supplier_labels={str(r["id"]):party_label(r) for r in supplier_rows}
     pre_type=str(st.session_state.pop("supply_po_type", "RAW_MATERIAL") or "RAW_MATERIAL")
     po_type=st.radio("Purchase Order Type",["RAW_MATERIAL","FORGING"],index=0 if pre_type=="RAW_MATERIAL" else 1,horizontal=True,format_func=lambda v:"Raw Material Purchase Order" if v=="RAW_MATERIAL" else "Forging Purchase Order",key="supply_controlled_po_type")
 
-    source_order_ids: list[str]=[]; source_order_id=None; rm_dispatch={}; selected_forging_source=None
+    source_order_ids: list[str]=[]; source_order_id=None; rm_dispatch={}; selected_forging_source=None; selected_forging_sources=[]
     with stage_section("A","CUSTOMER ORDER / SCHEDULE PURCHASE ORDER ELIGIBILITY","Every open Customer Order remains visible here. Eligible sources can be selected; waiting/not-required rows show the exact reason instead of disappearing.",key="supply_po_source"):
         eligibility=service.purchase_order_source_status(po_type)
         eligibility_rows=[]
@@ -692,7 +827,8 @@ def render_purchase_orders() -> None:
                 row["rm_balance_kg"]=number(pending.get("rm_balance_kg") or max(number(row.get("required_rm_kg"))-number(pending.get("rm_ordered_kg")),0.0))
             labels={str(r["id"]):f"{r.get('master_reference_no')} · Customer {(parties.get(str(r.get('customer_id'))) or {}).get('party_name') or '-'} · Part {(parts.get(str(r.get('part_id'))) or {}).get('part_number') or '-'} · FSI {(parts.get(str(r.get('part_id'))) or {}).get('fsi_part_number') or 'ENTER AT PO'} · Pos {r.get('order_position') or '-'} · RM Balance {number(r.get('rm_balance_kg')):,.3f} kg · Due {r.get('customer_delivery_date') or '-'}" for r in eligible_orders}
             pre=str(st.session_state.pop("supply_po_source_order_id","") or "")
-            defaults=[pre] if pre in labels else []
+            reissue_defaults=[str(v) for v in (st.session_state.pop("supply_po_reissue_source_ids",[]) or []) if str(v) in labels]
+            defaults=reissue_defaults or ([pre] if pre in labels else [])
             source_order_ids=st.multiselect("Select ELIGIBLE Customer Orders / Schedules for this RM Purchase Order",list(labels),default=defaults,format_func=lambda v:labels[v],key="supply_po_rm_sources") if labels else []
             st.caption(f"Open Customer Orders / Schedules: {len(eligibility):,} · Eligible for RM PO: {len(eligible_orders):,}. Every open order remains visible in the status table above.")
             if source_order_ids:
@@ -722,10 +858,13 @@ def render_purchase_orders() -> None:
                 src_part=parts.get(str(src_order.get('part_id'))) or {}
                 src_customer=parties.get(str(src_order.get('customer_id'))) or {}
                 labels[str(i)]=f"{src_order.get('master_reference_no')} · Customer {src_customer.get('party_name') or '-'} · Part {src_part.get('part_number') or '-'} · {r.get('_source_type')} · Balance {number(r.get('_balance_pcs')):,.0f} pcs"
-            chosen=st.selectbox("Select ELIGIBLE Forging PO Source",list(labels),format_func=lambda v:labels[v],key="supply_po_forging_source") if labels else None
-            if chosen is not None:
-                selected_forging_source=pending[int(chosen)]; source_order_id=str(selected_forging_source.get("_customer_order_id") or ""); source_order_ids=[source_order_id]; rm_dispatch=selected_forging_source.get("_rm_dispatch") or {}
-            st.caption(f"Open Customer Orders / Schedules: {len(eligibility):,} · Eligible for Forging PO: {len(pending):,}. Every open order remains visible in the status table above.")
+            chosen=st.multiselect("Select ELIGIBLE Forging PO Source(s)",list(labels),format_func=lambda v:labels[v],key="supply_po_forging_sources",help="Select multiple sources only when they use the same Supplier Forging Part No. in Part Master. QCMS consolidates the supplier item but retains each finished-Part allocation.") if labels else []
+            if chosen:
+                selected_forging_sources=[pending[int(value)] for value in chosen]
+                selected_forging_source=selected_forging_sources[0]
+                source_order_ids=[str(row.get("_customer_order_id") or "") for row in selected_forging_sources]
+                source_order_id=source_order_ids[0] if source_order_ids else None; rm_dispatch=selected_forging_source.get("_rm_dispatch") or {}
+            st.caption(f"Open Customer Orders / Schedules: {len(eligibility):,} · Eligible for Forging PO: {len(pending):,}. Common supplier forging items may be combined; each Customer Order remains traceable.")
             if not labels: st.warning("No Customer Order / Supply Chain source is currently eligible for a Forging Purchase Order. Review the reason grid above.")
 
     with stage_section("B","PURCHASE ORDER ENTRY","Supplier-facing Item # uses the FSI Part Number. Current Price and HSN/SAC are inherited directly from the selected supplier-specific Part Master record; normal entry fields are submitted as one form to avoid a full page rerun on every edit.",key="supply_po_entry"):
@@ -745,8 +884,6 @@ def render_purchase_orders() -> None:
             else:
                 supplier_options=list(supplier_labels)
             default_supplier=str(selected_orders[0].get("forging_supplier_id") or "") if po_type=="FORGING" and selected_orders else ""
-            profile=current_profile() or {}
-            login_employee_id=str(profile.get("employee_id") or "")
             login_employee=service.repo.get("employees",login_employee_id) if login_employee_id else {}
             requisitioner_name=" ".join(v for v in (str((login_employee or {}).get("first_name") or "").strip(),str((login_employee or {}).get("last_name") or "").strip()) if v).strip()
             if not requisitioner_name:
@@ -833,7 +970,7 @@ def render_purchase_orders() -> None:
                     for order in selected_orders:
                         oid=str(order.get("id") or ""); part=parts.get(str(order.get("part_id"))) or {}; totals=service.totals(oid); balance=max(number(order.get("required_rm_kg"))-totals["rm_ordered_kg"],0.0)
                         raw=service.raw_material_for_supplier(str(part.get("id") or ""),supplier_id,str(order.get("raw_material_detail_id") or "")); raw_for_order[oid]=raw
-                        group_key=f"{part.get('id')}|{(raw or {}).get('id') or ''}"; group_order_ids.setdefault(group_key,[]).append(oid)
+                        group_key=service.raw_material_po_group_key(part,raw or {}); group_order_ids.setdefault(group_key,[]).append(oid)
                         customer=parties.get(str(order.get("customer_id"))) or {}
                         grade_row=grades.get(str((raw or {}).get("material_grade_id") or part.get("material_grade_id") or "")) or {}
                         allocation_rows.append({"Order ID":oid,"Customer Order / Schedule":order.get("master_reference_no"),"Customer":customer.get("party_name"),"Part Number":part.get("part_number"),"Position":order.get("order_position"),"FSI Part Number":part.get("fsi_part_number") or "ENTER IN ITEM GRID","Part Description":part.get("part_name"),"Raw Material Type":(raw or {}).get("material_section_name") or "NO SUPPLIER RM DETAIL","Material Grade":grade_row.get("grade_code") or "-","Section Size":(raw or {}).get("section_size") or "-","Pending RM kg":balance,"PO Allocation kg":balance})
@@ -844,15 +981,16 @@ def render_purchase_orders() -> None:
 
                     line_rows=[]; group_data={}
                     for order in selected_orders:
-                        oid=str(order.get("id")); part=parts.get(str(order.get("part_id"))) or {}; raw=raw_for_order.get(oid) or {}; key=f"{part.get('id')}|{raw.get('id') or ''}"
-                        group=group_data.setdefault(key,{"part":part,"raw":raw,"qty":0.0}); group["qty"]+=allocations.get(oid,0.0)
+                        oid=str(order.get("id")); part=parts.get(str(order.get("part_id"))) or {}; raw=raw_for_order.get(oid) or {}; key=service.raw_material_po_group_key(part,raw)
+                        group=group_data.setdefault(key,{"part":part,"raw":raw,"qty":0.0,"parts":[]}); group["qty"]+=allocations.get(oid,0.0); group["parts"].append(part)
                     for key,group in group_data.items():
                         part,raw=group["part"],group["raw"]; current=service.current_price(str(part.get("id") or ""),supplier_id,on_date=order_date,uom="KGS",raw_material_detail_id=str(raw.get("id") or "") or None); master_hsn=str(raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip()
                         grade_row=grades.get(str(raw.get("material_grade_id") or part.get("material_grade_id") or "")) or {}
-                        line_rows.append({"Line Key":key,"FSI Part Number":part.get("fsi_part_number"),"HSN / SAC":master_hsn,"Part Description":part.get("part_name"),"Raw Material Type":raw.get("material_section_name"),"Material Grade":grade_row.get("grade_code") or "-","Section Size":raw.get("section_size"),"PO Qty kg":round(group["qty"],3),"Current Price":current})
+                        linked_parts=sorted({str(v.get("fsi_part_number") or v.get("part_number") or "") for v in group.get("parts",[])})
+                        line_rows.append({"Line Key":key,"FSI Part Number":raw.get("supplier_rm_item_code") or part.get("fsi_part_number"),"Linked Finished Parts":", ".join(linked_parts),"HSN / SAC":master_hsn,"Part Description":part.get("part_name"),"Raw Material Type":raw.get("material_section_name"),"Material Grade":grade_row.get("grade_code") or "-","Section Size":raw.get("section_size"),"PO Qty kg":round(group["qty"],3),"Current Price":current})
                         if current<=0 or not master_hsn: all_lines_valid=False
                     line_df=pd.DataFrame(line_rows)
-                    line_edit=st.data_editor(line_df,hide_index=True,width="stretch",height=min(330,90+len(line_df)*38),key="controlled_po_lines_form",disabled=["Line Key","HSN / SAC","Part Description","Raw Material Type","Material Grade","Section Size","PO Qty kg","Current Price"],column_config={"Line Key":None,"FSI Part Number":st.column_config.TextColumn(required=True,help="Supplier-facing FSI identity. If Part Master is blank, enter it here; the original Customer Part Number is never printed."),"HSN / SAC":st.column_config.TextColumn(help="Read-only supplier/raw-material HSN from Part Master."),"PO Qty kg":st.column_config.NumberColumn(format="%.3f"),"Current Price":st.column_config.NumberColumn(format="%.2f",help="Read-only current supplier price from Part Master price history.")})
+                    line_edit=st.data_editor(line_df,hide_index=True,width="stretch",height=min(330,90+len(line_df)*38),key="controlled_po_lines_form",disabled=["Line Key","Linked Finished Parts","HSN / SAC","Part Description","Raw Material Type","Material Grade","Section Size","PO Qty kg","Current Price"],column_config={"Line Key":None,"FSI Part Number":st.column_config.TextColumn(required=True,help="Supplier-facing FSI identity. If Part Master is blank, enter it here; the original Customer Part Number is never printed."),"HSN / SAC":st.column_config.TextColumn(help="Read-only supplier/raw-material HSN from Part Master."),"PO Qty kg":st.column_config.NumberColumn(format="%.3f"),"Current Price":st.column_config.NumberColumn(format="%.2f",help="Read-only current supplier price from Part Master price history.")})
                     for _,row in line_edit.iterrows():
                         key=str(row.get("Line Key")); line_prices[key]=number(row.get("Current Price")); line_hsn[key]=str(row.get("HSN / SAC") or "").strip(); line_fsi[key]=str(row.get("FSI Part Number") or "").strip()
                         if not line_fsi[key] or line_prices[key]<=0 or not line_hsn[key]: all_lines_valid=False
@@ -863,43 +1001,76 @@ def render_purchase_orders() -> None:
                     for key,group in group_data.items():
                         part,raw=group["part"],group["raw"]
                         with st.container(border=True):
-                            st.markdown(f"**FSI {part.get('fsi_part_number') or '-'} · {part.get('part_name') or '-'} · {supplier_labels.get(supplier_id,'Supplier')}**")
+                            shared_code=str(raw.get("supplier_rm_item_code") or "").strip()
+                            title_id=shared_code or part.get("fsi_part_number") or "-"
+                            st.markdown(f"**Supplier Item {title_id} · {part.get('part_name') or '-'} · {supplier_labels.get(supplier_id,'Supplier')}**")
                             allowed_rm_headings={"raw material type","raw material section","material grade","section size"}
                             tech=[r for r in service.technical_data_snapshot(raw,part) if str(r.get("heading") or "").strip().casefold() in allowed_rm_headings]
                             if tech: portal_table(pd.DataFrame([{"Heading":("Raw Material Type" if str(r.get("heading") or "").casefold()=="raw material section" else r.get("heading")),"Value":r.get("value")} for r in tech]),hide_index=True,width="stretch",height=min(220,70+len(tech)*34))
                             hist=service.price_history(str(part.get("id") or ""),supplier_id,uom="KGS",raw_material_detail_id=str(raw.get("id") or "") or None)
-                            if hist: portal_table(pd.DataFrame([{"Start Date":r.get("start_date"),"End Date":r.get("end_date") or "Current","Basic Rate":r.get("price"),"Freight":r.get("freight"),"Tool Cost":r.get("tool_cost"),"P&F":r.get("packing_forwarding"),"Profit":r.get("profit"),"ICC/Rej.":r.get("icc_rejection"),"Currency":r.get("currency"),"UOM":r.get("uom"),"Remark":r.get("remarks") or "","Status":r.get("status") or "ACTIVE"} for r in reversed(hist)]),hide_index=True,width="stretch",height=min(320,70+len(hist)*34))
+                            if hist and po_commercial_perm["can_view"]: portal_table(pd.DataFrame([{"Start Date":r.get("start_date"),"End Date":r.get("end_date") or "Current","Basic Rate":r.get("price"),"Freight":r.get("freight"),"Tool Cost":r.get("tool_cost"),"P&F":r.get("packing_forwarding"),"Profit":r.get("profit"),"ICC/Rej.":r.get("icc_rejection"),"Currency":r.get("currency"),"UOM":r.get("uom"),"Remark":r.get("remarks") or "","Status":r.get("status") or "ACTIVE"} for r in reversed(hist)]),hide_index=True,width="stretch",height=min(320,70+len(hist)*34))
+                            elif hist: st.caption("Commercial price history is hidden by your section permission.")
                 elif po_type=="FORGING" and supplier_id:
-                    order=selected_orders[0]; source_order_id=str(order.get("id") or ""); part=parts.get(str(order.get("part_id"))) or {}; raw=service.raw_material_for_supplier(str(part.get("id") or ""),supplier_id,str(order.get("raw_material_detail_id") or "")) or {}
-                    customer=parties.get(str(order.get("customer_id"))) or {}
-                    st.info(f"Customer: **{customer.get('party_name') or '-'}** · Part Number: **{part.get('part_number') or '-'}** · Customer Ref: **{order.get('master_reference_no') or '-'}**")
-                    totals=service.totals(source_order_id); default_qty=max(number(order.get("order_qty_pcs"))-totals["forging_ordered_pcs"],1.0)
-                    current_price=service.current_price(str(part.get("id") or ""),supplier_id,on_date=order_date,uom="NOS",raw_material_detail_id=str(raw.get("id") or "") or None); hsn_sac_code=str(raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip(); fsi_default=str(part.get("fsi_part_number") or "")
-                    c=st.columns(5,gap="small"); qty=c[0].number_input("Order Quantity",min_value=0.001,value=float(default_qty),step=1.0); c[1].text_input("UOM",value="NOS",disabled=True); unit_price=c[2].number_input("Current Price",min_value=0.0,value=float(current_price),step=0.01,disabled=True,help="Read-only current supplier price from Part Master price history."); c[3].text_input("HSN / SAC Code",value=hsn_sac_code,disabled=True,help="Read-only HSN/SAC from supplier Raw Material Detail; Part Master header HSN is fallback."); fsi_part_number=c[4].text_input("FSI Part Number",value=fsi_default,help="Required supplier-facing identity; Customer Part Number is not printed.")
-                    section_bar("PART MASTER TECHNICAL DATA & PRICE HISTORY")
-                    tech=service.technical_data_snapshot(raw,part); hist=service.price_history(str(part.get("id") or ""),supplier_id,uom="NOS",raw_material_detail_id=str(raw.get("id") or "") or None)
-                    if tech: portal_table(pd.DataFrame([{"Heading":r.get("heading"),"Value":r.get("value")} for r in tech]),hide_index=True,width="stretch")
-                    if hist: portal_table(pd.DataFrame([{"Start Date":r.get("start_date"),"End Date":r.get("end_date") or "Current","Basic Rate":r.get("price"),"Freight":r.get("freight"),"Tool Cost":r.get("tool_cost"),"P&F":r.get("packing_forwarding"),"Profit":r.get("profit"),"ICC/Rej.":r.get("icc_rejection"),"Currency":r.get("currency"),"UOM":r.get("uom"),"Remark":r.get("remarks") or "","Status":r.get("status") or "ACTIVE"} for r in reversed(hist)]),hide_index=True,width="stretch")
-                    all_lines_valid=bool(str(fsi_part_number or "").strip()) and current_price>0 and bool(hsn_sac_code)
-                    if current_price<=0: st.warning("Current Price is missing in Part Master price history. Add the current supplier price before creating the PO.")
-                    if not hsn_sac_code: st.warning("HSN / SAC is missing in Part Master Raw Material Details. Add it before creating the PO.")
+                    forging_rows=[]; all_lines_valid=True
+                    for src in selected_forging_sources:
+                        oid=str(src.get("_customer_order_id") or ""); order=service.order(oid) or {}; part=parts.get(str(order.get("part_id"))) or {}; raw=service.raw_material_for_supplier(str(part.get("id") or ""),supplier_id,str(order.get("raw_material_detail_id") or "")) or {}
+                        customer=parties.get(str(order.get("customer_id"))) or {}; balance=max(number(src.get("_balance_pcs")),0.0); common_code=str(raw.get("supplier_forging_part_number") or "").strip()
+                        current_price=service.current_price(str(part.get("id") or ""),supplier_id,on_date=order_date,uom="NOS",raw_material_detail_id=str(raw.get("id") or "") or None); hsn=str(raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip()
+                        forging_rows.append({"Order ID":oid,"Customer Order":order.get("master_reference_no"),"Customer":customer.get("party_name"),"Finished Part":part.get("part_number"),"FSI Part":part.get("fsi_part_number"),"Supplier Forging Part No.":common_code,"Available pcs":balance,"PO Qty pcs":balance,"Current Price":current_price,"HSN / SAC":hsn,"_source":src,"_raw":raw,"_part":part})
+                    if forging_rows:
+                        display=pd.DataFrame([{k:v for k,v in row.items() if not k.startswith("_")} for row in forging_rows])
+                        edited=st.data_editor(display,hide_index=True,width="stretch",height=min(360,90+len(display)*38),key="controlled_po_forging_multi",disabled=["Order ID","Customer Order","Customer","Finished Part","FSI Part","Supplier Forging Part No.","Available pcs","Current Price","HSN / SAC"],column_config={"Order ID":None,"PO Qty pcs":st.column_config.NumberColumn(min_value=0.001,format="%.0f",required=True)})
+                        forging_sources_payload=[]
+                        common_codes=set(); prices=set(); hsns=set()
+                        for idx,row in edited.iterrows():
+                            original=forging_rows[idx]; qty_value=number(row.get("PO Qty pcs"));
+                            if qty_value<=0 or qty_value>number(original.get("Available pcs"))+.0001: all_lines_valid=False
+                            common_codes.add(str(original.get("Supplier Forging Part No.") or "").strip().casefold()); prices.add(round(number(original.get("Current Price")),6)); hsns.add(str(original.get("HSN / SAC") or "").strip())
+                            forging_sources_payload.append({"customer_order_id":original["Order ID"],"quantity":qty_value,"rm_dispatch":dict(original["_source"].get("_rm_dispatch") or {})})
+                        if len(forging_rows)>1 and ("" in common_codes or len(common_codes)>1): all_lines_valid=False; st.warning("To combine multiple finished Parts in one Forging PO, maintain the SAME Supplier Forging Part No. for each supplier Raw Material Detail in Part Master.")
+                        if len(prices)>1: all_lines_valid=False; st.warning("The shared forging sources have different current supplier prices. Align Price History or split the PO.")
+                        if "" in hsns or len(hsns)>1: all_lines_valid=False; st.warning("The shared forging sources must use the same HSN/SAC.")
+                        if any(v<=0 for v in prices): all_lines_valid=False; st.warning("Current Price is missing for one or more forging sources.")
+                        section_bar("PART MASTER TECHNICAL DATA & PRICE HISTORY","Common forging item control uses Supplier Forging Part No. while retaining each finished-Part source allocation and supplier-specific commercial history.")
+                        section_bar("COMMON FORGING ITEM CONTROL","Use Supplier Forging Part No. to consolidate one purchased forging used by multiple finished Parts. The supplier sees one common item; QCMS keeps every finished-Part source allocation.")
+                        portal_table(display[["Customer Order","Finished Part","FSI Part","Supplier Forging Part No.","Available pcs","PO Qty pcs","Current Price","HSN / SAC"]],hide_index=True,width="stretch")
+                    else:
+                        forging_sources_payload=[]; all_lines_valid=False
 
                 remarks=st.text_area("Remarks",value="PART WILL BE SUPPLIED AS PER DRAWING.",height=70)
                 instructions=st.text_area("Comments / Special Instructions",value=DEFAULT_SPECIAL_INSTRUCTIONS,height=135)
-                create_disabled=not perms["can_create"] or not supplier_id or not company_branch_id or not all_lines_valid or not selected_ship_to_id or not login_employee_id or (notify_pref["send"] and not notify_pref["confirmed"])
+                po_blockers=[]
+                if not perms["can_create"]: po_blockers.append("Supply Chain Create permission is not assigned")
+                if not login_employee_id: po_blockers.append("signed-in user is not linked to an ACTIVE Employee Master")
+                if not supplier_id: po_blockers.append("Supplier is not selected")
+                if not company_branch_id: po_blockers.append("Company Branch / Plant is not selected")
+                if not selected_ship_to_id: po_blockers.append("Ship-To address is not selected")
+                if not all_lines_valid: po_blockers.append("one or more PO item fields / prices / HSN / FSI Part Numbers are incomplete")
+                if notify_pref["send"] and not notify_pref["confirmed"]: po_blockers.append("email recipients are not confirmed")
+                create_disabled=bool(po_blockers)
+                if po_blockers:
+                    st.warning("PO creation is waiting for: " + "; ".join(po_blockers) + ".")
+                else:
+                    st.success("PO entry is ready. Your live Employee link and Supply Chain Create permission are valid.")
                 create_po=st.form_submit_button("Create Controlled Purchase Order",type="primary",width="stretch",disabled=create_disabled)
 
             if create_po:
                 try:
-                    payload={"po_type":po_type,"supplier_id":supplier_id,"company_branch_id":str(company_branch_id or "") or None,"order_date":order_date.isoformat(),"delivery_date":delivery_date.isoformat(),"requisitioner":requisitioner_name or None,"requisitioner_employee_id":login_employee_id or None,"ship_to_party_id":str(ship_to_party_id or "") or None,"ship_to_branch_id":str(ship_to_branch_id or "") or None,"ship_to_source_type":ship_to_source,"ship_via":ship_via.strip(),"incoterm":incoterm.strip(),"payment_term":payment.strip(),"quotation_reference":quote_ref.strip() or None,"quotation_date":quote_date.isoformat(),"old_po_reference":old_po.strip() or None,"gst_percent":gst,"remarks":remarks.strip() or None,"special_instructions":instructions.strip() or None}
+                    replaces_po_id=str(st.session_state.get("supply_po_replaces_id") or "").strip() or None
+                    payload={"po_type":po_type,"supplier_id":supplier_id,"company_branch_id":str(company_branch_id or "") or None,"order_date":order_date.isoformat(),"delivery_date":delivery_date.isoformat(),"requisitioner":requisitioner_name or None,"requisitioner_employee_id":login_employee_id or None,"ship_to_party_id":str(ship_to_party_id or "") or None,"ship_to_branch_id":str(ship_to_branch_id or "") or None,"ship_to_source_type":ship_to_source,"ship_via":ship_via.strip(),"incoterm":incoterm.strip(),"payment_term":payment.strip(),"quotation_reference":quote_ref.strip() or None,"quotation_date":quote_date.isoformat(),"old_po_reference":old_po.strip() or None,"gst_percent":gst,"remarks":remarks.strip() or None,"special_instructions":instructions.strip() or None,"replaces_purchase_order_id":replaces_po_id}
                     if po_type=="RAW_MATERIAL": payload.update({"customer_order_ids":source_order_ids,"allocations":allocations,"line_prices":line_prices,"line_hsn_sac":line_hsn,"line_fsi_part_numbers":line_fsi})
-                    else: payload.update({"customer_order_id":source_order_id,"quantity":qty,"uom":"NOS","unit_price":unit_price,"hsn_sac_code":hsn_sac_code or None,"fsi_part_number":str(fsi_part_number or "").strip(),"rm_dispatch":rm_dispatch})
+                    else: payload.update({"forging_sources":forging_sources_payload,"uom":"NOS"})
                     result=service.create_purchase_order(payload)
                     st.session_state["last_supply_purchase_order_id"]=str((result.get("header") or {}).get("id") or "")
+                    st.session_state.pop("supply_po_replaces_id",None)
                     header_result=result.get("header") or {}
-                    if notify_pref["send"] and notify_pref["confirmed"]:
-                        NotificationService(service.repo).notify(po_event,related_table="supply_purchase_orders",related_id=str(header_result.get("id") or ""),context={"po_number":header_result.get("po_number"),"po_type":po_type,"customer_order_ids":source_order_ids,"supplier_id":str(supplier_id or ""),"supplier_name":supplier_labels.get(str(supplier_id),"Supplier"),"entry_email_confirmed":True,"next_task":"Raw Material Receipt / Material Inward" if po_type=="RAW_MATERIAL" else "Forging Receipt"},**notification_overrides(notify_pref))
-                    save_success_popup(f"Purchase Order {header_result.get('po_number')} created with {len(result.get('items') or [])} vendor line(s) and {len(result.get('stages') or [])} linked Supply Chain allocation(s).",queue_for_rerun=True); st.rerun()
+                    # PO is controlled but not effective until the authoritative approval target approves.
+                    approval_target=service.purchase_order_approval_target(str(header_result.get("id") or ""))
+                    target_email=str(approval_target.get("email") or "").strip()
+                    target_name=str(approval_target.get("employee_name") or "").strip()
+                    target_stage=str(approval_target.get("level_name") or "Manager Approval").strip()
+                    NotificationService(service.repo).notify("PO_APPROVAL_PENDING",related_table="supply_purchase_orders",related_id=str(header_result.get("id") or ""),recipient_email=target_email or None,recipient_name=target_name or None,context={"po_number":header_result.get("po_number"),"requisitioner":requisitioner_name,"supplier_name":supplier_labels.get(str(supplier_id),"Supplier"),"supplier_id":str(supplier_id or ""),"next_stage":target_stage})
+                    save_success_popup(f"Purchase Order {header_result.get('po_number')} created and submitted for approval. It becomes effective only after approval.",queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
 
             last_id=str(st.session_state.get("last_supply_purchase_order_id") or "")
@@ -926,11 +1097,106 @@ def render_purchase_orders() -> None:
                 context={"po_number": header.get("po_number"), "supplier_id": str(header.get("supplier_id") or ""), "next_task": "Raw Material Receipt / Material Inward" if str(header.get("po_type")) == "RAW_MATERIAL" else "Forging Receipt"},
                 include_supplier=True,
             )
-            if c[1].button("Cancel Selected PO",width="stretch",disabled=not perms["can_edit"] or str(header.get("status"))=="CLOSED"):
-                service.repo.update("supply_purchase_orders",selected_po,{"status":"CANCELLED"}); save_success_popup("Purchase Order cancelled.",queue_for_rerun=True); st.rerun()
+            approval_status=str(header.get("approval_status") or "APPROVED").upper()
+            if approval_status=="PENDING_APPROVAL":
+                st.warning("This Purchase Order is awaiting controlled approval and is not effective for receipt/procurement execution yet.")
+                approval_target=service.purchase_order_approval_target(selected_po)
+                target_employee_id=str(approval_target.get("employee_id") or "")
+                target_name=str(approval_target.get("employee_name") or "").strip()
+                target_source=str(approval_target.get("source") or "PERMISSION_FALLBACK").replace("_"," ").title()
+                target_level=str(approval_target.get("level_name") or "Approval")
+                if target_employee_id:
+                    st.info(f"Required Approver: **{target_name or target_employee_id}** · Route: **{target_source}** · Level: **{target_level}**")
+                else:
+                    st.info("No configured approval-route employee or Reports-To manager is available. A **different** employee with Supply Chain Approve permission may approve; self-approval remains blocked. Administrator override remains available.")
+                submitted_by=str(header.get("submitted_by_employee_id") or "")
+                is_admin_user=str(profile.get("role") or "").upper()=="ADMIN"
+                route_allows_user=is_admin_user or (bool(target_employee_id) and login_employee_id==target_employee_id) or (not target_employee_id and bool(login_employee_id) and login_employee_id!=submitted_by)
+                approval_note=st.text_input("Approval Remark",key=f"po_approval_note_{selected_po}")
+                if st.button("Approve Purchase Order",type="primary",width="stretch",disabled=(not perms.get("can_approve",False)) or (not route_allows_user),key=f"approve_po_{selected_po}"):
+                    try:
+                        approved=service.approve_purchase_order(selected_po,approval_note)
+                        supplier=service.repo.get("parties",str(approved.get("supplier_id") or "")) or {}
+                        notification=NotificationService(service.repo)
+                        notification.notify("PO_APPROVED",related_table="supply_purchase_orders",related_id=selected_po,recipient_email=str(supplier.get("email") or "").strip() or None,recipient_name=str(supplier.get("party_name") or "").strip() or None,include_supplier=True,context={"po_number":approved.get("po_number"),"supplier_id":str(approved.get("supplier_id") or ""),"supplier_name":supplier.get("party_name"),"next_stage":"Supplier PO Confirmation"})
+                        confirmation=service.ensure_purchase_order_confirmation(selected_po)
+                        notification.notify("PO_CONFIRMATION_REQUIRED",related_table="supply_po_confirmations",related_id=str(confirmation.get("id") or ""),recipient_email=str(supplier.get("email") or "").strip() or None,recipient_name=str(supplier.get("party_name") or "").strip() or None,include_supplier=True,context={"po_number":approved.get("po_number"),"supplier_id":str(approved.get("supplier_id") or ""),"supplier_name":supplier.get("party_name"),"next_stage":"Supplier PO Confirmation"})
+                        save_success_popup("Purchase Order approved. Supplier confirmation request was queued immediately; a daily priority reminder will continue until confirmation is received.",queue_for_rerun=True);st.rerun()
+                    except Exception as exc: st.error(str(exc))
+            # v4.14.19 supplier PO confirmation is a controlled Supply Chain stage after approval.
+            if str(header.get("approval_status") or "").upper()=="APPROVED" and str(header.get("status") or "").upper()!="CANCELLED":
+                section_bar("SUPPLIER PURCHASE ORDER CONFIRMATION", "Upload the supplier acknowledgement / confirmation. QCMS sends a high-priority reminder every day until this stage is confirmed.")
+                try:
+                    confirmation=service.purchase_order_confirmation(selected_po) or service.ensure_purchase_order_confirmation(selected_po)
+                except Exception as exc:
+                    confirmation={}
+                    st.error(f"Supplier confirmation stage could not be initialized: {exc}")
+                if confirmation:
+                    conf_status=str(confirmation.get("confirmation_status") or "PENDING").upper()
+                    cconf=st.columns(4,gap="small")
+                    cconf[0].metric("Confirmation Status",conf_status.replace("_"," ").title())
+                    cconf[1].metric("Priority","HIGH")
+                    cconf[2].metric("Reminder Count",int(confirmation.get("reminder_count") or 0))
+                    cconf[3].metric("Requested",str(confirmation.get("requested_at") or "")[:10] or "-")
+                    if conf_status!="CONFIRMED":
+                        st.warning("Supplier PO confirmation is pending. QCMS will continue the daily priority reminder until the confirmation is recorded.")
+                        cc=st.columns(3,gap="small")
+                        confirmation_reference=cc[0].text_input("Supplier Confirmation Reference",value=str(confirmation.get("confirmation_reference") or ""),key=f"po_conf_ref_{selected_po}")
+                        confirmation_date=cc[1].date_input("Supplier Confirmation Date",value=date.today(),format="DD-MM-YYYY",key=f"po_conf_date_{selected_po}")
+                        confirmed_delivery=cc[2].date_input("Supplier Confirmed Delivery Date",value=date.fromisoformat(str(header.get("delivery_date"))[:10]) if header.get("delivery_date") else date.today(),format="DD-MM-YYYY",key=f"po_conf_delivery_{selected_po}")
+                        confirmation_remarks=st.text_area("Supplier Confirmation Remarks",value=str(confirmation.get("remarks") or ""),height=70,key=f"po_conf_remarks_{selected_po}")
+                        confirmation_file=st.file_uploader("Supplier PO Confirmation Attachment",type=ALLOWED_ATTACHMENT_TYPES,key=f"po_conf_file_{selected_po}",help="Attach the supplier email acknowledgement, signed PO confirmation, PDF, image or office document.")
+                        caction=st.columns(2,gap="small")
+                        if caction[0].button("Save Supplier Confirmation",type="primary",width="stretch",disabled=not perms.get("can_edit",False) or confirmation_file is None or not confirmation_reference.strip(),key=f"save_po_confirmation_{selected_po}"):
+                            try:
+                                AttachmentService(service.repo).upload(
+                                    entity_type="PO_CONFIRMATION", entity_id=str(confirmation.get("id")), folder="supply-po-confirmation",
+                                    slot=AttachmentSlot("SUPPLIER_PO_CONFIRMATION","Supplier PO Confirmation","Mandatory supplier acknowledgement"), file=confirmation_file,
+                                )
+                                saved_confirmation=service.confirm_purchase_order(selected_po,{"confirmation_reference":confirmation_reference,"confirmation_date":confirmation_date.isoformat(),"confirmed_delivery_date":confirmed_delivery.isoformat(),"remarks":confirmation_remarks})
+                                supplier=service.repo.get("parties",str(header.get("supplier_id") or "")) or {}
+                                NotificationService(service.repo).notify("PO_CONFIRMATION_RECEIVED",related_table="supply_po_confirmations",related_id=str(saved_confirmation.get("id") or confirmation.get("id")),context={"po_number":header.get("po_number"),"supplier_id":str(header.get("supplier_id") or ""),"supplier_name":supplier.get("party_name"),"confirmation_reference":confirmation_reference,"next_stage":"Raw Material / Forging receipt execution"})
+                                save_success_popup("Supplier PO confirmation saved with attachment. Daily reminders are stopped for this PO.",queue_for_rerun=True);st.rerun()
+                            except Exception as exc: st.error(str(exc))
+                        if caction[1].button("Send Priority Reminder Now",width="stretch",disabled=not perms.get("can_edit",False),key=f"po_confirmation_reminder_{selected_po}"):
+                            try:
+                                supplier=service.repo.get("parties",str(header.get("supplier_id") or "")) or {}
+                                NotificationService(service.repo).notify("PO_CONFIRMATION_REQUIRED",related_table="supply_po_confirmations",related_id=str(confirmation.get("id")),recipient_email=str(supplier.get("email") or "").strip() or None,recipient_name=str(supplier.get("party_name") or "").strip() or None,include_supplier=True,context={"po_number":header.get("po_number"),"supplier_id":str(header.get("supplier_id") or ""),"supplier_name":supplier.get("party_name"),"next_stage":"Supplier PO Confirmation"})
+                                service.repo.update("supply_po_confirmations",str(confirmation.get("id")),{"last_reminder_at":datetime.now(timezone.utc).isoformat(),"reminder_count":int(confirmation.get("reminder_count") or 0)+1})
+                                save_success_popup("High-priority supplier confirmation reminder queued.",queue_for_rerun=True);st.rerun()
+                            except Exception as exc: st.error(str(exc))
+                    else:
+                        st.success(f"Supplier confirmed this PO · Reference: {confirmation.get('confirmation_reference') or '-'} · Confirmed delivery: {confirmation.get('confirmed_delivery_date') or '-'}")
+                    render_attachment_manager(
+                        repo=service.repo,entity_type="PO_CONFIRMATION",entity_id=str(confirmation.get("id")),folder="supply-po-confirmation",
+                        slots=(AttachmentSlot("SUPPLIER_PO_CONFIRMATION","Supplier PO Confirmation","Supplier acknowledgement / signed confirmation"),),
+                        key_prefix=f"supplier_po_confirmation_{selected_po}",can_add_or_replace=bool(perms.get("can_edit")),can_delete=bool(perms.get("can_archive")),title="SUPPLIER CONFIRMATION ATTACHMENT",
+                    )
+
+            cancel_reason=st.text_input("Cancellation Reason",key=f"po_cancel_reason_{selected_po}")
+            cancel_cols=st.columns(2,gap="small")
+            if cancel_cols[0].button("Cancel Selected PO",width="stretch",disabled=not perms["can_edit"] or str(header.get("status")) in {"CLOSED","CANCELLED"},key=f"cancel_po_{selected_po}"):
+                try:
+                    service.cancel_purchase_order(selected_po,cancel_reason)
+                    save_success_popup("Purchase Order cancelled. Original source allocations are released for reissue.",queue_for_rerun=True);st.rerun()
+                except Exception as exc: st.error(str(exc))
+            if cancel_cols[1].button("Cancel & Reissue with New Supplier",width="stretch",disabled=not perms["can_edit"] or str(header.get("status"))=="CLOSED",key=f"reissue_po_{selected_po}"):
+                try:
+                    if str(header.get("status"))!="CANCELLED": service.cancel_purchase_order(selected_po,cancel_reason)
+                    reissue_sources=service.purchase_order_reissue_sources(selected_po)
+                    if reissue_sources:
+                        st.session_state["supply_po_source_order_id"]=reissue_sources[0]
+                        st.session_state["supply_po_reissue_source_ids"]=reissue_sources
+                        st.session_state["supply_po_replaces_id"]=selected_po
+                        st.session_state["supply_po_type"]="RAW_MATERIAL" if str(header.get("po_type"))=="RAW_MATERIAL" else "FORGING"
+                    save_success_popup("PO cancelled. Select the replacement Supplier in Purchase Order Entry and create the new controlled PO.",queue_for_rerun=True);st.rerun()
+                except Exception as exc: st.error(str(exc))
 
     rows=service.purchase_order_rows(); all_frame=pd.DataFrame(rows)
     with stage_section("D","PURCHASE ORDER REPORTS","Pending Purchase Orders, RM Orders, RM Section Orders, Supplier Orders and RM-for-Part-Number Orders.",key="supply_po_reports"):
+        if not po_reports_perm["can_view"]:
+            st.info("Purchase Order reports are hidden by your section permission.")
+            return
         report_name=st.selectbox("Purchase Order Report",["Pending Purchase Orders","Raw Material Orders","RM Section Orders","Supplier Orders","RM for Part Number Orders"],key="supply_po_report_name")
         report=all_frame.copy()
         if not report.empty:

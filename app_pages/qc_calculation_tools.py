@@ -14,6 +14,7 @@ from core.hardness_conversion import SCALE_LABELS, convert_hardness
 from core.reporting import qc_calculation_pdf_bytes
 from core.selection_labels import employee_label, part_label
 from core.repository import Repository
+from core.record_audit import annotate_transaction_rows
 from core.ui import page_header, save_success_popup, section_bar
 
 
@@ -159,7 +160,7 @@ def _render_records(repo: Repository | None = None) -> None:
     c1, c2 = st.columns([2, 1], gap="small")
     search = c1.text_input("Search Calculation No., Heat or Type", key="qct_records_search")
     calc_type = c2.selectbox("Calculation Type", ["ALL", "JOMINY", "DI_VALUE", "HARDNESS_CONVERSION"], key="qct_records_type")
-    rows = repo.select("qc_calculation_records", order_by="created_at", desc=True, limit=5000)
+    rows = annotate_transaction_rows(repo, repo.select("qc_calculation_records", order_by="created_at", desc=True, limit=5000))
     filtered = [row for row in rows if (calc_type == "ALL" or str(row.get("calculation_type")) == calc_type) and (not search or search.casefold() in " ".join(str(row.get(key) or "") for key in ("calculation_number", "heat_number", "calculation_type", "standard_reference")).casefold())]
     if not filtered:
         st.info("No QC Calculation records match the selected filters.")
@@ -187,7 +188,7 @@ def _render_records(repo: Repository | None = None) -> None:
     display = pd.DataFrame([{
         "Calculation No.": row.get("calculation_number"), "Date": row.get("calculation_date"), "Type": row.get("calculation_type"),
         "Heat Number": row.get("heat_number"), "Primary": f"{row.get('primary_value') or ''} {row.get('primary_unit') or ''}".strip(),
-        "Result": f"{row.get('result_value') or ''} {row.get('conversion_unit') or ''}".strip(), "Standard": row.get("standard_reference"), "Status": row.get("status")
+        "Result": f"{row.get('result_value') or ''} {row.get('conversion_unit') or ''}".strip(), "Standard": row.get("standard_reference"), "User": row.get("Created By User"), "Data Entry Status": row.get("Data Entry Status"), "Status": row.get("status")
     } for row in filtered])
     portal_table(display, hide_index=True, width="stretch", height=500)
 

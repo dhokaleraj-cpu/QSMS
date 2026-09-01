@@ -1,3 +1,5 @@
+# QCMS 4.14.19 — PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES
+# BUILD 41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE
 # QCMS 4.14.15 — DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
 # BUILD 41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
 # QCMS 4.14.13 — METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM
@@ -56,6 +58,8 @@ from app_pages import (
     template_center,
 )
 from core.auth import current_profile, is_logged_in, logout, render_login
+from core.access import module_permissions
+from core.activity import log_route_view
 from core.config import get_settings
 from core.ui import app_footer, apply_global_style, module_submenu, render_left_navigation, render_pending_popups, render_shell_header
 
@@ -356,6 +360,25 @@ PAGE_TITLE_TO_PATH = {
 nav = st.navigation(PAGES, position="hidden")
 current_path = PAGE_TITLE_TO_PATH.get(nav.title, "dashboard")
 current_module = ROUTE_MODULE.get(current_path, "Dashboard")
+ROUTE_PERMISSION_MODULE = {
+    "part-entry":"PART_MASTER","part-records":"PART_MASTER","company-branch-entry":"REFERENCE_MASTERS","company-branch-records":"REFERENCE_MASTERS",
+    "process-entry":"REFERENCE_MASTERS","process-records":"REFERENCE_MASTERS","grade-entry":"MATERIAL_GRADE","grade-records":"MATERIAL_GRADE",
+    "reference-entry":"REFERENCE_MASTERS","reference-records":"REFERENCE_MASTERS","employee-entry":"EMPLOYEE_MASTER","employee-records":"EMPLOYEE_MASTER",
+    "standards-entry":"REFERENCE_MASTERS","standards-records":"REFERENCE_MASTERS","master-import":"REFERENCE_MASTERS",
+    "rmtc-entry":"RMTC_ENTRY","rmtc-approved-worksheet":"RMTC_ENTRY","rmtc-part":"RMTC_ENTRY","rmtc-approval":"RMTC_ENTRY","rmtc-records":"RMTC_ENTRY",
+    "inward-entry":"MATERIAL_INWARD","inward-records":"MATERIAL_INWARD",
+    "osp-home":"OSP_TRANSACTIONS","osp-material-out":"OSP_TRANSACTIONS","osp-sample-receipt":"OSP_TRANSACTIONS","osp-inward":"OSP_TRANSACTIONS","osp-records":"OSP_TRANSACTIONS",
+    "osp-dimensional":"DIMENSIONAL_REPORT","osp-metlab":"METLAB_REPORT",
+    "dimensional-entry":"DIMENSIONAL_REPORT","dimensional-records":"DIMENSIONAL_REPORT","metlab-entry":"METLAB_REPORT","metlab-records":"METLAB_REPORT",
+    "inspection-layout-entry":"INSPECTION_LAYOUTS","inspection-layout-records":"INSPECTION_LAYOUTS",
+    "supply-chain-home":"SUPPLY_CHAIN","supply-customer-orders":"SUPPLY_CHAIN","supply-opening-stock":"SUPPLY_CHAIN","supply-rm-procurement":"SUPPLY_CHAIN","supply-purchase-orders":"SUPPLY_CHAIN","supply-rm-receipt":"SUPPLY_CHAIN","supply-rm-dispatch":"SUPPLY_CHAIN","supply-forging":"SUPPLY_CHAIN","supply-downstream":"SUPPLY_CHAIN","supply-traceability":"SUPPLY_CHAIN","supply-order-mis":"SUPPLY_CHAIN",
+    "npd-process-flow":"NPD_APQP","npd-status":"NPD_APQP","apqp":"NPD_APQP","qc-tools":"QC_CALCULATION_TOOLS","qc-calculation-records":"QC_CALCULATION_TOOLS",
+    "complaints-home":"COMPLAINT_MANAGEMENT","customer-complaint":"COMPLAINT_MANAGEMENT","supplier-complaint":"COMPLAINT_MANAGEMENT","complaint-analysis":"COMPLAINT_MANAGEMENT","complaint-records":"COMPLAINT_MANAGEMENT",
+    "user-access":"USER_ACCESS","email-settings":"USER_ACCESS","deployment-diagnostics":"USER_ACCESS",
+}
+current_permission_module = ROUTE_PERMISSION_MODULE.get(current_path)
+current_route_permission = module_permissions(profile, current_permission_module) if current_permission_module else {"can_view": True}
+log_route_view(current_path, current_permission_module, nav.title)
 
 # QCMS v4.12.9 — hardened responsive enterprise navigation contract.
 # Legacy v4.12.8 marker: QCMS v4.12.8 — responsive enterprise navigation contract.
@@ -392,7 +415,7 @@ RAIL_NAV = (
 if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
     logout()
 
-st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM")
+st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE")
 
 # v4.12.9 keeps the real two-column Streamlit workspace and hardens component styling.
 # v4.12.8 uses a real two-column Streamlit workspace. The charcoal navigation
@@ -404,6 +427,9 @@ with st.container(border=False, key="qcms_workspace"):
         render_left_navigation(current_module, RAIL_NAV)
     with content_col:
         with st.container(border=False, key="qcms_content"):
-            module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=8)
-            nav.run()
+            if not bool(current_route_permission.get("can_view", True)):
+                st.error("You do not have View permission for this module. Ask the QCMS administrator to enable the module or department default in Admin → Users & Access.")
+            else:
+                module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=8)
+                nav.run()
             app_footer()

@@ -11,7 +11,7 @@ from core.master_service import MasterService
 from core.reporting import controlled_record_pdf_bytes
 from core.attachments import AttachmentService
 from core.selection_labels import customer_standard_label, party_label, process_label
-from core.ui import page_header, save_success_popup, section_bar, stage_section, template_download_row
+from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, stage_section, template_download_row
 
 
 def _label(row: dict) -> str:
@@ -71,13 +71,17 @@ def render_entry() -> None:
     perms = current_permissions("REFERENCE_MASTERS")
     rows = service.list_records(definition, status="All")
     labels = {str(row["id"]): _label(row) for row in rows}
+    force_new = consume_master_blank_request("process-entry", edit_keys=("edit_process_id",), widget_keys=("process_master_record_selector",))
     requested = str(st.session_state.pop("edit_process_id", "") or "")
-    options = ["__new__"] + list(labels)
+    options = ["__new__"] + list(labels); selector_key="process_master_record_selector"
+    if force_new: st.session_state[selector_key]="__new__"
+    elif requested in options: st.session_state[selector_key]=requested
+    elif st.session_state.get(selector_key) not in options: st.session_state[selector_key]="__new__"
     selected = st.selectbox(
         "Process Master record",
         options,
-        index=options.index(requested) if requested in options else 0,
         format_func=lambda value: "＋ New Process" if value == "__new__" else labels[value],
+        key=selector_key,
     )
     existing = next((row for row in rows if str(row.get("id")) == selected), {})
     writable = perms["can_edit"] if existing else perms["can_create"]

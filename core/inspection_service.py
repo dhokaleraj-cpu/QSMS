@@ -14,6 +14,7 @@ from core.attachments import AttachmentService
 from core.dimensional_import import parse_dimensional_workbook_bytes
 from core.inspection_queue import build_inspection_queue, pending_rows
 from core.repository import Repository
+from core.record_audit import annotate_transaction_rows
 
 FINAL_DISPOSITIONS = ("ON_HOLD", "ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED")
 RESULT_OPTIONS = ("PASS", "FAIL", "NOT_EVALUATED", "NOT_APPLICABLE")
@@ -319,7 +320,7 @@ class InspectionService:
         return str(self.repo.rpc("qsms_next_document_number", {"p_sequence_code": code}) or "")
 
     def dimensional_reports(self) -> list[dict]:
-        return self.repo.select("inspection_reports", eq={"report_type": "DIMENSIONAL"}, order_by="created_at", desc=True, limit=4000)
+        return annotate_transaction_rows(self.repo,self.repo.select("inspection_reports", eq={"report_type": "DIMENSIONAL"}, order_by="created_at", desc=True, limit=4000))
 
     def get_dimensional(self, report_id: str | None) -> dict | None:
         return self.repo.get("inspection_reports", report_id)
@@ -364,7 +365,7 @@ class InspectionService:
         return report
 
     def metlab_reports(self) -> list[dict]:
-        return self.repo.select("lab_tests", eq={"test_type": "METLAB"}, order_by="created_at", desc=True, limit=4000)
+        return annotate_transaction_rows(self.repo,self.repo.select("lab_tests", eq={"test_type": "METLAB"}, order_by="created_at", desc=True, limit=4000))
 
     def get_metlab(self, report_id: str | None) -> dict | None:
         return self.repo.get("lab_tests", report_id)

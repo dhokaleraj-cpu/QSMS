@@ -16,6 +16,7 @@ _ENTITY_TYPES = {
     "inward_lots": "MATERIAL_INWARD",
     "supply_customer_orders": "SUPPLY_CUSTOMER_ORDER",
     "supply_purchase_orders": "SUPPLY_PURCHASE_ORDER",
+    "supply_po_confirmations": "PO_CONFIRMATION",
     "osp_jobs": "OSP_JOB",
 }
 
@@ -188,6 +189,24 @@ class NotificationService:
             if supplier_id:
                 supplier = self.repo.get("parties", str(supplier_id)) or {}
                 ctx.update({"supplier_id": str(supplier_id), "supplier_name": supplier.get("party_name"), "supplier_code": supplier.get("party_code"), "supplier_email": supplier.get("email")})
+        elif table == "supply_po_confirmations":
+            po_id = str(record.get("purchase_order_id") or "")
+            po = self.repo.get("supply_purchase_orders", po_id) or {} if po_id else {}
+            supplier_id = record.get("supplier_id") or po.get("supplier_id")
+            supplier = self.repo.get("parties", str(supplier_id)) or {} if supplier_id else {}
+            ctx.update({
+                "document_no": po.get("po_number") or record.get("confirmation_reference") or "PO Confirmation",
+                "document_type": "Supplier PO Confirmation",
+                "due_date": po.get("delivery_date") or record.get("confirmation_date") or record.get("requested_at"),
+                "confirmation_reference": record.get("confirmation_reference"),
+                "confirmation_status": record.get("confirmation_status"),
+                "confirmed_delivery_date": record.get("confirmed_delivery_date"),
+                "supplier_id": str(supplier_id or ""),
+                "supplier_name": supplier.get("party_name"),
+                "supplier_code": supplier.get("party_code"),
+                "supplier_email": supplier.get("email"),
+                "purchase_order_id": po_id,
+            })
         elif table == "osp_jobs":
             ctx.update({"document_no": record.get("osp_job_number"), "document_type": "OSP Job", "due_date": record.get("expected_return_date")})
         return ctx
@@ -238,6 +257,19 @@ class NotificationService:
                 service = SupplyChainService(self.repo)
                 header = service.purchase_order(related_id) or {}
                 items = service.purchase_order_items_for_print(related_id)
+                if not header:
+                    return None
+                return f"{header.get('po_number') or 'Purchase_Order'}.pdf", purchase_order_pdf_bytes(header, items)
+            if related_table == "supply_po_confirmations":
+                from core.purchase_order_reporting import purchase_order_pdf_bytes
+                from core.supply_chain_service import SupplyChainService
+                confirmation = self.repo.get("supply_po_confirmations", related_id) or {}
+                po_id = str(confirmation.get("purchase_order_id") or "")
+                if not po_id:
+                    return None
+                service = SupplyChainService(self.repo)
+                header = service.purchase_order(po_id) or {}
+                items = service.purchase_order_items_for_print(po_id)
                 if not header:
                     return None
                 return f"{header.get('po_number') or 'Purchase_Order'}.pdf", purchase_order_pdf_bytes(header, items)

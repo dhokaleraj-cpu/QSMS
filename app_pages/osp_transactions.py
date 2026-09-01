@@ -7,7 +7,7 @@ import streamlit as st
 from core.ui import portal_table
 
 from core.access import current_permissions
-from core.delete_service import password_delete_panel
+from core.delete_service import password_delete_panel, password_rpc_delete_panel
 from core.osp_service import OSPService
 from core.notification_service import NotificationService
 from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
@@ -102,6 +102,30 @@ def render_material_out() -> None:
             st.rerun()
         except Exception as exc: st.error(str(exc))
 
+    with stage_section("B", "EDIT / DELETE MATERIAL OUT", "Controlled changes are allowed only while downstream OSP receipt/inspection genealogy permits them.", key="osp_material_out_manage"):
+        managed = service.register()
+        if managed:
+            mlabels = {str(r["id"]): _label(r) for r in managed}
+            mid = st.selectbox("Existing Material Out", list(mlabels), format_func=lambda value: mlabels[value], key="osp_material_out_manage_id")
+            mrow = next(r for r in managed if str(r["id"]) == mid)
+            with st.form("osp_material_out_edit_form"):
+                c=st.columns(4,gap="small")
+                mdate=c[0].date_input("Material Out Date", value=date.fromisoformat(str(mrow.get("dispatch_date"))[:10]), format="DD-MM-YYYY")
+                mexpected=c[1].date_input("Expected Return Date", value=date.fromisoformat(str(mrow.get("expected_return_date"))[:10]) if mrow.get("expected_return_date") else date.today()+timedelta(days=7), format="DD-MM-YYYY")
+                mch=c[2].text_input("Material Out Challan Number", value=str(mrow.get("dispatch_challan") or ""))
+                mqty=c[3].number_input("Material Out Quantity (pcs)", min_value=1.0, value=float(mrow.get("quantity_dispatched") or 1), step=1.0)
+                mremarks=st.text_area("Dispatch Remarks", value=str(mrow.get("dispatch_remarks") or ""), height=70)
+                update_clicked=st.form_submit_button("Update Material Out", type="primary", disabled=not perms["can_edit"], width="stretch")
+            if update_clicked:
+                try:
+                    service.update_material_out({"osp_job_id":mid,"dispatch_date":mdate.isoformat(),"dispatch_challan":mch,"quantity_dispatched":mqty,"expected_return_date":mexpected.isoformat(),"remarks":mremarks})
+                    save_success_popup("OSP Material Out updated successfully.", queue_for_rerun=True); st.rerun()
+                except Exception as exc: st.error(str(exc))
+            if password_rpc_delete_panel(repo=service.repo, rpc_name="qcms_delete_osp_transaction", rpc_param="p_osp_job_id", rows=[mrow], labeler=lambda row:_label(row), key=f"osp_material_out_delete_{mid}", can_delete=perms["can_archive"], title="Delete Material Out", help_text="Requires current password and OSP Delete/Archive permission. Downstream records block unsafe deletion.", success_message="OSP Material Out deleted and source allocation restored."):
+                st.rerun()
+        else:
+            st.info("No OSP Material Out transaction exists yet.")
+
 
 def render_sample_receipt() -> None:
     subpage_navigation(("osp-home", "OSP Home", ":material/arrow_back:"), ("osp-dimensional", "OSP Dimensional", ":material/straighten:"), ("osp-metlab", "OSP MetLAB", ":material/science:"))
@@ -140,6 +164,10 @@ def render_sample_receipt() -> None:
         c1, c2 = st.columns(2, gap="small")
         with c1: st.page_link(st.session_state["_qsms_pages"]["osp-dimensional"], label="Open Sample Dimensional", icon=":material/straighten:", width="stretch")
         with c2: st.page_link(st.session_state["_qsms_pages"]["osp-metlab"], label="Open Sample MetLAB", icon=":material/science:", width="stretch")
+        with stage_section("B", "EDIT / DELETE SAMPLE RECEIPT", key="osp_sample_manage"):
+            st.caption("The form above edits the selected Sample Receipt. Delete is allowed only before linked Sample Dimensional/MetLAB records exist.")
+            if password_rpc_delete_panel(repo=service.repo, rpc_name="qcms_clear_osp_sample", rpc_param="p_osp_job_id", rows=[job], labeler=lambda row:_label(row), key=f"osp_sample_delete_{job.get('id')}", can_delete=perms["can_archive"], title="Delete Sample Receipt", help_text="Requires current password and OSP Delete/Archive permission.", success_message="OSP Sample Receipt cleared successfully."):
+                st.rerun()
 
 
 def render_inward() -> None:
@@ -169,6 +197,38 @@ def render_inward() -> None:
             save_success_popup(f"OSP Inward {saved.get('receipt_number')} saved successfully. Post-receipt inspections are now pending.", queue_for_rerun=True); st.rerun()
         except Exception as exc: st.error(str(exc))
 
+    with stage_section("B", "EDIT / DELETE OSP INWARD RECEIPTS", key="osp_inward_manage"):
+        receipt_pairs=[]
+        for tx in service.register():
+            for rec in service.receipts(str(tx.get("id"))):
+                item=dict(rec); item["_job_label"]=_label(tx); receipt_pairs.append(item)
+        if receipt_pairs:
+            rlabels={str(r["id"]):f"{r.get('receipt_number')} · {r.get('_job_label')} · {float(r.get('quantity_received') or 0):,.0f} pcs" for r in receipt_pairs}
+            rid=st.selectbox("OSP Inward Receipt", list(rlabels), format_func=lambda value:rlabels[value], key="osp_inward_manage_id")
+            rec=next(r for r in receipt_pairs if str(r["id"])==rid)
+            with st.form("osp_inward_edit_form"):
+                c=st.columns(4,gap="small")
+                rdate=c[0].date_input("OSP Inward Date", value=date.fromisoformat(str(rec.get("receipt_date"))[:10]), format="DD-MM-YYYY")
+                rchallan=c[1].text_input("Vendor Delivery Challan", value=str(rec.get("receipt_challan") or ""))
+                rinvoice=c[2].text_input("Vendor Invoice Number", value=str(rec.get("vendor_invoice_number") or ""))
+                rinvoice_date=c[3].date_input("Vendor Invoice Date", value=date.fromisoformat(str(rec.get("vendor_invoice_date"))[:10]), format="DD-MM-YYYY")
+                c=st.columns(4,gap="small")
+                rtc=c[0].text_input("TC Number", value=str(rec.get("tc_number") or ""))
+                rtc_date=c[1].date_input("TC Date", value=date.fromisoformat(str(rec.get("tc_date"))[:10]), format="DD-MM-YYYY")
+                rvbatch=c[2].text_input("OSP Vendor Batch Number", value=str(rec.get("vendor_batch_number") or ""))
+                rqty=c[3].number_input("Receipt Batch Qty (pcs)", min_value=1.0, value=float(rec.get("quantity_received") or 1), step=1.0)
+                rremarks=st.text_area("Receipt Remarks", value=str(rec.get("remarks") or ""), height=70)
+                rupd=st.form_submit_button("Update OSP Inward Receipt", type="primary", disabled=not perms["can_edit"], width="stretch")
+            if rupd:
+                try:
+                    service.update_receipt({"receipt_id":rid,"receipt_date":rdate.isoformat(),"receipt_challan":rchallan,"vendor_invoice_number":rinvoice,"vendor_invoice_date":rinvoice_date.isoformat(),"tc_number":rtc,"tc_date":rtc_date.isoformat(),"vendor_batch_number":rvbatch,"quantity_received":rqty,"remarks":rremarks})
+                    save_success_popup("OSP Inward receipt updated successfully.", queue_for_rerun=True); st.rerun()
+                except Exception as exc: st.error(str(exc))
+            if password_rpc_delete_panel(repo=service.repo, rpc_name="qcms_delete_osp_receipt", rpc_param="p_receipt_id", rows=[rec], labeler=lambda row:rlabels[str(row['id'])], key=f"osp_inward_delete_{rid}", can_delete=perms["can_archive"], title="Delete OSP Inward Receipt", help_text="Requires current password and OSP Delete/Archive permission. Receipt inspection records block unsafe deletion.", success_message="OSP Inward receipt deleted and quantity/status recalculated."):
+                st.rerun()
+        else:
+            st.info("No OSP Inward receipt exists yet.")
+
 
 def _render_register(rows: list[dict], height: int = 560) -> None:
     display = pd.DataFrame([{
@@ -176,7 +236,8 @@ def _render_register(rows: list[dict], height: int = 560) -> None:
         "Part Number": r.get("part_number"), "FSI Part Number": r.get("fsi_part_number"), "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"),
         "Out Qty pcs": r.get("quantity_dispatched"), "Vendor Batch": r.get("vendor_batch_number"), "Sample Gate": r.get("sample_gate_status"),
         "OSP Inward": r.get("receipt_number"), "Inward Qty pcs": r.get("quantity_received"), "Receipt Decision": r.get("receipt_quality_disposition"),
-        "Production Qty Available": r.get("production_available_quantity"), "Status": r.get("status"),
+        "Production Qty Available": r.get("production_available_quantity"), "Data Entry Status": r.get("Data Entry Status") or r.get("status"),
+        "Created By User": r.get("Created By User"), "Last Modified By User": r.get("Last Modified By User"), "Status": r.get("status"),
     } for r in rows])
     portal_table(style_status_dataframe(display), hide_index=True, width="stretch", height=height)
 
@@ -259,10 +320,30 @@ def render_records() -> None:
                 ):
                     st.rerun()
             if not metlab_rows and not dimensional_rows:
-                if password_delete_panel(
-                    repo=inspection.repo, table="osp_jobs", rows=[selected_row], labeler=lambda row: _label(row),
+                if password_rpc_delete_panel(
+                    repo=service.repo, rpc_name="qcms_delete_osp_transaction", rpc_param="p_osp_job_id",
+                    rows=[selected_row], labeler=lambda row: _label(row),
                     key=f"osp_job_delete_{selected}", can_delete=perms["can_archive"], title="Delete OSP transaction",
-                    help_text="Deletes the selected OSP transaction. Current QCMS password is required. Linked inspection records must be deleted first.",
+                    help_text=(
+                        "Permanent OSP transaction deletion requires your current QCMS password and OSP Delete/Archive permission. "
+                        "QCMS restores the Material Out allocation before deleting the OSP child batch. Linked quality/downstream records block deletion."
+                    ),
+                    success_message="OSP transaction deleted and source quantity restored successfully.",
+                ):
+                    st.rerun()
+        if receipt_rows:
+            with stage_section("C", "DELETE PARTIAL OSP INWARD RECEIPT", key="osp_records_receipt_delete"):
+                st.caption(
+                    "Delete/Archive permission is controlled in Admin → Users & Access → OSP Transactions. "
+                    "Deleting a receipt recalculates the OSP inward balance and is blocked while receipt-level inspection reports exist."
+                )
+                if password_rpc_delete_panel(
+                    repo=service.repo, rpc_name="qcms_delete_osp_receipt", rpc_param="p_receipt_id",
+                    rows=receipt_rows,
+                    labeler=lambda row: f"{row.get('receipt_number')} · {row.get('receipt_date')} · {float(row.get('quantity_received') or 0):,.0f} pcs",
+                    key=f"osp_receipt_delete_{selected}", can_delete=perms["can_archive"], title="Delete selected OSP inward receipt",
+                    help_text="Current QCMS password is required. Receipt-level Dimensional/MetLAB records must be deleted first.",
+                    success_message="OSP inward receipt deleted and OSP quantity/status recalculated successfully.",
                 ):
                     st.rerun()
     with stage_section("D", "OSP TRANSACTION REGISTER", key="osp_records_c"):

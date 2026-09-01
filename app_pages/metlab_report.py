@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.attachments import MICROSTRUCTURE_IMAGE_TYPES
 # Legacy controlled PDF label retained for regression traceability: Download MetLAB Report PDF
 
 import re
@@ -416,7 +417,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             with col:
                 if (existing or {}).get(f"microstructure_image_{slot}_path"):
                     st.caption(f"Photo {slot} already uploaded")
-                micro_files.append(st.file_uploader(f"Photo {slot}", type=["png", "jpg", "jpeg"], key=f"standalone_metlab_photo_{slot}_{existing_id or 'new'}"))
+                micro_files.append(st.file_uploader(f"Photo {slot}", type=MICROSTRUCTURE_IMAGE_TYPES, key=f"standalone_metlab_photo_{slot}_{existing_id or 'new'}"))
                 micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or ""), key=f"standalone_metlab_caption_{slot}_{existing_id or 'new'}"))
 
     with stage_section("C", "METLAB CHARACTERISTICS", "The inspection grid is loaded automatically from the approved Part Master controlled layout.", key="metlab_standalone_characteristics"):
@@ -649,7 +650,7 @@ def render_entry() -> None:
                 existing_path = str((existing or {}).get(f"microstructure_image_{slot}_path") or "")
                 if existing_path:
                     st.caption(f"Photo {slot} already uploaded")
-                micro_files.append(st.file_uploader(f"Microstructure Photo {slot}", type=["png", "jpg", "jpeg"], key=f"microstructure_{slot}_{existing_id or 'new'}"))
+                micro_files.append(st.file_uploader(f"Microstructure Photo {slot}", type=MICROSTRUCTURE_IMAGE_TYPES, key=f"microstructure_{slot}_{existing_id or 'new'}"))
                 micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or ""), key=f"micro_caption_{slot}_{existing_id or 'new'}"))
 
         existing_chem = {str(row.get("element")): row for row in _existing_rows(existing, "chemistry_rows")}

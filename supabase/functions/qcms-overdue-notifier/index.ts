@@ -97,6 +97,29 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
       const part = maps.parts.get(String(r.part_id)) || {}; const customer = maps.parties.get(String(r.customer_id)) || {};
       pushIf({ reference: String(r.master_reference_no || r.customer_order_no || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(customer.party_name || "-"), due_date: String(r.customer_delivery_date || "-"), status: String(r.status || "OPEN"), quantity: `${n(r.order_qty_pcs)} pcs` }, r.customer_delivery_date);
     }
+  } else if (schedule.schedule_key === "PO_PENDING_APPROVAL") {
+    const { data = [] } = await admin.from("supply_purchase_orders").select("*").eq("tenant_id", tenantId).eq("approval_status", "PENDING_APPROVAL").limit(5000);
+    for (const r of data) {
+      if (String(r.status || "").toUpperCase() === "CANCELLED") continue;
+      const supplier = maps.parties.get(String(r.supplier_id)) || {}; const submitter = maps.employees.get(String(r.submitted_by_employee_id || "")) || {};
+      result.push({ reference: String(r.po_number || "-"), part: String(r.po_type || "PURCHASE ORDER").replaceAll("_", " "), party: String(supplier.party_name || supplier.party_code || "-"), due_date: String(r.delivery_date || r.order_date || localDate), status: "PENDING APPROVAL", quantity: "Approval pending", supplier_id: String(r.supplier_id || ""), responsible_employee_id: String(submitter.reports_to_employee_id || "") || undefined });
+    }
+  } else if (schedule.schedule_key === "RM_PROCUREMENT_PENDING_DUE") {
+    const { data: orders = [] } = await admin.from("supply_customer_orders").select("*").eq("tenant_id", tenantId).eq("rm_procurement_required", true).limit(5000);
+    const { data: rmPos = [] } = await admin.from("supply_rm_purchase_orders").select("customer_order_id,ordered_qty_kg,status").eq("tenant_id", tenantId).limit(10000);
+    const partIds = Array.from(new Set(orders.map((r: Row) => String(r.part_id || "")).filter(Boolean)));
+    const { data: rawDetails = [] } = partIds.length ? await admin.from("part_raw_material_details").select("part_id,lead_time_days,status").eq("tenant_id", tenantId).eq("status", "ACTIVE").in("part_id", partIds).limit(10000) : { data: [] } as any;
+    const leadByPart = new Map<string, number>();
+    for (const raw of rawDetails) leadByPart.set(String(raw.part_id), Math.max(leadByPart.get(String(raw.part_id)) || 0, Number(raw.lead_time_days || 0)));
+    const ordered = new Map<string, number>();
+    for (const po of rmPos) if (String(po.status || "").toUpperCase() !== "CANCELLED") ordered.set(String(po.customer_order_id), (ordered.get(String(po.customer_order_id)) || 0) + Number(po.ordered_qty_kg || 0));
+    for (const r of orders) {
+      if (["COMPLETED","CLOSED","CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
+      const pending = Math.max(Number(r.required_rm_kg || 0) - (ordered.get(String(r.id)) || 0), 0); if (pending <= 0.0001) continue;
+      const part = maps.parts.get(String(r.part_id)) || {}; const customer = maps.parties.get(String(r.customer_id)) || {}; const leadDays = leadByPart.get(String(r.part_id)) || 0;
+      const procurementDue = r.customer_delivery_date ? addDays(String(r.customer_delivery_date).slice(0,10), -leadDays) : r.customer_delivery_date;
+      pushIf({ reference: String(r.master_reference_no || r.customer_order_no || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(customer.party_name || "-"), due_date: String(procurementDue || r.customer_delivery_date || "-"), status: `RM PO PENDING · lead ${leadDays}d`, quantity: `${n(pending)} kg pending` }, procurementDue || r.customer_delivery_date);
+    }
   } else if (schedule.schedule_key === "RM_PO_OPEN_OVERDUE") {
     const { data = [] } = await admin.from("supply_rm_purchase_orders").select("*").eq("tenant_id", tenantId).limit(5000);
     for (const r of data) {
@@ -157,7 +180,7 @@ Deno.serve(async (req: Request) => {
         admin.from("qcms_notification_schedules").select("*").eq("tenant_id", tenantId).eq("enabled", true).limit(100),
         admin.from("parties").select("id,party_code,party_name,email,notification_emails").eq("tenant_id", tenantId).limit(5000),
         admin.from("parts").select("id,part_number,fsi_part_number,part_name").eq("tenant_id", tenantId).limit(5000),
-        admin.from("employees").select("id,first_name,last_name,email,department,status").eq("tenant_id", tenantId).eq("status", "ACTIVE").limit(5000),
+        admin.from("employees").select("id,first_name,last_name,email,department,status,reports_to_employee_id").eq("tenant_id", tenantId).eq("status", "ACTIVE").limit(5000),
         admin.from("qcms_email_templates").select("*").eq("tenant_id", tenantId).eq("enabled", true).limit(500),
       ]);
       const maps = { parties: new Map<string, Row>(parties.map((r: Row) => [String(r.id), r])), parts: new Map<string, Row>(parts.map((r: Row) => [String(r.id), r])), employees: new Map<string, Row>(employees.map((r: Row) => [String(r.id), r])) };
@@ -175,7 +198,7 @@ Deno.serve(async (req: Request) => {
         const bodyText = renderTemplate(String(template.body_template || "Attached is the QCMS open / overdue report for {{report_date}}."), baseCtx);
 
         const primaryRecipients: Array<{ email: string; name: string; rows: DigestRow[] }> = [];
-        if (schedule.schedule_key === "NPD_PROCESS_OPEN_OVERDUE") {
+        if (schedule.schedule_key === "NPD_PROCESS_OPEN_OVERDUE" || schedule.schedule_key === "PO_PENDING_APPROVAL") {
           const grouped = new Map<string, DigestRow[]>();
           for (const row of rows) if (row.responsible_employee_id) grouped.set(row.responsible_employee_id, [...(grouped.get(row.responsible_employee_id) || []), row]);
           for (const [employeeId, assignedRows] of grouped) { const emp = maps.employees.get(employeeId) || {}; if (emp.email) primaryRecipients.push({ email: String(emp.email), name: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(), rows: assignedRows }); }

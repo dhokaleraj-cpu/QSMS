@@ -12,7 +12,7 @@ from core.ui import portal_table
 
 from core.access import current_permissions
 from core.password_edit import password_reopen_for_edit
-from core.attachments import AttachmentService, AttachmentSlot, new_attachment_uploaders, render_attachment_manager
+from core.attachments import MICROSTRUCTURE_IMAGE_TYPES, AttachmentService, AttachmentSlot, new_attachment_uploaders, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.calculations import band_status, calculate_di, calculate_jominy_curve
 from core.permissions import normalized_role
@@ -132,11 +132,26 @@ def _open_rmtc_header_for_edit(rmtc_id: str) -> None:
 
 
 def _start_new_rmtc_for_heat(heat_number: str = "") -> None:
+    """Open a genuinely new certificate while preserving only the Heat identity.
+
+    The previous Existing-RMTC selector is explicitly cleared so Streamlit widget state
+    cannot make the new certificate appear to still be the old RMTC. Certificate number,
+    QCMS RMTC number and covered-part widget values get fresh keys through the nonce.
+    """
     st.session_state['rmtc_entry_mode'] = 'new'
     st.session_state['rmtc_heat_search'] = str(heat_number or '').strip()
+    st.session_state['rmtc_same_heat_create_mode'] = bool(str(heat_number or '').strip())
+    st.session_state['rmtc_same_heat_target'] = str(heat_number or '').strip()
+    if str(heat_number or '').strip():
+        st.session_state['rmtc_new_tc_flash'] = f"New RMTC / TC entry opened for Heat {str(heat_number).strip()}. Enter a new Supplier RMTC Number and this certificate quantity below."
     st.session_state['rmtc_new_form_nonce'] = int(st.session_state.get('rmtc_new_form_nonce') or 0) + 1
-    for key in ('edit_rmtc_id', 'part_rmtc_id', 'rmtc_part_choice', 'new_rmtc_number'):
-        st.session_state.pop(key, None)
+    # Clear every previous certificate/header widget value.  Only the Heat identity is
+    # deliberately retained for same-Heat TC creation.  Dynamic nonce keys prevent
+    # Streamlit from reusing the old certificate's covered Parts, Supplier TC, source,
+    # quantity, prepared-by employee or dates.
+    for key in list(st.session_state):
+        if key in ('edit_rmtc_id', 'part_rmtc_id', 'rmtc_part_choice', 'new_rmtc_number') or str(key).startswith(('rmtc_direct_edit_selector_', 'rmtc_parts_','rmtc_no_','rmtc_cert_ref_','rmtc_source_','rmtc_mill_','rmtc_qty_','rmtc_prepared_','rmtc_entry_date_','rmtc_cert_date_','rmtc_heat_code_','rmtc_section_','rmtc_route_','rmtc_remarks_','rmtc_micro_title_')):
+            st.session_state.pop(key, None)
 
 
 def _render_rmtc_microstructure_inputs(existing: dict, repo: Repository, form_token: str) -> tuple[dict[str, Any], dict[int, str]]:
@@ -179,7 +194,7 @@ def _render_rmtc_microstructure_inputs(existing: dict, repo: Repository, form_to
             if not existing:
                 uploads[document_type] = st.file_uploader(
                     f'Upload Microstructure Photo {slot}',
-                    type=['png', 'jpg', 'jpeg'],
+                    type=MICROSTRUCTURE_IMAGE_TYPES,
                     key=f'rmtc_micro_photo_{slot}_{form_token}',
                 )
     return uploads, titles
@@ -196,12 +211,18 @@ def render_entry()->None:
     rmtc_labels.update({str(row.get('id')):f"{row.get('rmtc_number') or '-'} · Heat {row.get('heat_number') or '-'} · {row.get('status') or '-'}" for row in rmtc_rows if row.get('id')})
     rmtc_ids=list(rmtc_labels)
     current_edit_id=str(st.session_state.get('edit_rmtc_id') or '')
-    chosen_rmtc=st.selectbox('Select Existing RMTC to Edit',rmtc_ids,index=rmtc_ids.index(current_edit_id) if current_edit_id in rmtc_ids else 0,format_func=lambda value:rmtc_labels[value],key='rmtc_direct_edit_selector')
+    selector_nonce=int(st.session_state.get('rmtc_new_form_nonce') or 0)
+    selector_key=f'rmtc_direct_edit_selector_{selector_nonce}'
+    chosen_rmtc=st.selectbox(
+        'Select Existing RMTC to Edit', rmtc_ids,
+        index=rmtc_ids.index(current_edit_id) if current_edit_id in rmtc_ids and st.session_state.get('rmtc_entry_mode')=='edit' else 0,
+        format_func=lambda value:rmtc_labels[value], key=selector_key,
+    )
     re1,re2=st.columns(2,gap='small')
     if re1.button('Load Selected RMTC for Edit',type='primary',width='stretch',disabled=not chosen_rmtc or not perms['can_edit'],key='rmtc_direct_edit_load'):
         st.session_state['edit_rmtc_id']=chosen_rmtc;st.session_state['rmtc_entry_mode']='edit';st.rerun()
     if re2.button('Start New RMTC',width='stretch',key='rmtc_direct_edit_new'):
-        st.session_state.pop('edit_rmtc_id',None);st.session_state['rmtc_entry_mode']='new';st.rerun()
+        _start_new_rmtc_for_heat('');st.rerun()
     if not perms['can_edit']:
         st.caption('Your user does not currently have RMTC Edit permission. Administrator role is not required; module Edit permission is required.')
     if st.session_state.get('rmtc_entry_mode')!='edit':
@@ -260,11 +281,21 @@ def render_entry()->None:
         elif heat_search:
             st.caption('New Heat Number. The steel quantity entered below becomes the global Heat steel quantity.')
 
+        canonical_heat_code=svc.canonical_heat_code(heat_search) if heat_summary else ''
+        if heat_summary and canonical_heat_code:
+            st.info(
+                f"Existing Heat detected · Internal Heat Code {canonical_heat_code}. "
+                "You can create another QCMS RMTC for the same Heat when the Supplier RMTC Number is different. "
+                "The new RMTC will share this Heat Code and the same global Heat steel balance, and can be selected independently in Material Inward after approval."
+            )
+
         if heat_summary:
             hb1,hb2=st.columns(2,gap='small')
-            if hb1.button('Add New RMTC for This Heat Number', icon=':material/add_circle:', type='primary', width='stretch', key=f'new_rmtc_same_heat_{form_token}'):
-                _start_new_rmtc_for_heat(heat_search)
-                st.rerun()
+            hb1.button(
+                'Add New RMTC for This Heat Number', icon=':material/add_circle:', type='primary', width='stretch',
+                key=f'new_rmtc_same_heat_{form_token}', on_click=_start_new_rmtc_for_heat, args=(heat_search,),
+                help='Starts a separate Supplier TC/RMTC for this Heat. Only the Heat identity and canonical Heat Code are reused; certificate fields are reset.'
+            )
             if hb2.button('Open Heat Steel Ledger',icon=':material/table_view:',width='stretch',key=f'open_heat_ledger_{form_token}'):
                 st.session_state['heat_ledger_filter']=heat_search
                 st.switch_page(st.session_state['_qsms_pages']['heat-ledger'])
@@ -277,6 +308,13 @@ def render_entry()->None:
         if not parts:st.warning('Create an active Part Master first.');return
         existing_parts=[str(row.get('part_id')) for row in existing_parts_rows] if existing else []
     with stage_section("B", 'CERTIFICATE & COVERED PARTS', 'Multiple parts are selected here and completed on separate Part Worksheet pages.', key="rmtc_pages_render_entry_b"):
+        if st.session_state.get('rmtc_new_tc_flash') and not existing and st.session_state.get('rmtc_same_heat_create_mode'):
+            st.success(f"NEW RMTC / TC MODE ACTIVE for Heat {heat_search}. This is a BLANK NEW certificate; the previous RMTC is not being edited.")
+        if not existing and st.session_state.get('rmtc_same_heat_create_mode') and heat_summary:
+            st.info(
+                f"NEW RMTC / TC for existing Heat **{heat_search}**. QCMS will reuse Internal Heat Code **{canonical_heat_code or '-'}** "
+                "and the existing global Heat quantity. Enter a NEW Supplier RMTC / TC Number; the previous certificate record remains unchanged and both can be used independently in Material Inward after approval."
+            )
         selected_parts=st.multiselect('Part Numbers Covered by this Heat',list(part_map),default=existing_parts,format_func=lambda x:part_map[x],max_selections=30,key=f'rmtc_parts_{form_token}')
         primary_id=selected_parts[0] if selected_parts else str(existing.get('part_id') or next(iter(part_map)))
         sources=svc.source_details(primary_id)
@@ -305,11 +343,26 @@ def render_entry()->None:
         steel_id=c[1].selectbox('Steel Mill',steel_options,index=steel_options.index(current_steel) if current_steel in steel_options else 0,format_func=lambda x:mill_map.get(x,'— Select —'),key=f'rmtc_mill_{form_token}')
         c[2].text_input('Selected Heat Number',value=heat_search,disabled=True,key=f'rmtc_selected_heat_{form_token}')
         heat=heat_search
-        heat_code=c[3].text_input('Internal Heat Code',value=str(existing.get('heat_code') or ''),placeholder='Auto on save: Steel Mill initial-0001',key=f'rmtc_heat_code_{form_token}')
+        heat_code_default=str(existing.get('heat_code') or canonical_heat_code or '')
+        heat_code=c[3].text_input(
+            'Internal Heat Code', value=heat_code_default,
+            placeholder='Auto on save: Steel Mill initial-0001',
+            disabled=bool(canonical_heat_code and not existing),
+            help='For an existing Heat Number, QCMS reuses the established Internal Heat Code across all Supplier RMTC certificates.',
+            key=f'rmtc_heat_code_{form_token}',
+        )
         c=st.columns(4,gap='small')
         heat_global_qty=float(heat_summary.get('global_steel_quantity_kg') or 0) if heat_summary else 0.0
-        qty_default=float(existing.get('certificate_quantity') or heat_global_qty or 0)
-        qty=c[0].number_input('Global Heat Steel Quantity (kg)',min_value=0.0,value=qty_default,step=1.0,disabled=bool(heat_summary),key=f'rmtc_qty_{form_token}')
+        same_heat_new = bool((not existing) and st.session_state.get('rmtc_same_heat_create_mode') and heat_summary)
+        # A second Supplier TC for an existing Heat contributes its own certified quantity
+        # to the shared Heat ledger.  Do not reuse/lock the existing Heat total as the new
+        # certificate quantity; that previously made the Add New RMTC action look inert and
+        # could double-count the old certificate if saved unchanged.
+        qty_default=float(existing.get('certificate_quantity') or (0.0 if same_heat_new else heat_global_qty) or 0)
+        qty_label='New RMTC / TC Certified Quantity (kg)' if same_heat_new else 'Global Heat Steel Quantity (kg)'
+        qty=c[0].number_input(qty_label,min_value=0.0,value=qty_default,step=1.0,disabled=bool(heat_summary and not same_heat_new and not existing),key=f'rmtc_qty_{form_token}',help=('Enter only the quantity certified on this NEW Supplier RMTC/TC. QCMS adds it to the shared global Heat quantity.' if same_heat_new else None))
+        if same_heat_new:
+            st.caption(f"Existing Heat balance before this TC: {heat_global_qty:,.3f} kg certified. The quantity entered above will be added as a separate certificate allocation after save/approval.")
         c[1].text_input('RM Section',value=str(source.get('section_size') or existing.get('rm_section') or ''),disabled=True,key=f'rmtc_section_{form_token}')
         c[2].text_input('Forging Route / Root',value=str(source.get('forging_route') or existing.get('forging_route') or ''),disabled=True,key=f'rmtc_route_{form_token}')
         prepared_options=['']+list(prepared_map);current_prepared=str(existing.get('prepared_by_employee_id') or '')
@@ -329,7 +382,7 @@ def render_entry()->None:
                 if not all([rmtc_no.strip(),cert_ref.strip(),source_id,steel_id,heat.strip(),prepared_id]) or qty<=0:
                     raise ValueError('Complete all mandatory certificate, source, heat, quantity and employee fields.')
                 with st.spinner('Saving RMTC and preparing Part Worksheets...'):
-                    final_heat_code=heat_code.strip() or svc.next_heat_code(steel_id)
+                    final_heat_code=canonical_heat_code or heat_code.strip() or svc.next_heat_code(steel_id)
                     supplier_id=str(source.get('supplier_id') or '')
                     part=next(row for row in parts if str(row['id'])==primary_id)
                     payload={'rmtc_number':rmtc_no.strip(),'entry_date':entry_date.isoformat(),'certificate_reference':cert_ref.strip(),'certificate_date':cert_date.isoformat(),'part_id':primary_id,'supplier_id':supplier_id,'steel_mill_id':steel_id,'material_grade_id':part.get('material_grade_id'),'heat_number':heat.strip(),'heat_code':final_heat_code,'certificate_quantity':qty,'chemistry_results':{},'chemistry_compliance':'NOT_EVALUATED','chemistry_failures':[],'mechanical_results':{},'status':str(existing.get('status') or 'DRAFT'),'selected_source_detail_id':source_id,'rm_section':source.get('section_size'),'forging_route':source.get('forging_route'),'prepared_by_employee_id':prepared_id,'prepared_at':existing.get('prepared_at') or datetime.now().isoformat(),'remarks':remarks.strip() or None,**{f'microstructure_caption_{slot}': (microstructure_titles.get(slot) or None) for slot in range(1,4)}}
@@ -356,6 +409,9 @@ def render_entry()->None:
                             )
                 st.session_state['edit_rmtc_id']=str(saved['id'])
                 st.session_state['rmtc_entry_mode']='edit'
+                st.session_state.pop('rmtc_same_heat_create_mode',None)
+                st.session_state.pop('rmtc_same_heat_target',None)
+                st.session_state.pop('rmtc_new_tc_flash',None)
                 st.session_state['rmtc_part_choice']=selected_parts[0]
                 st.session_state.pop('new_rmtc_number',None)
                 st.session_state['part_rmtc_id']=str(saved['id'])

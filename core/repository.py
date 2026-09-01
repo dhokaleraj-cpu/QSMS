@@ -13,22 +13,23 @@ import streamlit as st
 from core.config import is_preview_session
 from core.database import get_session_client
 from core.demo_data import DEMO_TENANT_ID, demo_store
+from core.activity import log_activity
 
 
 TENANT_SCOPED_TABLES = {
     "company_branches", "parties", "material_grades", "material_grade_elements", "parts", "part_supplier_links",
     "processes", "inspection_stages", "quality_assets", "inspection_plans",
     "inspection_plan_characteristics", "test_plans", "rmtc_approvals", "inward_lots",
-    "production_batches", "batch_movements", "osp_jobs", "inspection_reports",
+    "production_batches", "batch_movements", "osp_jobs", "osp_receipts", "inspection_reports",
     "inspection_results", "lab_tests", "dispatches", "dispatch_batches",
     "employees", "jominy_distances", "part_material_grade_links", "part_raw_material_details", "part_raw_material_technical_data", "part_supplier_price_history", "part_jominy_requirements",
     "part_heat_treatment_details", "part_process_specifications", "part_process_parameter_specifications", "part_metallurgical_requirements", "rmtc_part_approvals", "rmtc_chemistry_results",
     "rmtc_jominy_results", "rmtc_requirement_results", "document_attachments",
-    "master_value_catalog", "user_module_permissions", "heat_code_sequences",
+    "master_value_catalog", "user_module_permissions", "user_section_permissions", "department_module_defaults", "role_module_defaults", "qcms_module_approval_routes", "supply_stage_responsibilities", "qcms_user_activity_log", "heat_code_sequences",
     "rmtc_decision_revisions",
     "npd_process_flows", "npd_process_flow_steps", "npd_process_flow_points", "npd_orders", "npd_order_steps", "npd_order_step_points",
     "qc_calculation_records", "customer_standards", "part_standard_links", "quality_complaints", "quality_complaint_followups", "quality_complaint_actions",
-    "supply_customer_orders", "supply_purchase_orders", "supply_purchase_order_items", "supply_purchase_order_sources", "supply_opening_stock", "qcms_password_edit_audit", "qcms_email_settings", "qcms_notification_routes", "qcms_notification_outbox", "supply_rm_purchase_orders", "supply_rm_receipts", "supply_forging_orders", "supply_rm_dispatches", "supply_forging_receipts", "supply_downstream_events",
+    "supply_customer_orders", "supply_purchase_orders", "supply_purchase_order_items", "supply_purchase_order_sources", "supply_po_confirmations", "supply_opening_stock", "qcms_password_edit_audit", "qcms_email_settings", "qcms_notification_routes", "qcms_notification_outbox", "supply_rm_purchase_orders", "supply_rm_receipts", "supply_forging_orders", "supply_rm_dispatches", "supply_forging_receipts", "supply_downstream_events",
     "ppap_projects", "ppap_documents", "pfd_headers", "pfd_steps", "pfmea_headers", "pfmea_items",
     "control_plan_headers", "control_plan_items", "spc_plans", "spc_studies", "spc_readings",
     "msa_plans", "msa_studies", "msa_readings", "capacity_studies", "balloon_characteristics",
@@ -220,7 +221,9 @@ class Repository:
         response = self._retry(lambda: self.client.table(table).insert(row).execute(), operation=f"inserting {table}")
         if not response.data:
             raise RuntimeError(f"Insert into {table} returned no data.")
-        return dict(response.data[0])
+        result = dict(response.data[0])
+        log_activity("CREATE", table_name=table, row_id=str(result.get("id") or row.get("id") or ""))
+        return result
 
     def update(self, table: str, record_id: str, payload: Mapping[str, Any]) -> dict:
         record_id = str(record_id or "").strip()
@@ -241,7 +244,9 @@ class Repository:
         )
         if not response.data:
             raise RuntimeError(f"Update of {table} returned no data.")
-        return dict(response.data[0])
+        result = dict(response.data[0])
+        log_activity("UPDATE", table_name=table, row_id=record_id)
+        return result
 
     def delete(self, table: str, record_id: str) -> None:
         if self.preview:
@@ -251,6 +256,7 @@ class Repository:
         if self.client is None:
             raise RuntimeError("Supabase session is unavailable.")
         self._retry(lambda: self.client.table(table).delete().eq("id", record_id).execute(), operation=f"deleting {table}")
+        log_activity("DELETE", table_name=table, row_id=str(record_id))
 
     def upsert_by(self, table: str, payload: Mapping[str, Any], *, natural_key: Mapping[str, Any]) -> tuple[dict, str]:
         existing = self.find_one(table, eq=natural_key)
@@ -285,7 +291,9 @@ class Repository:
             lambda: self.client.table(table).upsert(prepared, on_conflict=on_conflict).execute(),
             operation=f"bulk upserting {table}",
         )
-        return [dict(row) for row in (response.data or [])]
+        result = [dict(row) for row in (response.data or [])]
+        log_activity("BULK_UPSERT", table_name=table, details={"row_count": len(result)})
+        return result
 
     def count(self, table: str, **kwargs: Any) -> int:
         if self.preview:
@@ -320,6 +328,8 @@ class Repository:
             lambda: self.client.rpc(function_name, _json_ready(params or {})).execute(),
             operation=f"running {function_name}",
         )
+        if function_name != "qcms_log_user_activity":
+            log_activity("RPC", section_key=function_name.upper(), details={"function": function_name})
         return response.data
 
     def reset_preview(self) -> None:

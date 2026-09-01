@@ -1406,6 +1406,23 @@ def module_submenu(title: str, *items: tuple[str, str, str], max_columns: int = 
                     st.page_link(pages[path], label=label, width="stretch")
 
 
+def consume_master_blank_request(entry_path: str, *, edit_keys: Sequence[str] = (), widget_keys: Sequence[str] = ()) -> bool:
+    """Consume a Master Data Centre New Record request before widgets are created.
+
+    Streamlit persists widget state across page visits.  Master cards therefore set a
+    one-shot blank-entry request; entry pages consume it before their selectors/forms
+    are instantiated so a new record never inherits the previously edited record.
+    """
+    if st.session_state.get("_qcms_master_blank_request") != entry_path:
+        return False
+    st.session_state.pop("_qcms_master_blank_request", None)
+    for key in (*edit_keys, *widget_keys):
+        st.session_state.pop(key, None)
+    nonce_key = f"_qcms_master_blank_nonce_{entry_path}"
+    st.session_state[nonce_key] = int(st.session_state.get(nonce_key) or 0) + 1
+    return True
+
+
 def master_card(*, title: str, description: str, count_text: str, icon: str, color: str, entry_path: str, records_path: str, can_view: bool = True) -> None:
     slug = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
     with st.container(border=True, key=f"master_card_{slug}"):
@@ -1417,9 +1434,15 @@ def master_card(*, title: str, description: str, count_text: str, icon: str, col
             f'<div class="fsi-master-card-desc">{safe(description or "Controlled workspace")}</div></div></div>',
             unsafe_allow_html=True,
         )
-        c1, c2 = st.columns(2, gap="small")
-        with c1: st.page_link(st.session_state["_qsms_pages"][entry_path], label="New / Edit", icon=":material/edit_note:", width="stretch", disabled=not can_view)
-        with c2: st.page_link(st.session_state["_qsms_pages"][records_path], label="Records", icon=":material/table_view:", width="stretch", disabled=not can_view)
+        if entry_path == records_path:
+            st.page_link(st.session_state["_qsms_pages"][entry_path], label="Open", icon=":material/open_in_new:", width="stretch", disabled=not can_view)
+        else:
+            c1, c2 = st.columns(2, gap="small")
+            with c1:
+                if st.button("New Record", icon=":material/add_circle:", width="stretch", disabled=not can_view, key=f"master_card_new_{slug}"):
+                    st.session_state["_qcms_master_blank_request"] = entry_path
+                    st.switch_page(st.session_state["_qsms_pages"][entry_path])
+            with c2: st.page_link(st.session_state["_qsms_pages"][records_path], label="Records / Edit", icon=":material/table_view:", width="stretch", disabled=not can_view)
 
 
 def disposition_cards(items: Sequence[Mapping[str, Any]]) -> None:
@@ -1495,6 +1518,11 @@ def stage_section(stage: str, title: str, note: str = "", *, key: str | None = N
     if letter not in STAGE_LETTERS:
         letter = "A"
     slug = _stage_slug(key or title)
+    try:
+        from core.activity import log_section_view
+        log_section_view(str(key or slug).upper(), title)
+    except Exception:
+        pass
     with st.container(border=False, key=f"fsi_stage_{letter.casefold()}_{slug}"):
         with st.expander(f"{letter} - {title}", expanded=False):
             if note:

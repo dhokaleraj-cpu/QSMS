@@ -15,9 +15,11 @@ from core.repository import Repository
 from core.ui import section_bar
 
 
+MICROSTRUCTURE_IMAGE_TYPES = ["png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp", "gif"]
+
 ALLOWED_ATTACHMENT_TYPES = [
     "pdf", "xlsx", "xls", "docx", "doc", "csv", "txt",
-    "png", "jpg", "jpeg", "webp", "dwg", "dxf", "zip",
+    *MICROSTRUCTURE_IMAGE_TYPES, "dwg", "dxf", "zip",
 ]
 
 
