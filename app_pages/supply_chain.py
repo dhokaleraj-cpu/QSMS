@@ -997,15 +997,15 @@ def render_purchase_orders() -> None:
                     if any(number(r.get("Current Price"))<=0 for _,r in line_edit.iterrows()): st.warning("Current Price is missing in Part Master price history for one or more items. Add the current supplier price before creating the PO.")
                     if any(not str(r.get("HSN / SAC") or "").strip() for _,r in line_edit.iterrows()): st.warning("HSN / SAC is missing in Part Master Raw Material Details for one or more items. Add it in Part Master before creating the PO.")
 
-                    section_bar("RAW MATERIAL DETAILS & PRICE HISTORY","RM Purchase Orders show only Raw Material Type, Material Grade and Section Size beneath each item. Forging-specific parameters are intentionally excluded from RM procurement POs.")
+                    section_bar("RAW MATERIAL DETAILS, SUPPLIER TECHNICAL DATA & PRICE HISTORY","RM Purchase Orders include the controlled Raw Material identity plus every active Supplier Technical Data row marked Include on PO. Forging-only standard parameters remain excluded from RM procurement POs.")
                     for key,group in group_data.items():
                         part,raw=group["part"],group["raw"]
                         with st.container(border=True):
                             shared_code=str(raw.get("supplier_rm_item_code") or "").strip()
                             title_id=shared_code or part.get("fsi_part_number") or "-"
                             st.markdown(f"**Supplier Item {title_id} · {part.get('part_name') or '-'} · {supplier_labels.get(supplier_id,'Supplier')}**")
-                            allowed_rm_headings={"raw material type","raw material section","material grade","section size"}
-                            tech=[r for r in service.technical_data_snapshot(raw,part) if str(r.get("heading") or "").strip().casefold() in allowed_rm_headings]
+                            allowed_rm_headings={"raw material type","raw material section","material grade","section size","supplier rm item code","supplier lead time"}
+                            tech=[r for r in service.technical_data_snapshot(raw,part) if str(r.get("source") or "").upper()=="CUSTOM" or str(r.get("heading") or "").strip().casefold() in allowed_rm_headings]
                             if tech: portal_table(pd.DataFrame([{"Heading":("Raw Material Type" if str(r.get("heading") or "").casefold()=="raw material section" else r.get("heading")),"Value":r.get("value")} for r in tech]),hide_index=True,width="stretch",height=min(220,70+len(tech)*34))
                             hist=service.price_history(str(part.get("id") or ""),supplier_id,uom="KGS",raw_material_detail_id=str(raw.get("id") or "") or None)
                             if hist and po_commercial_perm["can_view"]: portal_table(pd.DataFrame([{"Start Date":r.get("start_date"),"End Date":r.get("end_date") or "Current","Basic Rate":r.get("price"),"Freight":r.get("freight"),"Tool Cost":r.get("tool_cost"),"P&F":r.get("packing_forwarding"),"Profit":r.get("profit"),"ICC/Rej.":r.get("icc_rejection"),"Currency":r.get("currency"),"UOM":r.get("uom"),"Remark":r.get("remarks") or "","Status":r.get("status") or "ACTIVE"} for r in reversed(hist)]),hide_index=True,width="stretch",height=min(320,70+len(hist)*34))

@@ -6,7 +6,7 @@ def text(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 def test_release_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24"}
     marker = "4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA"
     for rel in ("streamlit_app.py", "core/ui.py", "core/auth.py"):
         assert marker in text(rel)
@@ -60,7 +60,7 @@ def test_po_screen_no_longer_retypes_old_technical_commercial_fields():
 def test_po_pdf_supports_multiple_vendor_lines_and_item_specific_history():
     reporting = text("core/purchase_order_reporting.py")
     assert "_continuation_items_bytes" in reporting
-    assert "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA" in reporting
+    assert "RAW MATERIAL / FORGING PARAMETERS & SUPPLIER TECHNICAL DATA" in reporting
     assert "PRICE REVISION HISTORY" in reporting
     assert "original/customer part number remains an internal qcms field" in reporting.lower()
     if (ROOT / "VERSION").read_text().strip() == "4.14.0":

@@ -32,9 +32,24 @@ def _parse_date(value: Any, fallback: date | None = None) -> date:
     if text:
         try:
             return date.fromisoformat(text[:10])
-        except ValueError:
+        except (TypeError, ValueError, OverflowError):
             pass
     return fallback or date.today()
+
+
+def _optional_date(value: Any) -> date | None:
+    """Parse an optional APQP date without substituting today on bad/blank data."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    try:
+        text = str(value).strip()
+        return date.fromisoformat(text[:10]) if text else None
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def _part_rows(repo: Repository) -> list[dict]:
@@ -822,7 +837,13 @@ def render_apqp() -> None:
             completed = sum(str(row.get("status") or "") in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"} for row in tasks)
             completion = round(completed * 100 / len(tasks)) if tasks else 0
             due = _parse_date((project or {}).get("target_submission_date"))
-            overdue = sum(str(row.get("status") or "") not in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"} and row.get("due_date") and _parse_date(row.get("due_date")) < date.today() for row in tasks)
+            overdue = 0
+            for row in tasks:
+                if not isinstance(row, dict) or str(row.get("status") or "") in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"}:
+                    continue
+                task_due = _optional_date(row.get("due_date"))
+                if task_due is not None and task_due < date.today():
+                    overdue += 1
             kpi_grid([
                 {"label": "APQP Completion", "value": f"{completion}%", "foot": f"{completed}/{len(tasks)} gates closed", "color": "#15803D", "background": "#F0FDF4"},
                 {"label": "Open Gates", "value": len(tasks)-completed, "foot": "Pending / in progress", "color": "#D97706", "background": "#FFF7ED"},

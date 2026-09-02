@@ -25,7 +25,10 @@ def _pdf_text(po_type: str) -> str:
             {"heading": "Section Size", "value": "Dia 50 mm"},
             {"heading": "Forge wt", "value": "2.2 Kgs"},
             {"heading": "Gross wt", "value": "2.5 Kgs"},
-            {"heading": "Forging Route", "value": "Closed Die Forging"},
+            {"heading": "Forging Route", "value": "Closed Die Forging", "source": "STANDARD"},
+            {"heading": "PACKING", "value": "LOOSE", "source": "CUSTOM"},
+            {"heading": "RM RATE", "value": "92/KG", "source": "CUSTOM"},
+            {"heading": "CONVERSION COST", "value": "20/KG", "source": "CUSTOM"},
         ],
         "price_history_snapshot": [{"start_date": "2026-08-01", "end_date": None, "price": 10}],
     }
@@ -42,11 +45,14 @@ def test_rm_po_prints_only_raw_material_identity_beneath_item():
     assert "Forge wt" not in text
     assert "Gross wt" not in text
     assert "Forging Route" not in text
+    assert "PACKING" in text and "LOOSE" in text
+    assert "RM RATE" in text and "92/KG" in text
+    assert "CONVERSION COST" in text and "20/KG" in text
 
 
 def test_forging_po_retains_forging_parameters():
     text = _pdf_text("FORGING")
-    assert "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA" in text
+    assert "SUPPLIER TECHNICAL DATA" in text
     assert "Forging Route" in text and "Closed Die Forging" in text
     assert "Forge wt" in text
 

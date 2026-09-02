@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import re
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -13,6 +14,7 @@ from core.access import current_permissions
 from core.employee_service import AUTHORITIES, EmployeeService
 from core.master_definitions import MASTER_BY_KEY, MasterDef
 from core.master_service import MasterService
+from core.master_import_templates import build_live_master_import_template
 from core.repository import Repository
 from core.ui import page_header, save_success_popup, section_bar, template_catalog, template_download_row
 
@@ -351,7 +353,27 @@ def render() -> None:
         st.warning("Create or Edit permission is required for this master import.")
 
     section_bar("TEMPLATE & UPLOAD")
-    template_download_row([(template_name, f"Download {_label} Template")], key_prefix=f"master_import_{selected_key}")
+    repo = Repository()
+    template_path = Path(__file__).resolve().parents[1] / "templates" / template_name
+    try:
+        live_template = build_live_master_import_template(
+            repo, template_path, selected_key=selected_key, selected_label=_label, version="4.14.24",
+        )
+        st.download_button(
+            f"Download {_label} Controlled Template + Live Master Data",
+            data=live_template,
+            file_name=template_name.replace(".xlsx", "_LIVE_MASTER_DATA.xlsx"),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"live_master_template_{selected_key}",
+            width="stretch",
+            disabled=not (perms["can_create"] or perms["can_edit"]),
+        )
+        st.caption("The workbook includes current MASTER_* reference sheets. Copy exact master codes/values from those sheets and enter only the new/variable transaction or master values in the original import sheet(s). Download a fresh template whenever master data changes.")
+        with st.expander("Blank base template (without live master data)", expanded=False):
+            template_download_row([(template_name, f"Download Blank {_label} Template")], key_prefix=f"master_import_blank_{selected_key}", import_master_key=None)
+    except Exception as exc:
+        st.warning(f"Live master-data template could not be generated: {exc}")
+        template_download_row([(template_name, f"Download {_label} Template")], key_prefix=f"master_import_{selected_key}")
     uploaded = st.file_uploader("Upload completed master file", type=["xlsx", "xls", "csv"], key=f"master_import_file_{selected_key}")
     if uploaded is None:
         st.caption("Complete the template and upload it here. Existing matching database records are skipped; only new natural keys are imported.")
@@ -388,7 +410,7 @@ def render() -> None:
 
     if st.button("Import Selected Master", type="primary", width="stretch", disabled=not (perms["can_create"] or perms["can_edit"])):
         try:
-            repo = Repository(); service = MasterService(repo)
+            service = MasterService(repo)
             if selected_key == "employees":
                 created, skipped, errors = _import_employees(repo, frame)
             else:

@@ -8,6 +8,7 @@ from core.ui import page_header, subpage_navigation, template_catalog, template_
 def render() -> None:
     subpage_navigation(("dashboard", "Dashboard", ":material/dashboard:"), ("masters", "Masters", ":material/dataset:"), ("inspection-home", "Inspections", ":material/biotech:"))
     page_header("Template Centre")
+    st.info("For master imports, use Master Import to download the controlled LIVE MASTER DATA template. It contains current QCMS master reference sheets so imported values can exactly match the database.")
     catalog = template_catalog()
     for start in range(0, len(catalog), 3):
         row = catalog[start:start + 3]

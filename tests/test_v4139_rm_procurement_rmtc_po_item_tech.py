@@ -24,7 +24,7 @@ def test_incremental_approved_rmtc_part_guard_allows_pending_part():
 
 def test_po_print_is_item_then_item_specific_technical_data():
     p=text('core/purchase_order_reporting.py')
-    assert 'RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA' in p
+    assert 'RAW MATERIAL / FORGING PARAMETERS & SUPPLIER TECHNICAL DATA' in p
     if (ROOT / "VERSION").read_text().strip() == "4.14.0":
         assert 'compact_technical_pairs' in p
         assert 'Item-wise technical pocket directly under the item line.' in p

@@ -11,7 +11,7 @@ def _text(path: str) -> str:
 
 
 def test_v41414_version_and_build() -> None:
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24"}
     assert BUILD in _text("streamlit_app.py") or "41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST" in _text("streamlit_app.py")
 
 

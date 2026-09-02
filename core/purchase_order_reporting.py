@@ -138,20 +138,35 @@ def _block(c: canvas.Canvas, x: float, y_top: float, width: float, title: str, l
     return y
 
 
-FIRST_HISTORY_ROWS = 9
+FIRST_HISTORY_ROWS = 8
 CONT_HISTORY_ROWS = 28
 HISTORY_ONLY_ROWS = 42
 
 
 def _technical_pairs(item: Mapping[str, Any], *, po_type: str = "FORGING", limit: int = 12) -> list[tuple[str, str]]:
+    """Return supplier-facing controlled technical data in display order.
+
+    For Raw Material POs, FSI forging-only standard fields remain suppressed, but
+    every supplier-controlled custom row marked Include on PO is printed. This
+    preserves the RM-only print contract while allowing rows such as PACKING, RM
+    RATE, CONVERSION COST, CUTTING COST and SHOT BLASTING to appear on the PDF.
+    """
     raw = item.get("technical_data_snapshot") or []
     if not isinstance(raw, list):
         return []
     po_kind = _s(po_type).upper()
-    rm_allowed = {"raw material type", "raw material section", "material grade", "section size"}
+    rm_allowed_standard = {
+        "raw material type", "raw material section", "material grade", "section size",
+        "supplier rm item code", "supplier lead time",
+    }
+    rm_forging_only = {
+        "supplier forging part no.", "supplier forging part no", "forge wt", "gross wt",
+        "input wt", "forging route",
+    }
     priority_names = (
         "Raw Material Type", "Raw Material Section", "Material Grade", "Section Size",
-        "Forge wt", "Gross wt", "Input wt", "Forging Route", "Supplier Lead Time",
+        "Supplier RM Item Code", "Supplier Lead Time", "Forge wt", "Gross wt",
+        "Input wt", "Forging Route",
     )
     priority = {name.casefold(): idx for idx, name in enumerate(priority_names)}
     prepared: list[tuple[int, str, str]] = []
@@ -162,13 +177,26 @@ def _technical_pairs(item: Mapping[str, Any], *, po_type: str = "FORGING", limit
         if not heading or not value:
             continue
         heading_key = heading.casefold()
-        if po_kind == "RAW_MATERIAL" and heading_key not in rm_allowed:
-            continue
+        source = _s(row.get("source")).upper()
+        if po_kind == "RAW_MATERIAL":
+            # Explicit custom rows always print when they were snapshotted from an
+            # Include-on-PO technical-data row. Legacy snapshots without source are
+            # treated as custom unless they are known forging-only standard fields.
+            if source == "STANDARD" and heading_key not in rm_allowed_standard:
+                continue
+            if source != "CUSTOM" and heading_key in rm_forging_only:
+                continue
         if heading_key == "raw material section":
             heading = "Raw Material Type"; heading_key = "raw material type"
         prepared.append((priority.get(heading_key, 100 + idx), heading, value))
     prepared.sort(key=lambda v: v[0])
     return [(h, v) for _, h, v in prepared[:limit]]
+
+
+def _technical_height(item: Mapping[str, Any], *, po_type: str) -> float:
+    pairs = _technical_pairs(item, po_type=po_type, limit=12)
+    rows = max(1, (len(pairs) + 2) // 3)
+    return max(42.0, 22.0 + rows * 13.0)
 
 
 def _price_history_rows(item: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -223,24 +251,40 @@ def _draw_item_row(c: canvas.Canvas, item: Mapping[str, Any], *, y_top: float, l
 
 
 def _draw_technical(c: canvas.Canvas, item: Mapping[str, Any], *, po_type: str, top: float, bottom: float, left: float, right: float, page_width: float) -> None:
-    c.setFillColor(HexColor("#F3F4F6")); c.rect(left, bottom, page_width-left-right, max(top-bottom, 0), stroke=1, fill=1)
+    total_w = page_width-left-right
     is_rm = _s(po_type).upper() == "RAW_MATERIAL"
-    title = "RAW MATERIAL DETAILS" if is_rm else "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA"
-    _draw_text(c, left+5, top-11, title, size=6.1, bold=True, color=NAVY, max_width=360)
-    pairs = _technical_pairs(item, po_type=po_type, limit=3 if is_rm else 12)
+    title = "RAW MATERIAL DETAILS & SUPPLIER TECHNICAL DATA" if is_rm else "RAW MATERIAL / FORGING PARAMETERS & SUPPLIER TECHNICAL DATA"
+    c.setFillColor(HexColor("#F8FAFC")); c.rect(left, bottom, total_w, max(top-bottom, 0), stroke=1, fill=1)
+    _bar(c, left, top, total_w, title, height=15)
+    pairs = _technical_pairs(item, po_type=po_type, limit=12)
     if not pairs:
-        _draw_text(c, left+5, top-25, "No controlled supplier technical data configured", size=5.8, color=HexColor("#6B7280"), max_width=310)
+        _draw_text(c, left+5, top-29, "No controlled supplier technical data configured", size=5.8, color=HexColor("#6B7280"), max_width=310)
         return
-    pair_width = (page_width-left-right-10) / 3.0
-    row_y = top - 26
-    for pidx, (heading, value) in enumerate(pairs[:12]):
-        row_no = pidx // 3; col_no = pidx % 3
-        py = row_y - row_no * 12
-        if py < bottom + 7:
+
+    # Compact 3-pair grid: HEADING | VALUE repeated three times. This keeps the
+    # Part Master technical-data table visible on the same supplier item page.
+    row_h = 13.0
+    inner_left = left + 3
+    inner_w = total_w - 6
+    pair_w = inner_w / 3.0
+    label_w = pair_w * 0.43
+    first_row_top = top - 17
+    for row_index in range((len(pairs) + 2) // 3):
+        y_top = first_row_top - row_index * row_h
+        y_bottom = y_top - row_h
+        if y_bottom < bottom + 2:
             break
-        px = left + 5 + col_no * pair_width
-        _draw_text(c, px, py, f"{heading}:", size=5.7, bold=True, max_width=pair_width*0.43)
-        _draw_text(c, px + pair_width*0.43, py, value, size=5.7, max_width=pair_width*0.55)
+        for col_index in range(3):
+            pair_index = row_index * 3 + col_index
+            px = inner_left + col_index * pair_w
+            if pair_index >= len(pairs):
+                c.setFillColor(white); c.rect(px, y_bottom, pair_w, row_h, stroke=1, fill=1)
+                continue
+            heading, value = pairs[pair_index]
+            c.setFillColor(HexColor("#E9EDF1")); c.rect(px, y_bottom, label_w, row_h, stroke=1, fill=1)
+            c.setFillColor(white); c.rect(px+label_w, y_bottom, pair_w-label_w, row_h, stroke=1, fill=1)
+            _draw_text(c, px+3, y_bottom+4.1, heading, size=5.2, bold=True, color=HexColor("#30363B"), max_width=label_w-6)
+            _draw_text(c, px+label_w+3, y_bottom+4.1, value, size=5.2, color=HexColor("#202124"), max_width=pair_w-label_w-6)
 
 
 def _draw_price_history(c: canvas.Canvas, item: Mapping[str, Any], history: Sequence[Mapping[str, Any]], *, top: float, bottom: float, left: float, right: float, page_width: float, max_rows: int) -> int:
@@ -344,7 +388,7 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     y_item_top = y_strip-45
     row_bottom = _draw_item_row(c, item, y_top=y_item_top, left=left, right=right, page_width=w)
     po_type = _s(header.get("po_type") or "FORGING").upper()
-    tech_bottom = row_bottom-(42 if po_type == "RAW_MATERIAL" else 68)
+    tech_bottom = row_bottom-_technical_height(item, po_type=po_type)
     _draw_technical(c, item, po_type=po_type, top=row_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
     history = _price_history_rows(item)
     _draw_price_history(c, item, history, top=tech_bottom-4, bottom=245, left=left, right=right, page_width=w, max_rows=FIRST_HISTORY_ROWS)
@@ -370,7 +414,7 @@ def _continuation_items_bytes(header: Mapping[str, Any], items: Sequence[Mapping
         w,h,left,right = _draw_continuation_header(c, header, title="PURCHASE ORDER · ITEM CONTINUED")
         row_bottom = _draw_item_row(c, item, y_top=h-92, left=left, right=right, page_width=w)
         po_type = _s(header.get("po_type") or "FORGING").upper()
-        tech_bottom = row_bottom-(55 if po_type == "RAW_MATERIAL" else 92)
+        tech_bottom = row_bottom-_technical_height(item, po_type=po_type)
         _draw_technical(c, item, po_type=po_type, top=row_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
         history = _price_history_rows(item)
         rendered = _draw_price_history(c, item, history, top=tech_bottom-6, bottom=50, left=left, right=right, page_width=w, max_rows=CONT_HISTORY_ROWS)

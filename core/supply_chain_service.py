@@ -398,7 +398,7 @@ class SupplyChainService:
             key = normalize_match(heading)
             if key == normalize_match("Raw Material Section"):
                 key = normalize_match("Raw Material Type"); heading = "Raw Material Type"
-            custom_map[key] = {"heading": heading, "value": value}
+            custom_map[key] = {"heading": heading, "value": value, "source": "CUSTOM"}
         grade = self.repo.get("material_grades", str(raw.get("material_grade_id") or part.get("material_grade_id") or "")) or {}
         standard = [
             ("Raw Material Type", raw.get("material_section_name")),
@@ -419,14 +419,14 @@ class SupplyChainService:
             if key in custom_map:
                 result.append(custom_map[key]); used.add(key)
             elif str(value or "").strip():
-                result.append({"heading": heading, "value": str(value).strip()})
+                result.append({"heading": heading, "value": str(value).strip(), "source": "STANDARD"})
         for r in custom:
             key = normalize_match(r.get("heading"))
             if key in used or not bool(r.get("include_on_po", True)):
                 continue
             heading = str(r.get("heading") or "").strip(); value = str(r.get("value_text") or "").strip()
             if heading and value:
-                result.append({"heading": heading, "value": value}); used.add(key)
+                result.append({"heading": heading, "value": value, "source": "CUSTOM"}); used.add(key)
         return result
 
     def price_history(

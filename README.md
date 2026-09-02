@@ -1,6 +1,6 @@
-# QCMS v4.14.23
+# QCMS v4.14.24
 
-Current controlled build: `41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE`
+Current controlled build: `41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE`
 
 This release is a deployment and master-entry reliability hotfix on top of v4.14.21.
 
@@ -11,7 +11,7 @@ This release is a deployment and master-entry reliability hotfix on top of v4.14
 - Existing production/master/RMTC/OSP/Supply Chain data is preserved.
 
 
-## v4.14.23 source-only deployment recovery
+## v4.14.24 source-only deployment recovery
 - No new Supabase migration is required; live database baseline remains v4.14.22 / `QCMS_V41422_FULL_READY`.
 - Online Supabase verification is non-blocking so a local Data API/DNS issue cannot prevent Git/Streamlit deployment.
 - Same-Heat **Add New RMTC / TC** uses a fresh selector/form nonce and preserves only Heat identity.

@@ -1,6 +1,6 @@
 {
-  "version": "4.14.23",
-  "build": "41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE",
+  "version": "4.14.24",
+  "build": "41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -128,13 +128,17 @@
     "v41422_public_release_contract"
   ],
   "source": "controlled_release",
-  "release_name": "QCMS v4.14.23 Source-Only Deployment Unblock / Same-Heat RMTC / Blank Masters / Delete Routing",
+  "release_name": "QCMS v4.14.24 Source-Only Deployment Unblock / Same-Heat RMTC / Blank Masters / Delete Routing",
   "database_schema_required": "4.14.22",
   "database_migration_required": false,
   "supabase_release_contract": "QCMS_V41422_FULL_READY",
   "deployment_notes": [
-    "v4.14.23 is source-only: no new Supabase schema migration is required.",
+    "v4.14.24 is source-only: no new Supabase schema migration is required.",
     "The v4.14.22 live Supabase contract was verified during release packaging; updater online recheck is non-blocking.",
     "Deploys same-Heat blank RMTC/TC form, blank Master New Record flow, and transaction delete routing fixes that previous blocked updaters never pushed."
-  ]
+  ],
+  "item_wise_po_technical_data": true,
+  "po_supplier_technical_grid": true,
+  "live_master_data_import_templates": true,
+  "apqp_safe_overdue_dates": true
 }

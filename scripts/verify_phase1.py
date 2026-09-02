@@ -661,7 +661,7 @@ if not saved_decision_contract:
     errors.append("QCMS Customer PO saved procurement-decision contract is missing")
 if "v_pending_decisions" not in v4139_sql or "PARTIALLY_APPROVED permits released Parts" not in v4139_sql:
     errors.append("QCMS 4.13.9 incremental approved-RMTC Part guard is missing")
-if "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA" not in v4139_po or not (("compact_technical_pairs" in v4139_po) or ("def _draw_technical" in v4139_po)):
+if "SUPPLIER TECHNICAL DATA" not in v4139_po or "def _draw_technical" not in v4139_po:
     errors.append("QCMS item-wise PO technical data print sequence is missing")
 
 # QCMS 4.14.0 PO source visibility / added-Part validation / HSN-SAC / email notification contract.
@@ -839,9 +839,9 @@ if 'RAW_MATERIAL_TYPE_DEFAULTS = ("Round Black Bar", "Bright Bar")' not in v4141
     errors.append("QCMS 4.14.12 controlled Raw Material Type list is incomplete")
 if "duplicate_word_check=True" not in v41412_part or "MasterService._fuzzy_word_duplicate" not in v41412_part:
     errors.append("QCMS 4.14.12 Section Size/Forging Route duplicate-word guard is incomplete")
-if 'title = "RAW MATERIAL DETAILS" if is_rm else "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA"' not in v41412_po:
+if 'RAW MATERIAL DETAILS & SUPPLIER TECHNICAL DATA' not in v41412_po or 'RAW MATERIAL / FORGING PARAMETERS & SUPPLIER TECHNICAL DATA' not in v41412_po:
     errors.append("QCMS 4.14.12 PO-type-specific technical print title is incomplete")
-if 'po_kind == "RAW_MATERIAL"' not in v41412_po or 'rm_allowed' not in v41412_po:
+if 'po_kind == "RAW_MATERIAL"' not in v41412_po or 'rm_allowed_standard' not in v41412_po or 'rm_forging_only' not in v41412_po:
     errors.append("QCMS 4.14.12 RM PO forging-parameter filter is incomplete")
 if '"Material Grade":grade_row.get("grade_code")' not in v41412_supply or '"Raw Material Type":raw.get("material_section_name")' not in v41412_supply:
     errors.append("QCMS 4.14.12 RM PO Part Master detail grid is incomplete")
@@ -983,7 +983,7 @@ if "PO_CONFIRMATION_DAILY" not in v41419_notifier or "reminder_count" not in v41
     errors.append("v4.14.19 daily supplier PO confirmation reminder missing")
 
 report = {
-    "release": "QCMS 4.14.19 PO Employee Gate / Delete / User Status / Same Heat / Supplier Confirmation / Images",
+    "release": "QCMS 4.14.24 PO Supplier Technical Grid / Live Master Import Templates / APQP Date Safety",
     "v41419_live_employee_po_gate": "refresh_current_employee_link" in v41419_auth and "po_blockers" in v41419_supply,
     "v41419_supplier_po_confirmation": "supply_po_confirmations" in v41419_sql and "PO_CONFIRMATION_DAILY" in v41419_notifier,
     "v41419_universal_transaction_delete": "qcms_delete_transaction_row" in v41419_sql and "password_transaction_delete_panel" in v41419_delete,
@@ -1069,7 +1069,7 @@ report = {
 
     "customer_order_rm_procurement_link_fix": saved_decision_contract,
     "incremental_approved_rmtc_part_guard": "v_pending_decisions" in v4139_sql,
-    "item_wise_po_technical_data": (("compact_technical_pairs" in v4139_po) or ("def _draw_technical" in v4139_po)) and "RAW MATERIAL / FORGING PARAMETERS & FSI TECHNICAL DATA" in v4139_po,
+    "item_wise_po_technical_data": ("def _draw_technical" in v4139_po) and "SUPPLIER TECHNICAL DATA" in v4139_po,
     "multi_rm_po_sources": "Select ELIGIBLE Customer Orders / Schedules for this RM Purchase Order" in v4138_supply and "supply_purchase_order_sources" in v4138_service,
     "supplier_fsi_price_history": "part_supplier_price_history" in v4138_sql and "def current_price" in v4138_service,
     "part_master_po_technical_data": "Save Supplier Technical Data" in v4138_part and "technical_data_snapshot" in v4138_service,
