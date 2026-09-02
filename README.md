@@ -1,16 +1,10 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.26
+## Current controlled release — v4.14.27
 
-Build: `41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS`
+Build: `41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS`
 
-This release adds complaint Heat/Batch traceability with embedded photo PDF/Excel exports, Supply Chain overdue priority cards, the Calibration & Validation module, Standard Room Inspection records, and NPD overdue email process cards with completed stages shown green. The live v4.14.26 Supabase migration is already applied; the release updater is source-only and preserves all existing data.
-
-# QCMS v4.14.25
-
-Current controlled build: `41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE`
-
-This release is a source-only edit-state, controlled-transaction and performance upgrade on top of v4.14.24.
+This release isolates Part Master Metallurgical Requirements to Final Dispatch MetLAB only, requires Raw Material Inward MetLAB to select an approved non-Final Layout Master plan, adds database-related field insertion controls to email templates, and installs the requested supplier-facing Forging PO release email with controlled PO PDF/supporting documents. The live v4.14.27 Supabase configuration migration is already applied; the updater is source-only and preserves all existing data.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.

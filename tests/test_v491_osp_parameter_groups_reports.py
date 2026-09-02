@@ -26,10 +26,10 @@ def test_part_master_groups_parameters_drawings_and_generated_layouts():
         "Minimum Specification",
         "Maximum Specification",
         "Create / Update OSP MetLAB Inspection Layout",
-        "Create / Update Final Metallurgical Inspection Layout",
+        "Final Metallurgical Inspection Layout",
         "OSP Process Drawing",
     ):
-        assert token in page
+        assert token in page or (token == "Final Metallurgical Inspection Layout" and "Create / Update Final Dispatch Metallurgical Inspection Layout" in page)
     assert "OSP PROCESS & INWARD SPECIFICATIONS" not in page
     assert "HEAT TREATMENT DETAILS" not in page
 
@@ -54,7 +54,7 @@ def test_reports_routes_views_and_excel_exports():
         "Download Excel Report",
         "Download Print PDF",
     ):
-        assert token in page
+        assert token in page or (token == "Final Metallurgical Inspection Layout" and "Create / Update Final Dispatch Metallurgical Inspection Layout" in page)
     for view in (
         "v_qsms_heat_transaction_report",
         "v_qsms_heat_global_balance_report",

@@ -401,7 +401,11 @@ def _render_metallurgical_requirements(
     show_heading: bool = True,
 ) -> None:
     if show_heading:
-        section_bar("METALLURGICAL REQUIREMENTS")
+        section_bar("FINAL DISPATCH METALLURGICAL REQUIREMENTS")
+    st.info(
+        "These Part Master metallurgical requirements are controlled ONLY for the Final MetLAB report used for customer dispatch. "
+        "They are not used for Raw Material Inward MetLAB inspection. Raw Material Inward MetLAB must use an approved Layout Master MetLAB layout."
+    )
     rows = repo.select(
         "part_metallurgical_requirements",
         eq={"part_id": part_id, "status": "ACTIVE"},
@@ -495,7 +499,7 @@ def _render_metallurgical_requirements(
             st.error(str(exc))
 
     if st.button(
-        "Create / Update Final Metallurgical Inspection Layout",
+        "Create / Update Final Dispatch Metallurgical Inspection Layout",
         icon=":material/auto_awesome:",
         type="primary",
         disabled=not writable or len(rows) == 0,

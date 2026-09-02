@@ -16,7 +16,7 @@ def _text(path: str) -> str:
 
 
 def test_v41413_version_and_live_build_marker() -> None:
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27"}
     app = _text("streamlit_app.py")
     assert BUILD in app
     assert f"# BUILD {BUILD}" in app

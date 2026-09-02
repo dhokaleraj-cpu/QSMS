@@ -7,7 +7,7 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 def test_release_identity_and_prior_builds_preserved():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27"}
     for path in ("streamlit_app.py", "core/auth.py", "core/ui.py"):
         text = read(path)
         assert BUILD in text
@@ -20,7 +20,7 @@ def test_metlab_and_dimensional_stopiteration_is_removed_and_historic_context_is
         assert "next(row for row in all_plans" not in text
         assert "historic_plan" in text
         assert "historic_inward" in text
-        assert "loaded that saved layout for controlled editing" in text
+        assert ("loaded that saved layout for controlled editing" in text or "historical MetLAB layout" in text or "historical / no-longer-approved" in text)
     assert "Edit Selected MetLAB Report with Password" in read("app_pages/metlab_report.py")
     assert "Edit Selected Dimensional Report with Password" in read("app_pages/dimensional_report.py")
 

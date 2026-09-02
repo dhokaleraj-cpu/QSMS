@@ -34,6 +34,71 @@ TEMPLATE_VARIABLES = (
     "{{report_date}}  {{open_count}}  {{overdue_count}}"
 )
 
+# Database-backed context fields available to controlled notification templates.
+# The source label tells the administrator exactly which QCMS table/relationship supplies the value.
+COMMON_TEMPLATE_FIELDS = (
+    ("document_no", "Document Number", "Related transaction · controlled document number"),
+    ("document_type", "Document Type", "Related transaction"),
+    ("part_number", "Part Number", "Part Master / related transaction item"),
+    ("fsi_part_number", "FSI / Supplier-facing Part Number", "Part Master / PO Item"),
+    ("part_description", "Part Description", "Part Master / PO Item"),
+    ("heat_number", "Heat Number", "Related quality transaction"),
+    ("supplier_name", "Supplier Name", "Party Master · Supplier"),
+    ("supplier_code", "Supplier Code", "Party Master · Supplier"),
+    ("customer_name", "Customer Name", "Party Master · Customer"),
+    ("due_date", "Due / Delivery Date", "Related transaction"),
+    ("next_stage", "Next Stage", "Notification route / workflow context"),
+    ("department", "Responsible Department", "Notification route"),
+)
+PO_TEMPLATE_FIELDS = (
+    ("po_number", "Purchase Order Number", "supply_purchase_orders.po_number"),
+    ("order_date", "PO Date", "supply_purchase_orders.order_date"),
+    ("delivery_date", "Delivery Date", "supply_purchase_orders.delivery_date"),
+    ("quantity", "Total PO Quantity + UOM", "supply_purchase_order_items.quantity + uom"),
+    ("quantity_value", "Total PO Quantity", "supply_purchase_order_items.quantity"),
+    ("uom", "PO UOM", "supply_purchase_order_items.uom"),
+    ("original_part_number", "Original / Finished Part Number(s)", "supply_purchase_order_items.original_part_number_snapshot"),
+    ("item_description", "PO Item Description(s)", "supply_purchase_order_items.item_description"),
+    ("line_count", "PO Line Count", "supply_purchase_order_items"),
+    ("requisitioner", "Requisitioner", "supply_purchase_orders.requisitioner"),
+    ("payment_term", "Payment Term", "supply_purchase_orders.payment_term"),
+    ("incoterm", "Incoterm", "supply_purchase_orders.incoterm"),
+    ("quotation_reference", "Quotation Reference", "supply_purchase_orders.quotation_reference"),
+)
+RMTC_TEMPLATE_FIELDS = (
+    ("rmtc_number", "QCMS RMTC Number", "rmtc_approvals.rmtc_number"),
+    ("certificate_reference", "Supplier RMTC Number", "rmtc_approvals.certificate_reference"),
+    ("certificate_date", "RMTC Date", "rmtc_approvals.certificate_date"),
+    ("heat_code", "Internal Heat Code", "rmtc_approvals.heat_code"),
+)
+REPORT_TEMPLATE_FIELDS = (
+    ("report_number", "Report Number", "inspection_reports / lab_tests.report_number"),
+    ("test_date", "MetLAB Test Date", "lab_tests.test_date"),
+    ("inspection_date", "Dimensional Inspection Date", "inspection_reports.inspection_date"),
+    ("sample_reference", "Sample Reference", "quality report.sample_reference"),
+)
+
+def _template_field_catalog(event_key: str) -> list[tuple[str, str, str]]:
+    event = str(event_key or "").upper()
+    rows = list(COMMON_TEMPLATE_FIELDS)
+    if event in {"RM_PO_CREATED", "FORGING_PO_CREATED", "PO_APPROVED", "PO_APPROVAL_PENDING", "PO_CONFIRMATION_REQUIRED", "PO_CONFIRMATION_RECEIVED"}:
+        rows.extend(PO_TEMPLATE_FIELDS)
+    if event.startswith("RMTC"):
+        rows.extend(RMTC_TEMPLATE_FIELDS)
+    if "METLAB" in event or "DIMENSIONAL" in event:
+        rows.extend(REPORT_TEMPLATE_FIELDS)
+    seen = set(); output = []
+    for item in rows:
+        if item[0] not in seen:
+            seen.add(item[0]); output.append(item)
+    return output
+
+def _append_template_placeholder(widget_key: str, placeholder: str, *, newline: bool = False) -> None:
+    token = "{{" + str(placeholder) + "}}"
+    current = str(st.session_state.get(widget_key) or "")
+    spacer = "\n" if newline and current else (" " if current and not current.endswith((" ", "\n")) else "")
+    st.session_state[widget_key] = current + spacer + token
+
 
 def _departments(repo: Repository) -> list[str]:
     rows = repo.select("employees", eq={"status": "ACTIVE"}, order_by="department", limit=5000)
@@ -123,10 +188,28 @@ def render() -> None:
         template_event = st.selectbox("Template", [k for k, _l, _m in EVENTS], format_func=lambda k: f"{EVENT_LABEL.get(k,k)} · {EVENT_MODULE.get(k,'')}", key="template_event")
         template = templates.get(template_event) or {}
         st.caption(f"Available placeholders: {TEMPLATE_VARIABLES}")
+        subject_key = f"email_template_subject_{template_event}"
+        body_key = f"email_template_body_{template_event}"
+        name_key = f"email_template_name_{template_event}"
+        if subject_key not in st.session_state:
+            st.session_state[subject_key] = str(template.get("subject_template") or f"QCMS · {EVENT_LABEL.get(template_event, template_event)} · {{{{document_no}}}}")
+        if body_key not in st.session_state:
+            default_body = "Dear {{department}},\n\nQCMS action is pending for {{document_no}}.\nNext Stage: {{next_stage}}\n\nRegards,\nQCMS"
+            st.session_state[body_key] = str(template.get("body_template") or default_body)
+        if name_key not in st.session_state:
+            st.session_state[name_key] = str(template.get("template_name") or EVENT_LABEL.get(template_event, template_event))
+
+        field_rows = _template_field_catalog(template_event)
+        field_labels = {field: f"{label} · {source} · {{{{{field}}}}}" for field, label, source in field_rows}
+        field_choice = st.selectbox("Add Database Field to Template", list(field_labels), format_func=lambda value: field_labels[value], key=f"email_template_field_{template_event}")
+        fc = st.columns(2, gap="small")
+        fc[0].button("Add Field to Subject", icon=":material/add:", width="stretch", key=f"email_field_subject_{template_event}", on_click=_append_template_placeholder, args=(subject_key, field_choice))
+        fc[1].button("Add Field to Email Body", icon=":material/add:", width="stretch", key=f"email_field_body_{template_event}", on_click=_append_template_placeholder, args=(body_key, field_choice), kwargs={"newline": True})
+        st.caption("The field picker is limited to database fields/context related to the selected QCMS section. Unknown or empty values render as '-'.")
         c = st.columns(2, gap="small")
-        subject_template = c[0].text_input("Subject Template", value=str(template.get("subject_template") or f"QCMS · {EVENT_LABEL.get(template_event, template_event)} · {{{{document_no}}}}"))
-        template_name = c[1].text_input("Template Name", value=str(template.get("template_name") or EVENT_LABEL.get(template_event, template_event)))
-        body_template = st.text_area("Email Body Template", value=str(template.get("body_template") or "Dear {{department}},\n\nQCMS action is pending for {{document_no}}.\nNext Stage: {{next_stage}}\n\nRegards,\nQCMS"), height=220)
+        subject_template = c[0].text_input("Subject Template", key=subject_key)
+        template_name = c[1].text_input("Template Name", key=name_key)
+        body_template = st.text_area("Email Body Template", key=body_key, height=260)
         c = st.columns(4, gap="small")
         include_pdf = c[0].toggle("Attach generated QCMS PDF", value=bool(template.get("include_generated_pdf", True)))
         include_docs = c[1].toggle("Attach controlled documents", value=bool(template.get("include_record_attachments", True)))

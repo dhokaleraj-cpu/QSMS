@@ -9,14 +9,14 @@ def text(rel: str) -> str:
 
 
 def test_v41426_release_identity_and_manifest():
-    assert text("VERSION").strip() == "4.14.26"
+    assert text("VERSION").strip() in {"4.14.26", "4.14.27"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] == "4.14.26"
-    assert manifest["build"] == "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS"
-    assert manifest["database_schema_required"] == "4.14.26"
+    assert manifest["version"] in {"4.14.26", "4.14.27"}
+    assert manifest["build"] in {"41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS"}
+    assert manifest["database_schema_required"] in {"4.14.26", "4.14.27"}
     assert manifest["database_migration_required"] is False
     assert manifest["registered_pages"] == 83
-    assert "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS" in text("streamlit_app.py")
+    assert any(v in text("streamlit_app.py") for v in ("41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS"))
 
 
 def test_complaints_capture_heat_batch_and_embed_photos_in_pdf_excel():

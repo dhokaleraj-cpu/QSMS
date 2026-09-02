@@ -1,6 +1,6 @@
 {
-  "version": "4.14.26",
-  "build": "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS",
+  "version": "4.14.27",
+  "build": "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -155,20 +155,24 @@
     "standard_room_cmm_vmm_roughness_counter_instruments",
     "standard_room_heat_batch_traceability",
     "npd_overdue_email_process_cards",
-    "npd_completed_stage_green_email_cards"
+    "npd_completed_stage_green_email_cards",
+    "final_metlab_part_master_only",
+    "raw_material_inward_metlab_layout_master_only",
+    "forging_po_release_email_template",
+    "email_template_database_field_picker",
+    "po_email_context_item_aggregation"
   ],
   "source": "controlled_release",
-  "release_name": "QCMS v4.14.26 Complaint Media / Calibration & Validation / Standard Room / NPD Email Cards",
-  "database_schema_required": "4.14.26",
+  "release_name": "QCMS v4.14.27 Final MetLAB Layout Boundary / PO Email Field Templates",
+  "database_schema_required": "4.14.27",
   "database_migration_required": false,
-  "supabase_release_contract": "QCMS v4.14.26 live migration applied and verified during controlled release packaging",
+  "supabase_release_contract": "QCMS v4.14.27 live migration applied and verified during controlled release packaging",
   "deployment_notes": [
-    "v4.14.26 database migration was applied and verified on the live QSMS Supabase project during controlled release packaging; the macOS updater performs source deployment only and does not require Supabase CLI login or manual SQL.",
-    "Customer and Supplier Complaint records include Heat Number and Batch/Lot Code, actual photographs in PDF and Excel, and same-screen PDF/Excel download controls.",
-    "Supply Chain Home shows overdue Customer Orders first as red priority cards.",
-    "Calibration & Validation links Quality Assets (gauges/fixtures) to Part and Process with frequency, drawings/photos, calibration/validation history, reports/certificates and 30-day daily Quality reminders.",
-    "Standard Room Inspection records support CMM, Counter, VMM, Roughness Tester and other instruments with Part, Process, Heat and Batch traceability.",
-    "NPD overdue digest email renders process-stage cards; completed stages are green and overdue stages red."
+    "v4.14.27 database/template configuration migration was applied and verified on the live QSMS Supabase project during controlled release packaging; the macOS updater performs source deployment only and does not require Supabase CLI login or manual SQL.",
+    "Part Master Final Dispatch Metallurgical Requirements are isolated to the Final/Customer Dispatch MetLAB layout and are not eligible for Raw Material Inward MetLAB.",
+    "Raw Material Inward MetLAB requires an approved MATERIAL_INWARD MetLAB plan selected from Inspection Layout Master; FINAL_METALLURGICAL layouts are excluded.",
+    "Forging PO release after approval uses the controlled supplier template requesting signed/stamped PO confirmation within 2-3 days, with controlled PO PDF and available supporting documents attached.",
+    "Admin Email Templates provides a database-field picker for event-specific placeholders such as PO number, supplier, part, quantity, delivery date and next stage."
   ],
   "item_wise_po_technical_data": true,
   "po_supplier_technical_grid": true,
@@ -184,9 +188,16 @@
   "standard_room_inspection_module": true,
   "npd_email_stage_cards": true,
   "registered_pages": 83,
-  "full_pytest_passed": 461,
+  "full_pytest_passed": 468,
   "live_supabase_schema_applied": true,
   "live_overdue_notifier_version": 4,
   "live_overdue_notifier_status": "ACTIVE",
-  "source_only_updater": true
+  "source_only_updater": true,
+  "release_notes": [
+    "v4.14.27 live migration was applied and verified on the QSMS Supabase project during controlled release packaging; the macOS updater is source-only and requires no Supabase CLI login or manual SQL."
+  ],
+  "final_metlab_part_master_only": true,
+  "raw_material_inward_metlab_layout_master_only": true,
+  "forging_po_release_email_template": true,
+  "email_template_database_field_picker": true
 }

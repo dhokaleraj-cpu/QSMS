@@ -94,8 +94,23 @@ class InspectionService:
                 output.append(row)
         return output
 
+    def raw_material_metlab_plans(self, part_id: str, *, approved_only: bool = True) -> list[dict]:
+        """Approved Layout Master plans eligible for Raw Material Inward MetLAB only.
+
+        FINAL_METALLURGICAL plans generated from Part Master are intentionally excluded.
+        """
+        rows = self.plans("METLAB", part_id, approved_only=approved_only)
+        return [
+            row for row in rows
+            if str(row.get("inward_type") or "MATERIAL_INWARD").upper() == "MATERIAL_INWARD"
+            and str(row.get("requirement_scope") or "GENERAL").upper() != "FINAL_METALLURGICAL"
+        ]
+
     def auto_standalone_plan(self, layout_type: str, part_id: str, scope: str, process_id: str | None = None) -> dict | None:
-        """Select the controlled approved layout from Part/Process master; no manual layout choice in standalone reports."""
+        """Select the controlled approved layout for non-RM standalone stages.
+
+        Raw Material Inward MetLAB is deliberately selected manually from Layout Master in the UI.
+        """
         candidates = self.plans(layout_type.upper(), part_id, approved_only=True)
         if scope == "OSP_STAGE":
             candidates = [row for row in candidates if str(row.get("process_id") or "") == str(process_id or "") and str(row.get("inward_type") or "") == "OSP_PROCESS"]
@@ -106,7 +121,10 @@ class InspectionService:
             else:
                 candidates = [row for row in candidates if str(row.get("inward_type") or "MATERIAL_INWARD") == "MATERIAL_INWARD"]
         else:
-            general = [row for row in candidates if str(row.get("inward_type") or "MATERIAL_INWARD") == "MATERIAL_INWARD" and str(row.get("requirement_scope") or "GENERAL") != "FINAL_METALLURGICAL"]
+            if layout_type.upper() == "METLAB":
+                general = self.raw_material_metlab_plans(part_id, approved_only=True)
+            else:
+                general = [row for row in candidates if str(row.get("inward_type") or "MATERIAL_INWARD") == "MATERIAL_INWARD" and str(row.get("requirement_scope") or "GENERAL") != "FINAL_METALLURGICAL"]
             if general:
                 candidates = general
         def sort_key(row: dict) -> tuple[str, str, str]:

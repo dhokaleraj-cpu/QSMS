@@ -353,17 +353,26 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
         plan = service.get_plan(saved_plan_id) if saved_plan_id else None
         if plan and str(plan.get("part_id") or "") != part_id:
             plan = None
-        if not plan:
-            plan = service.auto_standalone_plan("METLAB", part_id, scope, process_id)
-        elif str(plan.get("status") or "").upper() != "APPROVED":
+        if plan and str(plan.get("status") or "").upper() != "APPROVED":
             st.warning("This saved report uses a historical MetLAB layout. QCMS loaded the original layout so the report can be edited without silently changing its specification basis.")
+        if not plan and scope == "RAW_MATERIAL_STAGE":
+            raw_plans = service.raw_material_metlab_plans(part_id, approved_only=True)
+            if not raw_plans:
+                st.warning("No approved Raw Material Inward MetLAB layout exists in Layout Master for this Part. Create/approve a MetLAB layout in Inspection Layout Master. Part Master Final Metallurgical Requirements are intentionally not available here.")
+                return
+            raw_plan_map = {str(row["id"]): f"{row.get('layout_name')} · {row.get('plan_number')} Rev {row.get('revision')}" for row in raw_plans}
+            selected_raw_plan = st.selectbox("Raw Material Inward MetLAB Layout · Layout Master", list(raw_plan_map), format_func=lambda value: raw_plan_map[value], key=f"standalone_rm_metlab_layout_{existing_id or part_id}")
+            plan = next(row for row in raw_plans if str(row.get("id")) == selected_raw_plan)
+            st.caption("Source: Inspection Layout Master only. Part Master Final Metallurgical Requirements are reserved for Final Dispatch MetLAB.")
+        elif not plan:
+            plan = service.auto_standalone_plan("METLAB", part_id, scope, process_id)
         if not plan:
             if scope == "OSP_STAGE":
                 st.warning("The Part Master OSP MetLAB requirements exist, but the controlled OSP MetLAB layout has not been generated/approved. Use Part Master → OSP Inspection for MetLAB → Create / Update OSP MetLAB Inspection Layout.")
             elif scope == "FINAL_DISPATCH_STAGE":
-                st.warning("No approved Final Metallurgical layout is available for this Part. Generate it from Part Master → Metallurgical Requirements.")
+                st.warning("No approved Final Metallurgical layout is available for this Part. Generate it from Part Master → Final Dispatch Metallurgical Requirements.")
             else:
-                st.warning("No approved MetLAB layout is configured for this Part Number.")
+                st.warning("No approved Raw Material Inward MetLAB layout is configured in Layout Master for this Part Number.")
             return
         plan_id = str(plan["id"])
         if not process_id:
@@ -393,7 +402,8 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             c2.text_input("Process Specification", value=str((process_group or {}).get("process_specification") or ""), disabled=True)
             c3.text_input("Process Drawing", value=str((process_group or {}).get("drawing_number") or ""), disabled=True)
             c4.text_input("Process Drawing Rev", value=str((process_group or {}).get("drawing_revision") or ""), disabled=True)
-        st.info(f"Auto Layout from Part Master: {plan.get('layout_name') or plan.get('plan_number')} · Rev {plan.get('revision') or '-'}")
+        source_label = "Part Master Final Metallurgical Requirements" if scope == "FINAL_DISPATCH_STAGE" else ("Part Master OSP Process Layout" if scope == "OSP_STAGE" else "Inspection Layout Master")
+        st.info(f"Controlled Layout · {source_label}: {plan.get('layout_name') or plan.get('plan_number')} · Rev {plan.get('revision') or '-'}")
 
         c1, c2, c3, c4 = st.columns(4, gap="small")
         report_no = c1.text_input("Report Number", value=str((existing or {}).get("report_number") or ""), placeholder="Auto on save")
@@ -420,7 +430,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                 micro_files.append(st.file_uploader(f"Photo {slot}", type=MICROSTRUCTURE_IMAGE_TYPES, key=f"standalone_metlab_photo_{slot}_{existing_id or 'new'}"))
                 micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or ""), key=f"standalone_metlab_caption_{slot}_{existing_id or 'new'}"))
 
-    with stage_section("C", "METLAB CHARACTERISTICS", "The inspection grid is loaded automatically from the approved Part Master controlled layout.", key="metlab_standalone_characteristics"):
+    with stage_section("C", "METLAB CHARACTERISTICS", "Characteristics are loaded from the controlled layout for this report stage. Raw Material Inward uses Layout Master only; Final Dispatch uses Part Master Final Metallurgical Requirements.", key="metlab_standalone_characteristics"):
         layout_source = _layout_rows(service, plan_id, existing)
         frame = pd.DataFrame([{"Sr No": r.get("sequence_no"), "Parameter": r.get("parameter"), "Specification": r.get("specification"), "Min": r.get("lower_spec"), "Max": r.get("upper_spec"), "Method / Aid": r.get("checking_method"), "Actual Value": r.get("actual_value"), "Unit": r.get("unit"), "NA": r.get("applicability") == "NOT_APPLICABLE", "Result": r.get("result"), "Remark": r.get("remarks"), "_characteristic_id": r.get("inspection_plan_characteristic_id"), "_type": r.get("characteristic_type")} for r in layout_source])
         edited = st.data_editor(frame, hide_index=True, width="stretch", height=min(620, max(220, 80 + len(frame) * 30)), disabled=["Sr No", "Parameter", "Specification", "Min", "Max", "Method / Aid", "Result", "_characteristic_id", "_type"], column_config={"NA": st.column_config.CheckboxColumn(), "_characteristic_id": None, "_type": None}, key=f"standalone_metlab_grid_{existing_id or 'new'}_{plan_id}")
@@ -586,34 +596,28 @@ def render_entry() -> None:
         snapshot = service.rmtc_material_snapshot(inward)
         rmtc = snapshot.get("rmtc") or {}; grade = snapshot.get("grade") or {}; supplier = snapshot.get("supplier") or {}; steel_mill = snapshot.get("steel_mill") or {}
 
-        all_plans = service.plans("METLAB", part_id, approved_only=True)
+        all_plans = service.raw_material_metlab_plans(part_id, approved_only=True)
         saved_plan_id = str((existing or {}).get("layout_plan_id") or "")
         if saved_plan_id and all(str(row.get("id")) != saved_plan_id for row in all_plans):
             historic_plan = service.get_plan(saved_plan_id) or {}
             if historic_plan and str(historic_plan.get("part_id") or "") == part_id:
                 all_plans = [historic_plan, *all_plans]
-                st.warning("This report uses a historical / no-longer-approved MetLAB layout. QCMS loaded that saved layout for controlled editing instead of changing the report silently.")
+                st.warning("This saved report uses a historical MetLAB layout. It is preserved for traceability. New Raw Material Inward reports can only select a non-Final approved layout from Layout Master.")
         plan_id: str | None = None; plan: dict = {}
         if all_plans:
             plan_map = {str(row["id"]): f"{row.get('layout_name')} · {row.get('plan_number')} Rev {row.get('revision')}" for row in all_plans}
-            ranked = service.ranked_plans("METLAB", part_id)
-            recommended = ranked[0] if ranked else all_plans[0]
-            selection_mode = st.radio("Layout Selection", ["Automatic", "Manual"], horizontal=True, disabled=bool(existing))
             if existing:
-                plan_id = saved_plan_id if saved_plan_id in plan_map else str(recommended.get("id") or "")
-                if saved_plan_id and saved_plan_id not in plan_map:
-                    st.warning("The originally saved MetLAB layout record could not be found. The current approved layout is shown as a controlled fallback; review before saving.")
-            elif selection_mode == "Automatic":
-                plan_id = str(recommended["id"]); st.info(f"Automatically selected: {plan_map.get(plan_id, plan_id)}")
+                plan_id = saved_plan_id if saved_plan_id in plan_map else next(iter(plan_map))
+                st.selectbox("Raw Material Inward MetLAB Layout · Layout Master", [plan_id], format_func=lambda value: plan_map.get(value, value), disabled=True, key=f"linked_rm_metlab_saved_layout_{existing_id}")
             else:
-                plan_id = st.selectbox("Approved MetLAB Layout", list(plan_map), format_func=lambda value: plan_map[value])
-            if selection_mode == "Automatic" or existing:
-                st.selectbox("Approved MetLAB Layout", [plan_id], format_func=lambda value: plan_map.get(value, value), disabled=True)
-            plan = next((row for row in all_plans if str(row.get("id")) == plan_id), recommended or {})
+                plan_id = st.selectbox("Raw Material Inward MetLAB Layout · Layout Master", list(plan_map), format_func=lambda value: plan_map[value], key=f"linked_rm_metlab_layout_{inward_id}")
+                st.caption("Required source: approved Inspection Layout Master. Part Master Final Metallurgical Requirements are excluded from Raw Material Inward inspection.")
+            plan = next((row for row in all_plans if str(row.get("id")) == plan_id), {})
         else:
-            st.info("No approved MetLAB layout exists. The RMTC Raw Material layout is generated automatically from the Part Worksheet.")
+            st.error("No approved Raw Material Inward MetLAB layout is available in Layout Master for this Part. Create and approve a MetLAB layout before entering the Raw Material Inward report. Part Master Final Metallurgical Requirements cannot be used for this stage.")
+            return
 
-        layout_name = str(plan.get("layout_name") or "RMTC Raw Material Inspection")
+        layout_name = str(plan.get("layout_name") or "Raw Material Inward MetLAB")
         layout_type = str(plan.get("layout_type") or "METLAB")
         c1, c2, c3, c4 = st.columns(4, gap="small")
         c1.text_input("Layout Name", value=layout_name, disabled=True)

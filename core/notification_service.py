@@ -30,6 +30,17 @@ def _normalize_department(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
 
 
+
+
+def _quantity_text(value: Any) -> str:
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        return str(value or "-")
+    if abs(number - round(number)) < 1e-9:
+        return f"{number:,.0f}"
+    return f"{number:,.3f}".rstrip("0").rstrip(".")
+
 def _template_text(value: Any, context: Mapping[str, Any]) -> str:
     text = str(value or "")
     # User-facing templates use {{ field }}. Convert to format_map tokens while
@@ -184,11 +195,56 @@ class NotificationService:
         elif table == "supply_customer_orders":
             ctx.update({"document_no": record.get("master_reference_no"), "document_type": "Customer Order / Schedule", "due_date": record.get("customer_delivery_date")})
         elif table == "supply_purchase_orders":
-            ctx.update({"document_no": record.get("po_number"), "document_type": "Purchase Order", "due_date": record.get("delivery_date")})
+            ctx.update({
+                "document_no": record.get("po_number"),
+                "document_type": "Purchase Order",
+                "po_number": record.get("po_number"),
+                "order_date": record.get("order_date"),
+                "delivery_date": record.get("delivery_date"),
+                "due_date": record.get("delivery_date"),
+                "requisitioner": record.get("requisitioner"),
+                "payment_term": record.get("payment_term"),
+                "incoterm": record.get("incoterm"),
+                "quotation_reference": record.get("quotation_reference"),
+            })
             supplier_id = record.get("supplier_id")
             if supplier_id:
                 supplier = self.repo.get("parties", str(supplier_id)) or {}
                 ctx.update({"supplier_id": str(supplier_id), "supplier_name": supplier.get("party_name"), "supplier_code": supplier.get("party_code"), "supplier_email": supplier.get("email")})
+            try:
+                items = self.repo.select("supply_purchase_order_items", eq={"purchase_order_id": rid}, order_by="created_at", limit=500)
+            except Exception:
+                items = []
+            if items:
+                supplier_parts: list[str] = []
+                original_parts: list[str] = []
+                descriptions: list[str] = []
+                uoms: list[str] = []
+                total_quantity = 0.0
+                for item in items:
+                    supplier_part = str(item.get("fsi_part_number_snapshot") or item.get("item_no") or "").strip()
+                    original_part = str(item.get("original_part_number_snapshot") or "").strip()
+                    description = str(item.get("item_description") or "").strip()
+                    uom = str(item.get("uom") or "").strip().upper()
+                    if supplier_part and supplier_part.casefold() not in {v.casefold() for v in supplier_parts}: supplier_parts.append(supplier_part)
+                    if original_part and original_part.casefold() not in {v.casefold() for v in original_parts}: original_parts.append(original_part)
+                    if description and description.casefold() not in {v.casefold() for v in descriptions}: descriptions.append(description)
+                    if uom and uom.casefold() not in {v.casefold() for v in uoms}: uoms.append(uom)
+                    try: total_quantity += float(item.get("quantity") or 0)
+                    except (TypeError, ValueError): pass
+                uom_text = ", ".join(uoms) if uoms else ""
+                qty_value = _quantity_text(total_quantity)
+                ctx.update({
+                    "part_number": ", ".join(supplier_parts) or ", ".join(original_parts) or "-",
+                    "fsi_part_number": ", ".join(supplier_parts) or "-",
+                    "original_part_number": ", ".join(original_parts) or "-",
+                    "part_description": "; ".join(descriptions) or "-",
+                    "item_description": "; ".join(descriptions) or "-",
+                    "quantity_value": qty_value,
+                    "uom": uom_text or "-",
+                    "quantity": f"{qty_value} {uom_text}".strip(),
+                    "line_count": len(items),
+                })
         elif table == "supply_po_confirmations":
             po_id = str(record.get("purchase_order_id") or "")
             po = self.repo.get("supply_purchase_orders", po_id) or {} if po_id else {}

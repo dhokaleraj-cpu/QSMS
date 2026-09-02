@@ -186,11 +186,14 @@ required = [
     "supabase/migrations/20260902120000_qcms_v41426_calibration_standard_room_complaint_npd_cards.sql",
     "tests/test_v41426_complaint_calibration_standard_room_npd_cards.py",
     "RELEASE_NOTES_v4.14.26.md",
+    "RELEASE_NOTES_v4.14.27.md",
+    "supabase/migrations/20260902143000_qcms_v41427_final_metlab_layout_po_email_fields.sql",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.27.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.26 - Complaint Media / Calibration & Validation / Standard Room / NPD Email Cards",
+    "phase": "QCMS 4.14.27 - Final MetLAB Layout Boundary / PO Email Database Fields",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

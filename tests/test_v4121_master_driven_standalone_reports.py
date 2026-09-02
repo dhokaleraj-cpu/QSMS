@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version_and_migration():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.12.1", "4.12.2", "4.12.3", "4.12.4", "4.12.5", "4.12.6", "4.12.7", "4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.12.1", "4.12.2", "4.12.3", "4.12.4", "4.12.5", "4.12.6", "4.12.7", "4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27"}
     migration = ROOT / "supabase/migrations/20260819170000_qcms_master_driven_standalone_reports_v4121.sql"
     assert migration.exists()
     sql = migration.read_text()
@@ -17,8 +17,12 @@ def test_standalone_reports_are_master_driven_and_auto_layout():
     dim = (ROOT / "app_pages/dimensional_report.py").read_text()
     service = (ROOT / "core/inspection_service.py").read_text()
     for source in (met, dim):
-        for token in ("Customer", "Material Grade", "Batch Number", "Supplier Invoice / Reference", "Auto Layout from Part Master", "OSP Process", "Process Specification"):
+        for token in ("Customer", "Material Grade", "Batch Number", "Supplier Invoice / Reference", "OSP Process", "Process Specification"):
             assert token in source
+    assert "Auto Layout from Part Master" in dim
+    assert "Raw Material Inward MetLAB Layout · Layout Master" in met
+    assert "Part Master Final Metallurgical Requirements" in met
+    for source in (met, dim):
         assert '"customer_id": part.get("customer_id")' in source
         assert '"material_grade_id": part.get("material_grade_id")' in source
     assert "def standalone_part_context" in service

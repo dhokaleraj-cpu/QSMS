@@ -8,9 +8,9 @@ def text(path: str) -> str:
 
 
 def test_v4146_version_build_and_global_strip():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27"}
     app = text("streamlit_app.py")
-    assert any(token in app for token in ("4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM"))
+    assert any(token in app for token in ("4146-LIVE-RUNTIME-DIAGNOSTICS-FORCE-REDEPLOY", "4147-NEXT-STAGE-EMAIL-TEMPLATES-AUTO-OVERDUE-DEPLOY-TARGET", "4148-AUTO-SAFETY-SNAPSHOT-DIRTY-WORKTREE-DEPLOY", "4149-DEPENDENCY-BOOTSTRAP-REMOTE-DEPLOY", "41410-PO-SHIPTO-MASTER-LOGIN-REQUISITIONER", "41411-PO-MASTER-HSN-PRICE-FORM-EMAIL-CONFIRM-SERIES", "41412-RM-TYPE-PO-RM-DETAILS-FORGING-FILTER-DUPLICATE-GUARD", "41413-METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS"))
     assert "LIVE BUILD · QCMS" in app
 
 
@@ -44,6 +44,6 @@ def test_opening_stock_has_supply_home_quick_action():
 
 def test_manifest_declares_forced_redeploy_and_diagnostics():
     manifest = text("DEPLOYMENT_MANIFEST.json")
-    assert any(token in manifest for token in ('"version": "4.14.6"', '"version": "4.14.7"', '"version": "4.14.8"', '"version": "4.14.9"', '"version": "4.14.10"', '"version": "4.14.11"', '"version": "4.14.12"', '"version": "4.14.13"', '"version": "4.14.14"', '"version": "4.14.17"', '"version": "4.14.18"', '"version": "4.14.19"', '"version": "4.14.20"', '"version": "4.14.21"', '"version": "4.14.22"', '"version": "4.14.23"', '"version": "4.14.24"', '"version": "4.14.25"', '"version": "4.14.26"'))
+    assert any(token in manifest for token in ('"version": "4.14.6"', '"version": "4.14.7"', '"version": "4.14.8"', '"version": "4.14.9"', '"version": "4.14.10"', '"version": "4.14.11"', '"version": "4.14.12"', '"version": "4.14.13"', '"version": "4.14.14"', '"version": "4.14.17"', '"version": "4.14.18"', '"version": "4.14.19"', '"version": "4.14.20"', '"version": "4.14.21"', '"version": "4.14.22"', '"version": "4.14.23"', '"version": "4.14.24"', '"version": "4.14.25"', '"version": "4.14.26"', '"version": "4.14.27"'))
     assert '"live_runtime_diagnostics"' in manifest
     assert '"forced_streamlit_redeploy_commit"' in manifest

@@ -1296,10 +1296,23 @@ def render_purchase_orders() -> None:
                         approved=service.approve_purchase_order(selected_po,approval_note)
                         supplier=service.repo.get("parties",str(approved.get("supplier_id") or "")) or {}
                         notification=NotificationService(service.repo)
-                        notification.notify("PO_APPROVED",related_table="supply_purchase_orders",related_id=selected_po,recipient_email=str(supplier.get("email") or "").strip() or None,recipient_name=str(supplier.get("party_name") or "").strip() or None,include_supplier=True,context={"po_number":approved.get("po_number"),"supplier_id":str(approved.get("supplier_id") or ""),"supplier_name":supplier.get("party_name"),"next_stage":"Supplier PO Confirmation"})
+                        release_event = "RM_PO_CREATED" if str(approved.get("po_type") or "").upper() == "RAW_MATERIAL" else "FORGING_PO_CREATED"
+                        release_next_stage = "Raw Material Receipt" if release_event == "RM_PO_CREATED" else "Forging Receipt"
+                        notification.notify(
+                            release_event, related_table="supply_purchase_orders", related_id=selected_po,
+                            recipient_email=str(supplier.get("email") or "").strip() or None,
+                            recipient_name=str(supplier.get("party_name") or "").strip() or None,
+                            include_supplier=True,
+                            context={
+                                "po_number": approved.get("po_number"),
+                                "supplier_id": str(approved.get("supplier_id") or ""),
+                                "supplier_name": supplier.get("party_name"),
+                                "delivery_date": approved.get("delivery_date"),
+                                "next_stage": release_next_stage,
+                            },
+                        )
                         confirmation=service.ensure_purchase_order_confirmation(selected_po)
-                        notification.notify("PO_CONFIRMATION_REQUIRED",related_table="supply_po_confirmations",related_id=str(confirmation.get("id") or ""),recipient_email=str(supplier.get("email") or "").strip() or None,recipient_name=str(supplier.get("party_name") or "").strip() or None,include_supplier=True,context={"po_number":approved.get("po_number"),"supplier_id":str(approved.get("supplier_id") or ""),"supplier_name":supplier.get("party_name"),"next_stage":"Supplier PO Confirmation"})
-                        save_success_popup("Purchase Order approved. Supplier confirmation request was queued immediately; a daily priority reminder will continue until confirmation is received.",queue_for_rerun=True);st.rerun()
+                        save_success_popup("Purchase Order approved and released to the Supplier with the controlled PO PDF/supporting documents. Daily priority confirmation reminders will continue until the signed Supplier confirmation is received.",queue_for_rerun=True);st.rerun()
                     except Exception as exc: st.error(str(exc))
             # v4.14.19 supplier PO confirmation is a controlled Supply Chain stage after approval.
             if str(header.get("approval_status") or "").upper()=="APPROVED" and str(header.get("status") or "").upper()!="CANCELLED":

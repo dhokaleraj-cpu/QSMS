@@ -20,8 +20,10 @@ def test_material_inward_uses_steel_and_production_formula():
 def test_layout_is_automatic_with_manual_override():
     dimensional = (ROOT / "app_pages/dimensional_report.py").read_text()
     metlab = (ROOT / "app_pages/metlab_report.py").read_text()
-    for text in [dimensional, metlab]:
-        assert '"Automatic", "Manual"' in text
+    assert '"Automatic", "Manual"' in dimensional
+    assert "Raw Material Inward MetLAB Layout · Layout Master" in metlab
+    assert "raw_material_metlab_plans" in metlab
+    for text in (dimensional, metlab):
         assert "Layout Name" in text
         assert "Section / Layout Type" in text
     assert "ranked_plans" in (ROOT / "core/inspection_service.py").read_text()

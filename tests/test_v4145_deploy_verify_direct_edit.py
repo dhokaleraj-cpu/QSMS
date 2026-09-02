@@ -28,7 +28,8 @@ def test_direct_edit_selectors_are_visible():
 def test_stopiteration_guard_and_smtp_tenant_guidance():
     met = text("app_pages/metlab_report.py")
     email = text("app_pages/email_settings.py")
-    assert 'next((row for row in all_plans if str(row.get("id")) == plan_id), recommended or {})' in met
+    assert 'next((row for row in all_plans if str(row.get("id")) == plan_id), {})' in met
+    assert "raw_material_metlab_plans" in met
     assert "TENANT SMTP AUTH BLOCK" in email
     assert "QCMS cannot override this from application code" in email
 
