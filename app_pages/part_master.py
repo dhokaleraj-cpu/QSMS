@@ -24,7 +24,7 @@ from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
 from core.permissions import is_admin
 from core.selection_labels import customer_standard_label, material_grade_label, part_label, party_label, process_label
-from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
+from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
 
 DRAWING_TYPES = (
     ("FINISH_DRAWING", "Finish Drawing"),
@@ -521,6 +521,7 @@ def render_entry() -> None:
     repo = Repository(); catalog = LearnedValueCatalog(repo); perms = current_permissions("PART_MASTER")
     force_new = consume_master_blank_request("part-entry", edit_keys=("edit_part_id",), widget_keys=("part_master_record_selector",))
     existing, selected_record = _selected_part(repo, force_new=force_new); writable = perms["can_edit"] if existing else perms["can_create"]
+    header_scope = record_widget_token("part-entry", existing, selected=selected_record)
 
     customers = repo.select("parties", contains={"party_types": ["CUSTOMER"]}, eq={"status": "ACTIVE"}, order_by="party_name", limit=1000)
     grades = repo.select("material_grades", eq={"status": "ACTIVE"}, order_by="grade_code", limit=1000)
@@ -533,7 +534,7 @@ def render_entry() -> None:
     ]
 
     with stage_section("A", 'PART DETAILS', 'All fields shown in the approved Part Master layout.', key="part_master_render_entry_a"):
-        with st.form(f"part_header_{selected_record}"):
+        with st.form(f"part_header_{header_scope}"):
             c = st.columns(6, gap="small")
             part_number = c[0].text_input("Part Number", value=str(existing.get("part_number") or ""), help="Original / customer Part Number. Internal QCMS identity.")
             fsi_part_number = c[1].text_input("FSI Part Number", value=str(existing.get("fsi_part_number") or ""), help="Secondary FSI identity used on supplier-facing documents so the original Part Number remains confidential.")

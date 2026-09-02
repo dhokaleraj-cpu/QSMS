@@ -1,19 +1,21 @@
-# QCMS v4.14.24
+# QCMS v4.14.25
 
-Current controlled build: `41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE`
+Current controlled build: `41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE`
 
-This release is a deployment and master-entry reliability hotfix on top of v4.14.21.
+This release is a source-only edit-state, controlled-transaction and performance upgrade on top of v4.14.24.
 
-- Public Supabase release verification uses the project publishable key and requires no `supabase login`.
-- Master Data Centre **New Record** opens a blank form; editing remains through Records / Edit.
-- Same-Heat **Add New RMTC / TC** clears the previous certificate widget state while retaining only Heat identity.
-- v4.14.21 transaction-delete routing remains preserved so OSP/MetLAB/Dimensional records never go through the master-delete RPC.
-- Existing production/master/RMTC/OSP/Supply Chain data is preserved.
+## v4.14.25 controlled edit and exact-record reload
+- Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.
+- PO revision keeps Supplier and source Part identity controlled, protects received genealogy, refreshes current master snapshots when requested, recalculates commercial totals, returns the PO to approval, and requires supplier reconfirmation after approval.
+- Master and transaction edit widgets are namespaced by selected record ID + saved update timestamp so selecting a record always reloads that exact saved record rather than previous Streamlit widget state.
+- Reference Master learned suggestions always put the persisted saved value first during edit.
+- Records Centre provides **Open Selected Record for Controlled Edit** and routes the selection to its owning module so module approval/genealogy controls remain enforced.
+- Material Inward, OSP, NPD/APQP, Complaints, Supply Chain generic transactions and major master forms use record-specific edit state.
+- PO page loading uses page memoization, bulk received/source calculations and cached confirmation/branch lookups to reduce repeated Supabase calls.
+- When master data changes, new transactions use current master data. A controlled PO edited later can refresh its current master snapshots while the original/prior values remain traceable in the audit log.
 
-
-## v4.14.24 source-only deployment recovery
-- No new Supabase migration is required; live database baseline remains v4.14.22 / `QCMS_V41422_FULL_READY`.
-- Online Supabase verification is non-blocking so a local Data API/DNS issue cannot prevent Git/Streamlit deployment.
-- Same-Heat **Add New RMTC / TC** uses a fresh selector/form nonce and preserves only Heat identity.
-- Master Data Centre **New Record** requests clear the prior edit selector and open blank forms.
-- Transaction delete routing sends OSP/MetLAB/Dimensional/RMTC/Material Inward/Supply Chain transactions to `qcms_delete_transaction_row`, not the master-delete RPC.
+## Deployment
+- Source-only release; no new Supabase migration is required.
+- Required live database baseline remains v4.14.22 / `QCMS_V41422_FULL_READY`.
+- Online Supabase baseline recheck is informational/non-blocking and cannot prevent Git/Streamlit source deployment.
+- Existing production/master/RMTC/OSP/Supply Chain data and local secrets are preserved.

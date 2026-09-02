@@ -14,7 +14,7 @@ from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
 from core.selection_labels import reference_record_label
 from core.reporting import controlled_record_pdf_bytes
-from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 REFERENCE_KEYS = (
     "customers", "suppliers", "steel_mills", "osp_vendors",
@@ -22,9 +22,9 @@ REFERENCE_KEYS = (
 )
 
 
-def _widget(service: MasterService, catalog: LearnedValueCatalog, definition, field, record: dict[str, Any]):
+def _widget(service: MasterService, catalog: LearnedValueCatalog, definition, field, record: dict[str, Any], scope: str):
     value = record.get(field.name, field.default)
-    key = f"ref_{definition.key}_{field.name}_{record.get('id', 'new')}"
+    key = f"ref_{definition.key}_{field.name}_{scope}"
     if field.kind == "select":
         opts = list(field.options); current = str(value or field.default or "")
         return st.selectbox(field.label, opts, index=opts.index(current) if current in opts else 0, key=key)
@@ -45,15 +45,27 @@ def _widget(service: MasterService, catalog: LearnedValueCatalog, definition, fi
         return st.text_input(field.label, value=str(value or ""), key=key, help="Generated automatically for new records. You can edit it before saving.")
     suggestions = catalog.suggestions(f"{definition.key}.{field.name}")
     if suggestions and field.kind == "text":
-        options = [str(value)] if value and str(value) not in suggestions else []
-        options += suggestions
+        # Existing-record value must always be the selected/default option.  The old
+        # implementation used index=0 even when the saved value already existed in the
+        # learned list, which made another record's first suggestion appear in the edit
+        # form (the exact mismatch shown in the user video).
+        current = str(value or "").strip()
+        options: list[str] = []
+        if current:
+            options.append(current)
+        options += [item for item in suggestions if item not in options]
+        if not options:
+            options = [""]
         return st.selectbox(field.label, options, index=0, accept_new_options=True, key=key, help="Type a new value or reuse a previously saved value.")
     if field.kind == "textarea": return st.text_area(field.label, value=str(value or ""), height=90, key=key)
     return st.text_input(field.label, value=str(value or ""), key=key)
 
 
 def _master_selector() -> str:
-    return st.selectbox("Reference Master", REFERENCE_KEYS, format_func=lambda key: MASTER_BY_KEY[key].label)
+    return st.selectbox(
+        "Reference Master", REFERENCE_KEYS, format_func=lambda key: MASTER_BY_KEY[key].label,
+        key="reference_master_type_selector",
+    )
 
 
 def _record_key_label(definition, row: dict) -> str:
@@ -77,7 +89,15 @@ def render_entry() -> None:
     page_header("Reference Masters · Entry", "Create and edit controlled reference data without separate micro-masters.", "New / edit")
     template_download_row([("Reference_Masters_Template.xlsx", "Download Reference Masters Template")], key_prefix="reference_master", import_master_key=None)
     perms = current_permissions("REFERENCE_MASTERS"); service = MasterService(); catalog = LearnedValueCatalog(service.repo)
-    force_new = consume_master_blank_request("reference-entry", edit_keys=("edit_reference_id","edit_reference_key"))
+    requested_key = str(st.session_state.get("edit_reference_key", "") or "")
+    if requested_key in REFERENCE_KEYS:
+        st.session_state["reference_master_type_selector"] = requested_key
+    force_new = consume_master_blank_request(
+        "reference-entry", edit_keys=("edit_reference_id","edit_reference_key"),
+        widget_keys=("reference_master_type_selector",),
+    )
+    if force_new and st.session_state.get("reference_master_type_selector") not in REFERENCE_KEYS:
+        st.session_state["reference_master_type_selector"] = REFERENCE_KEYS[0]
     key = _master_selector()
     import_page = (st.session_state.get("_qsms_pages") or {}).get("master-import")
     if import_page is not None and st.button(f"Import / Upload {MASTER_BY_KEY[key].label}", icon=":material/upload_file:", width="stretch", key=f"reference_import_{key}"):
@@ -86,7 +106,8 @@ def render_entry() -> None:
     definition = service.definition(key); rows = service.list_records(definition, status="All")
     lookup_maps = service.lookup_label_maps()
     labels = {str(row["id"]): _row_label(definition, row, lookup_maps) for row in rows}
-    requested = str(st.session_state.pop("edit_reference_id", "") or ""); requested_key = str(st.session_state.pop("edit_reference_key", "") or "")
+    requested = str(st.session_state.pop("edit_reference_id", "") or "")
+    requested_key = str(st.session_state.pop("edit_reference_key", "") or "")
     options = ["__new__"] + list(labels); selector_key=f"reference_record_selector_{key}"
     if force_new: st.session_state[selector_key]="__new__"
     elif requested_key == key and requested in options: st.session_state[selector_key]=requested
@@ -105,10 +126,11 @@ def render_entry() -> None:
                 st.session_state[code_session_key] = ""
         form_record[definition.auto_code_field] = st.session_state.get(code_session_key, "")
     section_bar(definition.label.upper(), definition.description)
-    with st.form(f"reference_{key}_{selected}"):
+    scope = record_widget_token("reference-entry", record if record else {}, selected=selected)
+    with st.form(f"reference_{key}_{scope}"):
         cols = st.columns(3, gap="small"); raw = {}
         for i, field in enumerate(definition.fields):
-            with cols[i % 3]: raw[field.name] = _widget(service, catalog, definition, field, form_record)
+            with cols[i % 3]: raw[field.name] = _widget(service, catalog, definition, field, form_record, scope)
         save = st.form_submit_button("Save controlled record", type="primary", disabled=not writable, width="stretch")
     if save:
         try:

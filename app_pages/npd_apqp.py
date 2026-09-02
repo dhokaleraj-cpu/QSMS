@@ -15,7 +15,7 @@ from core.selection_labels import employee_label, part_label, party_label, proce
 from core.ui import safe
 from core.repository import Repository
 from core.record_audit import annotate_transaction_rows
-from core.ui import kpi_grid, page_header, save_success_popup, section_bar, stage_section, status_chip
+from core.ui import kpi_grid, page_header, record_widget_token, save_success_popup, section_bar, stage_section, status_chip
 
 
 ORDER_STATUSES = ["OPEN", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"]
@@ -498,7 +498,8 @@ def render_npd_status() -> None:
             default_part = part_by_id.get(default_part_id) or parts[0]
             linked_customer = str(default_part.get("customer_id") or "")
             default_customer_id = str((existing or {}).get("customer_id") or linked_customer or customers[0]["id"])
-            with st.form("npd_order_form"):
+            order_scope = record_widget_token("npd-order-entry", existing or {}, selected=edit_id or "new")
+            with st.form(f"npd_order_form_{order_scope}"):
                 c = st.columns(4, gap="small")
                 order_number = c[0].text_input("Customer / Internal Order Number", value=str((existing or {}).get("order_number") or ""))
                 part_id = c[1].selectbox("Part Number", list(part_labels), index=list(part_labels).index(default_part_id) if default_part_id in part_labels else 0, format_func=lambda value: part_labels[value], disabled=bool(existing))
@@ -784,7 +785,16 @@ def render_apqp() -> None:
     projects = repo.select("ppap_projects", order_by="target_submission_date", limit=2000)
     project_options = [""] + [str(row["id"]) for row in projects]
     project_labels = {str(row["id"]): f"{row.get('project_code')} · {part_labels.get(str(row.get('part_id')), '')}" for row in projects}
-    selected_id = st.selectbox("Open / Edit APQP Project", project_options, format_func=lambda value: "New APQP Project" if not value else project_labels[value])
+    requested_project = str(st.session_state.pop("apqp_project_edit_request_id", "") or "")
+    if requested_project in project_options:
+        st.session_state["apqp_project_selector"] = requested_project
+    elif st.session_state.get("apqp_project_selector") not in project_options:
+        st.session_state["apqp_project_selector"] = ""
+    selected_id = st.selectbox(
+        "Open / Edit APQP Project", project_options,
+        format_func=lambda value: "New APQP Project" if not value else project_labels[value],
+        key="apqp_project_selector",
+    )
     existing = next((row for row in projects if str(row["id"]) == selected_id), None)
     default_part_id = str((existing or {}).get("part_id") or parts[0]["id"])
     linked_customer = str((next((row for row in parts if str(row["id"]) == default_part_id), {}) or {}).get("customer_id") or "")
@@ -794,8 +804,9 @@ def render_apqp() -> None:
     coordinator_id_to_option = {employee_id: label for label, employee_id in coordinator_option_to_id.items() if employee_id}
     existing_coordinator_option = coordinator_id_to_option.get(str((existing or {}).get("coordinator_employee_id") or "")) or (f"Legacy · {(existing or {}).get('coordinator')}" if (existing or {}).get("coordinator") else "— Not assigned —")
 
+    apqp_scope = record_widget_token("apqp-project-entry", existing or {}, selected=selected_id or "new")
     with stage_section("A", 'APQP PROJECT HEADER', key="npd_apqp_render_apqp_a"):
-        with st.form("apqp_project_form"):
+        with st.form(f"apqp_project_form_{apqp_scope}"):
             c = st.columns(4, gap="small")
             project_code = c[0].text_input("Project / NPD Number", value=str((existing or {}).get("project_code") or ""))
             part_id = c[1].selectbox("Part Number", list(part_labels), index=list(part_labels).index(default_part_id) if default_part_id in part_labels else 0, format_func=lambda value: part_labels[value])

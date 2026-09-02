@@ -6,10 +6,10 @@ ROOT=Path(__file__).resolve().parents[1]
 def text(path): return (ROOT/path).read_text(encoding='utf-8')
 
 def test_release_identity_and_source_only_schema_baseline():
-    assert text('VERSION').strip() in {'4.14.23','4.14.24'}
+    assert text('VERSION').strip() in {'4.14.23','4.14.24','4.14.25'}
     manifest=json.loads(text('DEPLOYMENT_MANIFEST.json'))
-    assert manifest['version'] in {'4.14.23','4.14.24'}
-    assert manifest['build'] in {'41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE','41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE'}
+    assert manifest['version'] in {'4.14.23','4.14.24','4.14.25'}
+    assert manifest['build'] in {'41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE','41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE', '41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE'}
     assert manifest['database_schema_required']=='4.14.22'
     assert manifest['database_migration_required'] is False
     assert manifest['supabase_release_contract']=='QCMS_V41422_FULL_READY'

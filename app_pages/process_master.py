@@ -11,7 +11,7 @@ from core.master_service import MasterService
 from core.reporting import controlled_record_pdf_bytes
 from core.attachments import AttachmentService
 from core.selection_labels import customer_standard_label, party_label, process_label
-from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, stage_section, template_download_row
+from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, stage_section, template_download_row
 
 
 def _label(row: dict) -> str:
@@ -85,6 +85,7 @@ def render_entry() -> None:
     )
     existing = next((row for row in rows if str(row.get("id")) == selected), {})
     writable = perms["can_edit"] if existing else perms["can_create"]
+    scope = record_widget_token("process-entry", existing, selected=selected)
 
     auto_key = "_qsms_auto_process_code"
     if not existing and not st.session_state.get(auto_key):
@@ -94,7 +95,7 @@ def render_entry() -> None:
             st.session_state[auto_key] = ""
 
     with stage_section("A", "PROCESS DETAILS", key="process_master_render_entry_a"):
-        with st.form(f"process_master_{selected}"):
+        with st.form(f"process_master_{scope}"):
             c1, c2, c3 = st.columns(3, gap="small")
             process_code = c1.text_input(
                 "Process Code",

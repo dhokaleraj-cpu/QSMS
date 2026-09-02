@@ -12,7 +12,7 @@ from core.delete_service import password_delete_panel
 from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
 from core.selection_labels import material_grade_label
-from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
+from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
 
 DEFAULT_ELEMENTS = ["C", "Si", "Mn", "P", "S", "Cr", "Mo", "Ni"]
 
@@ -40,6 +40,7 @@ def render_entry() -> None:
     selected = st.selectbox("Material Grade record", options, format_func=lambda x: "＋ New Material Grade" if x == "__new__" else labels[x], key=selector_key)
     existing = next((g for g in grades if str(g["id"]) == selected), {})
     writable = perms["can_edit"] if existing else perms["can_create"]
+    scope = record_widget_token("grade-entry", existing, selected=selected)
     material_number_key = "_qcms_new_material_number"
     if not existing and not st.session_state.get(material_number_key):
         try:
@@ -52,7 +53,7 @@ def render_entry() -> None:
             st.session_state[material_number_key] = ""
 
     with stage_section("A", 'MATERIAL GRADE DETAILS', 'Grade name, auto Material Number, specification and revision.', key="material_grade_render_entry_a"):
-        with st.form(f"material_grade_header_{selected}"):
+        with st.form(f"material_grade_header_{scope}"):
             c = st.columns(4, gap="small")
             grade_code = c[0].text_input("Material Grade", value=str(existing.get("grade_code") or ""))
             material_number = c[1].text_input("Material Number", value=str(existing.get("material_number") or st.session_state.get(material_number_key) or ""), help="Generated automatically for new Material Grades and editable before save.")

@@ -6,8 +6,8 @@ def text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 def test_release_identity_and_publishable_verifier():
-    assert text("VERSION").strip() in {"4.14.22", "4.14.23", "4.14.24"}
-    assert any(b in text("streamlit_app.py") for b in ("41422-PUBLIC-VERIFY-BLANK-MASTER-RMTC-RESET", "41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE", "41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE"))
+    assert text("VERSION").strip() in {"4.14.22", "4.14.23", "4.14.24", "4.14.25"}
+    assert any(b in text("streamlit_app.py") for b in ("41422-PUBLIC-VERIFY-BLANK-MASTER-RMTC-RESET", "41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE", "41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE", "41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE"))
     guard = text("scripts/qcms_remote_schema_guard.py")
     assert "DEFAULT_PUBLISHABLE_KEY" in guard
     assert "qcms_release_contract_v41422" in guard

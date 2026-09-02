@@ -129,10 +129,24 @@ def parse_import_quantity(value: Any) -> float:
 class SupplyChainService:
     def __init__(self, repo: Repository | None = None):
         self.repo = repo or Repository()
+        # One Streamlit rerun creates one service instance.  Keep repeated master/register
+        # reads in memory for that rerun; this removes the N+1 query pattern that made the
+        # Purchase Order page increasingly slow as orders and PO lines accumulated.
+        self._page_cache: dict[tuple, Any] = {}
+
+    def _memo(self, key: tuple, loader):
+        if key not in self._page_cache:
+            self._page_cache[key] = loader()
+        return self._page_cache[key]
+
+    def _invalidate_transactions(self) -> None:
+        for key in list(self._page_cache):
+            if key and key[0] in {"customer_orders","purchase_orders","purchase_order_items","purchase_order_sources","totals_bulk","rm_purchase_orders","rm_receipts","rm_dispatches","forging_orders","forging_receipts","downstream_events","po_confirmations"}:
+                self._page_cache.pop(key, None)
 
     # ------------------------------------------------------------------ masters
     def parties(self) -> list[dict]:
-        return self.repo.select("parties", eq={"status": "ACTIVE"}, order_by="party_name", limit=5000)
+        return self._memo(("parties",), lambda: self.repo.select("parties", eq={"status": "ACTIVE"}, order_by="party_name", limit=5000))
 
     def customers(self) -> list[dict]:
         return self.repo.select("parties", contains={"party_types": ["CUSTOMER"]}, eq={"status": "ACTIVE"}, order_by="party_name", limit=3000)
@@ -142,13 +156,13 @@ class SupplyChainService:
         return [r for r in rows if set(str(v).upper() for v in (r.get("party_types") or [])) & {"SUPPLIER", "STEEL_MILL", "OSP_VENDOR"}]
 
     def parts(self) -> list[dict]:
-        return self.repo.select("parts", eq={"status": "ACTIVE"}, order_by="part_number", limit=5000)
+        return self._memo(("parts",), lambda: self.repo.select("parts", eq={"status": "ACTIVE"}, order_by="part_number", limit=5000))
 
     def material_grades(self) -> list[dict]:
-        return self.repo.select("material_grades", eq={"status": "ACTIVE"}, order_by="grade_code", limit=3000)
+        return self._memo(("material_grades",), lambda: self.repo.select("material_grades", eq={"status": "ACTIVE"}, order_by="grade_code", limit=3000))
 
     def raw_material_options(self, part_id: str) -> list[dict]:
-        return self.repo.select("part_raw_material_details", eq={"part_id": part_id, "status": "ACTIVE"}, order_by="sequence_no", limit=1000)
+        return self._memo(("raw_material_options", str(part_id)), lambda: self.repo.select("part_raw_material_details", eq={"part_id": part_id, "status": "ACTIVE"}, order_by="sequence_no", limit=1000))
 
     def material_grade_links(self, part_id: str | None = None) -> list[dict]:
         eq = {"status": "ACTIVE"}
@@ -328,30 +342,38 @@ class SupplyChainService:
 
     # ---------------------------------------------------------------- transactions
     def customer_orders(self) -> list[dict]:
-        rows = annotate_transaction_rows(self.repo, self.repo.select("supply_customer_orders", order_by="created_at", desc=True, limit=10000))
-        result = []
-        for row in rows:
-            item = dict(row)
-            item["supply_flow"] = self.flow_for_order(row)
-            item["remarks"] = clean_flow_remarks(row.get("remarks"))
-            result.append(item)
-        return result
+        def load():
+            rows = annotate_transaction_rows(self.repo, self.repo.select("supply_customer_orders", order_by="created_at", desc=True, limit=10000))
+            result = []
+            for row in rows:
+                item = dict(row)
+                item["supply_flow"] = self.flow_for_order(row)
+                item["remarks"] = clean_flow_remarks(row.get("remarks"))
+                result.append(item)
+            return result
+        return self._memo(("customer_orders",), load)
 
     def purchase_orders(self) -> list[dict]:
-        return annotate_transaction_rows(self.repo, self.repo.select("supply_purchase_orders", order_by="created_at", desc=True, limit=10000))
+        return self._memo(("purchase_orders",), lambda: annotate_transaction_rows(self.repo, self.repo.select("supply_purchase_orders", order_by="created_at", desc=True, limit=10000)))
 
     def purchase_order_items(self, purchase_order_id: str | None = None) -> list[dict]:
-        return self.repo.select("supply_purchase_order_items", eq={"purchase_order_id": purchase_order_id} if purchase_order_id else None, order_by="created_at", desc=False, limit=10000)
+        if purchase_order_id:
+            # Filter the already-loaded PO item register when available.
+            all_rows = self._memo(("purchase_order_items", "ALL"), lambda: self.repo.select("supply_purchase_order_items", order_by="created_at", desc=False, limit=10000))
+            return [r for r in all_rows if str(r.get("purchase_order_id")) == str(purchase_order_id)]
+        return self._memo(("purchase_order_items", "ALL"), lambda: self.repo.select("supply_purchase_order_items", order_by="created_at", desc=False, limit=10000))
 
     def purchase_order_sources(self, purchase_order_id: str | None = None) -> list[dict]:
-        return self.repo.select("supply_purchase_order_sources", eq={"purchase_order_id": purchase_order_id} if purchase_order_id else None, order_by="created_at", desc=False, limit=10000)
+        all_rows = self._memo(("purchase_order_sources", "ALL"), lambda: self.repo.select("supply_purchase_order_sources", order_by="created_at", desc=False, limit=10000))
+        if purchase_order_id:
+            return [r for r in all_rows if str(r.get("purchase_order_id")) == str(purchase_order_id)]
+        return all_rows
 
     def raw_material_for_supplier(self, part_id: str, supplier_id: str, preferred_id: str | None = None) -> dict | None:
+        rows = [r for r in self.raw_material_options(part_id) if str(r.get("supplier_id")) == str(supplier_id) and str(r.get("status") or "ACTIVE") == "ACTIVE"]
         if preferred_id:
-            row = self.repo.get("part_raw_material_details", preferred_id) or {}
-            if row and str(row.get("part_id")) == str(part_id) and str(row.get("supplier_id")) == str(supplier_id) and str(row.get("status") or "ACTIVE") == "ACTIVE":
-                return row
-        rows = self.repo.select("part_raw_material_details", eq={"part_id": part_id, "supplier_id": supplier_id, "status": "ACTIVE"}, order_by="sequence_no", limit=100)
+            preferred = next((r for r in rows if str(r.get("id")) == str(preferred_id)), None)
+            if preferred: return preferred
         return rows[0] if rows else None
 
     def raw_material_po_group_key(self, part: Mapping[str, Any], raw: Mapping[str, Any]) -> str:
@@ -584,28 +606,30 @@ class SupplyChainService:
         self.repo.insert("part_supplier_price_history", {"part_id": part_id, "supplier_id": supplier_id, "raw_material_detail_id": raw_material_detail_id, "start_date": target_text, "end_date": new_end, "price": price, "currency": currency or "INR", "uom": str(uom or "KGS").upper(), "source_purchase_order_item_id": source_item_id, "status": "ACTIVE"})
 
     def rm_purchase_orders(self) -> list[dict]:
-        return annotate_transaction_rows(self.repo, self.repo.select("supply_rm_purchase_orders", order_by="created_at", desc=True, limit=10000))
+        return self._memo(("rm_purchase_orders",), lambda: annotate_transaction_rows(self.repo, self.repo.select("supply_rm_purchase_orders", order_by="created_at", desc=True, limit=10000)))
 
     def rm_receipts(self) -> list[dict]:
-        return annotate_transaction_rows(self.repo, self.repo.select("supply_rm_receipts", order_by="created_at", desc=True, limit=10000))
+        return self._memo(("rm_receipts",), lambda: annotate_transaction_rows(self.repo, self.repo.select("supply_rm_receipts", order_by="created_at", desc=True, limit=10000)))
 
     def rm_dispatches(self) -> list[dict]:
-        return annotate_transaction_rows(self.repo, self.repo.select("supply_rm_dispatches", order_by="created_at", desc=True, limit=10000))
+        return self._memo(("rm_dispatches",), lambda: annotate_transaction_rows(self.repo, self.repo.select("supply_rm_dispatches", order_by="created_at", desc=True, limit=10000)))
 
     def forging_orders(self) -> list[dict]:
-        return annotate_transaction_rows(self.repo, self.repo.select("supply_forging_orders", order_by="created_at", desc=True, limit=10000))
+        return self._memo(("forging_orders",), lambda: annotate_transaction_rows(self.repo, self.repo.select("supply_forging_orders", order_by="created_at", desc=True, limit=10000)))
 
     def forging_receipts(self) -> list[dict]:
-        return annotate_transaction_rows(self.repo, self.repo.select("supply_forging_receipts", order_by="created_at", desc=True, limit=10000))
+        return self._memo(("forging_receipts",), lambda: annotate_transaction_rows(self.repo, self.repo.select("supply_forging_receipts", order_by="created_at", desc=True, limit=10000)))
 
     def downstream_events(self) -> list[dict]:
-        return annotate_transaction_rows(self.repo, self.repo.select("supply_downstream_events", order_by="created_at", desc=True, limit=20000))
+        return self._memo(("downstream_events",), lambda: annotate_transaction_rows(self.repo, self.repo.select("supply_downstream_events", order_by="created_at", desc=True, limit=20000)))
 
     def inward_register(self) -> list[dict]:
         return self.repo.select("v_qsms_inward_register", order_by="created_at", desc=True, limit=10000)
 
     def order(self, order_id: str) -> dict | None:
-        return self.repo.get("supply_customer_orders", order_id)
+        oid=str(order_id or "")
+        cached=next((r for r in self.customer_orders() if str(r.get("id"))==oid),None)
+        return dict(cached) if cached else self.repo.get("supply_customer_orders", oid)
 
     def flow_for_order(self, order: Mapping[str, Any] | str | None) -> str:
         if isinstance(order, str):
@@ -725,7 +749,7 @@ class SupplyChainService:
 
     def company_branches(self, *, active_only: bool = True) -> list[dict]:
         eq = {"status": "ACTIVE"} if active_only else None
-        return self.repo.select("company_branches", eq=eq, order_by="branch_code", limit=500)
+        return self._memo(("company_branches", bool(active_only)), lambda: self.repo.select("company_branches", eq=eq, order_by="branch_code", limit=500))
 
     @staticmethod
     def _branch_snapshot(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -1047,6 +1071,119 @@ class SupplyChainService:
                 stage=self.save_transaction("supply_forging_orders",stage_payload); stages.append(stage); self.sync_order_status(str(order.get("id")))
         return {"header":header,"item":items[0] if items else {},"items":items,"stage":stages[0] if stages else {},"stages":stages}
 
+    def update_purchase_order(self, purchase_order_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Controlled PO revision with live-master refresh and genealogy protection.
+
+        Supplier and source Part identities remain immutable; supplier changes continue to
+        use Cancel & Reissue.  Editable commercial/header fields and source allocations are
+        revised in place, audited by the normal row audit trigger, and the PO is returned to
+        controlled approval/confirmation when a meaningful revision is saved.
+        """
+        p=dict(payload or {}); header=self.purchase_order(purchase_order_id) or {}
+        if not header: raise ValueError("Purchase Order was not found.")
+        if str(header.get("status") or "").upper()=="CANCELLED": raise ValueError("Cancelled Purchase Orders are not edited. Use Cancel & Reissue to create the replacement PO.")
+        supplier_id=str(header.get("supplier_id") or ""); supplier=self.repo.get("parties",supplier_id) or {}
+        if not supplier: raise ValueError("The PO Supplier no longer exists in Supplier Master.")
+        employee_id=current_employee_id(refresh=True)
+        if not employee_id: raise ValueError("Your login is not linked to an ACTIVE Employee Master record.")
+
+        order_date=parse_business_date(p.get("order_date") or header.get("order_date")) or date.today().isoformat()
+        delivery_date=parse_business_date(p.get("delivery_date") or header.get("delivery_date"))
+        company_branch_id=str(p.get("company_branch_id") or header.get("company_branch_id") or "")
+        branch=self.repo.get("company_branches",company_branch_id) or {}
+        if not branch: raise ValueError("Select a valid Company Branch / Plant.")
+        source_type=str(p.get("ship_to_source_type") or header.get("ship_to_source_type") or "BRANCH").upper()
+        ship_to_party_id=str(p.get("ship_to_party_id") or header.get("ship_to_party_id") or "")
+        ship_to_branch_id=str(p.get("ship_to_branch_id") or header.get("ship_to_branch_id") or "")
+        if source_type=="BRANCH":
+            ship=self.repo.get("company_branches",ship_to_branch_id) or {}
+            if not ship: raise ValueError("Select a valid Ship-To Company Branch.")
+            ship_snapshot=self._branch_snapshot(ship); ship_snapshot.update({"source_type":"BRANCH","source_branch_id":ship_to_branch_id,"party_code":ship.get("branch_code"),"party_name":ship.get("branch_name")}); ship_to_party_id=""
+        else:
+            ship=self.repo.get("parties",ship_to_party_id) or {}
+            if not ship: raise ValueError("Select a valid Ship-To Customer / Supplier / Vendor.")
+            ship_snapshot=self._party_snapshot(ship); ship_snapshot.update({"source_type":source_type,"source_party_id":ship_to_party_id}); ship_to_branch_id=""
+
+        item_updates={str(row.get("id")):dict(row) for row in (p.get("items") or []) if row.get("id")}
+        allocation_updates={str(row.get("id")):dict(row) for row in (p.get("allocations") or []) if row.get("id")}
+        refresh_master=bool(p.get("refresh_master_data",True))
+        items=self.purchase_order_items(purchase_order_id); sources=self.purchase_order_sources(purchase_order_id)
+        sources_by_item: dict[str,list[dict]]={}
+        for source in sources: sources_by_item.setdefault(str(source.get("purchase_order_item_id") or ""),[]).append(source)
+
+        subtotal=0.0; gst_percent_values=[]; revised_items=[]
+        for item in items:
+            iid=str(item.get("id") or ""); upd=item_updates.get(iid,{})
+            item_sources=sources_by_item.get(iid,[])
+            # Source allocation is the controlled genealogy quantity.  Item quantity is
+            # always derived from the source sum when source rows exist.
+            new_source_qty=0.0
+            for source in item_sources:
+                sid=str(source.get("id") or ""); source_upd=allocation_updates.get(sid,{})
+                qty=max(number(source_upd.get("allocated_qty") if "allocated_qty" in source_upd else source.get("allocated_qty")),0.0)
+                if qty<=0: raise ValueError("Every Purchase Order source allocation must be greater than zero.")
+                # Do not reduce a source below material already received against its
+                # execution-stage row.
+                if str(header.get("po_type"))=="RAW_MATERIAL":
+                    stages=[r for r in self.rm_purchase_orders() if str(r.get("purchase_order_id") or "")==purchase_order_id and str(r.get("purchase_order_item_id") or "")==iid and str(r.get("customer_order_id") or "")==str(source.get("customer_order_id") or "")]
+                    received=sum(number(r.get("received_qty_kg")) for r in self.rm_receipts() if str(r.get("rm_purchase_order_id") or "") in {str(stage.get("id")) for stage in stages})
+                else:
+                    stages=[r for r in self.forging_orders() if str(r.get("purchase_order_id") or "")==purchase_order_id and str(r.get("purchase_order_item_id") or "")==iid and str(r.get("customer_order_id") or "")==str(source.get("customer_order_id") or "")]
+                    received=sum(number(r.get("received_qty_pcs")) for r in self.forging_receipts() if str(r.get("forging_order_id") or "") in {str(stage.get("id")) for stage in stages})
+                if qty+0.0001<received: raise ValueError(f"Source allocation cannot be reduced below received quantity {received:,.3f}.")
+                if abs(qty-number(source.get("allocated_qty")))>0.000001:
+                    self.repo.update("supply_purchase_order_sources",sid,{"allocated_qty":round(qty,3)})
+                new_source_qty+=qty
+                for stage in stages:
+                    if str(header.get("po_type"))=="RAW_MATERIAL":
+                        self.repo.update("supply_rm_purchase_orders",str(stage.get("id")),{"ordered_qty_kg":round(qty,3),"order_date":order_date,"expected_date":delivery_date,"rm_supplier_id":supplier_id,"supplier_order_no":header.get("po_number")})
+                    else:
+                        order=self.order(str(stage.get("customer_order_id") or "")) or {}
+                        self.repo.update("supply_forging_orders",str(stage.get("id")),{"order_qty_pcs":round(qty,3),"required_rm_kg":round(qty*number(order.get("gross_weight_kg_snapshot")),3),"order_date":order_date,"expected_date":delivery_date,"forging_supplier_id":supplier_id,"supplier_order_no":header.get("po_number")})
+            qty=round(new_source_qty if item_sources else max(number(upd.get("quantity") if "quantity" in upd else item.get("quantity")),0.0),3)
+            received_item=self.purchase_order_item_received_qty(iid)
+            if qty<=0: raise ValueError("Purchase Order item quantity must be greater than zero.")
+            if qty+0.0001<received_item: raise ValueError(f"PO item {item.get('item_no') or iid} cannot be reduced below received quantity {received_item:,.3f}.")
+
+            part=self.repo.get("parts",str(item.get("part_id") or "")) or {}; raw=self.repo.get("part_raw_material_details",str(item.get("raw_material_detail_id") or "")) or {}
+            grade=self.repo.get("material_grades",str(raw.get("material_grade_id") or item.get("material_grade_id") or part.get("material_grade_id") or "")) or {}
+            uom=str(item.get("uom") or ("KGS" if str(header.get("po_type"))=="RAW_MATERIAL" else "NOS"))
+            master_price=self.current_price(str(part.get("id") or ""),supplier_id,on_date=date.today(),uom=uom,raw_material_detail_id=str(raw.get("id") or "") or None) if refresh_master else 0.0
+            unit_price=max(number(master_price if master_price>0 else (upd.get("unit_price") if "unit_price" in upd else item.get("unit_price"))),0.0)
+            hsn=str((raw.get("hsn_sac_code") or part.get("hsn_sac_code")) if refresh_master else (upd.get("hsn_sac_code") if "hsn_sac_code" in upd else item.get("hsn_sac_code")) or "").strip()
+            item_no=str(upd.get("item_no") if "item_no" in upd else item.get("item_no") or "").strip()
+            if refresh_master:
+                item_no=str(raw.get("supplier_rm_item_code") if str(header.get("po_type"))=="RAW_MATERIAL" else raw.get("supplier_forging_part_number") or "").strip() or str(part.get("fsi_part_number") or item_no).strip()
+            if not item_no or not hsn or unit_price<=0: raise ValueError("Latest Part Master item identity, HSN/SAC and current price are required before saving the revised PO.")
+            gst=max(number(upd.get("gst_percent") if "gst_percent" in upd else item.get("gst_percent")),0.0); line_total=round(qty*unit_price,2); gst_amount=round(line_total*gst/100.0,2); subtotal+=line_total; gst_percent_values.append(gst)
+            if refresh_master:
+                rm_identity=" · ".join(v for v in (str(raw.get("material_section_name") or "").strip(),str(grade.get("grade_code") or grade.get("grade_name") or "").strip(),str(raw.get("section_size") or part.get("section_size") or "").strip()) if v)
+                item_description=(rm_identity or part.get("part_name") or "Raw Material") if str(header.get("po_type"))=="RAW_MATERIAL" else str(raw.get("supplier_forging_part_number") or part.get("part_name") or "Forging")
+                technical=self.technical_data_snapshot(raw,part); history=self.price_history_for_po(str(part.get("id") or ""),supplier_id,po_date=date.today(),uom=uom,raw_material_detail_id=str(raw.get("id") or "") or None)[:250]
+            else:
+                item_description=str(upd.get("item_description") if "item_description" in upd else item.get("item_description") or ""); technical=item.get("technical_data_snapshot") or []; history=item.get("price_history_snapshot") or []
+            item_payload={"item_no":item_no,"fsi_part_number_snapshot":item_no,"hsn_sac_code":hsn,"item_description":item_description,"rm_section":raw.get("section_size") or item.get("rm_section"),"quantity":qty,"unit_price":unit_price,"gst_percent":gst,"gst_amount":gst_amount,"line_total":line_total,"technical_data_snapshot":technical,"price_history_snapshot":history,"remarks":str(upd.get("remarks") if "remarks" in upd else item.get("remarks") or "").strip() or None}
+            revised_items.append(self.repo.update("supply_purchase_order_items",iid,item_payload))
+
+        subtotal=round(subtotal,2); gst_amount=round(sum(number(r.get("gst_amount")) for r in revised_items),2); state=str(supplier.get("state") or "").strip().casefold(); intra=not state or state in {"maharashtra","mh"}; cgst=round(gst_amount/2,2) if intra else 0.0; sgst=round(gst_amount/2,2) if intra else 0.0; igst=0.0 if intra else gst_amount; other=max(number(p.get("other_amount") if "other_amount" in p else header.get("other_amount")),0.0)
+        header_payload={
+            "order_date":order_date,"delivery_date":delivery_date,"company_branch_id":company_branch_id,"plant_snapshot":self._branch_snapshot(branch),"vendor_snapshot":self._party_snapshot(supplier),
+            "ship_to_source_type":source_type,"ship_to_party_id":ship_to_party_id or None,"ship_to_branch_id":ship_to_branch_id or None,"ship_to_snapshot":ship_snapshot,
+            "ship_via":str(p.get("ship_via") if "ship_via" in p else header.get("ship_via") or "").strip() or None,"incoterm":str(p.get("incoterm") if "incoterm" in p else header.get("incoterm") or "").strip() or None,
+            "payment_term":str(p.get("payment_term") if "payment_term" in p else header.get("payment_term") or "").strip() or None,"quotation_reference":str(p.get("quotation_reference") if "quotation_reference" in p else header.get("quotation_reference") or "").strip() or None,
+            "quotation_date":parse_business_date(p.get("quotation_date") if "quotation_date" in p else header.get("quotation_date")),"old_po_reference":str(p.get("old_po_reference") if "old_po_reference" in p else header.get("old_po_reference") or "").strip() or None,
+            "remarks":str(p.get("remarks") if "remarks" in p else header.get("remarks") or "").strip() or None,"special_instructions":str(p.get("special_instructions") if "special_instructions" in p else header.get("special_instructions") or "").strip() or None,
+            "subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":round(subtotal+cgst+sgst+igst+other,2),
+            "approval_status":"PENDING_APPROVAL","status":"PENDING_APPROVAL","approver_employee_id":None,"approved_at":None,"approval_remarks":None,"submitted_by_employee_id":employee_id,"submitted_at":datetime.now(timezone.utc).isoformat(),
+        }
+        revised_header=self.repo.update("supply_purchase_orders",purchase_order_id,header_payload)
+        # Any revised approved PO requires the supplier to acknowledge the new revision.
+        confirmation=self.purchase_order_confirmation(purchase_order_id)
+        if confirmation:
+            self.repo.update("supply_po_confirmations",str(confirmation.get("id")),{"confirmation_status":"PENDING","requested_at":datetime.now(timezone.utc).isoformat(),"confirmation_reference":None,"confirmation_date":None,"confirmed_delivery_date":None,"remarks":"PO revised; supplier reconfirmation required."})
+        self._invalidate_transactions()
+        return {"header":revised_header,"items":revised_items,"reapproval_required":True,"supplier_reconfirmation_required":True}
+
     def cancel_purchase_order(self, purchase_order_id: str, reason: str) -> dict:
         result = self.repo.rpc("qcms_cancel_purchase_order", {"p_purchase_order_id": purchase_order_id, "p_reason": reason})
         return dict(result or {})
@@ -1060,7 +1197,8 @@ class SupplyChainService:
         return dict(result or {})
 
     def purchase_order_confirmation(self, purchase_order_id: str) -> dict:
-        rows = self.repo.select("supply_po_confirmations", eq={"purchase_order_id": purchase_order_id}, order_by="created_at", desc=True, limit=1)
+        rows = [row for row in self.purchase_order_confirmations() if str(row.get("purchase_order_id") or "") == str(purchase_order_id)]
+        rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
         return dict(rows[0]) if rows else {}
 
     def confirm_purchase_order(self, purchase_order_id: str, payload: Mapping[str, Any]) -> dict:
@@ -1074,7 +1212,7 @@ class SupplyChainService:
         return dict(result or {})
 
     def purchase_order_confirmations(self) -> list[dict]:
-        return self.repo.select("supply_po_confirmations", order_by="updated_at", desc=True, limit=5000)
+        return self._memo(("po_confirmations",), lambda: self.repo.select("supply_po_confirmations", order_by="updated_at", desc=True, limit=5000))
 
     def purchase_order_approval_target(self, purchase_order_id: str) -> dict:
         """Resolve PO approver using configured route first, Reports-To second, permission fallback last.
@@ -1133,27 +1271,62 @@ class SupplyChainService:
         return ids
 
     def purchase_order_rows(self) -> list[dict]:
+        """Bulk PO register without per-line database round trips.
+
+        v4.14.25 replaces the previous N+1 implementation (received quantity, source
+        allocation and customer order were queried once per item) with one read per
+        transaction table.  This is the main Purchase Order page loading optimization.
+        """
         parts, parties, grades = self.master_maps()
-        headers = {str(r.get("id")): r for r in annotate_transaction_rows(self.repo, self.purchase_orders())}
+        headers = {str(r.get("id")): r for r in self.purchase_orders()}
         confirmations = {str(r.get("purchase_order_id")): r for r in self.purchase_order_confirmations()}
+        orders = {str(r.get("id")): r for r in self.customer_orders()}
+        sources_by_item: dict[str, list[dict]] = {}
+        for source in self.purchase_order_sources():
+            sources_by_item.setdefault(str(source.get("purchase_order_item_id") or ""), []).append(source)
+
+        rm_stage_by_item: dict[str, list[dict]] = {}
+        rm_stage_by_po_order: dict[tuple[str,str], list[dict]] = {}
+        for stage in self.rm_purchase_orders():
+            iid=str(stage.get("purchase_order_item_id") or "")
+            if iid: rm_stage_by_item.setdefault(iid,[]).append(stage)
+            rm_stage_by_po_order.setdefault((str(stage.get("purchase_order_id") or ""),str(stage.get("customer_order_id") or "")),[]).append(stage)
+        rm_receipts_by_stage: dict[str,float] = {}
+        for receipt in self.rm_receipts():
+            sid=str(receipt.get("rm_purchase_order_id") or "")
+            rm_receipts_by_stage[sid]=rm_receipts_by_stage.get(sid,0.0)+number(receipt.get("received_qty_kg"))
+
+        forging_stages_by_po: dict[str,list[dict]] = {}
+        forging_receipts_by_stage: dict[str,float] = {}
+        for stage in self.forging_orders(): forging_stages_by_po.setdefault(str(stage.get("purchase_order_id") or ""),[]).append(stage)
+        for receipt in self.forging_receipts():
+            sid=str(receipt.get("forging_order_id") or "")
+            forging_receipts_by_stage[sid]=forging_receipts_by_stage.get(sid,0.0)+number(receipt.get("received_qty_pcs"))
+
         rows: list[dict] = []
         for item in self.purchase_order_items():
             header = headers.get(str(item.get("purchase_order_id"))) or {}
             part = parts.get(str(item.get("part_id"))) or {}
             supplier = parties.get(str(header.get("supplier_id"))) or {}
             grade = grades.get(str(item.get("material_grade_id"))) or {}
-            received = self.purchase_order_item_received_qty(str(item.get("id")))
-            confirmation = confirmations.get(str(header.get("id"))) or {}
+            po_id=str(header.get("id") or ""); item_id=str(item.get("id") or "")
+            if str(header.get("po_type")) == "RAW_MATERIAL":
+                stages=rm_stage_by_item.get(item_id,[])
+                if not stages and item.get("customer_order_id"):
+                    stages=rm_stage_by_po_order.get((po_id,str(item.get("customer_order_id") or "")),[])
+                received=sum(rm_receipts_by_stage.get(str(stage.get("id") or ""),0.0) for stage in stages)
+            else:
+                received=sum(forging_receipts_by_stage.get(str(stage.get("id") or ""),0.0) for stage in forging_stages_by_po.get(po_id,[]))
+            confirmation = confirmations.get(po_id) or {}
             ordered = number(item.get("quantity"))
-            sources = self.repo.select("supply_purchase_order_sources", eq={"purchase_order_item_id": item.get("id")}, limit=1000)
-            source_labels = []
+            source_labels=[]
+            sources=sources_by_item.get(item_id,[])
             for source in sources:
-                src_order = self.order(str(source.get("customer_order_id") or "")) or {}
+                src_order=orders.get(str(source.get("customer_order_id") or "")) or {}
                 source_labels.append(f"{src_order.get('master_reference_no') or '-'} ({number(source.get('allocated_qty')):,.3f} {source.get('allocation_uom') or item.get('uom')})")
             if not source_labels and item.get("customer_order_id"):
-                src_order = self.order(str(item.get("customer_order_id") or "")) or {}
-                if src_order:
-                    source_labels.append(str(src_order.get("master_reference_no") or src_order.get("customer_order_no") or "-"))
+                src_order=orders.get(str(item.get("customer_order_id") or "")) or {}
+                if src_order: source_labels.append(str(src_order.get("master_reference_no") or src_order.get("customer_order_no") or "-"))
             rows.append({
                 "PO Number": header.get("po_number"), "PO Type": str(header.get("po_type") or "").replace("_", " ").title(), "PO Date": header.get("order_date"),
                 "Delivery Date": header.get("delivery_date"), "Supplier": party_label(supplier), "Part Number": item.get("original_part_number_snapshot") or part.get("part_number"),
@@ -1163,10 +1336,8 @@ class SupplyChainService:
                 "Received Qty": received, "Pending Qty": max(ordered-received, 0), "Unit Price": item.get("unit_price"), "GST %": item.get("gst_percent"),
                 "Total": header.get("grand_total"), "Approval Status": header.get("approval_status") or "APPROVED",
                 "Supplier Confirmation": confirmation.get("confirmation_status") or ("NOT STARTED" if str(header.get("approval_status") or "").upper() != "APPROVED" else "PENDING"),
-                "Supplier Confirmation Ref": confirmation.get("confirmation_reference"),
-                "Confirmed Delivery": confirmation.get("confirmed_delivery_date"),
-                "Reminder Count": confirmation.get("reminder_count") or 0,
-                "Data Entry Status": header.get("Data Entry Status") or header.get("approval_status") or header.get("status"),
+                "Supplier Confirmation Ref": confirmation.get("confirmation_reference"), "Confirmed Delivery": confirmation.get("confirmed_delivery_date"),
+                "Reminder Count": confirmation.get("reminder_count") or 0, "Data Entry Status": header.get("Data Entry Status") or header.get("approval_status") or header.get("status"),
                 "Created By User": header.get("Created By User"), "Last Modified By User": header.get("Last Modified By User"),
                 "Status": header.get("status"), "_po_id": header.get("id"), "_item_id": item.get("id"), "_part_id": item.get("part_id"), "_supplier_id": header.get("supplier_id"),
             })
@@ -1291,29 +1462,45 @@ class SupplyChainService:
         if table not in SUPPLY_TABLES:
             raise ValueError("Unsupported Supply Chain table.")
         if table == "supply_customer_orders":
-            return self.update_customer_order(str(record_id), payload) if record_id else self.create_customer_order(payload)
+            result = self.update_customer_order(str(record_id), payload) if record_id else self.create_customer_order(payload)
+            self._invalidate_transactions(); return result
         self._assert_transaction_duplicate(table, payload, record_id=record_id)
-        return self.repo.update(table, str(record_id), payload) if record_id else self.repo.insert(table, payload)
+        result = self.repo.update(table, str(record_id), payload) if record_id else self.repo.insert(table, payload)
+        self._invalidate_transactions()
+        return result
 
     # -------------------------------------------------------------- linked stages
+    def _totals_bulk(self) -> dict[str, dict[str, float]]:
+        def load():
+            result: dict[str, dict[str, float]] = {}
+            def bucket(order_id: Any) -> dict[str, float]:
+                key = str(order_id or "")
+                if key not in result:
+                    result[key] = {
+                        "rm_ordered_kg":0.0,"rm_received_kg":0.0,"rm_dispatched_kg":0.0,
+                        "forging_ordered_pcs":0.0,"forging_received_pcs":0.0,"rm_consumed_kg":0.0,
+                        "machined_pcs":0.0,"finished_goods_pcs":0.0,"customer_dispatched_pcs":0.0,
+                    }
+                return result[key]
+            for r in self.rm_purchase_orders():
+                if str(r.get("status") or "") != "CANCELLED": bucket(r.get("customer_order_id"))["rm_ordered_kg"] += number(r.get("ordered_qty_kg"))
+            for r in self.rm_receipts(): bucket(r.get("customer_order_id"))["rm_received_kg"] += number(r.get("received_qty_kg"))
+            for r in self.rm_dispatches(): bucket(r.get("customer_order_id"))["rm_dispatched_kg"] += number(r.get("qty_kg"))
+            for r in self.forging_orders():
+                if str(r.get("status") or "") != "CANCELLED": bucket(r.get("customer_order_id"))["forging_ordered_pcs"] += number(r.get("order_qty_pcs"))
+            for r in self.forging_receipts():
+                b=bucket(r.get("customer_order_id")); b["forging_received_pcs"] += number(r.get("received_qty_pcs")); b["rm_consumed_kg"] += number(r.get("actual_rm_consumed_kg")) if r.get("actual_rm_consumed_kg") is not None else number(r.get("received_qty_pcs"))*number(r.get("gross_weight_kg_snapshot"))
+            for r in self.downstream_events():
+                b=bucket(r.get("customer_order_id")); event=str(r.get("event_type") or "")
+                if event=="MACHINING": b["machined_pcs"] += number(r.get("qty_pcs"))
+                elif event=="FINISHED_GOODS": b["finished_goods_pcs"] += number(r.get("qty_pcs"))
+                elif event=="CUSTOMER_DISPATCH": b["customer_dispatched_pcs"] += number(r.get("qty_pcs"))
+            return result
+        return self._memo(("totals_bulk",), load)
+
     def totals(self, order_id: str) -> dict[str, float]:
-        rm_pos = self.repo.select("supply_rm_purchase_orders", eq={"customer_order_id": order_id}, limit=5000)
-        rm_receipts = self.repo.select("supply_rm_receipts", eq={"customer_order_id": order_id}, limit=5000)
-        rm_dispatch = self.repo.select("supply_rm_dispatches", eq={"customer_order_id": order_id}, limit=5000)
-        forg_orders = self.repo.select("supply_forging_orders", eq={"customer_order_id": order_id}, limit=5000)
-        forg_receipts = self.repo.select("supply_forging_receipts", eq={"customer_order_id": order_id}, limit=5000)
-        downstream = self.repo.select("supply_downstream_events", eq={"customer_order_id": order_id}, limit=10000)
-        return {
-            "rm_ordered_kg": sum(number(r.get("ordered_qty_kg")) for r in rm_pos if r.get("status") != "CANCELLED"),
-            "rm_received_kg": sum(number(r.get("received_qty_kg")) for r in rm_receipts),
-            "rm_dispatched_kg": sum(number(r.get("qty_kg")) for r in rm_dispatch),
-            "forging_ordered_pcs": sum(number(r.get("order_qty_pcs")) for r in forg_orders if r.get("status") != "CANCELLED"),
-            "forging_received_pcs": sum(number(r.get("received_qty_pcs")) for r in forg_receipts),
-            "rm_consumed_kg": sum(number(r.get("actual_rm_consumed_kg")) if r.get("actual_rm_consumed_kg") is not None else number(r.get("received_qty_pcs"))*number(r.get("gross_weight_kg_snapshot")) for r in forg_receipts),
-            "machined_pcs": sum(number(r.get("qty_pcs")) for r in downstream if r.get("event_type") == "MACHINING"),
-            "finished_goods_pcs": sum(number(r.get("qty_pcs")) for r in downstream if r.get("event_type") == "FINISHED_GOODS"),
-            "customer_dispatched_pcs": sum(number(r.get("qty_pcs")) for r in downstream if r.get("event_type") == "CUSTOMER_DISPATCH"),
-        }
+        empty={"rm_ordered_kg":0.0,"rm_received_kg":0.0,"rm_dispatched_kg":0.0,"forging_ordered_pcs":0.0,"forging_received_pcs":0.0,"rm_consumed_kg":0.0,"machined_pcs":0.0,"finished_goods_pcs":0.0,"customer_dispatched_pcs":0.0}
+        return dict(self._totals_bulk().get(str(order_id), empty))
 
     def sync_order_status(self, order_id: str) -> str:
         order = self.order(order_id) or {}

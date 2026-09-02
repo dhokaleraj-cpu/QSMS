@@ -13,7 +13,7 @@ from core.delete_service import password_delete_panel
 from core.employee_service import AUTHORITIES, EmployeeService
 from core.reporting import controlled_record_pdf_bytes
 from core.selection_labels import employee_label
-from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 
 DEPARTMENT_OPTIONS = ["Quality", "Production", "Stores", "MetLAB", "Engineering", "Supply Chain", "Management", "Business Development", "Procurement", "HR", "Accounts"]
@@ -48,9 +48,10 @@ def render_entry()->None:
     existing=next((r for r in rows if str(r['id'])==selected),{})
     writable=perms['can_edit'] if existing else perms['can_create']
     managers={'': '— No reporting manager —',**labels}
+    scope=record_widget_token('employee-entry',existing,selected=selected)
 
     section_bar('EMPLOYEE DETAILS','Employee code is generated automatically when blank and remains manually editable.')
-    with st.form(f'employee_entry_form_{selected}'):
+    with st.form(f'employee_entry_form_{scope}'):
         c=st.columns(4,gap='small')
         code=c[0].text_input('Employee Code',value=str(existing.get('employee_code') or ''),placeholder='Auto on save (EMP-0001)')
         first=c[1].text_input('First Name',value=str(existing.get('first_name') or ''))
@@ -58,11 +59,11 @@ def render_entry()->None:
         email=c[3].text_input('Email',value=str(existing.get('email') or ''))
         c=st.columns(4,gap='small')
         with c[0]:
-            department=_learned_select(catalog,'Department','employee.department',str(existing.get('department') or ''),'emp_dept',DEPARTMENT_OPTIONS)
+            department=_learned_select(catalog,'Department','employee.department',str(existing.get('department') or ''),f'emp_dept_{scope}',DEPARTMENT_OPTIONS)
         with c[1]:
-            designation=_learned_select(catalog,'Designation','employee.designation',str(existing.get('designation') or ''),'emp_desig')
+            designation=_learned_select(catalog,'Designation','employee.designation',str(existing.get('designation') or ''),f'emp_desig_{scope}')
         with c[2]:
-            plant=_learned_select(catalog,'Plant','employee.plant',str(existing.get('plant') or 'D9'),'emp_plant')
+            plant=_learned_select(catalog,'Plant','employee.plant',str(existing.get('plant') or 'D9'),f'emp_plant_{scope}')
         mobile=c[3].text_input('Mobile Number',value=str(existing.get('mobile_number') or ''))
         c=st.columns(3,gap='small')
         reports=c[0].selectbox('Reports To',list(managers),format_func=lambda x:managers[x],index=list(managers).index(str(existing.get('reports_to_employee_id') or '')) if str(existing.get('reports_to_employee_id') or '') in managers else 0)
@@ -76,7 +77,7 @@ def render_entry()->None:
         remarks=st.text_area('Remarks',value=str(existing.get('remarks') or ''),height=70)
         save=st.form_submit_button('Save Employee',type='primary',disabled=not writable,width='stretch')
     st.caption(f"Experience automatically calculated: {svc.years(exp_start.isoformat())} completed years")
-    photo=st.file_uploader('Employee Photo',type=['png','jpg','jpeg'],key=f"employee_photo_{selected}")
+    photo=st.file_uploader('Employee Photo',type=['png','jpg','jpeg'],key=f"employee_photo_{scope}")
     if save:
         try:
             final_code=code.strip()

@@ -1,6 +1,6 @@
 {
-  "version": "4.14.24",
-  "build": "41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE",
+  "version": "4.14.25",
+  "build": "41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -125,20 +125,40 @@
     "master_card_new_record_blank_entry",
     "master_entry_selector_state_reset",
     "same_heat_rmtc_certificate_widget_hard_reset",
-    "v41422_public_release_contract"
+    "v41422_public_release_contract",
+    "purchase_order_controlled_edit_reapproval",
+    "purchase_order_live_master_refresh_on_revision",
+    "purchase_order_edit_supplier_identity_immutable",
+    "purchase_order_edit_source_genealogy_protection",
+    "purchase_order_page_bulk_cache_performance",
+    "master_record_widget_scope_exact_reload",
+    "reference_master_saved_value_first",
+    "transaction_record_widget_scope_exact_reload",
+    "records_center_controlled_edit_routing",
+    "material_inward_record_specific_edit_state",
+    "osp_record_specific_edit_state",
+    "npd_apqp_record_specific_edit_state",
+    "complaint_record_specific_edit_state",
+    "master_refresh_new_and_revised_transactions_audited"
   ],
   "source": "controlled_release",
-  "release_name": "QCMS v4.14.24 Source-Only Deployment Unblock / Same-Heat RMTC / Blank Masters / Delete Routing",
+  "release_name": "QCMS v4.14.25 Controlled PO Edit / Exact Record Reload / Transaction Edit / Performance",
   "database_schema_required": "4.14.22",
   "database_migration_required": false,
   "supabase_release_contract": "QCMS_V41422_FULL_READY",
   "deployment_notes": [
-    "v4.14.24 is source-only: no new Supabase schema migration is required.",
-    "The v4.14.22 live Supabase contract was verified during release packaging; updater online recheck is non-blocking.",
-    "Deploys same-Heat blank RMTC/TC form, blank Master New Record flow, and transaction delete routing fixes that previous blocked updaters never pushed."
+    "v4.14.25 is source-only: no new Supabase schema migration is required.",
+    "Purchase Orders gain controlled revision with re-approval and supplier reconfirmation while Supplier/source Part identity remains genealogy-protected.",
+    "Master and transaction editors use record-specific Streamlit widget namespaces so selecting a saved record reloads that exact saved data.",
+    "When a controlled PO is revised after master updates, current master snapshots are refreshed on save and the prior transaction values remain available in audit history.",
+    "PO register loading uses request/page memoization and bulk transaction totals to remove N+1 database reads."
   ],
   "item_wise_po_technical_data": true,
   "po_supplier_technical_grid": true,
   "live_master_data_import_templates": true,
-  "apqp_safe_overdue_dates": true
+  "apqp_safe_overdue_dates": true,
+  "purchase_order_controlled_edit": true,
+  "master_record_exact_reload": true,
+  "transaction_controlled_edit_routing": true,
+  "po_page_bulk_cache": true
 }

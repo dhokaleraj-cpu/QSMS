@@ -15,7 +15,7 @@ from core.reporting import controlled_record_pdf_bytes
 from core.repository import Repository
 from core.record_audit import annotate_transaction_rows
 from core.selection_labels import employee_label, part_label, party_label, process_label
-from core.ui import kpi_grid, page_header, save_success_popup, section_bar, stage_section, workflow_progress
+from core.ui import kpi_grid, page_header, record_widget_token, save_success_popup, section_bar, stage_section, workflow_progress
 
 
 STATUSES = ["OPEN", "CONTAINMENT", "ROOT_CAUSE", "CORRECTIVE_ACTION", "VERIFICATION", "CLOSED", "CANCELLED"]
@@ -737,39 +737,42 @@ def _render_entry(complaint_type: str) -> None:
     selected_id = st.selectbox("Open Complaint Record", list(record_labels), index=list(record_labels).index(preferred), format_func=lambda value: record_labels[value], key=f"{complaint_type}_complaint_selector")
     existing = next((row for row in records if str(row.get("id")) == selected_id), None)
     writable = perms["can_edit"] if existing else perms["can_create"]
+    entry_scope = record_widget_token(f"complaint-{complaint_type.casefold()}-entry", existing or {}, selected=selected_id or "new")
+    def _entry_key(name: str) -> str:
+        return f"{complaint_type}_{name}_{entry_scope}"
 
     st.caption("Stage sequence: A Complaint Details → B Responsibility → C Photographs & Attachments → D Containment / Root Cause / Corrective Action → E Debit Note / Commercial Settlement · all stages collapsed by default")
 
     with stage_section("A", "COMPLAINT DETAILS", key=f"{complaint_type.lower()}_complaint_details"):
         c1, c2, c3, c4 = st.columns(4, gap="small")
-        c1.text_input("Complaint Number", value=str((existing or {}).get("complaint_number") or "Auto on Save"), disabled=True, key=f"{complaint_type}_number")
-        complaint_date = c2.date_input("Complaint Date", value=_as_date((existing or {}).get("complaint_date")), disabled=not writable, key=f"{complaint_type}_date")
-        severity = c3.selectbox("Severity", SEVERITIES, index=SEVERITIES.index(str((existing or {}).get("severity") or "MEDIUM")) if str((existing or {}).get("severity") or "MEDIUM") in SEVERITIES else 1, disabled=not writable, key=f"{complaint_type}_severity")
+        c1.text_input("Complaint Number", value=str((existing or {}).get("complaint_number") or "Auto on Save"), disabled=True, key=_entry_key("number"))
+        complaint_date = c2.date_input("Complaint Date", value=_as_date((existing or {}).get("complaint_date")), disabled=not writable, key=_entry_key("date"))
+        severity = c3.selectbox("Severity", SEVERITIES, index=SEVERITIES.index(str((existing or {}).get("severity") or "MEDIUM")) if str((existing or {}).get("severity") or "MEDIUM") in SEVERITIES else 1, disabled=not writable, key=_entry_key("severity"))
         current_status = str((existing or {}).get("status") or "OPEN")
         entry_statuses = ["OPEN", "CONTAINMENT", "ROOT_CAUSE", "CORRECTIVE_ACTION", "VERIFICATION", "CANCELLED"]
         if current_status == "CLOSED": entry_statuses.append("CLOSED")
-        status = c4.selectbox("Complaint Status", entry_statuses, index=entry_statuses.index(current_status) if current_status in entry_statuses else 0, disabled=not writable or current_status == "CLOSED", key=f"{complaint_type}_status", help="Final CLOSED status is controlled from Detailed Complaint Analysis after RCA, actions and effectiveness verification are complete.")
+        status = c4.selectbox("Complaint Status", entry_statuses, index=entry_statuses.index(current_status) if current_status in entry_statuses else 0, disabled=not writable or current_status == "CLOSED", key=_entry_key("status"), help="Final CLOSED status is controlled from Detailed Complaint Analysis after RCA, actions and effectiveness verification are complete.")
 
         p1, p2, p3 = st.columns([1.2, 1.2, 1], gap="small")
         default_party = str((existing or {}).get("party_id") or "")
-        party_id = p1.selectbox(party_word, list(party_labels), index=list(party_labels).index(default_party) if default_party in party_labels else 0, format_func=lambda value: party_labels[value], disabled=not writable or not party_labels, key=f"{complaint_type}_party") if party_labels else ""
+        party_id = p1.selectbox(party_word, list(party_labels), index=list(party_labels).index(default_party) if default_party in party_labels else 0, format_func=lambda value: party_labels[value], disabled=not writable or not party_labels, key=_entry_key("party")) if party_labels else ""
         default_part = str((existing or {}).get("part_id") or "")
-        part_id = p2.selectbox("Part Number", list(part_labels), index=list(part_labels).index(default_part) if default_part in part_labels else 0, format_func=lambda value: part_labels[value], disabled=not writable, key=f"{complaint_type}_part")
-        external_reference = p3.text_input(f"{party_word} Complaint / Reference No.", value=str((existing or {}).get("external_reference") or ""), disabled=not writable, key=f"{complaint_type}_external_ref")
-        subject = st.text_input("Complaint Subject", value=str((existing or {}).get("subject") or ""), disabled=not writable, key=f"{complaint_type}_subject")
-        description = st.text_area("Complaint Description", value=str((existing or {}).get("description") or ""), height=100, disabled=not writable, key=f"{complaint_type}_description")
+        part_id = p2.selectbox("Part Number", list(part_labels), index=list(part_labels).index(default_part) if default_part in part_labels else 0, format_func=lambda value: part_labels[value], disabled=not writable, key=_entry_key("part"))
+        external_reference = p3.text_input(f"{party_word} Complaint / Reference No.", value=str((existing or {}).get("external_reference") or ""), disabled=not writable, key=_entry_key("external_ref"))
+        subject = st.text_input("Complaint Subject", value=str((existing or {}).get("subject") or ""), disabled=not writable, key=_entry_key("subject"))
+        description = st.text_area("Complaint Description", value=str((existing or {}).get("description") or ""), height=100, disabled=not writable, key=_entry_key("description"))
         q1, q2 = st.columns(2, gap="small")
-        affected_qty = q1.number_input("Affected Quantity", min_value=0.0, value=float((existing or {}).get("affected_quantity") or 0.0), step=1.0, disabled=not writable, key=f"{complaint_type}_qty")
-        target_closure = q2.date_input("Target Closure Date", value=_as_date((existing or {}).get("target_closure_date"), date.today()), disabled=not writable, key=f"{complaint_type}_target")
+        affected_qty = q1.number_input("Affected Quantity", min_value=0.0, value=float((existing or {}).get("affected_quantity") or 0.0), step=1.0, disabled=not writable, key=_entry_key("qty"))
+        target_closure = q2.date_input("Target Closure Date", value=_as_date((existing or {}).get("target_closure_date"), date.today()), disabled=not writable, key=_entry_key("target"))
 
     with stage_section("B", "RESPONSIBILITY", key=f"{complaint_type.lower()}_complaint_responsibility"):
         r1, r2 = st.columns(2, gap="small")
         default_emp = str((existing or {}).get("fourstar_responsible_employee_id") or "")
-        fourstar_employee_id = r1.selectbox("Four Star Responsible Person", list(employee_labels), index=list(employee_labels).index(default_emp) if default_emp in employee_labels else 0, format_func=lambda value: employee_labels[value], disabled=not writable or not employee_labels, key=f"{complaint_type}_fsi_resp") if employee_labels else ""
-        external_name = r2.text_input(f"{party_word} Responsible Person", value=str((existing or {}).get("external_responsible_name") or ""), disabled=not writable, key=f"{complaint_type}_external_name")
+        fourstar_employee_id = r1.selectbox("Four Star Responsible Person", list(employee_labels), index=list(employee_labels).index(default_emp) if default_emp in employee_labels else 0, format_func=lambda value: employee_labels[value], disabled=not writable or not employee_labels, key=_entry_key("fsi_resp")) if employee_labels else ""
+        external_name = r2.text_input(f"{party_word} Responsible Person", value=str((existing or {}).get("external_responsible_name") or ""), disabled=not writable, key=_entry_key("external_name"))
         r3, r4 = st.columns(2, gap="small")
-        external_email = r3.text_input(f"{party_word} Responsible Email", value=str((existing or {}).get("external_responsible_email") or ""), disabled=not writable, key=f"{complaint_type}_external_email")
-        external_phone = r4.text_input(f"{party_word} Responsible Phone", value=str((existing or {}).get("external_responsible_phone") or ""), disabled=not writable, key=f"{complaint_type}_external_phone")
+        external_email = r3.text_input(f"{party_word} Responsible Email", value=str((existing or {}).get("external_responsible_email") or ""), disabled=not writable, key=_entry_key("external_email"))
+        external_phone = r4.text_input(f"{party_word} Responsible Phone", value=str((existing or {}).get("external_responsible_phone") or ""), disabled=not writable, key=_entry_key("external_phone"))
 
     with stage_section("C", "PHOTOGRAPHS & MULTIPLE ATTACHMENTS", key=f"{complaint_type.lower()}_complaint_evidence"):
         if existing:
@@ -779,35 +782,35 @@ def _render_entry(complaint_type: str) -> None:
             staged_media = _stage_new_complaint_media(complaint_type, writable, show_heading=False)
 
     with stage_section("D", "CONTAINMENT / ROOT CAUSE / CORRECTIVE ACTION", key=f"{complaint_type.lower()}_complaint_action"):
-        containment = st.text_area("Containment Action", value=str((existing or {}).get("containment_action") or ""), height=75, disabled=not writable, key=f"{complaint_type}_containment")
-        root_cause = st.text_area("Root Cause", value=str((existing or {}).get("root_cause") or ""), height=75, disabled=not writable, key=f"{complaint_type}_root")
-        corrective = st.text_area("Corrective Action", value=str((existing or {}).get("corrective_action") or ""), height=75, disabled=not writable, key=f"{complaint_type}_corrective")
-        verification = st.text_area("Effectiveness / Verification Result", value=str((existing or {}).get("verification_result") or ""), height=75, disabled=not writable, key=f"{complaint_type}_verification")
+        containment = st.text_area("Containment Action", value=str((existing or {}).get("containment_action") or ""), height=75, disabled=not writable, key=_entry_key("containment"))
+        root_cause = st.text_area("Root Cause", value=str((existing or {}).get("root_cause") or ""), height=75, disabled=not writable, key=_entry_key("root"))
+        corrective = st.text_area("Corrective Action", value=str((existing or {}).get("corrective_action") or ""), height=75, disabled=not writable, key=_entry_key("corrective"))
+        verification = st.text_area("Effectiveness / Verification Result", value=str((existing or {}).get("verification_result") or ""), height=75, disabled=not writable, key=_entry_key("verification"))
         close1, close2 = st.columns(2, gap="small")
-        closure_date = close1.date_input("Actual Closure Date", value=_as_date((existing or {}).get("closure_date"), date.today()), disabled=not writable or status != "CLOSED", key=f"{complaint_type}_closure_date")
-        closure_remarks = close2.text_area("Closure Remarks", value=str((existing or {}).get("closure_remarks") or ""), height=75, disabled=not writable, key=f"{complaint_type}_closure_remarks")
+        closure_date = close1.date_input("Actual Closure Date", value=_as_date((existing or {}).get("closure_date"), date.today()), disabled=not writable or status != "CLOSED", key=_entry_key("closure_date"))
+        closure_remarks = close2.text_area("Closure Remarks", value=str((existing or {}).get("closure_remarks") or ""), height=75, disabled=not writable, key=_entry_key("closure_remarks"))
 
     with stage_section("E", "DEBIT NOTE / COMMERCIAL SETTLEMENT", key=f"{complaint_type.lower()}_complaint_commercial"):
-        debit_required = st.checkbox("Debit Note Required", value=bool((existing or {}).get("debit_note_required")), disabled=not writable, key=f"{complaint_type}_debit_required")
+        debit_required = st.checkbox("Debit Note Required", value=bool((existing or {}).get("debit_note_required")), disabled=not writable, key=_entry_key("debit_required"))
         d1, d2, d3, d4 = st.columns(4, gap="small")
         default_debit_status = str((existing or {}).get("debit_note_status") or ("PENDING" if debit_required else "NOT_REQUIRED"))
         if default_debit_status not in DEBIT_STATUSES: default_debit_status = "PENDING" if debit_required else "NOT_REQUIRED"
-        debit_status = d1.selectbox("Debit Note Status", DEBIT_STATUSES, index=DEBIT_STATUSES.index(default_debit_status), disabled=not writable or not debit_required, key=f"{complaint_type}_debit_status")
-        debit_number = d2.text_input("Debit Note Number", value=str((existing or {}).get("debit_note_number") or ""), disabled=not writable or not debit_required, key=f"{complaint_type}_debit_no")
-        debit_date = d3.date_input("Debit Note Date", value=_as_date((existing or {}).get("debit_note_date"), date.today()), disabled=not writable or not debit_required, key=f"{complaint_type}_debit_date")
+        debit_status = d1.selectbox("Debit Note Status", DEBIT_STATUSES, index=DEBIT_STATUSES.index(default_debit_status), disabled=not writable or not debit_required, key=_entry_key("debit_status"))
+        debit_number = d2.text_input("Debit Note Number", value=str((existing or {}).get("debit_note_number") or ""), disabled=not writable or not debit_required, key=_entry_key("debit_no"))
+        debit_date = d3.date_input("Debit Note Date", value=_as_date((existing or {}).get("debit_note_date"), date.today()), disabled=not writable or not debit_required, key=_entry_key("debit_date"))
         currencies = ["INR", "EUR", "USD", "GBP", "JPY"]
         current_currency = str((existing or {}).get("currency") or "INR")
-        currency = d4.selectbox("Currency", currencies, index=currencies.index(current_currency) if current_currency in currencies else 0, disabled=not writable or not debit_required, key=f"{complaint_type}_currency")
+        currency = d4.selectbox("Currency", currencies, index=currencies.index(current_currency) if current_currency in currencies else 0, disabled=not writable or not debit_required, key=_entry_key("currency"))
         a1, a2, a3 = st.columns(3, gap="small")
-        debit_amount = a1.number_input("Debit Note Amount", min_value=0.0, value=float((existing or {}).get("debit_note_amount") or 0.0), step=0.01, disabled=not writable or not debit_required, key=f"{complaint_type}_debit_amount")
-        settled_amount = a2.number_input("Settled Amount", min_value=0.0, value=float((existing or {}).get("debit_note_settled_amount") or 0.0), step=0.01, disabled=not writable or not debit_required, key=f"{complaint_type}_settled_amount")
-        settled_date = a3.date_input("Settled Date", value=_as_date((existing or {}).get("debit_note_settled_date"), date.today()), disabled=not writable or debit_status != "SETTLED", key=f"{complaint_type}_settled_date")
-        commercial_remarks = st.text_area("Commercial / Debit Note Remarks", value=str((existing or {}).get("commercial_remarks") or ""), height=70, disabled=not writable, key=f"{complaint_type}_commercial")
+        debit_amount = a1.number_input("Debit Note Amount", min_value=0.0, value=float((existing or {}).get("debit_note_amount") or 0.0), step=0.01, disabled=not writable or not debit_required, key=_entry_key("debit_amount"))
+        settled_amount = a2.number_input("Settled Amount", min_value=0.0, value=float((existing or {}).get("debit_note_settled_amount") or 0.0), step=0.01, disabled=not writable or not debit_required, key=_entry_key("settled_amount"))
+        settled_date = a3.date_input("Settled Date", value=_as_date((existing or {}).get("debit_note_settled_date"), date.today()), disabled=not writable or debit_status != "SETTLED", key=_entry_key("settled_date"))
+        commercial_remarks = st.text_area("Commercial / Debit Note Remarks", value=str((existing or {}).get("commercial_remarks") or ""), height=70, disabled=not writable, key=_entry_key("commercial"))
         debit_balance = max(float(debit_amount or 0.0) - float(settled_amount or 0.0), 0.0) if debit_required else 0.0
         if debit_required:
             st.caption(f"Debit Note Settlement Balance: {currency} {debit_balance:,.2f}")
 
-    if st.button("Update Complaint" if existing else "Save Complaint", type="primary", width="stretch", disabled=not writable, key=f"save_{complaint_type}_complaint"):
+    if st.button("Update Complaint" if existing else "Save Complaint", type="primary", width="stretch", disabled=not writable, key=_entry_key("save_complaint")):
         staged_photo_gaps = [str(getattr(photo, "name", "Photograph")) for title, photo in (staged_media.get("photos") or []) if not str(title or "").strip()] if not existing else []
         if not party_id or not subject.strip() or not description.strip() or not fourstar_employee_id:
             st.error(f"{party_word}, Complaint Subject, Complaint Description and Four Star Responsible Person are mandatory.")

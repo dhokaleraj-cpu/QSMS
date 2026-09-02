@@ -13,7 +13,7 @@ from core.delete_service import password_delete_panel
 from core.inward_service import InwardService
 from core.reporting import material_inward_record_pdf_bytes
 from core.supply_chain_service import SupplyChainService
-from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
+from core.ui import disposition_cards, disposition_label, page_header, record_widget_token, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
 
 DISPOSITIONS = ["PENDING", "ON_HOLD", "ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"]
 
@@ -59,6 +59,7 @@ def render_entry() -> None:
     service = InwardService()
     perms = current_permissions("MATERIAL_INWARD")
     existing = _record_from_state(service)
+    editor_scope = record_widget_token("material-inward-entry", existing, selected=str(existing.get("id") or "new"))
     writable = perms["can_edit"] if existing else perms["can_create"]
 
     # QCMS v4.12.4: Material Inward remains the single RM Receipt source of truth,
@@ -183,7 +184,7 @@ def render_entry() -> None:
             options,
             index=options.index(selected_existing) if selected_existing in options else 0,
             format_func=lambda value: source_map.get(value, "— Select accepted RMTC steel source —"),
-            disabled=bool(existing),
+            disabled=bool(existing), key=f"inward_rmtc_source_{editor_scope}",
         )
         source = next((row for row in accepted if str(row.get("rmtc_part_approval_id")) == source_id), {})
         if not source and existing:
@@ -225,34 +226,34 @@ def render_entry() -> None:
         validator_map = _employee_map(service.employees("RAW_MATERIAL_INSPECTION"))
 
         c = st.columns(4, gap="small")
-        inward_no = c[0].text_input("Inward Number", value=str(existing.get("inward_number") or ""), placeholder="Auto on save")
-        inward_date = c[1].date_input("Inward Date", value=date.fromisoformat(str(existing.get("inward_date"))[:10]) if existing.get("inward_date") else date.today(), format="DD-MM-YYYY")
-        grn = c[2].text_input("GRN Number", value=str(existing.get("grn_number") or ""))
-        invoice = c[3].text_input("Supplier Invoice Number", value=str(existing.get("invoice_number") or ""))
+        inward_no = c[0].text_input("Inward Number", value=str(existing.get("inward_number") or ""), placeholder="Auto on save", key=f"inward_number_{editor_scope}")
+        inward_date = c[1].date_input("Inward Date", value=date.fromisoformat(str(existing.get("inward_date"))[:10]) if existing.get("inward_date") else date.today(), format="DD-MM-YYYY", key=f"inward_date_{editor_scope}")
+        grn = c[2].text_input("GRN Number", value=str(existing.get("grn_number") or ""), key=f"inward_grn_{editor_scope}")
+        invoice = c[3].text_input("Supplier Invoice Number", value=str(existing.get("invoice_number") or ""), key=f"inward_invoice_{editor_scope}")
 
         c = st.columns(4, gap="small")
-        accepted_pcs = c[0].number_input("Accepted Production Quantity (pcs)", min_value=0.0, value=float(existing.get("accepted_production_quantity_pcs") or 0), step=1.0)
-        rejected_pcs = c[1].number_input("Rejected Production Quantity (pcs)", min_value=0.0, value=float(existing.get("rejected_production_quantity_pcs") or 0), step=1.0)
-        hold_pcs = c[2].number_input("On Hold Production Quantity (pcs)", min_value=0.0, value=float(existing.get("hold_production_quantity_pcs") or 0), step=1.0)
+        accepted_pcs = c[0].number_input("Accepted Production Quantity (pcs)", min_value=0.0, value=float(existing.get("accepted_production_quantity_pcs") or 0), step=1.0, key=f"inward_accepted_pcs_{editor_scope}")
+        rejected_pcs = c[1].number_input("Rejected Production Quantity (pcs)", min_value=0.0, value=float(existing.get("rejected_production_quantity_pcs") or 0), step=1.0, key=f"inward_rejected_pcs_{editor_scope}")
+        hold_pcs = c[2].number_input("On Hold Production Quantity (pcs)", min_value=0.0, value=float(existing.get("hold_production_quantity_pcs") or 0), step=1.0, key=f"inward_hold_pcs_{editor_scope}")
         production_qty = float(accepted_pcs) + float(rejected_pcs) + float(hold_pcs)
-        c[3].number_input("Total Production Quantity (pcs)", min_value=0.0, value=production_qty, step=1.0, disabled=True)
+        c[3].number_input("Total Production Quantity (pcs)", min_value=0.0, value=production_qty, step=1.0, disabled=True, key=f"inward_total_pcs_{editor_scope}")
 
         accepted_steel = round(float(accepted_pcs) * input_weight, 3)
         rejected_steel = round(float(rejected_pcs) * input_weight, 3)
         hold_steel = round(float(hold_pcs) * input_weight, 3)
         required_steel = round(production_qty * input_weight, 3)
         c = st.columns(4, gap="small")
-        c[0].number_input("Accepted Steel Quantity (kg)", min_value=0.0, value=accepted_steel, step=0.001, format="%.3f", disabled=True)
-        c[1].number_input("Rejected Steel Quantity (kg)", min_value=0.0, value=rejected_steel, step=0.001, format="%.3f", disabled=True)
-        c[2].number_input("On Hold Steel Quantity (kg)", min_value=0.0, value=hold_steel, step=0.001, format="%.3f", disabled=True)
-        c[3].number_input("Total Steel Quantity (kg)", min_value=0.0, value=required_steel, step=0.001, format="%.3f", disabled=True)
+        c[0].number_input("Accepted Steel Quantity (kg)", min_value=0.0, value=accepted_steel, step=0.001, format="%.3f", disabled=True, key=f"inward_accepted_steel_{editor_scope}")
+        c[1].number_input("Rejected Steel Quantity (kg)", min_value=0.0, value=rejected_steel, step=0.001, format="%.3f", disabled=True, key=f"inward_rejected_steel_{editor_scope}")
+        c[2].number_input("On Hold Steel Quantity (kg)", min_value=0.0, value=hold_steel, step=0.001, format="%.3f", disabled=True, key=f"inward_hold_steel_{editor_scope}")
+        c[3].number_input("Total Steel Quantity (kg)", min_value=0.0, value=required_steel, step=0.001, format="%.3f", disabled=True, key=f"inward_total_steel_{editor_scope}")
 
         c = st.columns(4, gap="small")
-        c[0].number_input("Input Weight (kg/part)", min_value=0.0, value=input_weight, step=0.001, format="%.3f", disabled=True)
-        c[1].number_input("Available Production from RMTC Balance (pcs)", min_value=0.0, value=available_production_for_entry, step=1.0, disabled=True)
-        c[2].number_input("Heat Steel Available Before Entry (kg)", min_value=0.0, value=available_for_entry, step=0.001, format="%.3f", disabled=True)
+        c[0].number_input("Input Weight (kg/part)", min_value=0.0, value=input_weight, step=0.001, format="%.3f", disabled=True, key=f"inward_input_weight_{editor_scope}")
+        c[1].number_input("Available Production from RMTC Balance (pcs)", min_value=0.0, value=available_production_for_entry, step=1.0, disabled=True, key=f"inward_available_pcs_{editor_scope}")
+        c[2].number_input("Heat Steel Available Before Entry (kg)", min_value=0.0, value=available_for_entry, step=0.001, format="%.3f", disabled=True, key=f"inward_available_steel_{editor_scope}")
         remaining_steel=max(available_for_entry-required_steel,0)
-        c[3].number_input("Heat Steel Balance After Entry (kg)", min_value=0.0, value=remaining_steel, step=0.001, format="%.3f", disabled=True)
+        c[3].number_input("Heat Steel Balance After Entry (kg)", min_value=0.0, value=remaining_steel, step=0.001, format="%.3f", disabled=True, key=f"inward_balance_steel_{editor_scope}")
 
         if source_id and required_steel > available_for_entry + 0.001:
             st.error(f"Total production steel {required_steel:,.3f} kg exceeds the Heat steel available before this entry {available_for_entry:,.3f} kg. The after-entry balance cannot be negative.")
@@ -260,27 +261,27 @@ def render_entry() -> None:
             st.success(f"Automatic conversion: {production_qty:,.0f} pcs × {input_weight:,.3f} kg = {required_steel:,.3f} kg. Heat balance after entry: {remaining_steel:,.3f} kg.")
 
         c = st.columns(2, gap="small")
-        disposition = c[0].selectbox("Receipt Disposition", DISPOSITIONS, index=DISPOSITIONS.index(str(existing.get("receipt_disposition") or "PENDING")), format_func=disposition_label)
-        c[1].text_input("Quality Gate", value=disposition_label(existing.get("quality_disposition") or "PENDING"), disabled=True)
+        disposition = c[0].selectbox("Receipt Disposition", DISPOSITIONS, index=DISPOSITIONS.index(str(existing.get("receipt_disposition") or "PENDING")), format_func=disposition_label, key=f"inward_disposition_{editor_scope}")
+        c[1].text_input("Quality Gate", value=disposition_label(existing.get("quality_disposition") or "PENDING"), disabled=True, key=f"inward_quality_gate_{editor_scope}")
 
         c = st.columns(4, gap="small")
-        c[0].text_input("MetLAB Status", value=disposition_label(existing.get("metallurgical_status") or "PENDING"), disabled=True)
-        c[1].text_input("Dimensional Status", value=disposition_label(existing.get("dimensional_status") or "PENDING"), disabled=True)
+        c[0].text_input("MetLAB Status", value=disposition_label(existing.get("metallurgical_status") or "PENDING"), disabled=True, key=f"inward_metlab_status_{editor_scope}")
+        c[1].text_input("Dimensional Status", value=disposition_label(existing.get("dimensional_status") or "PENDING"), disabled=True, key=f"inward_dim_status_{editor_scope}")
         prepared_options = [""] + list(employee_map)
         prepared_current = str(existing.get("prepared_by_employee_id") or "")
-        prepared = c[2].selectbox("Prepared By", prepared_options, index=prepared_options.index(prepared_current) if prepared_current in prepared_options else 0, format_func=lambda value: employee_map.get(value, "— Select Employee —"))
+        prepared = c[2].selectbox("Prepared By", prepared_options, index=prepared_options.index(prepared_current) if prepared_current in prepared_options else 0, format_func=lambda value: employee_map.get(value, "— Select Employee —"), key=f"inward_prepared_{editor_scope}")
         validator_options = [""] + list(validator_map)
         validator_current = str(existing.get("validated_by_employee_id") or "")
-        validator = c[3].selectbox("Validated By", validator_options, index=validator_options.index(validator_current) if validator_current in validator_options else 0, format_func=lambda value: validator_map.get(value, "— Select Quality Employee —"))
+        validator = c[3].selectbox("Validated By", validator_options, index=validator_options.index(validator_current) if validator_current in validator_options else 0, format_func=lambda value: validator_map.get(value, "— Select Quality Employee —"), key=f"inward_validator_{editor_scope}")
 
-        reserve_reason = st.text_input("Hold / Reserve / Rejection Reason", value=str(existing.get("reserve_reason") or ""))
-        remarks = st.text_area("Remarks", value=str(existing.get("remarks") or ""), height=70)
+        reserve_reason = st.text_input("Hold / Reserve / Rejection Reason", value=str(existing.get("reserve_reason") or ""), key=f"inward_reason_{editor_scope}")
+        remarks = st.text_area("Remarks", value=str(existing.get("remarks") or ""), height=70, key=f"inward_remarks_{editor_scope}")
         new_attachments = {} if existing else new_attachment_uploaders(
             INWARD_ATTACHMENT_SLOTS, key_prefix='inward_new', title='OPTIONAL MATERIAL INWARD ATTACHMENTS'
         )
 
         invalid_quantity = required_steel > available_for_entry + 0.001
-        if st.button("Save Material Inward", type="primary", disabled=not writable or invalid_quantity, width="stretch"):
+        if st.button("Save Material Inward", type="primary", disabled=not writable or invalid_quantity, width="stretch", key=f"inward_save_{editor_scope}"):
             try:
                 if not source_id:
                     raise ValueError("Select an Accepted or Accepted Under Reserve RMTC Part Number.")

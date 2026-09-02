@@ -1406,6 +1406,32 @@ def module_submenu(title: str, *items: tuple[str, str, str], max_columns: int = 
                     st.page_link(pages[path], label=label, width="stretch")
 
 
+def record_widget_token(entry_path: str, record: Mapping[str, Any] | None = None, *, selected: Any = None) -> str:
+    """Return a stable widget namespace for the currently loaded database record.
+
+    Streamlit keeps widget values even when Python ``value=`` arguments change.  A
+    record-specific token that also includes the database ``updated_at`` value makes
+    every edit selection load the selected record's saved values, while a one-shot
+    New Record request receives a fresh nonce and therefore a truly blank form.
+    """
+    row = dict(record or {})
+    identity = str(row.get("id") or selected or "new").strip() or "new"
+    stamp = str(row.get("updated_at") or row.get("created_at") or "").strip()
+    nonce = int(st.session_state.get(f"_qcms_master_blank_nonce_{entry_path}") or 0) if identity in {"new", "__new__"} else 0
+    raw = f"{identity}|{stamp}|{nonce}"
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", raw)[-120:]
+
+
+def clear_widget_state_prefixes(*prefixes: str) -> None:
+    """Clear matching Streamlit widget-state keys before a controlled record reload."""
+    wanted = tuple(str(prefix) for prefix in prefixes if str(prefix))
+    if not wanted:
+        return
+    for key in list(st.session_state.keys()):
+        if str(key).startswith(wanted):
+            st.session_state.pop(key, None)
+
+
 def consume_master_blank_request(entry_path: str, *, edit_keys: Sequence[str] = (), widget_keys: Sequence[str] = ()) -> bool:
     """Consume a Master Data Centre New Record request before widgets are created.
 

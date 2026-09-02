@@ -34,6 +34,7 @@ from core.supply_chain_service import (
 from core.ui import (
     kpi_grid,
     page_header,
+    record_widget_token,
     safe,
     save_success_popup,
     section_bar,
@@ -339,17 +340,18 @@ def _edit_delete_panel(
         labels={str(r["id"]):labeler(r) for r in rows if r.get("id")}
         selected=st.selectbox("Select Entry",list(labels),format_func=lambda v:labels[v],key=f"{key}_edit_select")
         row=next(r for r in rows if str(r.get("id"))==selected)
-        with st.form(f"{key}_edit_form"):
+        scope=record_widget_token(f"transaction-{table}",row,selected=selected)
+        with st.form(f"{key}_edit_form_{scope}"):
             values={}; columns=st.columns(3,gap="small")
             for index,spec in enumerate(fields):
-                name,label,kind,*extra=spec; col=columns[index%3]; current=row.get(name)
-                if kind=="date": values[name]=col.date_input(label,value=_iso_date(current),format="DD-MM-YYYY",key=f"{key}_{name}").isoformat()
-                elif kind=="number": values[name]=col.number_input(label,min_value=0.0,value=float(number(current)),step=1.0,key=f"{key}_{name}")
+                name,label,kind,*extra=spec; col=columns[index%3]; current=row.get(name); widget_key=f"{key}_{name}_{scope}"
+                if kind=="date": values[name]=col.date_input(label,value=_iso_date(current),format="DD-MM-YYYY",key=widget_key).isoformat()
+                elif kind=="number": values[name]=col.number_input(label,min_value=0.0,value=float(number(current)),step=1.0,key=widget_key)
                 elif kind=="select":
-                    opts=list(extra[0]); cur=str(current or opts[0]); values[name]=col.selectbox(label,opts,index=opts.index(cur) if cur in opts else 0,key=f"{key}_{name}")
+                    opts=list(extra[0]); cur=str(current or opts[0]); values[name]=col.selectbox(label,opts,index=opts.index(cur) if cur in opts else 0,key=widget_key)
                 elif kind=="lookup":
-                    mapping=dict(extra[0]); opts=list(mapping); cur=str(current or ""); values[name]=col.selectbox(label,opts,index=opts.index(cur) if cur in opts else 0,format_func=lambda v:mapping[v],key=f"{key}_{name}") if opts else current
-                else: values[name]=col.text_input(label,value=str(current or ""),key=f"{key}_{name}")
+                    mapping=dict(extra[0]); opts=list(mapping); cur=str(current or ""); values[name]=col.selectbox(label,opts,index=opts.index(cur) if cur in opts else 0,format_func=lambda v:mapping[v],key=widget_key) if opts else current
+                else: values[name]=col.text_input(label,value=str(current or ""),key=widget_key)
             submitted=st.form_submit_button("Save Edited Entry",type="primary",width="stretch",disabled=not perms.get("can_edit",False))
         if submitted:
             try:
@@ -738,7 +740,8 @@ def render_opening_stock() -> None:
             labels={str(r["id"]):f"{part_labels.get(str(r.get('part_id')),'Part')} · {OPENING_STOCK_STAGES.get(str(r.get('stage')),r.get('stage'))} · {number(r.get('available_quantity_pcs')):,.0f} pcs" for r in rows}
             selected_id=st.selectbox("Opening Stock Record",list(labels),format_func=lambda v:labels[v],key="opening_stock_edit_select")
             record=next(r for r in rows if str(r.get("id"))==selected_id)
-            with st.form("opening_stock_edit_form"):
+            opening_scope=record_widget_token("supply-opening-stock-edit",record,selected=selected_id)
+            with st.form(f"opening_stock_edit_form_{opening_scope}"):
                 c=st.columns(4,gap="small")
                 e_stage=c[0].selectbox("Stage",list(OPENING_STOCK_STAGES),index=list(OPENING_STOCK_STAGES).index(str(record.get("stage"))) if str(record.get("stage")) in OPENING_STOCK_STAGES else 0,format_func=lambda v:OPENING_STOCK_STAGES[v])
                 e_qty=c[1].number_input("Opening Qty pcs",min_value=0.0,value=float(number(record.get("quantity_pcs"))),step=1.0)
@@ -785,6 +788,146 @@ def render_rm_procurement() -> None:
         _searchable_grid(pd.DataFrame(data),title="Raw Material Order Register",key="supply_rm_order_register",height=520)
     _edit_delete_panel(service,table="supply_rm_purchase_orders",rows=service.rm_purchase_orders(),title="RAW MATERIAL ORDER EDIT / DELETE",stage="D",key="supply_rm_po",labeler=lambda r:f"{r.get('supplier_order_no')} · {number(r.get('ordered_qty_kg')):,.3f} kg",fields=(("rm_supplier_id","RM Supplier","lookup",supplier_map),("supplier_order_no","Supplier Order No.","text"),("order_date","Order Date","date"),("expected_date","Expected Receipt","date"),("ordered_qty_kg","Ordered Qty kg","number"),("status","Status","select",("OPEN","PART_RECEIVED","CLOSED","CANCELLED")),("remarks","Remarks","text")),perms=perms)
 
+
+
+
+def _render_purchase_order_edit(
+    service: SupplyChainService, *, purchase_order_id: str, header: Mapping[str, Any],
+    parts: Mapping[str, Mapping[str, Any]], parties: Mapping[str, Mapping[str, Any]],
+    supplier_labels: Mapping[str, str], perms: Mapping[str, bool], login_employee_id: str | None,
+) -> None:
+    """Controlled PO edit workspace with live-master refresh and source genealogy."""
+    if not perms.get("can_edit", False):
+        st.info("Purchase Order Edit permission is not assigned to this login.")
+        return
+    if str(header.get("status") or "").upper() == "CANCELLED":
+        st.info("Cancelled POs are not edited. Use Cancel & Reissue to create a replacement PO.")
+        return
+    items = service.purchase_order_items(purchase_order_id)
+    sources = service.purchase_order_sources(purchase_order_id)
+    scope = record_widget_token("purchase-order-edit", header, selected=purchase_order_id)
+    supplier_id = str(header.get("supplier_id") or "")
+    supplier = parties.get(supplier_id) or service.repo.get("parties", supplier_id) or {}
+    st.warning(
+        "Supplier and source Part identities are controlled genealogy and cannot be changed in-place. "
+        "Use Cancel & Reissue for a Supplier change. Saving a PO revision sends it back for approval and supplier reconfirmation."
+    )
+    st.caption(
+        "Latest master-data refresh is ON by default. When a Part/Supplier/Branch master is changed, opening this PO for edit and saving it refreshes the PO snapshots, technical data, HSN and current master price while the audit log preserves the previous values."
+    )
+
+    branches = {str(r.get("id")): r for r in service.company_branches()}
+    branch_labels = {bid: branch_label(row) for bid, row in branches.items()}
+    ship_source = st.selectbox(
+        "Ship-To Source", ["BRANCH", "CUSTOMER", "SUPPLIER", "VENDOR"],
+        index=["BRANCH", "CUSTOMER", "SUPPLIER", "VENDOR"].index(str(header.get("ship_to_source_type") or "BRANCH")) if str(header.get("ship_to_source_type") or "BRANCH") in {"BRANCH","CUSTOMER","SUPPLIER","VENDOR"} else 0,
+        format_func=lambda value: SHIP_TO_SOURCE_LABELS[value], key=f"po_edit_ship_source_{scope}",
+    )
+    if ship_source == "BRANCH":
+        ship_candidates = branches
+        ship_labels = {bid: f"{row.get('branch_code') or '-'} · {row.get('branch_name') or '-'} · {row.get('city') or '-'}" for bid, row in branches.items()}
+        current_ship = str(header.get("ship_to_branch_id") or header.get("company_branch_id") or "")
+    else:
+        ship_candidates = _ship_to_candidates(parties, ship_source)
+        ship_labels = {pid: f"{row.get('party_code') or '-'} · {row.get('party_name') or '-'} · {row.get('city') or '-'}" for pid, row in ship_candidates.items()}
+        current_ship = str(header.get("ship_to_party_id") or "")
+    ship_ids = list(ship_labels)
+    if current_ship not in ship_ids and ship_ids:
+        current_ship = ship_ids[0]
+
+    order_map = {str(r.get("id")): r for r in service.customer_orders()}
+    source_rows = []
+    for source in sources:
+        item = next((r for r in items if str(r.get("id")) == str(source.get("purchase_order_item_id"))), {})
+        order = order_map.get(str(source.get("customer_order_id") or "")) or {}
+        part = parts.get(str(order.get("part_id") or item.get("part_id") or "")) or {}
+        source_rows.append({
+            "Source ID": str(source.get("id") or ""), "Item ID": str(item.get("id") or ""),
+            "Customer Order / Schedule": order.get("master_reference_no") or order.get("customer_order_no"),
+            "Part Number": part.get("part_number"), "FSI Part Number": part.get("fsi_part_number"),
+            "Allocated Qty": number(source.get("allocated_qty")), "UOM": source.get("allocation_uom") or item.get("uom"),
+        })
+    source_frame = pd.DataFrame(source_rows)
+
+    item_rows = []
+    for item in items:
+        part = parts.get(str(item.get("part_id") or "")) or {}
+        received = service.purchase_order_item_received_qty(str(item.get("id") or ""))
+        item_rows.append({
+            "Item ID": str(item.get("id") or ""), "Finished Part": part.get("part_number"),
+            "Supplier Item / FSI": item.get("item_no") or item.get("fsi_part_number_snapshot"),
+            "HSN / SAC": item.get("hsn_sac_code"), "Ordered Qty": number(item.get("quantity")), "UOM": item.get("uom"),
+            "Received Qty": received, "Unit Price": number(item.get("unit_price")), "GST %": number(item.get("gst_percent")),
+            "Remarks": item.get("remarks") or "",
+        })
+    item_frame = pd.DataFrame(item_rows)
+
+    with st.form(f"purchase_order_edit_form_{scope}"):
+        c = st.columns(4, gap="small")
+        c[0].text_input("PO Number", value=str(header.get("po_number") or ""), disabled=True)
+        c[1].text_input("Supplier", value=supplier_labels.get(supplier_id, party_label(supplier)), disabled=True)
+        po_date = c[2].date_input("PO Date", value=_iso_date(header.get("order_date")), format="DD-MM-YYYY")
+        delivery = c[3].date_input("Delivery Date", value=_iso_date(header.get("delivery_date")), format="DD-MM-YYYY")
+        c = st.columns(3, gap="small")
+        current_branch = str(header.get("company_branch_id") or "")
+        branch_id = c[0].selectbox("Company Branch / Plant", list(branch_labels), index=list(branch_labels).index(current_branch) if current_branch in branch_labels else 0, format_func=lambda value: branch_labels[value]) if branch_labels else None
+        ship_id = c[1].selectbox("Ship-To Master Record", ship_ids, index=ship_ids.index(current_ship) if current_ship in ship_ids else 0, format_func=lambda value: ship_labels[value]) if ship_ids else None
+        refresh_master = c[2].checkbox("Refresh Latest Master Data", value=True, help="Refresh Supplier/Branch/Ship-To snapshots, HSN, technical data and the current supplier price when this revision is saved.")
+        c = st.columns(4, gap="small")
+        ship_via = c[0].text_input("Ship Via", value=str(header.get("ship_via") or ""))
+        incoterm = c[1].text_input("Incoterm", value=str(header.get("incoterm") or ""))
+        payment = c[2].text_input("Payment Term", value=str(header.get("payment_term") or ""))
+        quote_date = c[3].date_input("Quotation Date", value=_iso_date(header.get("quotation_date")))
+        c = st.columns(2, gap="small")
+        quote_ref = c[0].text_input("Quotation Reference", value=str(header.get("quotation_reference") or ""))
+        old_po = c[1].text_input("Old PO Details", value=str(header.get("old_po_reference") or ""))
+
+        section_bar("PO SOURCE ALLOCATIONS", "Edit the source quantity; QCMS blocks any reduction below quantity already received and keeps Customer Order genealogy aligned.")
+        if not source_frame.empty:
+            source_edit = st.data_editor(
+                source_frame, hide_index=True, width="stretch", height=min(360, 90 + len(source_frame) * 38),
+                disabled=["Source ID", "Item ID", "Customer Order / Schedule", "Part Number", "FSI Part Number", "UOM"],
+                column_config={"Source ID": None, "Item ID": None, "Allocated Qty": st.column_config.NumberColumn(min_value=0.001, format="%.3f", required=True)},
+                key=f"po_edit_sources_{scope}",
+            )
+        else:
+            source_edit = source_frame
+            st.caption("This historical PO has no source-allocation rows. Item quantity is edited directly below.")
+
+        section_bar("PO ITEMS", "Supplier item, HSN, quantity, price and GST are revision-controlled. With Refresh Latest Master Data enabled, current master item/HSN/price overrides the editable snapshot on save.")
+        item_edit = st.data_editor(
+            item_frame, hide_index=True, width="stretch", height=min(390, 90 + len(item_frame) * 38),
+            disabled=["Item ID", "Finished Part", "UOM", "Received Qty", "Ordered Qty"] if not source_frame.empty else ["Item ID", "Finished Part", "UOM", "Received Qty"],
+            column_config={"Item ID": None, "Ordered Qty": st.column_config.NumberColumn(min_value=0.001, format="%.3f"), "Received Qty": st.column_config.NumberColumn(format="%.3f"), "Unit Price": st.column_config.NumberColumn(min_value=0.0, format="%.4f"), "GST %": st.column_config.NumberColumn(min_value=0.0, format="%.2f")},
+            key=f"po_edit_items_{scope}",
+        )
+        remarks = st.text_area("Remarks", value=str(header.get("remarks") or ""), height=70)
+        instructions = st.text_area("Comments / Special Instructions", value=str(header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS), height=130)
+        confirm = st.checkbox("I confirm this PO revision must be re-approved and re-confirmed by the supplier.", value=False)
+        submitted = st.form_submit_button("Save Revised Purchase Order & Submit for Re-Approval", type="primary", width="stretch", disabled=not bool(login_employee_id) or not confirm)
+    if submitted:
+        try:
+            allocations = [{"id": row.get("Source ID"), "allocated_qty": row.get("Allocated Qty")} for _, row in source_edit.iterrows()] if not source_edit.empty else []
+            item_payload = [{"id": row.get("Item ID"), "item_no": row.get("Supplier Item / FSI"), "hsn_sac_code": row.get("HSN / SAC"), "quantity": row.get("Ordered Qty"), "unit_price": row.get("Unit Price"), "gst_percent": row.get("GST %"), "remarks": row.get("Remarks")} for _, row in item_edit.iterrows()]
+            result = service.update_purchase_order(purchase_order_id, {
+                "order_date": po_date.isoformat(), "delivery_date": delivery.isoformat(), "company_branch_id": branch_id,
+                "ship_to_source_type": ship_source, "ship_to_branch_id": str(ship_id or "") if ship_source == "BRANCH" else None,
+                "ship_to_party_id": str(ship_id or "") if ship_source != "BRANCH" else None,
+                "ship_via": ship_via, "incoterm": incoterm, "payment_term": payment, "quotation_reference": quote_ref,
+                "quotation_date": quote_date.isoformat(), "old_po_reference": old_po, "remarks": remarks,
+                "special_instructions": instructions, "refresh_master_data": refresh_master, "items": item_payload, "allocations": allocations,
+            })
+            revised = result.get("header") or {}
+            target = service.purchase_order_approval_target(purchase_order_id)
+            NotificationService(service.repo).notify(
+                "PO_APPROVAL_PENDING", related_table="supply_purchase_orders", related_id=purchase_order_id,
+                recipient_email=str(target.get("email") or "").strip() or None, recipient_name=str(target.get("employee_name") or "").strip() or None,
+                context={"po_number": revised.get("po_number"), "supplier_name": supplier_labels.get(supplier_id,"Supplier"), "supplier_id": supplier_id, "next_stage": str(target.get("level_name") or "Re-Approval")},
+            )
+            save_success_popup("Purchase Order revised using the latest master data and submitted for re-approval. Supplier reconfirmation is required after approval.", queue_for_rerun=True)
+            st.rerun()
+        except Exception as exc:
+            st.error(str(exc))
 
 
 def render_purchase_orders() -> None:
@@ -1085,6 +1228,11 @@ def render_purchase_orders() -> None:
         _searchable_grid(frame.drop(columns=["_po_id","_item_id","_part_id","_supplier_id"],errors="ignore"),title="Purchase Order Register",key="supply_purchase_order_register",height=560)
         headers={str(r.get("id")):r for r in service.purchase_orders()}
         labels={pid:f"{h.get('po_number')} · {str(h.get('po_type') or '').replace('_',' ').title()} · {supplier_labels.get(str(h.get('supplier_id')),'Supplier')} · {len(service.purchase_order_items(pid))} line(s) · {h.get('status')}" for pid,h in headers.items()}
+        requested_po = str(st.session_state.pop("supply_po_edit_request_id", "") or "")
+        if requested_po in labels:
+            st.session_state["supply_po_register_select"] = requested_po
+        elif st.session_state.get("supply_po_register_select") not in labels and labels:
+            st.session_state["supply_po_register_select"] = next(iter(labels))
         selected_po=st.selectbox("Purchase Order for PDF / Status",list(labels),format_func=lambda v:labels[v],key="supply_po_register_select") if labels else None
         if selected_po:
             service.sync_purchase_order_status(selected_po); header=service.purchase_order(selected_po) or {}; items=service.purchase_order_items_for_print(selected_po); c=st.columns(2,gap="small")
@@ -1097,6 +1245,19 @@ def render_purchase_orders() -> None:
                 context={"po_number": header.get("po_number"), "supplier_id": str(header.get("supplier_id") or ""), "next_task": "Raw Material Receipt / Material Inward" if str(header.get("po_type")) == "RAW_MATERIAL" else "Forging Receipt"},
                 include_supplier=True,
             )
+            edit_open = st.toggle(
+                "Edit Selected Purchase Order",
+                value=bool(requested_po == selected_po),
+                key=f"po_edit_open_{selected_po}",
+                disabled=not perms.get("can_edit", False),
+                help="Controlled PO revision refreshes latest master snapshots, preserves genealogy, and sends the PO back for approval / supplier reconfirmation.",
+            )
+            if edit_open:
+                section_bar("EDIT SELECTED PURCHASE ORDER", "Revise controlled PO fields and allocations. Supplier / source Part genealogy cannot be changed in-place.")
+                _render_purchase_order_edit(
+                    service, purchase_order_id=selected_po, header=header, parts=parts, parties=parties,
+                    supplier_labels=supplier_labels, perms=perms, login_employee_id=login_employee_id,
+                )
             approval_status=str(header.get("approval_status") or "APPROVED").upper()
             if approval_status=="PENDING_APPROVAL":
                 st.warning("This Purchase Order is awaiting controlled approval and is not effective for receipt/procurement execution yet.")

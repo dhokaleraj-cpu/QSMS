@@ -235,6 +235,105 @@ TRANSACTION_DELETE_TABLES: dict[str, tuple[str, str]] = {
 }
 
 
+
+def _reference_key_for_party(record: dict) -> str:
+    raw = record.get("party_types") or record.get("party_type") or []
+    if isinstance(raw, str):
+        values = [piece.strip().upper() for piece in raw.replace(";", ",").split(",") if piece.strip()]
+    else:
+        values = [str(piece).strip().upper() for piece in (raw or []) if str(piece).strip()]
+    mapping = {
+        "CUSTOMER": "customers", "SUPPLIER": "suppliers", "STEEL_MILL": "steel_mills",
+        "STEEL MILL": "steel_mills", "OSP_VENDOR": "osp_vendors", "OSP VENDOR": "osp_vendors",
+    }
+    return next((mapping[value] for value in values if value in mapping), "suppliers")
+
+
+def _open_selected_record_for_edit(table: str, record: dict) -> None:
+    """Route a Records Centre selection to its controlled source editor.
+
+    This is deliberately navigation-only: each source module keeps its own workflow,
+    approval and genealogy rules.  Records Centre therefore exposes one consistent
+    Edit action without creating a dangerous generic database editor.
+    """
+    pages = st.session_state.get("_qsms_pages") or {}
+    record_id = str(record.get("id") or "")
+    route = None
+    if table in {"parts", "part_raw_material_details", "part_raw_material_technical_data", "part_supplier_price_history"}:
+        part_id = record_id if table == "parts" else str(record.get("part_id") or "")
+        st.session_state["edit_part_id"] = part_id; route = "part-entry"
+    elif table == "material_grades":
+        st.session_state["edit_grade_id"] = record_id; route = "grade-entry"
+    elif table == "parties":
+        st.session_state["edit_reference_id"] = record_id
+        st.session_state["edit_reference_key"] = _reference_key_for_party(record); route = "reference-entry"
+    elif table == "processes":
+        st.session_state["edit_process_id"] = record_id; route = "process-entry"
+    elif table == "inspection_stages":
+        st.session_state["edit_reference_id"] = record_id; st.session_state["edit_reference_key"] = "inspection_stages"; route = "reference-entry"
+    elif table == "company_branches":
+        st.session_state["company_branch_edit_select"] = record_id; route = "company-branch-entry"
+    elif table == "employees":
+        st.session_state["edit_employee_id"] = record_id; route = "employee-entry"
+    elif table == "inspection_plans":
+        st.session_state["edit_inspection_layout_id"] = record_id; route = "inspection-layout-entry"
+    elif table in {"rmtc_approvals", "rmtc_part_approvals"}:
+        rid = record_id if table == "rmtc_approvals" else str(record.get("rmtc_approval_id") or "")
+        st.session_state["edit_rmtc_id"] = rid; st.session_state["rmtc_entry_mode"] = "edit"; route = "rmtc-entry"
+    elif table == "inward_lots":
+        st.session_state["edit_inward_id"] = record_id; route = "inward-entry"
+    elif table == "osp_jobs":
+        st.session_state["osp_material_out_manage_id"] = record_id; route = "osp-material-out"
+    elif table == "osp_receipts":
+        st.session_state["osp_inward_manage_id"] = record_id; route = "osp-inward"
+    elif table == "production_batches":
+        route = "osp-records"
+    elif table == "inspection_reports":
+        st.session_state["edit_dimensional_id"] = record_id; route = "dimensional-entry"
+    elif table == "lab_tests":
+        st.session_state["edit_metlab_id"] = record_id; route = "metlab-entry"
+    elif table == "npd_orders":
+        st.session_state["npd_order_edit"] = record_id; route = "npd-status"
+    elif table == "npd_process_flows":
+        if record.get("part_id"): st.session_state["npd_flow_part"] = str(record.get("part_id"))
+        route = "npd-process-flow"
+    elif table == "ppap_projects":
+        st.session_state["apqp_project_edit_request_id"] = record_id; route = "apqp"
+    elif table == "qc_calculation_records":
+        route = "qc-calculation-records"
+    elif table == "quality_complaints":
+        complaint_type = str(record.get("complaint_type") or "CUSTOMER").upper()
+        st.session_state[f"selected_{complaint_type.lower()}_complaint"] = record_id
+        route = "supplier-complaint" if complaint_type == "SUPPLIER" else "customer-complaint"
+    elif table == "supply_customer_orders":
+        st.session_state["supply_customer_order_edit_select"] = record_id; route = "supply-customer-orders"
+    elif table in {"supply_purchase_orders", "supply_purchase_order_items", "supply_po_confirmations"}:
+        po_id = record_id if table == "supply_purchase_orders" else str(record.get("purchase_order_id") or "")
+        st.session_state["supply_po_edit_request_id"] = po_id; route = "supply-purchase-orders"
+    elif table == "supply_opening_stock":
+        st.session_state["opening_stock_edit_select"] = record_id; route = "supply-opening-stock"
+    elif table == "supply_rm_purchase_orders":
+        st.session_state["supply_rm_po_edit_select"] = record_id; route = "supply-rm-procurement"
+    elif table == "supply_rm_receipts":
+        inward_id = str(record.get("inward_lot_id") or "")
+        if inward_id:
+            st.session_state["edit_inward_id"] = inward_id; route = "inward-entry"
+        else:
+            route = "supply-rm-receipt"
+    elif table == "supply_rm_dispatches":
+        st.session_state["supply_rm_dispatch_edit_select"] = record_id; route = "supply-rm-dispatch"
+    elif table == "supply_forging_orders":
+        st.session_state["supply_forging_order_edit_edit_select"] = record_id; route = "supply-forging"
+    elif table == "supply_forging_receipts":
+        st.session_state["supply_forging_receipt_edit_edit_select"] = record_id; route = "supply-forging"
+    elif table == "supply_downstream_events":
+        st.session_state["supply_downstream_edit_edit_select"] = record_id; route = "supply-downstream"
+    if route and route in pages:
+        st.switch_page(pages[route])
+    else:
+        st.warning("This child/detail record is edited through its parent source module. Open the related module from the main navigation.")
+
+
 def _generic_record_label(row: dict) -> str:
     candidates = (
         "part_number", "fsi_part_number", "po_number", "order_number", "customer_order_no", "rmtc_number",
@@ -296,6 +395,13 @@ def render_universal_pdf_center(repo: Repository) -> None:
             "Download Selected Record PDF", record_pdf, file_name=f"QCMS_{table}_{selected_id}.pdf",
             mime="application/pdf", width="stretch", key=f"universal_record_pdf_{table}_{selected_id}",
         )
+        if perms.get("can_edit", False):
+            if st.button(
+                "Open Selected Record for Controlled Edit", icon=":material/edit:", width="stretch",
+                key=f"universal_edit_{table}_{selected_id}",
+                help="Opens the source module so its approval, audit and genealogy rules remain enforced.",
+            ):
+                _open_selected_record_for_edit(table, record)
 
 
 def render_master_delete_center(repo: Repository) -> None:

@@ -12,7 +12,7 @@ from core.attachments import AttachmentService
 from core.delete_service import password_delete_panel
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes
-from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, subpage_navigation, template_download_row
 from core.selection_labels import part_label
 
 
@@ -84,7 +84,7 @@ def render_entry() -> None:
     elif selected != "__new__":
         existing = service.get_plan(selected)
 
-    editor_token = str(selected or "__new__")
+    editor_token = record_widget_token("inspection-layout-entry", existing or {}, selected=selected or "__new__")
     current_part = str((existing or {}).get("part_id") or next(iter(part_map)))
     current_process = str((existing or {}).get("process_id") or "")
     current_stage = str((existing or {}).get("inspection_stage_id") or "")

@@ -13,7 +13,7 @@ from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
 from core.reporting import controlled_record_pdf_bytes
 from core.selection_labels import customer_standard_label, party_label, process_label
-from core.ui import consume_master_blank_request, page_header, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, subpage_navigation, template_download_row
 
 STANDARD_SLOT = AttachmentSlot(
     "STANDARD_DOCUMENT",
@@ -88,6 +88,7 @@ def render_entry() -> None:
     )
     existing = next((r for r in rows if str(r.get("id")) == selected), {})
     writable = perms["can_edit"] if existing else perms["can_create"]
+    scope = record_widget_token("standards-entry", existing, selected=selected)
 
     auto_key = "_qcms_auto_customer_standard_code"
     if not existing and not st.session_state.get(auto_key):
@@ -97,7 +98,7 @@ def render_entry() -> None:
             st.session_state[auto_key] = ""
 
     section_bar("STANDARD / SPECIFICATION DETAILS")
-    with st.form(f"customer_standard_{selected}"):
+    with st.form(f"customer_standard_{scope}"):
         c = st.columns(4, gap="small")
         standard_code = c[0].text_input(
             "Standard Code",
@@ -146,7 +147,7 @@ def render_entry() -> None:
             new_standard_attachment = st.file_uploader(
                 "Upload Standard / Specification File",
                 type=ALLOWED_ATTACHMENT_TYPES,
-                key="new_customer_standard_attachment",
+                key=f"new_customer_standard_attachment_{scope}",
                 help="Optional at initial save. The file will be stored against the new Standard record and can later be downloaded, replaced or password-deleted.",
             )
         save = st.form_submit_button("Save Customer Standard / Specification", type="primary", disabled=not writable, width="stretch")

@@ -14,7 +14,7 @@ from core.notification_ui import notification_confirmation, notification_overrid
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes, dimensional_record_pdf_bytes, metlab_record_pdf_bytes
 from core.selection_labels import party_label, process_label
-from core.ui import kpi_grid, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, workflow_progress
+from core.ui import kpi_grid, page_header, record_widget_token, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, workflow_progress
 
 
 def _label(row: dict) -> str:
@@ -80,7 +80,8 @@ def render_material_out() -> None:
         return
     spec_labels = {str(row["id"]): f"{process_label(processes.get(str(row.get('process_id'))) or {})} · {row.get('process_specification') or '-'}" for row in specifications}
     vendor_labels = {str(row["id"]): party_label(row, include_type=True) for row in vendors}
-    with st.form("osp_material_out_form"):
+    new_scope = record_widget_token("osp-material-out-new", candidate, selected=selected_key)
+    with st.form(f"osp_material_out_form_{new_scope}"):
         c = st.columns(4, gap="small")
         spec_id = c[0].selectbox("OSP Process / Specification", list(spec_labels), format_func=lambda value: spec_labels[value])
         vendor_id = c[1].selectbox("OSP Vendor", list(vendor_labels), format_func=lambda value: vendor_labels[value]) if vendor_labels else None
@@ -108,7 +109,8 @@ def render_material_out() -> None:
             mlabels = {str(r["id"]): _label(r) for r in managed}
             mid = st.selectbox("Existing Material Out", list(mlabels), format_func=lambda value: mlabels[value], key="osp_material_out_manage_id")
             mrow = next(r for r in managed if str(r["id"]) == mid)
-            with st.form("osp_material_out_edit_form"):
+            edit_scope = record_widget_token("osp-material-out-edit", mrow, selected=mid)
+            with st.form(f"osp_material_out_edit_form_{edit_scope}"):
                 c=st.columns(4,gap="small")
                 mdate=c[0].date_input("Material Out Date", value=date.fromisoformat(str(mrow.get("dispatch_date"))[:10]), format="DD-MM-YYYY")
                 mexpected=c[1].date_input("Expected Return Date", value=date.fromisoformat(str(mrow.get("expected_return_date"))[:10]) if mrow.get("expected_return_date") else date.today()+timedelta(days=7), format="DD-MM-YYYY")
@@ -134,7 +136,8 @@ def render_sample_receipt() -> None:
     job = _job_selector(service.jobs_for_sample_receipt(), "OSP Material Out", "osp_sample_job")
     if not job: return
     osp_notify_pref = notification_confirmation(NotificationService(service.repo), "OSP_SAMPLE_PENDING", key=f"osp_sample_notify_{job.get('id')}", context={"supplier_id":str(job.get("vendor_id") or ""),"supplier_name":job.get("vendor_name"),"part_number":job.get("part_number"),"next_task":"OSP Sample Dimensional / MetLAB"}, include_supplier=True, default_send=True)
-    with st.form("osp_sample_receipt_form"):
+    sample_scope = record_widget_token("osp-sample-receipt", job, selected=job.get("id"))
+    with st.form(f"osp_sample_receipt_form_{sample_scope}"):
         c = st.columns(4, gap="small")
         received_date = c[0].date_input("Sample Received Date", value=date.today(), format="DD-MM-YYYY")
         reference = c[1].text_input("Sample Reference", value=str(job.get("sample_reference") or ""))
@@ -176,7 +179,8 @@ def render_inward() -> None:
     service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS")
     job = _job_selector(service.jobs_for_full_receipt(), "Sample-approved OSP Batch", "osp_inward_job")
     if not job: return
-    with st.form("osp_full_inward_form"):
+    inward_scope = record_widget_token("osp-inward-new", job, selected=job.get("id"))
+    with st.form(f"osp_full_inward_form_{inward_scope}"):
         c = st.columns(4, gap="small")
         receipt_date = c[0].date_input("OSP Inward Date", value=date.today(), format="DD-MM-YYYY")
         receipt_challan = c[1].text_input("Vendor Delivery Challan")
@@ -206,7 +210,8 @@ def render_inward() -> None:
             rlabels={str(r["id"]):f"{r.get('receipt_number')} · {r.get('_job_label')} · {float(r.get('quantity_received') or 0):,.0f} pcs" for r in receipt_pairs}
             rid=st.selectbox("OSP Inward Receipt", list(rlabels), format_func=lambda value:rlabels[value], key="osp_inward_manage_id")
             rec=next(r for r in receipt_pairs if str(r["id"])==rid)
-            with st.form("osp_inward_edit_form"):
+            receipt_scope = record_widget_token("osp-inward-edit", rec, selected=rid)
+            with st.form(f"osp_inward_edit_form_{receipt_scope}"):
                 c=st.columns(4,gap="small")
                 rdate=c[0].date_input("OSP Inward Date", value=date.fromisoformat(str(rec.get("receipt_date"))[:10]), format="DD-MM-YYYY")
                 rchallan=c[1].text_input("Vendor Delivery Challan", value=str(rec.get("receipt_challan") or ""))

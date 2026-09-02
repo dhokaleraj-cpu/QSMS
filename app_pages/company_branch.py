@@ -8,7 +8,7 @@ import streamlit as st
 from core.access import current_permissions
 from core.branch_context import branch_label
 from core.repository import Repository
-from core.ui import consume_master_blank_request, page_header, portal_table, save_success_popup, section_bar, subpage_navigation
+from core.ui import consume_master_blank_request, page_header, portal_table, record_widget_token, save_success_popup, section_bar, subpage_navigation
 
 
 def _norm(value: object) -> str:
@@ -43,9 +43,10 @@ def render_entry() -> None:
     selected = st.selectbox("New / Edit Company Branch", options, format_func=lambda v: "— New Company Branch —" if not v else labels[v], key="company_branch_edit_select")
     existing = repo.get("company_branches", selected) if selected else None
     writable = perms["can_edit"] if existing else perms["can_create"]
+    scope = record_widget_token("company-branch-entry", existing or {}, selected=selected or "new")
 
     section_bar("COMPANY / BRANCH IDENTITY", "This master is reusable throughout QCMS. The logged-in employee Plant resolves to this Branch, and Purchase Orders use it for issuing-branch and Ship-To data.")
-    with st.form(f"company_branch_form_{selected or 'new'}"):
+    with st.form(f"company_branch_form_{scope}"):
         c = st.columns(4, gap="small")
         branch_code = c[0].text_input("Branch Code", value=str((existing or {}).get("branch_code") or ""), placeholder="D9")
         plant_code = c[1].text_input("Plant Code", value=str((existing or {}).get("plant_code") or ""), placeholder="D9")
