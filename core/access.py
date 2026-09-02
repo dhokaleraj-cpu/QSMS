@@ -21,6 +21,7 @@ MODULES = (
     ("NPD_APQP", "NPD & APQP"),
     ("QC_CALCULATION_TOOLS", "QC Calculation Tools"),
     ("COMPLAINT_MANAGEMENT", "Complaint Management"),
+    ("CALIBRATION_VALIDATION", "Calibration & Validation"),
     ("SUPPLY_CHAIN", "Supply Chain"),
     ("USER_ACCESS", "Users & Access"),
 )
@@ -72,6 +73,8 @@ def _legacy_role_permissions(profile: Mapping[str, Any] | None, module_key: str)
         write = role in quality_roles | {"PRODUCTION", "MANAGEMENT"}
     elif module_key == "NPD_APQP":
         write = role in quality_roles | {"PRODUCTION", "BUSINESS_DEVELOPMENT", "MANAGEMENT", "MASTER_DATA"}
+    elif module_key == "CALIBRATION_VALIDATION":
+        write = role in quality_roles | {"MANAGEMENT", "MASTER_DATA"}
     else:
         write = role in quality_roles | {"MASTER_DATA", "MANAGEMENT"}
     validate = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "METLAB_APPROVER", "SQA", "SUPPLY_CHAIN", "PROCUREMENT", "MANAGEMENT"}

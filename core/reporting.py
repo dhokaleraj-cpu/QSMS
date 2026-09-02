@@ -4,7 +4,7 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 import re
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import pandas as pd
 from PIL import Image as PILImage
@@ -1266,6 +1266,8 @@ def controlled_record_pdf_bytes(
     *,
     record_number: str = "",
     subtitle: str = "",
+    images: Sequence[Mapping[str, object]] | None = None,
+    images_title: str = "PHOTOGRAPHS",
 ) -> bytes:
     """Create a compact A4 portrait controlled-record PDF with the common QCMS header/footer.
 
@@ -1339,6 +1341,12 @@ def controlled_record_pdf_bytes(
         widths = [content_width / max(1, len(columns))] * max(1, len(columns))
         status_columns = tuple(index for index, name in enumerate(columns) if "status" in name.casefold() or "result" in name.casefold())
         story.append(_rmtc_grid(table_rows, widths, styles["header"], styles["cell"], status_columns=status_columns))
+
+    image_rows = [dict(item) for item in (images or []) if bytes(item.get("bytes") or b"")]
+    if image_rows:
+        story.append(Spacer(1, 2.4 * mm))
+        story.append(_rmtc_section_bar(images_title, content_width, styles["section"]))
+        story.append(_photo_grid_table(image_rows, content_width, styles["center"], columns=2, max_height=52 * mm))
 
     doc.build(
         story,

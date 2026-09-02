@@ -369,6 +369,23 @@ def render_home() -> None:
     page_header("Supply Chain", "Master-linked Customer Order to final dispatch genealogy", "Supply Chain")
     service=SupplyChainService(); perms=current_permissions("SUPPLY_CHAIN"); orders=service.customer_orders(); active=[r for r in orders if str(r.get("status")) not in {"COMPLETED","CANCELLED"}]
     overdue=[r for r in active if _due_status(r.get("status"),r.get("customer_delivery_date"))=="OVERDUE"]
+    if overdue:
+        parts, parties, _ = _maps(service)
+        cards=[]
+        for row in sorted(overdue, key=lambda r: str(r.get("customer_delivery_date") or "9999-12-31"))[:20]:
+            due=_iso_date(row.get("customer_delivery_date")); days=max((date.today()-due).days,0)
+            part=parts.get(str(row.get("part_id"))) or {}; customer=parties.get(str(row.get("customer_id"))) or {}
+            progress=_order_progress(service,row); current=next((x for x in progress if str(x.get("state")) in {"pending","current","overdue"} and str(x.get("label"))!="Customer Order"),None)
+            cards.append(
+                '<div style="border:1px solid #FCA5A5;border-left:5px solid #B91C1C;background:#FEF2F2;border-radius:8px;padding:10px 12px;min-width:235px;flex:1 1 260px">'
+                f'<div style="font-weight:800;color:#991B1B">{safe(row.get("master_reference_no") or row.get("customer_order_no") or "Customer Order")}</div>'
+                f'<div style="font-size:12px;color:#334155;margin-top:4px">Customer: {safe(customer.get("party_name") or "-")}</div>'
+                f'<div style="font-size:12px;color:#334155">Part: {safe(part.get("part_number") or "-")} · {safe(part.get("part_name") or "")}</div>'
+                f'<div style="font-size:12px;color:#334155">Delivery: {safe(row.get("customer_delivery_date") or "-")}</div>'
+                f'<div style="font-size:12px;color:#991B1B;font-weight:800">{days} day(s) overdue · Next: {safe((current or {}).get("label") or "Review order")}</div></div>'
+            )
+        section_bar("PRIORITY · OVERDUE CUSTOMER ORDERS")
+        st.markdown('<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+''.join(cards)+'</div>',unsafe_allow_html=True)
     dispatched=sum(service.totals(str(r["id"]))["customer_dispatched_pcs"] for r in orders)
     kpi_grid([
         {"label":"Open Customer Orders","value":len(active),"foot":"Purchase Orders + Monthly Schedules","color":"#0B6FAE","background":"#EFF7FD"},

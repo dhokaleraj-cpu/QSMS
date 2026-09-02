@@ -21,6 +21,8 @@ TRANSACTION_DELETE_TABLES = {
     "npd_process_flows", "ppap_projects", "pfd_headers", "pfmea_headers",
     "control_plan_headers", "spc_studies", "msa_studies", "capacity_studies",
     "qc_calculation_records", "quality_complaints",
+    "quality_asset_part_process_links", "quality_asset_calibration_records",
+    "standard_room_inspection_records",
 }
 
 

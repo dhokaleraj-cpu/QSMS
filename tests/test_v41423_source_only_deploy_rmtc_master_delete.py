@@ -6,13 +6,13 @@ ROOT=Path(__file__).resolve().parents[1]
 def text(path): return (ROOT/path).read_text(encoding='utf-8')
 
 def test_release_identity_and_source_only_schema_baseline():
-    assert text('VERSION').strip() in {'4.14.23','4.14.24','4.14.25'}
+    assert text('VERSION').strip() in {'4.14.23','4.14.24','4.14.25','4.14.26'}
     manifest=json.loads(text('DEPLOYMENT_MANIFEST.json'))
-    assert manifest['version'] in {'4.14.23','4.14.24','4.14.25'}
-    assert manifest['build'] in {'41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE','41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE', '41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE'}
-    assert manifest['database_schema_required']=='4.14.22'
+    assert manifest['version'] in {'4.14.23','4.14.24','4.14.25','4.14.26'}
+    assert manifest['build'] in {'41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE','41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE', '41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE', '41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS'}
+    assert manifest['database_schema_required'] in {'4.14.22','4.14.26'}
     assert manifest['database_migration_required'] is False
-    assert manifest['supabase_release_contract']=='QCMS_V41422_FULL_READY'
+    assert manifest['supabase_release_contract'] in {'QCMS_V41422_FULL_READY','QCMS v4.14.26 live migration applied and verified during controlled release packaging'}
 
 def test_same_heat_new_rmtc_uses_fresh_selector_nonce_and_blank_certificate_state():
     page=text('app_pages/rmtc_pages.py')

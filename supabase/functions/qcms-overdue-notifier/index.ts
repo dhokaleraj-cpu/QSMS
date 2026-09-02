@@ -18,6 +18,7 @@ type DigestRow = {
   quantity: string;
   responsible_employee_id?: string;
   supplier_id?: string;
+  order_id?: string;
 };
 
 function hex(bytes: ArrayBuffer): string {
@@ -59,6 +60,40 @@ function eligibleDate(due: any, localDate: string, daysAhead: number, includeOpe
 }
 function renderTemplate(value: string, ctx: Row): string {
   return String(value || "").replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_m, key) => String(ctx[key] ?? "-"));
+}
+function esc(value: any): string {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+function baseHtml(text: string): string {
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#273444;line-height:1.5">${String(text || "").split("\n").map((x) => esc(x)).join("<br>")}</div>`;
+}
+async function npdCardsHtml(admin: any, tenantId: string, assignedRows: DigestRow[], maps: { parties: Map<string, Row>; parts: Map<string, Row>; employees: Map<string, Row> }, localDate: string): Promise<string> {
+  const orderIds = Array.from(new Set(assignedRows.map((r) => String(r.order_id || "")).filter(Boolean)));
+  if (!orderIds.length) return "";
+  const [{ data: orders = [] }, { data: steps = [] }] = await Promise.all([
+    admin.from("npd_orders").select("id,order_number,part_id,customer_id,delivery_date,status,created_by").eq("tenant_id", tenantId).in("id", orderIds).limit(500),
+    admin.from("npd_order_steps").select("id,npd_order_id,operation_no,process_name,process_name_snapshot,target_date,status,completed_date,responsible_employee_id").eq("tenant_id", tenantId).in("npd_order_id", orderIds).order("operation_no").limit(5000),
+  ]);
+  const stepByOrder = new Map<string, Row[]>();
+  for (const step of steps) stepByOrder.set(String(step.npd_order_id), [...(stepByOrder.get(String(step.npd_order_id)) || []), step]);
+  let html = '<div style="font-family:Arial,Helvetica,sans-serif;margin-top:18px"><div style="font-size:15px;font-weight:700;color:#8B0015;margin-bottom:8px">NPD PROCESS STATUS · OPEN / OVERDUE</div>';
+  for (const order of orders) {
+    const allSteps = stepByOrder.get(String(order.id)) || []; const done = allSteps.filter((x) => String(x.status || "").toUpperCase() === "COMPLETED").length;
+    const part = maps.parts.get(String(order.part_id)) || {}; const customer = maps.parties.get(String(order.customer_id)) || {};
+    html += '<table cellpadding="0" cellspacing="8" border="0" style="border-collapse:separate;width:100%;margin:0 0 12px 0"><tr>';
+    html += `<td valign="top" style="width:220px;border:1px solid #CBD5E1;border-left:4px solid #8B0015;padding:10px;background:#FFFFFF"><div style="font-size:15px;font-weight:800;color:#17212B">${esc(part.part_number || part.fsi_part_number || "-")}</div><div style="font-weight:700;margin:2px 0 8px">${esc(part.part_name || "")}</div><div style="font-size:11px"><b>Order:</b> ${esc(order.order_number || "-")}<br><b>Customer:</b> ${esc(customer.party_code || "")} · ${esc(customer.party_name || "-")}<br><b>Delivery:</b> ${esc(order.delivery_date || "-")}<br><b>Progress:</b> ${done}/${allSteps.length}</div></td>`;
+    for (const step of allSteps) {
+      const status = String(step.status || "PENDING").toUpperCase(); const target = String(step.target_date || "").slice(0,10); const overdue = status !== "COMPLETED" && Boolean(target) && target < localDate;
+      let bg="#FFF7ED", border="#FDBA74", color="#9A3412", label="Pending";
+      if (status === "COMPLETED") { bg="#DCFCE7"; border="#86EFAC"; color="#166534"; label="✓ Completed"; }
+      else if (overdue) { bg="#FEE2E2"; border="#FCA5A5"; color="#991B1B"; label="! Overdue"; }
+      else if (status === "IN_PROGRESS") { bg="#DBEAFE"; border="#93C5FD"; color="#1D4ED8"; label="● In Process"; }
+      else if (status === "ON_HOLD") { bg="#F3E8FF"; border="#D8B4FE"; color="#6B21A8"; label="Ⅱ On Hold"; }
+      html += `<td valign="top" style="min-width:155px;border:1px solid ${border};padding:10px;background:${bg};color:#273444"><div style="font-size:11px;font-weight:800;color:#64748B">OP ${esc(step.operation_no || "-")}</div><div style="font-size:12px;font-weight:800;margin:5px 0">${esc(step.process_name_snapshot || step.process_name || "Process")}</div><div style="display:inline-block;padding:4px 6px;border-radius:4px;background:${bg};color:${color};font-size:11px;font-weight:800">${label}</div><div style="font-size:11px;margin-top:8px">Target ${esc(target || "Not set")}</div></td>`;
+    }
+    html += '</tr></table>';
+  }
+  return html + '</div>';
 }
 function wrap(text: string, max = 115): string[] {
   const words = String(text || "").split(/\s+/); const lines: string[] = []; let line = "";
@@ -141,14 +176,25 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
       const vendor = maps.parties.get(String(r.vendor_id)) || {}; const part = maps.parts.get(String(r.part_id)) || {};
       pushIf({ reference: String(r.osp_job_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(vendor.party_name || vendor.party_code || "-"), due_date: String(r.expected_return_date || "-"), status: String(r.status || "AT_VENDOR"), quantity: `${n(Number(r.quantity_dispatched || 0) - Number(r.quantity_received || 0))} pcs pending`, supplier_id: String(r.vendor_id || "") }, r.expected_return_date);
     }
+  } else if (schedule.schedule_key === "CALIBRATION_VALIDATION_DUE") {
+    const [{ data: links = [] }, { data: assets = [] }, { data: processes = [] }] = await Promise.all([
+      admin.from("quality_asset_part_process_links").select("*").eq("tenant_id", tenantId).eq("status", "ACTIVE").limit(10000),
+      admin.from("quality_assets").select("id,asset_code,asset_name,asset_type,serial_number,location").eq("tenant_id", tenantId).limit(5000),
+      admin.from("processes").select("id,process_code,process_name").eq("tenant_id", tenantId).limit(5000),
+    ]);
+    const assetMap = new Map<string, Row>(assets.map((r: Row) => [String(r.id), r])); const processMap = new Map<string, Row>(processes.map((r: Row) => [String(r.id), r]));
+    for (const r of links) {
+      const asset = assetMap.get(String(r.asset_id)) || {}; const part = maps.parts.get(String(r.part_id)) || {}; const process = processMap.get(String(r.process_id)) || {};
+      pushIf({ reference: `${asset.asset_code || "ASSET"} · ${asset.asset_name || "Gauge / Fixture"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: `${process.process_code || ""} ${process.process_name || "General"}`.trim(), due_date: String(r.next_due_date || "-"), status: String(r.service_type || "CALIBRATION"), quantity: `${r.frequency_days || 365} day frequency`, responsible_employee_id: String(r.responsible_employee_id || "") || undefined }, r.next_due_date);
+    }
   } else if (schedule.schedule_key === "NPD_PROCESS_OPEN_OVERDUE") {
     const { data: steps = [] } = await admin.from("npd_order_steps").select("*").eq("tenant_id", tenantId).limit(5000);
-    const { data: orders = [] } = await admin.from("npd_orders").select("id,order_number,part_id").eq("tenant_id", tenantId).limit(5000);
+    const { data: orders = [] } = await admin.from("npd_orders").select("id,order_number,part_id,customer_id,delivery_date").eq("tenant_id", tenantId).limit(5000);
     const orderMap = new Map<string, Row>(orders.map((r: Row) => [String(r.id), r]));
     for (const r of steps) {
       if (["COMPLETED", "APPROVED", "NOT_APPLICABLE", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
       const order = orderMap.get(String(r.npd_order_id)) || {}; const part = maps.parts.get(String(order.part_id)) || {}; const emp = maps.employees.get(String(r.responsible_employee_id)) || {};
-      pushIf({ reference: `${order.order_number || "NPD"} · OP ${r.operation_no || "-"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || "Unassigned", due_date: String(r.target_date || "-"), status: String(r.status || "PENDING"), quantity: String(r.process_name_snapshot || r.responsible || ""), responsible_employee_id: String(r.responsible_employee_id || "") }, r.target_date);
+      pushIf({ reference: `${order.order_number || "NPD"} · OP ${r.operation_no || "-"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || "Unassigned", due_date: String(r.target_date || "-"), status: String(r.status || "PENDING"), quantity: String(r.process_name_snapshot || r.process_name || r.responsible || ""), responsible_employee_id: String(r.responsible_employee_id || ""), order_id: String(r.npd_order_id || "") }, r.target_date);
     }
   }
   return result;
@@ -223,15 +269,17 @@ Deno.serve(async (req: Request) => {
           const { data: exists } = await admin.from("qcms_notification_outbox").select("id").eq("tenant_id", tenantId).eq("dedupe_key", dedupeKey).maybeSingle();
           if (exists?.id) continue;
           const pdfBytes = await digestPdf(String(schedule.schedule_label || "QCMS Open / Overdue Report"), clock.date, recipient.rows);
+          let bodyHtml = baseHtml(bodyText);
+          if (schedule.schedule_key === "NPD_PROCESS_OPEN_OVERDUE") bodyHtml += await npdCardsHtml(admin, tenantId, recipient.rows, maps, clock.date);
           const fileName = `QCMS_${String(schedule.schedule_key).replace(/[^A-Za-z0-9_-]+/g, "_")}_${clock.date}.pdf`;
           const path = `${tenantId}/notification_exports/automatic/${schedule.schedule_key}/${clock.date}/${crypto.randomUUID()}_${fileName}`;
           const upload = await admin.storage.from(BUCKET).upload(path, pdfBytes, { contentType: "application/pdf", upsert: false }); if (upload.error) throw upload.error;
           const manifest = [{ bucket: BUCKET, object_path: path, file_name: fileName, mime_type: "application/pdf", generated: true }];
-          const { data: outbox, error: insertError } = await admin.from("qcms_notification_outbox").insert({ tenant_id: tenantId, event_key: schedule.event_key, recipient_email: recipient.email, recipient_name: recipient.name || null, subject, body_text: bodyText, body_html: bodyText.split("\n").map((x: string) => x.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")).join("<br>"), context: { ...baseCtx, schedule_key: schedule.schedule_key, record_count: recipient.rows.length }, template_key: schedule.template_key || schedule.event_key, attachment_manifest: manifest, dedupe_key: dedupeKey, is_automatic: true, scheduled_for: now.toISOString(), status: "PENDING" }).select("*").single();
+          const { data: outbox, error: insertError } = await admin.from("qcms_notification_outbox").insert({ tenant_id: tenantId, event_key: schedule.event_key, recipient_email: recipient.email, recipient_name: recipient.name || null, subject, body_text: bodyText, body_html: bodyHtml, context: { ...baseCtx, schedule_key: schedule.schedule_key, record_count: recipient.rows.length }, template_key: schedule.template_key || schedule.event_key, attachment_manifest: manifest, dedupe_key: dedupeKey, is_automatic: true, scheduled_for: now.toISOString(), status: "PENDING" }).select("*").single();
           if (insertError) throw insertError;
           try {
             await admin.from("qcms_notification_outbox").update({ status: "SENDING", attempts: 1, updated_at: new Date().toISOString() }).eq("id", outbox.id);
-            await transporter.sendMail({ from: settings.sender_name ? `"${String(settings.sender_name).replaceAll('"', '')}" <${settings.sender_email}>` : settings.sender_email, to: recipient.name ? `"${recipient.name.replaceAll('"', '')}" <${recipient.email}>` : recipient.email, replyTo: settings.reply_to || undefined, subject, text: bodyText, html: bodyText.split("\n").join("<br>"), attachments: [{ filename: fileName, content: Buffer.from(pdfBytes), contentType: "application/pdf" }] });
+            await transporter.sendMail({ from: settings.sender_name ? `"${String(settings.sender_name).replaceAll('"', '')}" <${settings.sender_email}>` : settings.sender_email, to: recipient.name ? `"${recipient.name.replaceAll('"', '')}" <${recipient.email}>` : recipient.email, replyTo: settings.reply_to || undefined, subject, text: bodyText, html: bodyHtml, attachments: [{ filename: fileName, content: Buffer.from(pdfBytes), contentType: "application/pdf" }] });
             await admin.from("qcms_notification_outbox").update({ status: "SENT", sent_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq("id", outbox.id);
             await admin.storage.from(BUCKET).remove([path]).catch(() => undefined); sentMessages += 1;
           } catch (error) {

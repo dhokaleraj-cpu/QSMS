@@ -1,5 +1,5 @@
 # QCMS 4.14.19 — PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES
-# BUILD 41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE
+# BUILD 41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS
 # QCMS 4.14.15 — DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
 # BUILD 41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
 # QCMS 4.14.13 — METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM
@@ -30,6 +30,7 @@ from app_pages import (
     dashboard,
     deployment_diagnostics,
     complaints,
+    calibration_validation,
     company_branch,
     dimensional_report,
     employee_master,
@@ -108,6 +109,8 @@ PAGE_ITEMS = (
     ("supplier-complaint", st.Page(complaints.render_supplier_entry, title="Supplier Complaint", icon=":material/feedback:", url_path="supplier-complaint")),
     ("complaint-analysis", st.Page(complaints.render_analysis, title="Complaint Analysis & CAPA", icon=":material/troubleshoot:", url_path="complaint-analysis")),
     ("complaint-records", st.Page(complaints.render_records, title="Complaint Records", icon=":material/fact_check:", url_path="complaint-records")),
+    ("calibration-validation", st.Page(calibration_validation.render_calibration_validation, title="Calibration & Validation", icon=":material/straighten:", url_path="calibration-validation")),
+    ("standard-room-inspection", st.Page(calibration_validation.render_standard_room, title="Standard Room Inspection", icon=":material/biotech:", url_path="standard-room-inspection")),
     ("inspection-home", st.Page(inspection_home.render, title="Inspections", icon=":material/biotech:", url_path="inspection-home")),
     ("records-center", st.Page(records_center.render, title="Records Centre", icon=":material/table_view:", url_path="records-center")),
     ("heat-ledger", st.Page(records_center.render_heat_ledger, title="Heat Steel Ledger", icon=":material/table_view:", url_path="heat-ledger")),
@@ -244,6 +247,10 @@ MODULE_SUBMENUS = {
         ("complaint-analysis", "Analysis & CAPA", ":material/troubleshoot:"),
         ("complaints-report", "Complaint Reports", ":material/assessment:"),
     ),
+    "Calibration & Validation": (
+        ("calibration-validation", "Gauges / Fixtures", ":material/straighten:"),
+        ("standard-room-inspection", "Standard Room Inspection", ":material/biotech:"),
+    ),
     "Inspections": (
         ("inspection-home", "Inspection Home", ":material/biotech:"),
         ("inspection-layout-entry", "Layout Entry", ":material/edit_document:"),
@@ -314,6 +321,7 @@ ROUTE_MODULE = {
     "qc-tools": "QC Calculation Tools",
     "complaints-home": "Complaints", "customer-complaint": "Complaints",
     "supplier-complaint": "Complaints", "complaint-analysis": "Complaints",
+    "calibration-validation": "Calibration & Validation", "standard-room-inspection": "Calibration & Validation",
     "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
     "dimensional-entry": "Inspections", "metlab-entry": "Inspections",
     "reports-home": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports", "supply-chain-report": "Reports", "rmtc-report": "Reports", "inward-report": "Reports", "dimensional-report": "Reports", "metlab-report": "Reports", "complaints-report": "Reports", "traceability-report": "Reports", "npd-report": "Reports", "apqp-report": "Reports", "qc-report": "Reports", "inspection-layout-report": "Reports", "standards-report": "Reports",
@@ -374,6 +382,7 @@ ROUTE_PERMISSION_MODULE = {
     "supply-chain-home":"SUPPLY_CHAIN","supply-customer-orders":"SUPPLY_CHAIN","supply-opening-stock":"SUPPLY_CHAIN","supply-rm-procurement":"SUPPLY_CHAIN","supply-purchase-orders":"SUPPLY_CHAIN","supply-rm-receipt":"SUPPLY_CHAIN","supply-rm-dispatch":"SUPPLY_CHAIN","supply-forging":"SUPPLY_CHAIN","supply-downstream":"SUPPLY_CHAIN","supply-traceability":"SUPPLY_CHAIN","supply-order-mis":"SUPPLY_CHAIN",
     "npd-process-flow":"NPD_APQP","npd-status":"NPD_APQP","apqp":"NPD_APQP","qc-tools":"QC_CALCULATION_TOOLS","qc-calculation-records":"QC_CALCULATION_TOOLS",
     "complaints-home":"COMPLAINT_MANAGEMENT","customer-complaint":"COMPLAINT_MANAGEMENT","supplier-complaint":"COMPLAINT_MANAGEMENT","complaint-analysis":"COMPLAINT_MANAGEMENT","complaint-records":"COMPLAINT_MANAGEMENT",
+    "calibration-validation":"CALIBRATION_VALIDATION","standard-room-inspection":"CALIBRATION_VALIDATION",
     "user-access":"USER_ACCESS","email-settings":"USER_ACCESS","deployment-diagnostics":"USER_ACCESS",
 }
 current_permission_module = ROUTE_PERMISSION_MODULE.get(current_path)
@@ -384,7 +393,7 @@ log_route_view(current_path, current_permission_module, nav.title)
 # Legacy v4.12.8 marker: QCMS v4.12.8 — responsive enterprise navigation contract.
 # The red header stays intentionally concise while the charcoal rail preserves
 # direct access to every operational module from the previous releases.
-QUALITY_HEADER_MODULES = {"RMTC", "Inward", "OSP", "QC Calculation Tools", "Complaints", "Inspections"}
+QUALITY_HEADER_MODULES = {"RMTC", "Inward", "OSP", "QC Calculation Tools", "Complaints", "Calibration & Validation", "Inspections"}
 quality_active_module = current_module if current_module in QUALITY_HEADER_MODULES else "Inspections"
 HEADER_NAV = (
     (PAGE_BY_PATH["dashboard"], "Dashboard", "Dashboard"),
@@ -406,6 +415,7 @@ RAIL_NAV = (
     (PAGE_BY_PATH["npd-status"], "NPD / APQP", "NPD & APQP", ":material/timeline:"),
     (PAGE_BY_PATH["qc-tools"], "QC Tools", "QC Calculation Tools", ":material/calculate:"),
     (PAGE_BY_PATH["complaints-home"], "Complaints", "Complaints", ":material/support_agent:"),
+    (PAGE_BY_PATH["calibration-validation"], "Calibration", "Calibration & Validation", ":material/straighten:"),
     (PAGE_BY_PATH["records-center"], "Records", "Records", ":material/description:"),
     (PAGE_BY_PATH["reports-home"], "Reports", "Reports", ":material/assessment:"),
     (PAGE_BY_PATH["templates"], "Templates", "Templates", ":material/download:"),
@@ -415,7 +425,7 @@ RAIL_NAV = (
 if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
     logout()
 
-st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE")
+st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS")
 
 # v4.12.9 keeps the real two-column Streamlit workspace and hardens component styling.
 # v4.12.8 uses a real two-column Streamlit workspace. The charcoal navigation

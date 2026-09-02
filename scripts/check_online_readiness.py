@@ -182,11 +182,15 @@ required = [
     "core/record_audit.py",
     "core/activity.py",
     "DEPLOYMENT_MANIFEST.json",
+    "app_pages/calibration_validation.py",
+    "supabase/migrations/20260902120000_qcms_v41426_calibration_standard_room_complaint_npd_cards.sql",
+    "tests/test_v41426_complaint_calibration_standard_room_npd_cards.py",
+    "RELEASE_NOTES_v4.14.26.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.24 - PO Supplier Technical Grid / Live Master Import Templates / APQP Date Safety",
+    "phase": "QCMS 4.14.26 - Complaint Media / Calibration & Validation / Standard Room / NPD Email Cards",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

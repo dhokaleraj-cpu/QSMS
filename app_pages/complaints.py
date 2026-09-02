@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Mapping
 
 import pandas as pd
 import streamlit as st
+from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
+from openpyxl.styles import Alignment, Font, PatternFill
+from PIL import Image as PILImage
 from core.ui import portal_table
 
 from core.access import current_permissions
@@ -33,7 +38,7 @@ COMPLAINT_ATTACHMENT_SLOTS = (
 
 COMPLAINT_PHOTO_TYPE = "COMPLAINT_PHOTO"
 COMPLAINT_MULTI_ATTACHMENT_TYPE = "COMPLAINT_ATTACHMENT"
-COMPLAINT_PHOTO_EXTENSIONS = ["png", "jpg", "jpeg", "webp"]
+COMPLAINT_PHOTO_EXTENSIONS = ["png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp", "gif"]
 
 
 def _complaint_entry_styles() -> None:
@@ -622,13 +627,101 @@ def _complaint_pdf(repo: Repository, complaint: Mapping[str, Any]) -> bytes:
             for row in followups
         ],
     }
+    photo_items: list[dict[str, object]] = []
+    attachment_service = AttachmentService(repo)
+    for row in complaint_media:
+        if str(row.get("document_type") or "") != COMPLAINT_PHOTO_TYPE:
+            continue
+        try:
+            photo_items.append({
+                "bytes": attachment_service.download(row),
+                "title": _media_title(row),
+                "caption": _media_title(row),
+                "file_name": row.get("file_name") or "Photograph",
+            })
+        except Exception:
+            continue
     return controlled_record_pdf_bytes(
         "DETAILED COMPLAINT ANALYSIS RECORD",
         header,
         sections,
         record_number=str(complaint.get("complaint_number") or ""),
         subtitle="Problem Definition · Root Cause · Corrective Action · Responsibility · Verification · Commercial Closure",
+        images=photo_items,
+        images_title="COMPLAINT PHOTOGRAPHS",
     )
+
+
+def _complaint_excel(repo: Repository, complaint: Mapping[str, Any]) -> bytes:
+    """Create a complaint workbook with current record data and embedded photographs."""
+    complaint_id = str(complaint.get("id") or "")
+    parties = {str(row["id"]): row for row in repo.select("parties", limit=5000)}
+    parts = {str(row["id"]): row for row in repo.select("parts", limit=5000)}
+    party = parties.get(str(complaint.get("party_id"))) or {}
+    part = parts.get(str(complaint.get("part_id"))) or {}
+    followups = repo.select("quality_complaint_followups", eq={"complaint_id": complaint_id}, order_by="followup_date", limit=5000)
+    actions = repo.select("quality_complaint_actions", eq={"complaint_id": complaint_id}, order_by="action_no", limit=5000)
+    media = _complaint_media_rows(repo, complaint_id)
+
+    wb = Workbook(); ws = wb.active; ws.title = "Complaint Summary"
+    maroon = PatternFill("solid", fgColor="8B0015"); header_fill = PatternFill("solid", fgColor="EAF0F5")
+    white_font = Font(color="FFFFFF", bold=True); bold_font = Font(bold=True)
+    ws.merge_cells("A1:D1"); ws["A1"] = "FOUR STAR INDUSTRIES - QCMS COMPLAINT RECORD"
+    ws["A1"].fill = maroon; ws["A1"].font = white_font; ws["A1"].alignment = Alignment(horizontal="center")
+    summary = [
+        ("Complaint Number", complaint.get("complaint_number")), ("Complaint Type", complaint.get("complaint_type")),
+        ("Complaint Date", complaint.get("complaint_date")), ("Status", complaint.get("status")),
+        ("Customer / Supplier", party.get("party_name")), ("Part Number", part.get("part_number")),
+        ("Part Name", part.get("part_name")), ("External Reference", complaint.get("external_reference")),
+        ("Heat Number", complaint.get("heat_number")), ("Batch Code / Lot Number", complaint.get("lot_batch_number")),
+        ("Subject", complaint.get("subject")), ("Description", complaint.get("description")),
+        ("Affected Quantity", complaint.get("affected_quantity")), ("Severity", complaint.get("severity")),
+        ("Target Closure", complaint.get("target_closure_date")), ("Actual Closure", complaint.get("closure_date")),
+        ("Root Cause", complaint.get("root_cause") or complaint.get("occurrence_root_cause")),
+        ("Corrective Action", complaint.get("corrective_action")), ("Verification", complaint.get("verification_result")),
+        ("Closure Remarks", complaint.get("closure_remarks")),
+    ]
+    rr = 3
+    for label, value in summary:
+        ws.cell(rr, 1, label).font = bold_font; ws.cell(rr, 2, "" if value is None else str(value)); ws.merge_cells(start_row=rr,start_column=2,end_row=rr,end_column=4); rr += 1
+    for col, width in {"A":28,"B":30,"C":24,"D":24}.items(): ws.column_dimensions[col].width = width
+    ws.freeze_panes = "A3"
+
+    def add_table(name: str, rows: list[Mapping[str, Any]], fields: list[tuple[str,str]]) -> None:
+        sh = wb.create_sheet(name)
+        for c, (_, label) in enumerate(fields, 1): sh.cell(1,c,label).font=bold_font; sh.cell(1,c).fill=header_fill
+        for r_i, row in enumerate(rows, 2):
+            for c, (key, _) in enumerate(fields, 1): sh.cell(r_i,c,"" if row.get(key) is None else str(row.get(key)))
+        for c in range(1,len(fields)+1): sh.column_dimensions[chr(64+c)].width=24
+        sh.freeze_panes="A2"
+
+    add_table("Follow-up History", followups, [("followup_date","Date"),("followup_type","Type"),("remarks","Remarks"),("next_followup_date","Next Follow-up"),("status_after_followup","Status")])
+    add_table("Action Plan", actions, [("action_no","Action No."),("action_type","Type"),("action_description","Action"),("target_date","Target"),("completion_date","Completed"),("status","Status"),("evidence","Evidence")])
+
+    photos = wb.create_sheet("Photographs")
+    for c, label in enumerate(["Title","Photograph","File Name","Uploaded At"], 1): photos.cell(1,c,label).font=bold_font; photos.cell(1,c).fill=header_fill
+    photos.column_dimensions["A"].width=30; photos.column_dimensions["B"].width=52; photos.column_dimensions["C"].width=28; photos.column_dimensions["D"].width=22
+    service = AttachmentService(repo); retained_images: list[XLImage] = []; r_i = 2
+    for item in [row for row in media if str(row.get("document_type")) == COMPLAINT_PHOTO_TYPE]:
+        photos.cell(r_i,1,_media_title(item)); photos.cell(r_i,3,str(item.get("file_name") or "")); photos.cell(r_i,4,str(item.get("created_at") or "")[:19])
+        try:
+            raw = service.download(item)
+            with PILImage.open(BytesIO(raw)) as src:
+                converted = src.convert("RGB"); buffer = BytesIO(); converted.save(buffer, format="PNG"); buffer.seek(0)
+                xl = XLImage(buffer); scale = min(340/max(1,xl.width),190/max(1,xl.height),1.0); xl.width=int(xl.width*scale); xl.height=int(xl.height*scale)
+                retained_images.append(xl); photos.add_image(xl,f"B{r_i}"); photos.row_dimensions[r_i].height=150
+        except Exception as exc:
+            photos.cell(r_i,2,f"Image unavailable: {exc}")
+        r_i += 1
+    if r_i == 2: photos["A2"] = "No complaint photographs uploaded."
+
+    reg = wb.create_sheet("Attachment Register")
+    for c, label in enumerate(["Type","Title","File Name","Uploaded At"],1): reg.cell(1,c,label).font=bold_font; reg.cell(1,c).fill=header_fill
+    for idx,item in enumerate(media,2):
+        reg.cell(idx,1,"Photograph" if str(item.get("document_type"))==COMPLAINT_PHOTO_TYPE else "Attachment"); reg.cell(idx,2,_media_title(item)); reg.cell(idx,3,item.get("file_name") or ""); reg.cell(idx,4,str(item.get("created_at") or "")[:19])
+    for col in "ABCD": reg.column_dimensions[col].width=28
+
+    out=BytesIO(); wb.save(out); return out.getvalue()
 
 
 def render_home() -> None:
@@ -764,6 +857,9 @@ def _render_entry(complaint_type: str) -> None:
         q1, q2 = st.columns(2, gap="small")
         affected_qty = q1.number_input("Affected Quantity", min_value=0.0, value=float((existing or {}).get("affected_quantity") or 0.0), step=1.0, disabled=not writable, key=_entry_key("qty"))
         target_closure = q2.date_input("Target Closure Date", value=_as_date((existing or {}).get("target_closure_date"), date.today()), disabled=not writable, key=_entry_key("target"))
+        hb1, hb2 = st.columns(2, gap="small")
+        heat_number = hb1.text_input("Heat Number", value=str((existing or {}).get("heat_number") or ""), disabled=not writable, key=_entry_key("heat_number"), help="Manufacturing / raw-material Heat Number related to this complaint.")
+        lot_batch_number = hb2.text_input("Batch Code / Lot Number", value=str((existing or {}).get("lot_batch_number") or ""), disabled=not writable, key=_entry_key("batch_code"), help="Internal batch code, vendor batch or complaint lot reference.")
 
     with stage_section("B", "RESPONSIBILITY", key=f"{complaint_type.lower()}_complaint_responsibility"):
         r1, r2 = st.columns(2, gap="small")
@@ -829,6 +925,7 @@ def _render_entry(complaint_type: str) -> None:
             payload = {
                 "complaint_number": number, "complaint_type": complaint_type, "complaint_date": complaint_date,
                 "party_id": party_id, "part_id": part_id or None, "external_reference": external_reference.strip() or None,
+                "heat_number": heat_number.strip() or None, "lot_batch_number": lot_batch_number.strip() or None,
                 "subject": subject.strip(), "description": description.strip(), "affected_quantity": float(affected_qty), "severity": severity,
                 "fourstar_responsible_employee_id": fourstar_employee_id, "external_responsible_name": external_name.strip() or None,
                 "external_responsible_email": external_email.strip() or None, "external_responsible_phone": external_phone.strip() or None,
@@ -864,9 +961,11 @@ def _render_entry(complaint_type: str) -> None:
             _render_followups(repo, existing, employees, employee_labels, perms, show_heading=False)
         with stage_section("G", "PRINT / DELETE", key=f"{complaint_type.lower()}_complaint_print_delete"):
             pdf = _complaint_pdf(repo, existing)
-            p1, p2 = st.columns(2, gap="small")
+            excel = _complaint_excel(repo, existing)
+            p1, p2, p3 = st.columns(3, gap="small")
             p1.download_button("Download Complaint PDF", data=pdf, file_name=f"{existing.get('complaint_number')}.pdf", mime="application/pdf", width="stretch", key=f"pdf_{complaint_type}_{selected_id}")
-            with p2:
+            p2.download_button("Download Complaint Excel", data=excel, file_name=f"{existing.get('complaint_number')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch", key=f"xlsx_{complaint_type}_{selected_id}")
+            with p3:
                 if password_delete_panel(repo=repo, table="quality_complaints", rows=[existing], labeler=lambda row: _complaint_label(row), key=f"delete_{complaint_type}_{selected_id}", can_delete=perms["can_archive"], title="Delete Selected Complaint", help_text="Permanent deletion of the complaint and its follow-up history requires your current QCMS password."):
                     st.session_state.pop(f"selected_{complaint_type.lower()}_complaint", None)
                     st.rerun()
@@ -1156,9 +1255,11 @@ def render_analysis() -> None:
                 })
                 save_success_popup("Complaint closed successfully after RCA, action and effectiveness verification.", queue_for_rerun=True); st.rerun()
 
-    with stage_section("H", 'PRINT', key="complaints_render_analysis_h"):
+    with stage_section("H", 'PRINT / EXCEL', key="complaints_render_analysis_h"):
         latest = (repo.select("quality_complaints", eq={"id": complaint_id}, limit=1) or [refreshed])[0]
-        st.download_button("Download Detailed Complaint Analysis PDF", _complaint_pdf(repo, latest), file_name=f"{latest.get('complaint_number')}_Detailed_Analysis.pdf", mime="application/pdf", width="stretch", key=f"analysis_pdf_{complaint_id}")
+        h1, h2 = st.columns(2, gap="small")
+        h1.download_button("Download Detailed Complaint Analysis PDF", _complaint_pdf(repo, latest), file_name=f"{latest.get('complaint_number')}_Detailed_Analysis.pdf", mime="application/pdf", width="stretch", key=f"analysis_pdf_{complaint_id}")
+        h2.download_button("Download Complaint Excel + Photographs", _complaint_excel(repo, latest), file_name=f"{latest.get('complaint_number')}_Detailed_Analysis.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch", key=f"analysis_xlsx_{complaint_id}")
 
 
 def render_records() -> None:
@@ -1168,7 +1269,7 @@ def render_records() -> None:
     parties = {str(row["id"]): row for row in repo.select("parties", limit=5000)}
     employees = {str(row["id"]): row for row in repo.select("employees", limit=5000)}
     c1, c2, c3 = st.columns([1.8, 1, 1], gap="small")
-    search = c1.text_input("Search Complaint No., Party, Subject or Reference")
+    search = c1.text_input("Search Complaint No., Party, Heat, Batch, Subject or Reference")
     type_filter = c2.selectbox("Complaint Type", ["ALL", "CUSTOMER", "SUPPLIER"])
     status_filter = c3.selectbox("Status", ["ALL", "OVERDUE", *STATUSES])
     filtered = []
@@ -1176,7 +1277,7 @@ def render_records() -> None:
         if type_filter != "ALL" and str(row.get("complaint_type")) != type_filter: continue
         if status_filter == "OVERDUE" and not _is_overdue(row): continue
         if status_filter not in {"ALL", "OVERDUE"} and str(row.get("status")) != status_filter: continue
-        haystack = " ".join([str(row.get("complaint_number") or ""), str(row.get("external_reference") or ""), str(row.get("subject") or ""), str((parties.get(str(row.get("party_id"))) or {}).get("party_name") or "")]).casefold()
+        haystack = " ".join([str(row.get("complaint_number") or ""), str(row.get("external_reference") or ""), str(row.get("heat_number") or ""), str(row.get("lot_batch_number") or ""), str(row.get("subject") or ""), str((parties.get(str(row.get("party_id"))) or {}).get("party_name") or "")]).casefold()
         if search and search.casefold() not in haystack: continue
         filtered.append(row)
     if not filtered:
@@ -1185,13 +1286,14 @@ def render_records() -> None:
     labels = {str(row["id"]): _complaint_label(row, parties) for row in filtered}
     selected_id = st.selectbox("Select Complaint Record", list(labels), format_func=lambda value: labels[value])
     selected = next(row for row in filtered if str(row.get("id")) == selected_id)
-    p1, p2, p3 = st.columns(3, gap="small")
+    p1, p2, p3, p4 = st.columns(4, gap="small")
     p1.download_button("Download Selected Complaint PDF", _complaint_pdf(repo, selected), file_name=f"{selected.get('complaint_number')}.pdf", mime="application/pdf", width="stretch")
+    p2.download_button("Download Excel + Photos", _complaint_excel(repo, selected), file_name=f"{selected.get('complaint_number')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch", key=f"record_xlsx_{selected_id}")
     analysis_page = (st.session_state.get("_qsms_pages") or {}).get("complaint-analysis")
-    if p2.button("Open Detailed Analysis & CAPA", width="stretch", disabled=analysis_page is None, key=f"record_analysis_{selected_id}"):
+    if p3.button("Open Detailed Analysis & CAPA", width="stretch", disabled=analysis_page is None, key=f"record_analysis_{selected_id}"):
         st.session_state["complaint_analysis_id"] = selected_id
         st.switch_page(analysis_page)
-    with p3:
+    with p4:
         if password_delete_panel(repo=repo, table="quality_complaints", rows=[selected], labeler=lambda row: _complaint_label(row, parties), key=f"delete_complaint_record_{selected_id}", can_delete=perms["can_archive"], title="Delete Selected Complaint", help_text="Permanent deletion requires your current QCMS password."):
             st.rerun()
     section_bar("COMPLAINT REGISTER")
@@ -1205,6 +1307,7 @@ def render_records() -> None:
         {
             "Complaint No.": row.get("complaint_number"), "Date": row.get("complaint_date"), "Type": str(row.get("complaint_type") or "").title(),
             "Party": (parties.get(str(row.get("party_id"))) or {}).get("party_name"), "Subject": row.get("subject"), "Severity": row.get("severity"),
+            "Heat Number": row.get("heat_number"), "Batch Code / Lot Number": row.get("lot_batch_number"),
             "Four Star Responsible": employee_label(employees.get(str(row.get("fourstar_responsible_employee_id"))) or {}),
             "Root Cause": "CONFIRMED" if row.get("root_cause_confirmed") else "PENDING", "Open Actions": open_action_count.get(str(row.get("id")), 0),
             "Effectiveness": "VERIFIED" if row.get("effectiveness_verified") else "PENDING",

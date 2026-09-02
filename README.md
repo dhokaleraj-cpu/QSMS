@@ -1,3 +1,11 @@
+# QUALITY CONTROL MONITORING SYSTEM (QCMS)
+
+## Current controlled release — v4.14.26
+
+Build: `41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS`
+
+This release adds complaint Heat/Batch traceability with embedded photo PDF/Excel exports, Supply Chain overdue priority cards, the Calibration & Validation module, Standard Room Inspection records, and NPD overdue email process cards with completed stages shown green. The live v4.14.26 Supabase migration is already applied; the release updater is source-only and preserves all existing data.
+
 # QCMS v4.14.25
 
 Current controlled build: `41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE`

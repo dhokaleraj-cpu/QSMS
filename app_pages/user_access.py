@@ -56,6 +56,9 @@ SECTION_CATALOG = [
     ("NPD_APQP", "PROCESS_FLOW", "NPD / APQP · Process Flow"),
     ("NPD_APQP", "ORDER_STATUS", "NPD / APQP · Order Status"),
     ("COMPLAINT_MANAGEMENT", "COMMERCIAL", "Complaints · Commercial / Debit Note"),
+    ("CALIBRATION_VALIDATION", "GAUGE_FIXTURE_LINKS", "Calibration · Part / Process Gauge-Fixture Links"),
+    ("CALIBRATION_VALIDATION", "CALIBRATION_RECORDS", "Calibration · Calibration / Validation Records"),
+    ("CALIBRATION_VALIDATION", "STANDARD_ROOM", "Calibration · Standard Room Inspection"),
 ]
 
 
