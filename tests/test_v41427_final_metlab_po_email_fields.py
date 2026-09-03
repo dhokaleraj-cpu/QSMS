@@ -8,10 +8,10 @@ def text(path: str) -> str:
 
 
 def test_release_markers_are_v41427():
-    assert text("VERSION").strip() == "4.14.27"
+    assert text("VERSION").strip() in {"4.14.27", "4.14.28"}
     app = text("streamlit_app.py")
-    assert "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS" in app
-    assert '"version": "4.14.27"' in text("DEPLOYMENT_MANIFEST.json")
+    assert any(x in app for x in ("41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL"))
+    assert any(x in text("DEPLOYMENT_MANIFEST.json") for x in ('"version": "4.14.27"', '"version": "4.14.28"'))
 
 
 def test_part_master_metallurgy_is_final_dispatch_only():

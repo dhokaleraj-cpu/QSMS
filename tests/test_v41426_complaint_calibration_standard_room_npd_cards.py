@@ -9,14 +9,14 @@ def text(rel: str) -> str:
 
 
 def test_v41426_release_identity_and_manifest():
-    assert text("VERSION").strip() in {"4.14.26", "4.14.27"}
+    assert text("VERSION").strip() in {"4.14.26", "4.14.27", "4.14.28"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.26", "4.14.27"}
-    assert manifest["build"] in {"41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS"}
-    assert manifest["database_schema_required"] in {"4.14.26", "4.14.27"}
+    assert manifest["version"] in {"4.14.26", "4.14.27", "4.14.28"}
+    assert manifest["build"] in {"41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL"}
+    assert manifest["database_schema_required"] in {"4.14.26", "4.14.27", "4.14.28"}
     assert manifest["database_migration_required"] is False
     assert manifest["registered_pages"] == 83
-    assert any(v in text("streamlit_app.py") for v in ("41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS"))
+    assert any(v in text("streamlit_app.py") for v in ("41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL"))
 
 
 def test_complaints_capture_heat_batch_and_embed_photos_in_pdf_excel():

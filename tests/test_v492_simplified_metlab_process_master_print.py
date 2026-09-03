@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_and_release_files():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.9.2", "4.9.3", "4.9.4", "4.9.5", "4.9.6", "4.9.7", "4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2", "4.10.3", "4.10.5", "4.10.6", "4.10.7", "4.10.8", "4.10.9", "4.11.0", "4.11.1", "4.11.2", "4.11.3", "4.11.4", "4.11.5", "4.11.6", "4.11.7", "4.11.8","4.12.0", "4.12.1", "4.12.2", "4.12.3", "4.12.4", "4.12.5", "4.12.6", "4.12.7", "4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.9.2", "4.9.3", "4.9.4", "4.9.5", "4.9.6", "4.9.7", "4.9.8", "4.9.9", "4.10.0", "4.10.1", "4.10.2", "4.10.3", "4.10.5", "4.10.6", "4.10.7", "4.10.8", "4.10.9", "4.11.0", "4.11.1", "4.11.2", "4.11.3", "4.11.4", "4.11.5", "4.11.6", "4.11.7", "4.11.8","4.12.0", "4.12.1", "4.12.2", "4.12.3", "4.12.4", "4.12.5", "4.12.6", "4.12.7", "4.12.8", "4.12.9", "4.13.0", "4.13.1", "4.13.2", "4.13.3", "4.13.4", "4.13.5", "4.13.6", "4.13.7", "4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28"}
     assert (ROOT / "docs/RELEASE_4_9_2.md").exists()
     assert (ROOT / "supabase/migrations/20260805194500_qsms_simplified_metlab_process_master_print_v492.sql").exists()
 
@@ -48,7 +48,11 @@ def test_requirement_schema_and_generated_layouts():
 def test_osp_queue_skips_non_required_inspection_types():
     service = (ROOT / "core/osp_service.py").read_text()
     assert 'requirement_flag = "dimensional_required" if report_type == "DIMENSIONAL" else "metlab_required"' in service
-    assert "if not bool(row.get(requirement_flag))" in service
+    # Later controlled releases keep the flag gate but also accept an APPROVED OSP layout
+    # as authoritative evidence, so legacy flags cannot hide a valid inspection queue.
+    assert "required_by_flag = bool(row.get(requirement_flag))" in service
+    assert "required_by_approved_layout" in service
+    assert "if not (required_by_flag or required_by_approved_layout)" in service
 
 
 def test_single_navigation_and_export_shipment_theme():

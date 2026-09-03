@@ -22,7 +22,11 @@ def _employee_map(service: InspectionService) -> dict[str, str]:
 
 
 def _job_label(row: dict) -> str:
-    return f"{row.get('osp_job_number')} · {row.get('part_number')} · Heat {row.get('heat_number')} · {row.get('process_name')} · {row.get('vendor_name')} · Batch {row.get('vendor_batch_number') or '-'}"
+    return (
+        f"{row.get('osp_job_number')} · Part {row.get('part_number')} · "
+        f"FSI Batch {row.get('osp_batch_code') or '-'} · Vendor Batch {row.get('vendor_batch_number') or '-'} · "
+        f"Heat {row.get('heat_number')} · {row.get('process_name')} · {row.get('vendor_name')}"
+    )
 
 
 def _scope_label(scope: str) -> str:
@@ -67,7 +71,7 @@ def _pending_table(rows: list[dict], report_type: str, scope: str) -> None:
     )
     frame = pd.DataFrame([{
         "OSP Job": r.get("osp_job_number"), "Heat Number": r.get("heat_number"), "Part Number": r.get("part_number"), "FSI Part Number": r.get("fsi_part_number"),
-        "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"), "Vendor Batch": r.get("vendor_batch_number"),
+        "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"), "FSI Batch Number": r.get("osp_batch_code"), "Vendor Batch": r.get("vendor_batch_number"),
         "Quantity pcs": r.get("sample_quantity") if scope == "OSP_SAMPLE" else r.get("quantity_received"),
         "Decision": r.get(disposition_key) or "PENDING", "Status": r.get("status"),
     } for r in rows])
@@ -122,14 +126,17 @@ def _render(report_type: str) -> None:
         plan = next(r for r in plans if str(r["id"]) == plan_id)
 
     with stage_section("B", 'OSP BATCH & PROCESS SPECIFICATION', key="osp_inspections__render_b"):
-        c = st.columns(6, gap="small")
+        c = st.columns(7, gap="small")
         c[0].text_input("Heat Number", value=str(job.get("heat_number") or ""), disabled=True)
         c[1].text_input("Part Number", value=str(job.get("part_number") or ""), disabled=True)
         c[2].text_input("FSI Part Number", value=str(job.get("fsi_part_number") or ""), disabled=True)
-        c[3].text_input("OSP Vendor", value=str(job.get("vendor_name") or ""), disabled=True)
-        c[4].text_input("OSP Process", value=str(job.get("process_name") or ""), disabled=True)
-        c[5].text_input("Vendor Batch", value=str(job.get("vendor_batch_number") or ""), disabled=True)
-        st.text_area("Process Specification", value=str(job.get("process_specification") or ""), disabled=True, height=68)
+        c[3].text_input("FSI Batch Number", value=str(job.get("osp_batch_code") or ""), disabled=True)
+        c[4].text_input("OSP Vendor", value=str(job.get("vendor_name") or ""), disabled=True)
+        c[5].text_input("OSP Process", value=str(job.get("process_name") or ""), disabled=True)
+        c[6].text_input("Vendor Batch", value=str(job.get("vendor_batch_number") or ""), disabled=True)
+        c1, c2 = st.columns(2, gap="small")
+        c1.text_area("Process Specification", value=str(job.get("process_specification") or ""), disabled=True, height=68)
+        c2.text_area("Material Out Remarks", value=str(job.get("dispatch_remarks") or ""), disabled=True, height=68)
 
         report_id = str((existing or {}).get("id") or "")
         existing_detail = inspection.dimensional_results(report_id) if is_dimensional and report_id else []
@@ -200,6 +207,7 @@ def _render(report_type: str) -> None:
                 common = {
                     "report_number": final_number, "part_id": job.get("part_id"), "osp_job_id": job_id, "batch_id": job.get("osp_batch_id"),
                     "process_id": job.get("process_id"), "inspection_scope": scope, "heat_number": job.get("heat_number"), "heat_code": job.get("heat_code"),
+                    "batch_number": job.get("osp_batch_code"),
                     "supplier_id": source_inward.get("supplier_id") or opening_source.get("supplier_id"), "status": str((existing or {}).get("status") or "DRAFT"), "overall_result": "NOT_EVALUATED",
                     "disposition": str((existing or {}).get("disposition") or "PENDING"), "remarks": remarks.strip() or None,
                     "prepared_by_employee_id": prepared, "layout_name_snapshot": plan.get("layout_name"), "layout_type_name": report_type,

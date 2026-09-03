@@ -1,6 +1,6 @@
 {
-  "version": "4.14.27",
-  "build": "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS",
+  "version": "4.14.28",
+  "build": "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -160,19 +160,30 @@
     "raw_material_inward_metlab_layout_master_only",
     "forging_po_release_email_template",
     "email_template_database_field_picker",
-    "po_email_context_item_aggregation"
+    "po_email_context_item_aggregation",
+    "osp_fsi_batch_number_genealogy",
+    "osp_material_out_remarks_downstream",
+    "osp_selector_part_and_batch_identity",
+    "osp_approved_layout_requirement_sync",
+    "osp_sample_dimensional_queue_resilience",
+    "two_day_internal_supply_excel_digests",
+    "multi_department_notification_schedules",
+    "xlsx_notification_export_format",
+    "dedicated_supply_digest_edge_function",
+    "two_day_supply_digest_duplicate_guard"
   ],
   "source": "controlled_release",
-  "release_name": "QCMS v4.14.27 Final MetLAB Layout Boundary / PO Email Field Templates",
-  "database_schema_required": "4.14.27",
+  "release_name": "QCMS v4.14.28 OSP Batch Genealogy / Two-Day Excel Digests",
+  "database_schema_required": "4.14.28",
   "database_migration_required": false,
-  "supabase_release_contract": "QCMS v4.14.27 live migration applied and verified during controlled release packaging",
+  "supabase_release_contract": "QCMS v4.14.28 live migration applied and verified during controlled release packaging",
   "deployment_notes": [
-    "v4.14.27 database/template configuration migration was applied and verified on the live QSMS Supabase project during controlled release packaging; the macOS updater performs source deployment only and does not require Supabase CLI login or manual SQL.",
-    "Part Master Final Dispatch Metallurgical Requirements are isolated to the Final/Customer Dispatch MetLAB layout and are not eligible for Raw Material Inward MetLAB.",
-    "Raw Material Inward MetLAB requires an approved MATERIAL_INWARD MetLAB plan selected from Inspection Layout Master; FINAL_METALLURGICAL layouts are excluded.",
-    "Forging PO release after approval uses the controlled supplier template requesting signed/stamped PO confirmation within 2-3 days, with controlled PO PDF and available supporting documents attached.",
-    "Admin Email Templates provides a database-field picker for event-specific placeholders such as PO number, supplier, part, quantity, delivery date and next stage."
+    "v4.14.28 OSP requirement synchronization and two-day Excel digest configuration are applied and verified on the live QSMS Supabase project; the macOS updater performs source deployment only and does not require Supabase CLI login or manual SQL.",
+    "OSP selectors carry Part Number, FSI Batch Number and Vendor Batch Number; Material Out remarks remain visible in Sample Receipt, OSP inspection and OSP Inward context.",
+    "An approved OSP Dimensional/MetLAB layout is authoritative evidence that the inspection is required; Process Specification flags and open osp_jobs.required_tests are synchronized.",
+    "The dedicated qcms-supply-digest-notifier Edge Function runs from Supabase cron and sends every-two-day XLSX digests; interim duplicate *_2DAY schedules are disabled.",
+    "Part Master Final Dispatch Metallurgical Requirements remain isolated from Raw Material Inward MetLAB, which uses approved Layout Master records only.",
+    "Forging PO release uses the controlled supplier confirmation template and supporting attachments."
   ],
   "item_wise_po_technical_data": true,
   "po_supplier_technical_grid": true,
@@ -188,16 +199,20 @@
   "standard_room_inspection_module": true,
   "npd_email_stage_cards": true,
   "registered_pages": 83,
-  "full_pytest_passed": 468,
+  "full_pytest_passed": 473,
   "live_supabase_schema_applied": true,
   "live_overdue_notifier_version": 4,
   "live_overdue_notifier_status": "ACTIVE",
   "source_only_updater": true,
   "release_notes": [
-    "v4.14.27 live migration was applied and verified on the QSMS Supabase project during controlled release packaging; the macOS updater is source-only and requires no Supabase CLI login or manual SQL."
+    "v4.14.28 live OSP requirement synchronization is applied and verified, including the screenshot job OSP-D9-2026-00004.",
+    "Dedicated two-day Excel digests are active through qcms-supply-digest-notifier v1 and cron; duplicate interim schedule keys are disabled."
   ],
   "final_metlab_part_master_only": true,
   "raw_material_inward_metlab_layout_master_only": true,
   "forging_po_release_email_template": true,
-  "email_template_database_field_picker": true
+  "email_template_database_field_picker": true,
+  "live_supply_digest_notifier_version": 1,
+  "live_supply_digest_notifier_status": "ACTIVE",
+  "live_supply_digest_cron": "qcms-supply-digest-notifier-hourly"
 }

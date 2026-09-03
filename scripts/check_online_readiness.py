@@ -189,11 +189,18 @@ required = [
     "RELEASE_NOTES_v4.14.27.md",
     "supabase/migrations/20260902143000_qcms_v41427_final_metlab_layout_po_email_fields.sql",
     "QCMS_NEW_CHAT_HANDOVER_v4.14.27.md",
+    "RELEASE_NOTES_v4.14.28.md",
+    "supabase/migrations/20260903103000_qcms_v41428_osp_batch_two_day_excel_digest.sql",
+    "supabase/migrations/20260903105000_qcms_v41428_supply_digest_consolidation.sql",
+    "supabase/functions/qcms-supply-digest-notifier/index.ts",
+    "supabase/functions/qcms-supply-digest-notifier/deno.json",
+    "tests/test_v41428_osp_batch_two_day_excel.py",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.28.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.27 - Final MetLAB Layout Boundary / PO Email Database Fields",
+    "phase": "QCMS 4.14.28 - OSP Batch Genealogy / Two-Day Excel Digests",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

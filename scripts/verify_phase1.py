@@ -983,7 +983,7 @@ if "PO_CONFIRMATION_DAILY" not in v41419_notifier or "reminder_count" not in v41
     errors.append("v4.14.19 daily supplier PO confirmation reminder missing")
 
 report = {
-    "release": "QCMS 4.14.27 Final MetLAB Layout Boundary / PO Email Database Fields",
+    "release": "QCMS 4.14.28 OSP Batch Genealogy / Two-Day Excel Digests",
     "v41419_live_employee_po_gate": "refresh_current_employee_link" in v41419_auth and "po_blockers" in v41419_supply,
     "v41419_supplier_po_confirmation": "supply_po_confirmations" in v41419_sql and "PO_CONFIRMATION_DAILY" in v41419_notifier,
     "v41419_universal_transaction_delete": "qcms_delete_transaction_row" in v41419_sql and "password_transaction_delete_panel" in v41419_delete,

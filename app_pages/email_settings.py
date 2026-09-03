@@ -25,6 +25,10 @@ EVENTS = (
     ("FORGING_ORDER_OPEN_OVERDUE_DIGEST", "Forging Orders · Open / Overdue digest", "SUPPLY_CHAIN"),
     ("OSP_RETURN_OPEN_OVERDUE_DIGEST", "OSP Returns · Open / Overdue digest", "OSP_TRANSACTIONS"),
     ("NPD_PROCESS_OPEN_OVERDUE_DIGEST", "NPD Process Steps · Open / Overdue digest", "NPD_APQP"),
+    ("CUSTOMER_ORDER_OVERDUE_BIENNIAL", "Customer Orders · Overdue · Every 2 Days · Excel", "SUPPLY_CHAIN"),
+    ("RM_PENDING_BIENNIAL", "RM Procurement · Pending · Every 2 Days · Excel", "SUPPLY_CHAIN"),
+    ("PO_PENDING_BIENNIAL", "Purchase Orders · Pending · Every 2 Days · Excel", "SUPPLY_CHAIN"),
+    ("FORGING_RECEIPT_OVERDUE_BIENNIAL", "Forging Receipts · Overdue · Every 2 Days · Excel", "SUPPLY_CHAIN"),
 )
 EVENT_LABEL = {k: label for k, label, _module in EVENTS}
 EVENT_MODULE = {k: module for k, _label, module in EVENTS}
@@ -228,33 +232,39 @@ def render() -> None:
             default_recipient=str(profile.get("email") or ""),
         )
 
-    with stage_section("E", "AUTOMATIC OPEN / OVERDUE REPORT EMAILS", "Supabase Cron checks every hour. Each schedule sends once per local day at the configured hour, with a generated PDF list. Supplier/vendor copies are sent only when Party Master contains an email address.", key="email_auto_schedules"):
+    with stage_section("E", "AUTOMATIC OPEN / OVERDUE REPORT EMAILS", "Supabase Cron checks every hour. Each schedule follows its configured cadence (for example every 2 days), local hour, recipient departments and PDF/Excel export format. Supplier/vendor copies are sent only when Party Master contains an email address.", key="email_auto_schedules"):
         schedules = repo.select("qcms_notification_schedules", order_by="schedule_key", limit=100)
         if schedules:
             schedule_labels = {str(r.get("id")): f"{r.get('schedule_label')} · {r.get('module_key')}" for r in schedules}
             sid = st.selectbox("Automatic Schedule", list(schedule_labels), format_func=lambda v: schedule_labels[v])
             schedule = next(r for r in schedules if str(r.get("id")) == sid)
-            c = st.columns(4, gap="small")
+            c = st.columns(5, gap="small")
             schedule_enabled = c[0].toggle("Enabled", value=bool(schedule.get("enabled", True)), key=f"schedule_enabled_{sid}")
             hour = c[1].number_input("Local send hour", min_value=0, max_value=23, value=int(schedule.get("hour_local") or 8), step=1, key=f"schedule_hour_{sid}")
-            days_ahead = c[2].number_input("Include due within days", min_value=0, max_value=365, value=int(schedule.get("days_ahead") or 7), step=1, key=f"schedule_days_{sid}")
-            include_suppliers = c[3].toggle("Send supplier/vendor copies", value=bool(schedule.get("include_suppliers", False)), key=f"schedule_suppliers_{sid}")
+            run_every_days = c[2].number_input("Run every (days)", min_value=1, max_value=30, value=max(int(schedule.get("run_every_days") or 1), 1), step=1, key=f"schedule_cadence_{sid}")
+            days_ahead = c[3].number_input("Include due within days", min_value=0, max_value=365, value=int(schedule.get("days_ahead") or 7), step=1, key=f"schedule_days_{sid}")
+            include_suppliers = c[4].toggle("Send supplier/vendor copies", value=bool(schedule.get("include_suppliers", False)), key=f"schedule_suppliers_{sid}")
             c = st.columns(4, gap="small")
             tz = c[0].text_input("Time Zone", value=str(schedule.get("timezone") or "Asia/Kolkata"), key=f"schedule_tz_{sid}")
             dept_values = [""] + departments; current_dept = str(schedule.get("recipient_department") or "")
-            recipient_department = c[1].selectbox("Responsible Department", dept_values, index=dept_values.index(current_dept) if current_dept in dept_values else 0, format_func=lambda v: v or "— None —", key=f"schedule_dept_{sid}")
+            recipient_department = c[1].selectbox("Primary Department", dept_values, index=dept_values.index(current_dept) if current_dept in dept_values else 0, format_func=lambda v: v or "— None —", key=f"schedule_dept_{sid}")
+            existing_multi = [str(x) for x in (schedule.get("recipient_departments") or []) if str(x)]
+            extra_depts = ["Marketing", "Procurement", "Business Development"]
+            multi_options = sorted(set(departments + extra_depts))
+            recipient_departments = c[2].multiselect("Recipient Departments", multi_options, default=[x for x in existing_multi if x in multi_options], key=f"schedule_depts_{sid}", help="Every active employee in these departments receives the digest. Marketing and Procurement also match the equivalent QCMS user roles when configured.")
+            export_format = c[3].selectbox("Attachment Format", ["PDF","XLSX","BOTH"], index=["PDF","XLSX","BOTH"].index(str(schedule.get("export_format") or "PDF").upper()) if str(schedule.get("export_format") or "PDF").upper() in {"PDF","XLSX","BOTH"} else 0, key=f"schedule_export_{sid}")
+            c = st.columns(3, gap="small")
             emp_ids = [""] + list(employee_options); current_emp = str(schedule.get("employee_id") or "")
-            responsible_employee = c[2].selectbox("Specific Employee (optional)", emp_ids, index=emp_ids.index(current_emp) if current_emp in emp_ids else 0, format_func=lambda v: employee_options.get(v,"— Department / record responsibility —"), key=f"schedule_emp_{sid}")
-            template_key = c[3].selectbox("Template", [k for k,_l,_m in EVENTS], index=[k for k,_l,_m in EVENTS].index(str(schedule.get("template_key") or schedule.get("event_key"))) if str(schedule.get("template_key") or schedule.get("event_key")) in [k for k,_l,_m in EVENTS] else 0, format_func=lambda k: EVENT_LABEL.get(k,k), key=f"schedule_template_{sid}")
-            c = st.columns(2, gap="small")
-            include_overdue = c[0].toggle("Include overdue", value=bool(schedule.get("include_overdue", True)), key=f"schedule_overdue_{sid}")
-            include_open = c[1].toggle("Include open / due-soon", value=bool(schedule.get("include_open", True)), key=f"schedule_open_{sid}")
+            responsible_employee = c[0].selectbox("Specific Employee (optional)", emp_ids, index=emp_ids.index(current_emp) if current_emp in emp_ids else 0, format_func=lambda v: employee_options.get(v,"— Department / record responsibility —"), key=f"schedule_emp_{sid}")
+            template_key = c[1].selectbox("Template", [k for k,_l,_m in EVENTS], index=[k for k,_l,_m in EVENTS].index(str(schedule.get("template_key") or schedule.get("event_key"))) if str(schedule.get("template_key") or schedule.get("event_key")) in [k for k,_l,_m in EVENTS] else 0, format_func=lambda k: EVENT_LABEL.get(k,k), key=f"schedule_template_{sid}")
+            include_overdue = c[2].toggle("Include overdue", value=bool(schedule.get("include_overdue", True)), key=f"schedule_overdue_{sid}")
+            include_open = st.toggle("Include open / due-soon", value=bool(schedule.get("include_open", True)), key=f"schedule_open_{sid}")
             if st.button("Save Automatic Email Schedule", type="primary", width="stretch"):
                 try:
-                    repo.update("qcms_notification_schedules", sid, {"enabled": schedule_enabled, "hour_local": int(hour), "days_ahead": int(days_ahead), "include_suppliers": include_suppliers, "timezone": tz.strip() or "Asia/Kolkata", "recipient_department": recipient_department or None, "employee_id": responsible_employee or None, "template_key": template_key, "include_overdue": include_overdue, "include_open": include_open})
+                    repo.update("qcms_notification_schedules", sid, {"enabled": schedule_enabled, "hour_local": int(hour), "run_every_days": int(run_every_days), "days_ahead": int(days_ahead), "include_suppliers": include_suppliers, "timezone": tz.strip() or "Asia/Kolkata", "recipient_department": recipient_department or None, "recipient_departments": recipient_departments, "employee_id": responsible_employee or None, "template_key": template_key, "export_format": export_format, "include_overdue": include_overdue, "include_open": include_open})
                     save_success_popup("Automatic email schedule saved.", queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
-            portal_table(pd.DataFrame([{ "Schedule": r.get("schedule_label"), "Module": r.get("module_key"), "Hour": r.get("hour_local"), "Time Zone": r.get("timezone"), "Days Ahead": r.get("days_ahead"), "Department": r.get("recipient_department"), "Supplier Copy": bool(r.get("include_suppliers")), "Enabled": bool(r.get("enabled")), "Last Run": r.get("last_run_at") } for r in schedules]), hide_index=True, width="stretch", height=300)
+            portal_table(pd.DataFrame([{ "Schedule": r.get("schedule_label"), "Module": r.get("module_key"), "Hour": r.get("hour_local"), "Every Days": r.get("run_every_days") or 1, "Time Zone": r.get("timezone"), "Days Ahead": r.get("days_ahead"), "Departments": ", ".join(r.get("recipient_departments") or []) or r.get("recipient_department"), "Export": r.get("export_format") or "PDF", "Supplier Copy": bool(r.get("include_suppliers")), "Enabled": bool(r.get("enabled")), "Last Run": r.get("last_run_at") } for r in schedules]), hide_index=True, width="stretch", height=300)
         else:
             st.warning("Automatic notification schedules are not available. Apply the QCMS v4.14.7 database migration.")
 

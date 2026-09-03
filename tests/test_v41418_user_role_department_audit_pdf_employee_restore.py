@@ -19,7 +19,7 @@ def v41418_sql() -> str:
 
 def test_version_build_manifest_and_release_docs_are_v41418():
     # v4.14.18 remains a preserved non-regression baseline even on later controlled releases.
-    assert text("VERSION").strip() in {"4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27"}
+    assert text("VERSION").strip() in {"4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28"}
     app = text("streamlit_app.py")
     assert any(marker in app for marker in (
         "41418-PERMISSIONS-AUDIT-EMPLOYEE-OSP-RMTC-METLAB-RLS-PDF",
@@ -29,9 +29,10 @@ def test_version_build_manifest_and_release_docs_are_v41418():
         "41422-PUBLIC-VERIFY-BLANK-MASTER-RMTC-RESET",
         "41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE",
         "41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE", "41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS",
+        "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL",
     ))
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27"}
+    assert manifest["version"] in {"4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28"}
     assert manifest["build"] in {
         "41418-PERMISSIONS-AUDIT-EMPLOYEE-OSP-RMTC-METLAB-RLS-PDF",
         "41419-PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES",
@@ -43,6 +44,7 @@ def test_version_build_manifest_and_release_docs_are_v41418():
         "41422-PUBLIC-VERIFY-BLANK-MASTER-RMTC-RESET",
         "41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE",
         "41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE", "41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS",
+        "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL",
     }
     assert (ROOT / "docs/RELEASE_4_14_18.md").exists()
     assert (ROOT / "QCMS_NEW_CHAT_HANDOVER_v4.14.18.md").exists()

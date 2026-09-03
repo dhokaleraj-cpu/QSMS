@@ -9,11 +9,11 @@ def text(rel):
 
 
 def test_v41425_release_identity_and_source_only_baseline():
-    assert text("VERSION").strip() in {"4.14.25", "4.14.26", "4.14.27"}
+    assert text("VERSION").strip() in {"4.14.25", "4.14.26", "4.14.27", "4.14.28"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.25", "4.14.26", "4.14.27"}
-    assert manifest["build"] in {"41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS"}
-    assert manifest["database_schema_required"] in {"4.14.22", "4.14.26", "4.14.27"}
+    assert manifest["version"] in {"4.14.25", "4.14.26", "4.14.27", "4.14.28"}
+    assert manifest["build"] in {"41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL"}
+    assert manifest["database_schema_required"] in {"4.14.22", "4.14.26", "4.14.27", "4.14.28"}
     assert manifest["database_migration_required"] is False
 
 
@@ -89,4 +89,4 @@ def test_po_page_uses_bulk_request_cache_instead_of_n_plus_one_reads():
 
 def test_live_build_marker_is_v41425():
     source = text("streamlit_app.py")
-    assert any(marker in source for marker in ("41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS"))
+    assert any(marker in source for marker in ("41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL"))

@@ -1,5 +1,5 @@
 # QCMS 4.14.19 — PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES
-# BUILD 41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS
+# BUILD 41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL
 # QCMS 4.14.15 — DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
 # BUILD 41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
 # QCMS 4.14.13 — METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM
@@ -425,7 +425,7 @@ RAIL_NAV = (
 if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
     logout()
 
-st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS")
+st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL")
 
 # v4.12.9 keeps the real two-column Streamlit workspace and hardens component styling.
 # v4.12.8 uses a real two-column Streamlit workspace. The charcoal navigation

@@ -1,10 +1,10 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.27
+## Current controlled release — v4.14.28
 
-Build: `41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS`
+Build: `41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL`
 
-This release isolates Part Master Metallurgical Requirements to Final Dispatch MetLAB only, requires Raw Material Inward MetLAB to select an approved non-Final Layout Master plan, adds database-related field insertion controls to email templates, and installs the requested supplier-facing Forging PO release email with controlled PO PDF/supporting documents. The live v4.14.27 Supabase configuration migration is already applied; the updater is source-only and preserves all existing data.
+This release strengthens OSP genealogy by carrying the QCMS/FSI Batch Number and Material Out remarks through Sample Receipt, OSP Dimensional, OSP MetLAB and OSP Inward; every OSP selector exposes Part Number + FSI Batch + Vendor Batch. Approved OSP layouts now synchronize the inspection-required flags so an approved Dimensional layout cannot disappear from the Sample inspection queue. It also adds every-two-day XLSX digests for overdue Customer Orders and Supply Chain pending/overdue lists. The live v4.14.28 database migration and overdue-notifier Edge Function are applied during controlled release packaging; the macOS updater performs source deployment without requiring Supabase CLI login or manual SQL.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.

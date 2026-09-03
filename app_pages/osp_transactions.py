@@ -19,8 +19,13 @@ from core.ui import kpi_grid, page_header, record_widget_token, save_success_pop
 
 def _label(row: dict) -> str:
     fsi = f" · FSI {row.get('fsi_part_number')}" if row.get("fsi_part_number") else ""
-    batch = f" · Vendor Batch {row.get('vendor_batch_number')}" if row.get('vendor_batch_number') else ""
-    return f"{row.get('osp_job_number')} · {row.get('part_number')}{fsi} · Heat {row.get('heat_number')} · {row.get('process_name')} · {row.get('vendor_name')}{batch}"
+    fsi_batch = row.get("osp_batch_code") or row.get("fsi_batch_number") or "-"
+    vendor_batch = row.get("vendor_batch_number") or "-"
+    return (
+        f"{row.get('osp_job_number')} · Part {row.get('part_number')}{fsi} · "
+        f"FSI Batch {fsi_batch} · Vendor Batch {vendor_batch} · Heat {row.get('heat_number')} · "
+        f"{row.get('process_name')} · {row.get('vendor_name')}"
+    )
 
 
 def _job_selector(rows: list[dict], label: str, key: str) -> dict | None:
@@ -87,19 +92,22 @@ def render_material_out() -> None:
         vendor_id = c[1].selectbox("OSP Vendor", list(vendor_labels), format_func=lambda value: vendor_labels[value]) if vendor_labels else None
         dispatch_date = c[2].date_input("Material Out Date", value=date.today(), format="DD-MM-YYYY")
         expected_date = c[3].date_input("Expected Return Date", value=date.today() + timedelta(days=7), format="DD-MM-YYYY")
-        c = st.columns(4, gap="small")
+        c = st.columns(5, gap="small")
         challan = c[0].text_input("Material Out Challan Number")
         quantity = c[1].number_input("Material Out Quantity (pcs)", min_value=1.0, max_value=float(candidate.get("osp_available_quantity_pcs") or 1), value=float(candidate.get("osp_available_quantity_pcs") or 1), step=1.0)
         selected_spec = next(row for row in specifications if str(row["id"]) == spec_id)
         sample_qty = c[2].number_input("Pre-inward Sample Quantity (pcs)", min_value=1, max_value=20, value=int(selected_spec.get("sample_quantity") or 1), step=1)
         c[3].text_input("Heat Number", value=str(candidate.get("heat_number") or ""), disabled=True)
+        c[4].text_input("FSI Batch Number", value="Auto-generated on save", disabled=True, help="QCMS generates one controlled Four Star Industries batch number for this OSP Material Out and carries it through Sample, OSP inspection and OSP Inward.")
         remarks = st.text_area("Dispatch Remarks", height=70)
         submitted = st.form_submit_button("Create OSP Material Out", type="primary", disabled=not perms["can_create"] or not vendor_id, width="stretch")
     if submitted:
         try:
             process_id = str(selected_spec.get("process_id"))
             saved = service.create_dispatch({"inward_lot_id": inward_id, "opening_stock_id": candidate.get("opening_stock_id"), "vendor_id": vendor_id, "process_id": process_id, "process_specification_id": spec_id, "dispatch_date": dispatch_date.isoformat(), "dispatch_challan": challan, "quantity_dispatched": quantity, "expected_return_date": expected_date.isoformat(), "sample_quantity": sample_qty, "remarks": remarks})
-            save_success_popup(f"OSP Material Out {saved.get('osp_job_number')} saved successfully.", queue_for_rerun=True)
+            batch = service.repo.get("production_batches", str(saved.get("osp_batch_id") or "")) or {}
+            batch_code = batch.get("batch_code") or "generated"
+            save_success_popup(f"OSP Material Out {saved.get('osp_job_number')} saved successfully · FSI Batch {batch_code}.", queue_for_rerun=True)
             st.rerun()
         except Exception as exc: st.error(str(exc))
 
@@ -109,6 +117,14 @@ def render_material_out() -> None:
             mlabels = {str(r["id"]): _label(r) for r in managed}
             mid = st.selectbox("Existing Material Out", list(mlabels), format_func=lambda value: mlabels[value], key="osp_material_out_manage_id")
             mrow = next(r for r in managed if str(r["id"]) == mid)
+            portal_table(pd.DataFrame([{
+                "Part Number": mrow.get("part_number"),
+                "FSI Part Number": mrow.get("fsi_part_number"),
+                "FSI Batch Number": mrow.get("osp_batch_code") or "-",
+                "Vendor Batch Number": mrow.get("vendor_batch_number") or "-",
+                "Heat Number": mrow.get("heat_number"),
+                "Material Out Remarks": mrow.get("dispatch_remarks") or "-",
+            }]), hide_index=True, width="stretch", height=105)
             edit_scope = record_widget_token("osp-material-out-edit", mrow, selected=mid)
             with st.form(f"osp_material_out_edit_form_{edit_scope}"):
                 c=st.columns(4,gap="small")
@@ -133,8 +149,16 @@ def render_sample_receipt() -> None:
     subpage_navigation(("osp-home", "OSP Home", ":material/arrow_back:"), ("osp-dimensional", "OSP Dimensional", ":material/straighten:"), ("osp-metlab", "OSP MetLAB", ":material/science:"))
     page_header("OSP Pre-inward Sample Receipt", "Record the vendor batch sample before accepting the full processed batch.", "Sample gate")
     service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS")
-    job = _job_selector(service.jobs_for_sample_receipt(), "OSP Material Out", "osp_sample_job")
+    job = _job_selector(service.jobs_for_sample_receipt(), "OSP Material Out · Part / FSI Batch", "osp_sample_job")
     if not job: return
+    portal_table(pd.DataFrame([{
+        "Part Number": job.get("part_number"),
+        "FSI Part Number": job.get("fsi_part_number"),
+        "FSI Batch Number": job.get("osp_batch_code") or "-",
+        "Vendor Batch Number": job.get("vendor_batch_number") or "-",
+        "Material Out Challan": job.get("dispatch_challan") or "-",
+        "Material Out Remarks": job.get("dispatch_remarks") or "-",
+    }]), hide_index=True, width="stretch", height=105)
     osp_notify_pref = notification_confirmation(NotificationService(service.repo), "OSP_SAMPLE_PENDING", key=f"osp_sample_notify_{job.get('id')}", context={"supplier_id":str(job.get("vendor_id") or ""),"supplier_name":job.get("vendor_name"),"part_number":job.get("part_number"),"next_task":"OSP Sample Dimensional / MetLAB"}, include_supplier=True, default_send=True)
     sample_scope = record_widget_token("osp-sample-receipt", job, selected=job.get("id"))
     with st.form(f"osp_sample_receipt_form_{sample_scope}"):
@@ -154,13 +178,15 @@ def render_sample_receipt() -> None:
                 body_text=(f"OSP sample receipt is recorded for {job.get('osp_job_number')}.\n"
                            f"Part: {job.get('part_number') or '-'} · FSI {job.get('fsi_part_number') or '-'}\n"
                            f"Vendor: {job.get('vendor_name') or '-'}\n"
+                           f"FSI Batch: {job.get('osp_batch_code') or '-'}\n"
                            f"Vendor Batch: {vendor_batch or '-'}\n"
-                           "Complete OSP Dimensional and MetLAB sample inspections."),
+                           f"Material Out Remarks: {job.get('dispatch_remarks') or '-'}\n"
+                           "Complete the required OSP sample inspections shown in QCMS."),
                 related_table="osp_jobs",related_id=str(job.get("id")),
                 context={"osp_job_id":str(job.get("id")),"next_task":"OSP Sample Dimensional / MetLAB"},
                 **notification_overrides(osp_notify_pref),
             )
-            save_success_popup("OSP sample receipt saved successfully. Complete both OSP Dimensional and MetLAB inspections.", queue_for_rerun=True); st.rerun()
+            save_success_popup("OSP sample receipt saved successfully. Required OSP inspection queues are now available.", queue_for_rerun=True); st.rerun()
         except Exception as exc: st.error(str(exc))
     if job.get("sample_received_date"):
         st.session_state["osp_inspection_job_id"] = str(job["id"]); st.session_state["osp_inspection_scope"] = "OSP_SAMPLE"
@@ -177,8 +203,16 @@ def render_inward() -> None:
     subpage_navigation(("osp-home", "OSP Home", ":material/arrow_back:"), ("osp-records", "OSP Records", ":material/table_view:"))
     page_header("OSP Material Inward", "OSP receipt is enabled after the pre-inward sample passes Dimensional and MetLAB. Partial vendor receipts are allowed against the remaining dispatched quantity.", "Controlled receipt")
     service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS")
-    job = _job_selector(service.jobs_for_full_receipt(), "Sample-approved OSP Batch", "osp_inward_job")
+    job = _job_selector(service.jobs_for_full_receipt(), "Sample-approved OSP Batch · Part / FSI Batch", "osp_inward_job")
     if not job: return
+    portal_table(pd.DataFrame([{
+        "Part Number": job.get("part_number"),
+        "FSI Part Number": job.get("fsi_part_number"),
+        "FSI Batch Number": job.get("osp_batch_code") or "-",
+        "Vendor Batch Number": job.get("vendor_batch_number") or "-",
+        "Material Out Challan": job.get("dispatch_challan") or "-",
+        "Material Out Remarks": job.get("dispatch_remarks") or "-",
+    }]), hide_index=True, width="stretch", height=105)
     inward_scope = record_widget_token("osp-inward-new", job, selected=job.get("id"))
     with st.form(f"osp_full_inward_form_{inward_scope}"):
         c = st.columns(4, gap="small")
@@ -192,7 +226,7 @@ def render_inward() -> None:
         vendor_batch = c[2].text_input("OSP Vendor Batch Number", value=str(job.get("vendor_batch_number") or ""))
         dispatched = float(job.get("quantity_dispatched") or 0); already_received = float(job.get("quantity_received") or 0); remaining = max(dispatched - already_received, 0)
         quantity = c[3].number_input("Receipt Batch Qty (pcs)", min_value=1.0, max_value=max(float(remaining), 1.0), value=max(float(remaining), 1.0), step=1.0, help="Override with the actual partial quantity received from the OSP Vendor. The remaining dispatched quantity stays open for another inward.")
-        portal_table(pd.DataFrame([{"OSP Out Qty pcs": dispatched, "Already Received pcs": already_received, "Balance at Vendor pcs": remaining, "OSP Vendor Batch": job.get("vendor_batch_number") or vendor_batch or "-"}]), hide_index=True, width="stretch", height=105)
+        portal_table(pd.DataFrame([{"FSI Batch Number": job.get("osp_batch_code") or "-", "OSP Out Qty pcs": dispatched, "Already Received pcs": already_received, "Balance at Vendor pcs": remaining, "OSP Vendor Batch": job.get("vendor_batch_number") or vendor_batch or "-", "Material Out Remarks": job.get("dispatch_remarks") or "-"}]), hide_index=True, width="stretch", height=105)
         remarks = st.text_area("Receipt Remarks", height=70)
         submitted = st.form_submit_button("Create OSP Material Inward", type="primary", disabled=not perms["can_create"], width="stretch")
     if submitted:
@@ -238,8 +272,8 @@ def render_inward() -> None:
 def _render_register(rows: list[dict], height: int = 560) -> None:
     display = pd.DataFrame([{
         "OSP Job": r.get("osp_job_number"), "Material Out Date": r.get("dispatch_date"), "Heat Number": r.get("heat_number"),
-        "Part Number": r.get("part_number"), "FSI Part Number": r.get("fsi_part_number"), "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"),
-        "Out Qty pcs": r.get("quantity_dispatched"), "Vendor Batch": r.get("vendor_batch_number"), "Sample Gate": r.get("sample_gate_status"),
+        "Part Number": r.get("part_number"), "FSI Part Number": r.get("fsi_part_number"), "FSI Batch Number": r.get("osp_batch_code"), "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"),
+        "Out Qty pcs": r.get("quantity_dispatched"), "Vendor Batch": r.get("vendor_batch_number"), "Material Out Remarks": r.get("dispatch_remarks"), "Sample Gate": r.get("sample_gate_status"),
         "OSP Inward": r.get("receipt_number"), "Inward Qty pcs": r.get("quantity_received"), "Receipt Decision": r.get("receipt_quality_disposition"),
         "Production Qty Available": r.get("production_available_quantity"), "Data Entry Status": r.get("Data Entry Status") or r.get("status"),
         "Created By User": r.get("Created By User"), "Last Modified By User": r.get("Last Modified By User"), "Status": r.get("status"),
@@ -251,7 +285,7 @@ def render_records() -> None:
     subpage_navigation(("osp-home", "OSP Home", ":material/arrow_back:"), ("osp-material-out", "Material Out", ":material/output:"), ("osp-inward", "OSP Inward", ":material/input:"))
     page_header("OSP Transaction Records", context="Heat · Part · Vendor Batch")
     service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS"); rows = service.register(); search = st.text_input("Search OSP Job, Heat, Part, Vendor, Process or Vendor Batch")
-    filtered = [r for r in rows if not search or search.casefold() in " ".join(str(r.get(k) or "") for k in ("osp_job_number","receipt_number","heat_number","part_number","vendor_name","process_name","vendor_batch_number","vendor_invoice_number","tc_number")).casefold()]
+    filtered = [r for r in rows if not search or search.casefold() in " ".join(str(r.get(k) or "") for k in ("osp_job_number","receipt_number","heat_number","part_number","fsi_part_number","osp_batch_code","vendor_name","process_name","vendor_batch_number","vendor_invoice_number","tc_number","dispatch_remarks")).casefold()]
     if filtered:
         labels = {str(r["id"]): _label(r) for r in filtered}
         selected = st.selectbox("Select OSP record for controlled reports", list(labels), format_func=lambda value: labels[value], key="osp_record_print_selection")

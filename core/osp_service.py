@@ -250,13 +250,37 @@ class OSPService:
             "receipt_dimensional_disposition" if report_type == "DIMENSIONAL" else
             "receipt_metlab_disposition"
         )
-        rows: list[dict] = []
+        register_rows = self.register()
         requirement_flag = "dimensional_required" if report_type == "DIMENSIONAL" else "metlab_required"
-        for row in self.register():
-            # A quality queue must include only inspection types selected in the Part + OSP Process group.
-            if not bool(row.get(requirement_flag)):
+
+        # v4.14.28 resilience rule:
+        # An Approved OSP layout is also authoritative evidence that this inspection is required.
+        # This prevents old Process Specification flags from hiding a valid Sample Dimensional/MetLAB queue.
+        spec_ids = sorted({str(row.get("process_specification_id")) for row in register_rows if row.get("process_specification_id")})
+        approved_layout_specs: set[str] = set()
+        if spec_ids:
+            layouts = self.repo.select(
+                "inspection_plans",
+                eq={"status": "APPROVED", "layout_type": report_type},
+                in_={"source_process_specification_id": spec_ids},
+                limit=max(1000, len(spec_ids) * 4),
+            )
+            approved_layout_specs = {
+                str(row.get("source_process_specification_id"))
+                for row in layouts
+                if row.get("source_process_specification_id")
+            }
+
+        rows: list[dict] = []
+        for row in register_rows:
+            required_by_flag = bool(row.get(requirement_flag))
+            required_by_approved_layout = str(row.get("process_specification_id") or "") in approved_layout_specs
+            if not (required_by_flag or required_by_approved_layout):
                 continue
-            ready = bool(row.get("sample_received_date")) if scope == "OSP_SAMPLE" else (float(row.get("quantity_received") or 0) >= float(row.get("quantity_dispatched") or 0) and float(row.get("quantity_dispatched") or 0) > 0)
+            ready = bool(row.get("sample_received_date")) if scope == "OSP_SAMPLE" else (
+                float(row.get("quantity_received") or 0) >= float(row.get("quantity_dispatched") or 0)
+                and float(row.get("quantity_dispatched") or 0) > 0
+            )
             pending = str(row.get(disposition_key) or "PENDING") not in {"ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"}
             if ready and pending and str(row.get("status")) != "CANCELLED":
                 rows.append(row)
