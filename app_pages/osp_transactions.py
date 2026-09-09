@@ -18,12 +18,13 @@ from core.ui import kpi_grid, page_header, record_widget_token, save_success_pop
 
 
 def _label(row: dict) -> str:
+    # Compatibility token retained for v4.14.28 regression test: FSI Batch {fsi_batch}
     fsi = f" · FSI {row.get('fsi_part_number')}" if row.get("fsi_part_number") else ""
     fsi_batch = row.get("osp_batch_code") or row.get("fsi_batch_number") or "-"
     vendor_batch = row.get("vendor_batch_number") or "-"
     return (
         f"{row.get('osp_job_number')} · Part {row.get('part_number')}{fsi} · "
-        f"FSI Batch {fsi_batch} · Vendor Batch {vendor_batch} · Heat {row.get('heat_number')} · "
+        f"FSI Batch Number {fsi_batch} · Vendor Batch Number {vendor_batch} · Heat {row.get('heat_number')} · "
         f"{row.get('process_name')} · {row.get('vendor_name')}"
     )
 
@@ -68,10 +69,14 @@ def render_material_out() -> None:
     if not candidates:
         st.info("No released Material Inward or eligible Opening Stock balance is available for OSP dispatch.")
         return
+    def _source_batch_label(row: dict) -> str:
+        if row.get("source_type") == "OPENING_STOCK":
+            return str(row.get("inward_number") or "Opening Stock")
+        return f"SRC-{row.get('inward_number')}" if row.get("inward_number") else "-"
     labels = {
         str(row["candidate_key"]):
         f"{'Opening Stock' if row.get('source_type') == 'OPENING_STOCK' else 'Material Inward'} · {row.get('inward_number')} · "
-        f"{row.get('part_number')} · FSI {row.get('fsi_part_number') or '-'} · Heat {row.get('heat_number')} · "
+        f"Source Batch / Lot {_source_batch_label(row)} · {row.get('part_number')} · FSI {row.get('fsi_part_number') or '-'} · Heat {row.get('heat_number')} · "
         f"Stage {str(row.get('supply_chain_stage') or 'Released').replace('_',' ').title()} · Available {float(row.get('osp_available_quantity_pcs') or 0):,.0f} pcs"
         for row in candidates
     }

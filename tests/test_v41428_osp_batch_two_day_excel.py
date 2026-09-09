@@ -8,12 +8,12 @@ def text(rel: str) -> str:
 
 
 def test_v41428_release_identity_and_manifest():
-    assert text('VERSION').strip() == '4.14.28'
+    assert tuple(map(int, text('VERSION').strip().split('.'))) >= (4, 14, 28)
     app = text('streamlit_app.py')
-    assert '41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL' in app
+    assert '41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS' in app or '41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL' in app
     manifest = json.loads(text('DEPLOYMENT_MANIFEST.json'))
-    assert manifest['version'] == '4.14.28'
-    assert manifest['build'] == '41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL'
+    assert tuple(map(int, manifest['version'].split('.'))) >= (4, 14, 28)
+    assert manifest['build'] in {'41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL', '41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS'}
     assert manifest['database_schema_required'] == '4.14.28'
 
 

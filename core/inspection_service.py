@@ -14,6 +14,7 @@ from core.attachments import AttachmentService
 from core.dimensional_import import parse_dimensional_workbook_bytes
 from core.inspection_queue import build_inspection_queue, pending_rows
 from core.repository import Repository
+from core.inspection_layout_metadata import BEND_TEST, GENERAL_METLAB, inspection_method_from_rows, row_metadata
 from core.record_audit import annotate_transaction_rows
 
 FINAL_DISPOSITIONS = ("ON_HOLD", "ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED")
@@ -212,6 +213,16 @@ class InspectionService:
             limit=1000,
         )
 
+    def plan_inspection_method(self, plan_id: str | None) -> str:
+        if not plan_id:
+            return GENERAL_METLAB
+        plan = self.get_plan(plan_id) or {}
+        rows = self.plan_characteristics(plan_id)
+        return inspection_method_from_rows(
+            rows,
+            " ".join(str(plan.get(key) or "") for key in ("layout_name", "report_title", "source_template_name")),
+        )
+
     def osp_parameter_characteristics(
         self,
         part_id: str,
@@ -296,7 +307,9 @@ class InspectionService:
                     raise ValueError(f"Text Specification is required for {characteristic}.")
                 lower_spec = upper_spec = None
             else:
-                if lower_spec is None and upper_spec is None:
+                metadata = row_metadata(source)
+                method = str(metadata.get("inspection_method") or GENERAL_METLAB).upper()
+                if lower_spec is None and upper_spec is None and not (method == BEND_TEST and specification):
                     raise ValueError(f"Minimum or Maximum Specification is required for numeric parameter {characteristic}.")
             payload_row = {
                 "id": str((existing.get(sequence) or {}).get("id") or source.get("id") or "") or None,

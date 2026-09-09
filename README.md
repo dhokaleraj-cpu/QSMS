@@ -1,10 +1,10 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.28
+## Current controlled release — v4.14.29
 
-Build: `41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL`
+Build: `41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS`
 
-This release strengthens OSP genealogy by carrying the QCMS/FSI Batch Number and Material Out remarks through Sample Receipt, OSP Dimensional, OSP MetLAB and OSP Inward; every OSP selector exposes Part Number + FSI Batch + Vendor Batch. Approved OSP layouts now synchronize the inspection-required flags so an approved Dimensional layout cannot disappear from the Sample inspection queue. It also adds every-two-day XLSX digests for overdue Customer Orders and Supply Chain pending/overdue lists. The live v4.14.28 database migration and overdue-notifier Edge Function are applied during controlled release packaging; the macOS updater performs source deployment without requiring Supabase CLI login or manual SQL.
+v4.14.29 fixes the Part Master **Approved Sources → RMTC Approved Raw Material Source** linkage, completes section-wise permission rows for every QCMS module, adds **Bend Test** as a MetLAB inspection sub category, changes chemical analysis to the controlled horizontal sequence, adds an explicit **Case Depth Traverse** checkbox with multiple locations, adds reusable MetLAB reference statements, highlights conclusion/decision output, and expands OSP selectors with batch identity. This is a source-only release using the already-applied v4.14.28 database contract; no manual Supabase SQL is required.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.
@@ -18,6 +18,6 @@ This release strengthens OSP genealogy by carrying the QCMS/FSI Batch Number and
 
 ## Deployment
 - Source-only release; no new Supabase migration is required.
-- Required live database baseline remains v4.14.22 / `QCMS_V41422_FULL_READY`.
+- Required live database baseline remains v4.14.28; v4.14.29 adds no schema migration.
 - Online Supabase baseline recheck is informational/non-blocking and cannot prevent Git/Streamlit source deployment.
 - Existing production/master/RMTC/OSP/Supply Chain data and local secrets are preserved.

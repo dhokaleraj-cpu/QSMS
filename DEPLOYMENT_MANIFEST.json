@@ -1,6 +1,6 @@
 {
-  "version": "4.14.28",
-  "build": "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL",
+  "version": "4.14.29",
+  "build": "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -170,20 +170,32 @@
     "multi_department_notification_schedules",
     "xlsx_notification_export_format",
     "dedicated_supply_digest_edge_function",
-    "two_day_supply_digest_duplicate_guard"
+    "two_day_supply_digest_duplicate_guard",
+    "rmtc_part_master_approved_source_join",
+    "user_access_all_module_section_rights",
+    "metlab_bend_test_subcategory",
+    "bend_test_controlled_starter_layout",
+    "metlab_horizontal_chemical_analysis",
+    "metlab_case_depth_explicit_checkbox_locations",
+    "metlab_reusable_reference_documents",
+    "quality_conclusion_remark_highlight",
+    "osp_selector_batch_identity_expanded"
   ],
   "source": "controlled_release",
-  "release_name": "QCMS v4.14.28 OSP Batch Genealogy / Two-Day Excel Digests",
+  "release_name": "QCMS v4.14.29 RMTC / Bend Test / Chemical Grid / Case Depth / Permissions",
   "database_schema_required": "4.14.28",
   "database_migration_required": false,
   "supabase_release_contract": "QCMS v4.14.28 live migration applied and verified during controlled release packaging",
   "deployment_notes": [
-    "v4.14.28 OSP requirement synchronization and two-day Excel digest configuration are applied and verified on the live QSMS Supabase project; the macOS updater performs source deployment only and does not require Supabase CLI login or manual SQL.",
-    "OSP selectors carry Part Number, FSI Batch Number and Vendor Batch Number; Material Out remarks remain visible in Sample Receipt, OSP inspection and OSP Inward context.",
-    "An approved OSP Dimensional/MetLAB layout is authoritative evidence that the inspection is required; Process Specification flags and open osp_jobs.required_tests are synchronized.",
-    "The dedicated qcms-supply-digest-notifier Edge Function runs from Supabase cron and sends every-two-day XLSX digests; interim duplicate *_2DAY schedules are disabled.",
-    "Part Master Final Dispatch Metallurgical Requirements remain isolated from Raw Material Inward MetLAB, which uses approved Layout Master records only.",
-    "Forging PO release uses the controlled supplier confirmation template and supporting attachments."
+    "v4.14.29 is a source-only controlled update. It uses the already-applied v4.14.28 database contract and requires no manual Supabase SQL or Supabase CLI login.",
+    "RMTC Approved Raw Material Source now combines Part Master Approved Sources with the ACTIVE Raw Material Detail required for section, route and weight genealogy; incomplete approved sources remain visible with a setup warning instead of silently disappearing.",
+    "Users & Access now exposes section-wise View/Create/Edit rights for every QCMS module instead of only a partial section catalog.",
+    "MetLAB Layout Master adds Bend Test as an Inspection Method / Sub Category with controlled starter parameters based on the supplied Bend Test report.",
+    "Chemical analysis entry and PDF use a horizontal grid ordered C, Mn, Si, S, P, Cr, Ni, Mo, V, Al, Cu, Nb, Ti, configured extras and Al/N2 Ratio last when configured.",
+    "Case Depth Traverse can be explicitly ticked per MetLAB characteristic and multiple controlled Traverse Locations can be configured.",
+    "MetLAB Specification Reference and Reference Documents / Statements use reusable controlled-value lists, and conclusion remarks are highlighted separately in report output.",
+    "OSP selectors show FSI Batch Number, Vendor Batch Number and source batch/lot identity where applicable.",
+    "All v4.14.28 OSP genealogy, two-day XLSX digests, MetLAB boundary, PO confirmation and existing data remain preserved."
   ],
   "item_wise_po_technical_data": true,
   "po_supplier_technical_grid": true,
@@ -199,14 +211,15 @@
   "standard_room_inspection_module": true,
   "npd_email_stage_cards": true,
   "registered_pages": 83,
-  "full_pytest_passed": 473,
+  "full_pytest_passed": 482,
   "live_supabase_schema_applied": true,
   "live_overdue_notifier_version": 4,
   "live_overdue_notifier_status": "ACTIVE",
   "source_only_updater": true,
   "release_notes": [
-    "v4.14.28 live OSP requirement synchronization is applied and verified, including the screenshot job OSP-D9-2026-00004.",
-    "Dedicated two-day Excel digests are active through qcms-supply-digest-notifier v1 and cron; duplicate interim schedule keys are disabled."
+    "v4.14.29 fixes the Part Master Approved Source \u2192 RMTC source selector gap and completes the section-permission editor across all modules.",
+    "Adds Bend Test, horizontal chemical analysis, explicit multi-location Case Depth Traverse control, reusable MetLAB references and highlighted conclusion remarks.",
+    "No database migration is required for v4.14.29; existing layout_metadata, report results JSON and master_value_catalog are reused."
   ],
   "final_metlab_part_master_only": true,
   "raw_material_inward_metlab_layout_master_only": true,
@@ -214,5 +227,7 @@
   "email_template_database_field_picker": true,
   "live_supply_digest_notifier_version": 1,
   "live_supply_digest_notifier_status": "ACTIVE",
-  "live_supply_digest_cron": "qcms-supply-digest-notifier-hourly"
+  "live_supply_digest_cron": "qcms-supply-digest-notifier-hourly",
+  "schema_change_for_v41429": false,
+  "previous_controlled_release": "4.14.28"
 }

@@ -31,6 +31,90 @@ class RMTCService:
             return []
         return self.repo.select('part_raw_material_details', eq={'part_id': value, 'status': 'ACTIVE'}, order_by='sequence_no', limit=200)
 
+    def approved_source_options(self, part_id):
+        """Return RMTC source choices from Part Master Approved Sources + RM details.
+
+        Part Master deliberately stores commercial source approval in
+        ``part_supplier_links`` and production-weight/section data in
+        ``part_raw_material_details``.  Older RMTC screens looked only at the
+        latter table, so an approved Supplier / Steel Mill could disappear from
+        the **Approved Raw Material Source** selector.  This method joins both
+        masters without creating duplicate or synthetic production data.
+
+        When an approved Supplier does not yet have an ACTIVE Raw Material
+        Detail row, the source is still returned with ``source_ready=False`` so
+        the user can see the approval and receives a precise setup message.
+        RMTC save must continue to persist the real Raw Material Detail id.
+        """
+        value = str(part_id or '').strip()
+        if not value:
+            return []
+        raw_rows = self.source_details(value)
+        approved_links = self.repo.select(
+            'part_supplier_links',
+            eq={'part_id': value, 'approved': True},
+            order_by='valid_from',
+            limit=500,
+        )
+
+        # Backward compatibility: Parts created before Approved Sources became
+        # mandatory continue to use their ACTIVE Raw Material Detail rows.
+        if not approved_links:
+            return [{
+                **dict(row),
+                'option_key': f"RAW:{row.get('id')}",
+                'raw_material_detail_id': row.get('id'),
+                'approved_source_link_id': None,
+                'steel_mill_id': None,
+                'approval_reference': None,
+                'source_ready': True,
+                'approval_mode': 'LEGACY_RAW_DETAIL',
+            } for row in raw_rows]
+
+        raw_by_supplier = {}
+        for row in raw_rows:
+            raw_by_supplier.setdefault(str(row.get('supplier_id') or ''), []).append(dict(row))
+
+        options = []
+        for link in approved_links:
+            supplier_id = str(link.get('supplier_id') or '')
+            matches = raw_by_supplier.get(supplier_id) or []
+            if matches:
+                for raw in matches:
+                    options.append({
+                        **raw,
+                        'option_key': f"APPROVED:{link.get('id')}:RAW:{raw.get('id')}",
+                        'raw_material_detail_id': raw.get('id'),
+                        'approved_source_link_id': link.get('id'),
+                        'steel_mill_id': link.get('steel_mill_id'),
+                        'approval_reference': link.get('approval_reference'),
+                        'supplier_part_number': link.get('supplier_part_number'),
+                        'valid_from': link.get('valid_from'),
+                        'valid_to': link.get('valid_to'),
+                        'source_ready': True,
+                        'approval_mode': 'APPROVED_SOURCE',
+                    })
+            else:
+                # Visible but intentionally non-saveable until the missing raw
+                # detail (weight / section / route) is completed in Part Master.
+                options.append({
+                    'option_key': f"APPROVED:{link.get('id')}:SETUP_REQUIRED",
+                    'raw_material_detail_id': None,
+                    'approved_source_link_id': link.get('id'),
+                    'part_id': value,
+                    'supplier_id': link.get('supplier_id'),
+                    'steel_mill_id': link.get('steel_mill_id'),
+                    'approval_reference': link.get('approval_reference'),
+                    'supplier_part_number': link.get('supplier_part_number'),
+                    'valid_from': link.get('valid_from'),
+                    'valid_to': link.get('valid_to'),
+                    'section_size': None,
+                    'forging_route': None,
+                    'source_ready': False,
+                    'approval_mode': 'APPROVED_SOURCE_SETUP_REQUIRED',
+                })
+        return options
+
     def employees(self,authority):
         rows=self.repo.select('employees',eq={'status':'ACTIVE'},order_by='first_name',limit=2000)
         return [r for r in rows if authority in (r.get('approval_authorities') or [])]

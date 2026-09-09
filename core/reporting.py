@@ -4,7 +4,7 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 import re
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 from PIL import Image as PILImage
@@ -80,16 +80,21 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
     stage = dict(payload.get("stage") or {})
     employees = dict(payload.get("employees") or {})
     is_metlab = kind == "METLAB"
+    result_map = dict(payload.get("results") or {}) if is_metlab else {}
+    inspection_method = str(result_map.get("inspection_method") or "GENERAL_METLAB").strip().upper() if is_metlab else ""
     report_number = record.get("report_number") or "Quality Report"
     report_date = record.get("test_date") if is_metlab else record.get("inspection_date")
     conclusion = record.get("remarks") or f"Overall result: {record.get('overall_result') or 'NOT_EVALUATED'}"
+    conclusion_remark = result_map.get("conclusion_remark") if is_metlab else None
+    reference_documents = [str(value).strip() for value in (result_map.get("reference_documents") or []) if str(value).strip()] if is_metlab else []
     final_decision = record.get("disposition") or "PENDING"
     decision_reason = record.get("disposition_reason") or ""
 
     summary_rows = [
         ("Report Number", report_number),
         ("Report Date", report_date),
-        ("Report Type", "MetLAB" if is_metlab else "Dimensional Inspection"),
+        ("Report Type", "Bend Test" if is_metlab and inspection_method == "BEND_TEST" else ("MetLAB" if is_metlab else "Dimensional Inspection")),
+        ("Inspection Method / Sub Category", "Bend Test" if inspection_method == "BEND_TEST" else ("General MetLAB" if is_metlab else "Dimensional Inspection")),
         ("Part Number", part.get("part_number")),
         ("FSI Part Number", part.get("fsi_part_number")),
         ("Part Name", part.get("part_name")),
@@ -108,6 +113,8 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
         ("Report Layout", record.get("layout_name_snapshot")),
         ("Production / Lot Quantity pcs", record.get("production_quantity_pcs") or record.get("lot_quantity")),
         ("Conclusion", conclusion),
+        ("Conclusion Remark", conclusion_remark),
+        ("Reference Documents / Statements", " | ".join(reference_documents)),
         ("Final Decision", final_decision),
         ("Decision Reason", decision_reason),
         ("Status", record.get("status")),
@@ -123,7 +130,6 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
             writer, index=False, sheet_name=safe_excel_sheet_name("Report Summary", used_names=used)
         )
         if is_metlab:
-            result_map = dict(payload.get("results") or {})
             sections = (
                 ("MetLAB Results", list(result_map.get("rows") or [])),
                 ("Chemistry", list(result_map.get("chemistry_rows") or [])),
@@ -155,9 +161,26 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
                 case_rows.append(item)
             pd.DataFrame(case_rows).to_excel(writer, index=False, sheet_name=safe_excel_sheet_name("Case Depth Traverse", used_names=used))
         decision = pd.DataFrame([
-            {"Conclusion": conclusion, "Final Decision": final_decision, "Decision Reason": decision_reason, "Status": record.get("status")}
+            {"Conclusion": conclusion, "Conclusion Remark": conclusion_remark, "Final Decision": final_decision, "Decision Reason": decision_reason, "Status": record.get("status")}
         ])
-        decision.to_excel(writer, index=False, sheet_name=safe_excel_sheet_name("Conclusion and Decision", used_names=used))
+        decision_sheet_name = safe_excel_sheet_name("Conclusion and Decision", used_names=used)
+        decision.to_excel(writer, index=False, sheet_name=decision_sheet_name)
+        # Make the conclusion/decision visually stand out in exported inspection workbooks.
+        try:
+            from openpyxl.styles import Font, PatternFill
+            worksheet = writer.sheets[decision_sheet_name]
+            fills = {
+                "Conclusion": "E0F2FE", "Conclusion Remark": "FFF7ED",
+                "Final Decision": "DCFCE7" if str(final_decision).upper() in {"ACCEPTED", "APPROVED", "PASS", "RELEASED"} else ("FEE2E2" if str(final_decision).upper() in {"REJECTED", "FAIL"} else "FEF3C7"),
+                "Decision Reason": "F8FAFC",
+            }
+            for col_index, header in enumerate([cell.value for cell in worksheet[1]], start=1):
+                worksheet.cell(1, col_index).font = Font(bold=True)
+                if header in fills:
+                    worksheet.cell(2, col_index).fill = PatternFill("solid", fgColor=fills[header])
+                    worksheet.cell(2, col_index).font = Font(bold=(header in {"Conclusion", "Final Decision"}), italic=(header == "Conclusion Remark"))
+        except Exception:
+            pass
     return buffer.getvalue()
 
 
@@ -521,6 +544,129 @@ def _rmtc_labeled_grid(
     ]
     for label_col in label_columns:
         commands.append(("BACKGROUND", (label_col, 0), (label_col, -1), colors.HexColor("#EDF4FA")))
+    table.setStyle(TableStyle(commands))
+    return table
+
+
+_CHEMICAL_REPORT_ORDER = ("C", "Mn", "Si", "S", "P", "Cr", "Ni", "Mo", "V", "Al", "Cu", "Nb", "Ti")
+_CHEMICAL_RATIO_KEY = "aln2ratio"
+
+
+def _chemical_report_key(value: Any) -> str:
+    text = re.sub(r"[^A-Za-z0-9]", "", str(value or "")).casefold()
+    aliases = {
+        "carbon": "c", "manganese": "mn", "silicon": "si", "sulphur": "s", "sulfur": "s",
+        "phosphorus": "p", "chromium": "cr", "nickel": "ni", "molybdenum": "mo",
+        "vanadium": "v", "aluminium": "al", "aluminum": "al", "copper": "cu",
+        "niobium": "nb", "titanium": "ti", "alnratio": _CHEMICAL_RATIO_KEY,
+        "aln2ratio": _CHEMICAL_RATIO_KEY, "alnitrogenratio": _CHEMICAL_RATIO_KEY,
+    }
+    return aliases.get(text, text)
+
+
+def _ordered_chemical_report_rows(rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+    """Attached chemical-analysis order: C→Ti, extras, Al/N2 Ratio last."""
+    rank = {_chemical_report_key(name): index for index, name in enumerate(_CHEMICAL_REPORT_ORDER)}
+    normal: list[dict[str, object]] = []
+    extras: list[dict[str, object]] = []
+    ratio: list[dict[str, object]] = []
+    for source in rows:
+        row = dict(source)
+        key = _chemical_report_key(row.get("element"))
+        if key == _CHEMICAL_RATIO_KEY:
+            ratio.append(row)
+        elif key in rank:
+            normal.append(row)
+        else:
+            extras.append(row)
+    normal.sort(key=lambda row: (rank[_chemical_report_key(row.get("element"))], str(row.get("element") or "")))
+    extras.sort(key=lambda row: str(row.get("element") or ""))
+    ratio.sort(key=lambda row: str(row.get("element") or ""))
+    return [*normal, *extras, *ratio]
+
+
+def _chemical_report_label(element: object) -> str:
+    text = str(element or "").strip()
+    if _chemical_report_key(text) == _CHEMICAL_RATIO_KEY:
+        return "Al/N2 Ratio"
+    return text if "%" in text else f"{text}%"
+
+
+def _chemical_horizontal_report_table(
+    chemistry_rows: Sequence[Mapping[str, object]],
+    content_width: float,
+    styles: Mapping[str, ParagraphStyle],
+) -> Table:
+    ordered = _ordered_chemical_report_rows(chemistry_rows)
+    header = ["Element", *[_chemical_report_label(row.get("element")) for row in ordered]]
+    rows: list[list[object]] = [header]
+    for title, field in (
+        ("Spec. Min", "minimum_value"),
+        ("Spec. Max", "maximum_value"),
+        ("RMTC Achieved", "rmtc_actual_value"),
+        ("MetLAB Achieved", "actual_value"),
+    ):
+        line: list[object] = [title]
+        for row in ordered:
+            value = row.get(field)
+            # Some historical RMTC snapshots used actual_value as the RMTC value.
+            if title == "RMTC Achieved" and value in (None, ""):
+                value = row.get("source_actual_value")
+            line.append("-" if value in (None, "") else value)
+        rows.append(line)
+    first_width = 26 * mm
+    remaining = max(1.0, content_width - first_width)
+    value_width = remaining / max(1, len(header) - 1)
+    widths = [first_width, *([value_width] * (len(header) - 1))]
+    return _rmtc_grid(rows, widths, styles["header"], styles["small"], header_rows=1)
+
+
+# Compatibility tokens retained for v4.12.5 verification: ["Final Decision", overall] and ["Decision Reason", decision_reason]
+
+def _quality_conclusion_table(
+    *,
+    conclusion: object,
+    conclusion_remark: object = None,
+    final_decision: object,
+    decision_reason: object,
+    content_width: float,
+    styles: Mapping[str, ParagraphStyle],
+) -> Table:
+    """High-visibility conclusion block used by MetLAB and inspection PDFs."""
+    conclusion_style = ParagraphStyle(
+        "QcConclusionValue", parent=styles["cell"], fontName="Helvetica-Bold",
+        fontSize=6.6, leading=8.0, textColor=NAVY,
+    )
+    remark_style = ParagraphStyle(
+        "QcConclusionRemark", parent=styles["cell"], fontName="Helvetica-Oblique",
+        fontSize=5.8, leading=7.0, textColor=colors.HexColor("#7C2D12"),
+    )
+    decision_style = ParagraphStyle(
+        "QcFinalDecision", parent=styles["cell"], fontName="Helvetica-Bold",
+        fontSize=7.0, leading=8.2, textColor=TEXT,
+    )
+    rows: list[tuple[str, object, ParagraphStyle, colors.Color]] = [
+        ("Conclusion", conclusion, conclusion_style, colors.HexColor("#E0F2FE")),
+    ]
+    if str(conclusion_remark or "").strip():
+        rows.append(("Conclusion Remark", conclusion_remark, remark_style, colors.HexColor("#FFF7ED")))
+    rows.extend([
+        ("Final Decision", final_decision, decision_style, _table_status_color(final_decision)),
+        ("Decision Reason", decision_reason, styles["cell"], colors.HexColor("#F8FAFC")),
+    ])
+    prepared = [[_paragraph(label, styles["label"]), _paragraph(_display_value(value), value_style)] for label, value, value_style, _ in rows]
+    table = Table(prepared, colWidths=[36 * mm, content_width - 36 * mm], hAlign="LEFT", splitByRow=1)
+    commands = [
+        ("GRID", (0, 0), (-1, -1), 0.55, colors.HexColor("#64748B")),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#E2E8F0")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3.0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3.0),
+        ("TOPPADDING", (0, 0), (-1, -1), 3.0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.0),
+    ]
+    for index, (_, _, _, background) in enumerate(rows):
+        commands.append(("BACKGROUND", (1, index), (1, index), background))
     table.setStyle(TableStyle(commands))
     return table
 
@@ -1017,10 +1163,13 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     employees = dict(payload.get("employees") or {})
     results = dict(payload.get("results") or {})
     microstructure_images = [dict(row) for row in (payload.get("microstructure_images") or [])]
+    inspection_method = str(results.get("inspection_method") or "GENERAL_METLAB").strip().upper()
+    is_bend_test = inspection_method == "BEND_TEST"
 
     scope = str(record.get("inspection_scope") or "MATERIAL_INWARD")
     is_osp = scope.startswith("OSP_") or scope == "OSP_STAGE" or bool(record.get("osp_job_id"))
     title = (
+        "BEND TEST REPORT" if is_bend_test else
         "OSP METALLURGICAL TEST REPORT" if is_osp else
         "FINAL METALLURGICAL TEST REPORT" if scope == "FINAL_DISPATCH_STAGE" else
         "RAW MATERIAL METALLURGICAL TEST REPORT"
@@ -1073,8 +1222,19 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     if len(test_rows) == 1:
         test_rows.append([1, "Metallurgical requirements", "As approved inspection layout", "No result rows recorded", "", "NOT_EVALUATED"])
     story.append(Spacer(1, 1.4 * mm))
-    story.append(_rmtc_section_bar("METALLURGICAL TEST RESULTS", content_width, sty["section"]))
-    story.append(_rmtc_grid(test_rows, [12*mm, 54*mm, 50*mm, 46*mm, 14*mm, 18*mm], sty["header"], sty["small"], status_columns=(5,)))
+    if is_bend_test:
+        baking_keywords = ("baking", "base metal hardness")
+        baking_rows = [test_rows[0]] + [row for row in test_rows[1:] if any(token in str(row[1] or "").casefold() for token in baking_keywords)]
+        bend_rows = [test_rows[0]] + [row for row in test_rows[1:] if not any(token in str(row[1] or "").casefold() for token in baking_keywords)]
+        if len(baking_rows) > 1:
+            story.append(_rmtc_section_bar("BAKING / AGING", content_width, sty["section"]))
+            story.append(_rmtc_grid(baking_rows, [12*mm, 54*mm, 50*mm, 46*mm, 14*mm, 18*mm], sty["header"], sty["small"], status_columns=(5,)))
+            story.append(Spacer(1, 1.2 * mm))
+        story.append(_rmtc_section_bar("BEND TEST RESULTS", content_width, sty["section"]))
+        story.append(_rmtc_grid(bend_rows if len(bend_rows) > 1 else test_rows, [12*mm, 54*mm, 50*mm, 46*mm, 14*mm, 18*mm], sty["header"], sty["small"], status_columns=(5,)))
+    else:
+        story.append(_rmtc_section_bar("METALLURGICAL TEST RESULTS", content_width, sty["section"]))
+        story.append(_rmtc_grid(test_rows, [12*mm, 54*mm, 50*mm, 46*mm, 14*mm, 18*mm], sty["header"], sty["small"], status_columns=(5,)))
 
     case_locations = [dict(row) for row in (results.get("case_depth_locations") or [])]
     case_traverse = [dict(row) for row in (results.get("case_depth_traverse") or [])]
@@ -1109,11 +1269,8 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
 
     chemistry_rows = [dict(row) for row in (results.get("chemistry_rows") or [])]
     if chemistry_rows:
-        story.append(_rmtc_section_bar("Chemical Composition Verification", content_width, sty["sub"], light=True))
-        rows = [["Element", "Minimum", "Maximum", "RMTC Actual", "MetLAB Actual", "Unit", "Result"]]
-        for row in chemistry_rows:
-            rows.append([row.get("element"), row.get("minimum_value"), row.get("maximum_value"), row.get("rmtc_actual_value"), row.get("actual_value"), row.get("unit"), row.get("result")])
-        story.append(_rmtc_grid(rows, [22*mm, 26*mm, 26*mm, 32*mm, 32*mm, 18*mm, 38*mm], sty["header"], sty["small"], status_columns=(6,)))
+        story.append(_rmtc_section_bar("CHEMICAL ANALYSIS · ASTM E 415 / IS 8811", content_width, sty["sub"], light=True))
+        story.append(_chemical_horizontal_report_table(chemistry_rows, content_width, sty))
 
     jominy_rows = [dict(row) for row in (results.get("jominy_rows") or [])]
     if jominy_rows:
@@ -1124,8 +1281,16 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         story.append(_rmtc_grid(rows, [20*mm, 17*mm, 22*mm, 22*mm, 25*mm, 28*mm, 22*mm, 38*mm], sty["header"], sty["small"], status_columns=(6,)))
 
     story.append(CondPageBreak(70 * mm))
-    story.append(_rmtc_section_bar("MICROSTRUCTURE PHOTOGRAPHS", content_width, sty["section"]))
+    evidence_title = "BEND TEST EVIDENCE / PART PHOTOGRAPHS" if is_bend_test else "MICROSTRUCTURE PHOTOGRAPHS"
+    story.append(_rmtc_section_bar(evidence_title, content_width, sty["section"]))
     story.append(_photo_grid_table(microstructure_images, content_width, sty["center"], columns=2, max_height=46*mm))
+
+    reference_documents = [str(value).strip() for value in (results.get("reference_documents") or []) if str(value).strip()]
+    if reference_documents:
+        story.append(Spacer(1, 1.2 * mm))
+        story.append(_rmtc_section_bar("REFERENCE DOCUMENTS / STATEMENTS", content_width, sty["sub"], light=True))
+        ref_rows = [["Sr.", "Reference"]] + [[index, value] for index, value in enumerate(reference_documents, start=1)]
+        story.append(_rmtc_grid(ref_rows, [14*mm, content_width - 14*mm], sty["header"], sty["small"]))
 
     prepared = _employee_name(employees.get(str(record.get("prepared_by_employee_id"))))
     validated = _employee_name(employees.get(str(record.get("validated_by_employee_id"))))
@@ -1133,12 +1298,12 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     overall = record.get("disposition") or record.get("overall_result") or "NOT_EVALUATED"
     conclusion = record.get("remarks") or f"Overall result: {record.get('overall_result') or overall}"
     decision_reason = record.get("disposition_reason") or "-"
+    conclusion_remark = results.get("conclusion_remark")
     story.append(Spacer(1, 1.5 * mm))
-    story.append(_rmtc_labeled_grid([
-        ["Conclusion", conclusion],
-        ["Final Decision", overall],
-        ["Decision Reason", decision_reason],
-    ], [32*mm, 162*mm], sty["label"], sty["cell"], label_columns=(0,)))
+    story.append(_quality_conclusion_table(
+        conclusion=conclusion, conclusion_remark=conclusion_remark, final_decision=overall,
+        decision_reason=decision_reason, content_width=content_width, styles=sty,
+    ))
     story.append(_rmtc_labeled_grid([
         ["Prepared By", prepared, "Validated By", validated, "Verified & Approved By", approved],
         ["Prepared / Test Date", record.get("test_date"), "Validated At", record.get("validated_at"), "Decision At", record.get("decision_at")],
@@ -1200,11 +1365,10 @@ def dimensional_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     overall = record.get("disposition") or record.get("overall_result") or "NOT_EVALUATED"
     conclusion = record.get("remarks") or f"Overall result: {record.get('overall_result') or overall}"
     decision_reason = record.get("disposition_reason") or "-"
-    story.append(Spacer(1,1.5*mm)); story.append(_rmtc_labeled_grid([
-        ["Conclusion", conclusion],
-        ["Final Decision", overall],
-        ["Decision Reason", decision_reason],
-    ], [36*mm,158*mm], sty["label"], sty["cell"], label_columns=(0,)))
+    story.append(Spacer(1,1.5*mm)); story.append(_quality_conclusion_table(
+        conclusion=conclusion, conclusion_remark=None, final_decision=overall,
+        decision_reason=decision_reason, content_width=content_width, styles=sty,
+    ))
     story.append(_rmtc_labeled_grid([["Prepared By",_employee_name(employees.get(str(record.get("prepared_by_employee_id")))),"Validated By",_employee_name(employees.get(str(record.get("validated_by_employee_id")))),"Approved By",_employee_name(employees.get(str(record.get("approved_by_employee_id"))))]], [25*mm,39*mm,25*mm,39*mm,25*mm,41*mm], sty["label"], sty["center"], label_columns=(0,2,4)))
     doc.build(story, canvasmaker=lambda *args, **kwargs: _PageNumberCanvas(*args, report_title=title, **kwargs))
     return buffer.getvalue()

@@ -22,13 +22,68 @@ ROLES = [
 ACCESS_STATUSES = ["ACTIVE", "INACTIVE", "LOCKED"]
 
 # Legacy contract wording: SECTION VISIBILITY / EDIT CONTROL
+# v4.14.29: every access module has explicit section rows so an administrator
+# can actually see and control section-wise rights after granting a module.
 SECTION_CATALOG = [
     ("PART_MASTER", "BASIC_IDENTITY", "Part Master · Basic Identity / Drawing"),
-    ("PART_MASTER", "RAW_MATERIAL_DETAILS", "Part Master · Raw Material Details"),
+    ("PART_MASTER", "RAW_MATERIAL_DETAILS", "Part Master · Raw Material Details / Approved Sources"),
     ("PART_MASTER", "SUPPLIER_TECHNICAL", "Part Master · Supplier Technical Data"),
     ("PART_MASTER", "PRICE_HISTORY", "Part Master · Supplier Price History"),
     ("PART_MASTER", "HEAT_TREATMENT", "Part Master · Heat Treatment / Metallurgical"),
     ("PART_MASTER", "PROCESS_SPECIFICATIONS", "Part Master · Process Specifications"),
+    ("MATERIAL_GRADE", "GRADE_IDENTITY", "Material Grade · Grade Identity / Standard"),
+    ("MATERIAL_GRADE", "CHEMICAL_COMPOSITION", "Material Grade · Chemical Composition"),
+    ("MATERIAL_GRADE", "HARDENABILITY", "Material Grade · Jominy / Hardenability"),
+    ("REFERENCE_MASTERS", "PARTIES", "Reference Masters · Suppliers / Customers / Steel Mills"),
+    ("REFERENCE_MASTERS", "PROCESSES", "Reference Masters · Processes / Inspection Stages"),
+    ("REFERENCE_MASTERS", "QUALITY_ASSETS", "Reference Masters · Quality Assets / Standards"),
+    ("REFERENCE_MASTERS", "REUSABLE_VALUES", "Reference Masters · Reusable Controlled Values"),
+    ("EMPLOYEE_MASTER", "IDENTITY", "Employee Master · Identity / Contact"),
+    ("EMPLOYEE_MASTER", "ORGANIZATION", "Employee Master · Department / Reports-To"),
+    ("EMPLOYEE_MASTER", "APPROVAL_AUTHORITY", "Employee Master · Approval Authority"),
+    ("RMTC_ENTRY", "HEADER", "RMTC · Header Entry / Approved RM Source"),
+    ("RMTC_ENTRY", "PART_WORKSHEET", "RMTC · Part Worksheet"),
+    ("RMTC_ENTRY", "VALIDATION", "RMTC · Validation / Decision"),
+    ("RMTC_ENTRY", "REPORTS", "RMTC · Records / Print Layout"),
+    ("MATERIAL_INWARD", "RECEIPT_ENTRY", "Material Inward · Receipt Entry"),
+    ("MATERIAL_INWARD", "SOURCE_TRACEABILITY", "Material Inward · RMTC / Heat / Source Traceability"),
+    ("MATERIAL_INWARD", "QUALITY_GATE", "Material Inward · Quality Gate / Disposition"),
+    ("MATERIAL_INWARD", "RECORDS", "Material Inward · Records / Reports"),
+    ("OSP_TRANSACTIONS", "MATERIAL_OUT", "OSP · Material Out"),
+    ("OSP_TRANSACTIONS", "SAMPLE", "OSP · Sample Receipt / Gate"),
+    ("OSP_TRANSACTIONS", "DIMENSIONAL_GATE", "OSP · Dimensional Inspection Gate"),
+    ("OSP_TRANSACTIONS", "METLAB_GATE", "OSP · MetLAB Inspection Gate"),
+    ("OSP_TRANSACTIONS", "INWARD", "OSP · Inward / Production Release"),
+    ("OSP_TRANSACTIONS", "RECORDS", "OSP · Records / Traceability"),
+    ("INSPECTION_LAYOUTS", "HEADER", "Inspection Layouts · Header / Scope"),
+    ("INSPECTION_LAYOUTS", "CHARACTERISTICS", "Inspection Layouts · Characteristics"),
+    ("INSPECTION_LAYOUTS", "CASE_DEPTH_CONFIGURATION", "Inspection Layouts · Case Depth Traverse Setup"),
+    ("INSPECTION_LAYOUTS", "APPROVAL", "Inspection Layouts · Approval / Revision"),
+    ("DIMENSIONAL_REPORT", "ENTRY", "Dimensional · Entry / Report Header"),
+    ("DIMENSIONAL_REPORT", "RESULTS", "Dimensional · Inspection Results"),
+    ("DIMENSIONAL_REPORT", "FINAL_DECISION", "Dimensional · Conclusion / Final Decision"),
+    ("DIMENSIONAL_REPORT", "RECORDS", "Dimensional · Records / Print / Excel"),
+    ("METLAB_REPORT", "ENTRY", "MetLAB · Entry / Report Header"),
+    ("METLAB_REPORT", "CHEMICAL_ANALYSIS", "MetLAB · Chemical Analysis"),
+    ("METLAB_REPORT", "CASE_DEPTH", "MetLAB · Case Depth Traverse"),
+    ("METLAB_REPORT", "MICROSTRUCTURE", "MetLAB · Photographs / Evidence"),
+    ("METLAB_REPORT", "REFERENCES", "MetLAB · Reference Documents / Statements"),
+    ("METLAB_REPORT", "FINAL_DECISION", "MetLAB · Conclusion / Final Decision"),
+    ("METLAB_REPORT", "RECORDS", "MetLAB · Records / Print / Excel"),
+    ("NPD_APQP", "PROCESS_FLOW", "NPD / APQP · Process Flow Designer"),
+    ("NPD_APQP", "ORDER_STATUS", "NPD / APQP · NPD Status / Target Dates"),
+    ("NPD_APQP", "APQP", "NPD / APQP · APQP"),
+    ("NPD_APQP", "RECORDS", "NPD / APQP · Records / Reports"),
+    ("QC_CALCULATION_TOOLS", "CALCULATORS", "QC Calculation Tools · Calculators"),
+    ("QC_CALCULATION_TOOLS", "SAVED_RESULTS", "QC Calculation Tools · Saved Results / Reports"),
+    ("COMPLAINT_MANAGEMENT", "COMPLAINT_ENTRY", "Complaints · Customer / Supplier Complaint Entry"),
+    ("COMPLAINT_MANAGEMENT", "TRACEABILITY", "Complaints · Heat / Batch / Photo Traceability"),
+    ("COMPLAINT_MANAGEMENT", "COMMERCIAL", "Complaints · Commercial / Debit Note"),
+    ("COMPLAINT_MANAGEMENT", "RECORDS", "Complaints · Records / PDF / Excel"),
+    ("CALIBRATION_VALIDATION", "GAUGE_FIXTURE_LINKS", "Calibration · Gauge / Fixture Part-Process Links"),
+    ("CALIBRATION_VALIDATION", "CALIBRATION_RECORDS", "Calibration · Calibration / Validation Records"),
+    ("CALIBRATION_VALIDATION", "STANDARD_ROOM", "Calibration · Standard Room Inspection"),
+    ("CALIBRATION_VALIDATION", "REMINDERS", "Calibration · Due Dates / Reminders"),
     ("SUPPLY_CHAIN", "CUSTOMER_ORDERS", "Supply Chain · Customer Orders / Schedules"),
     ("SUPPLY_CHAIN", "RM_PROCUREMENT", "Supply Chain · RM Procurement"),
     ("SUPPLY_CHAIN", "PURCHASE_ORDERS", "Supply Chain · Purchase Orders"),
@@ -40,26 +95,14 @@ SECTION_CATALOG = [
     ("SUPPLY_CHAIN", "MACHINING_DISPATCH", "Supply Chain · Machining / FG / Dispatch"),
     ("SUPPLY_CHAIN", "OPENING_STOCK", "Supply Chain · Opening Stock"),
     ("SUPPLY_CHAIN", "TRACEABILITY", "Supply Chain · Traceability / MIS"),
-    ("RMTC_ENTRY", "HEADER", "RMTC · Header Entry"),
-    ("RMTC_ENTRY", "PART_WORKSHEET", "RMTC · Part Worksheet"),
-    ("RMTC_ENTRY", "VALIDATION", "RMTC · Validation / Decision"),
-    ("DIMENSIONAL_REPORT", "ENTRY", "Dimensional · Entry"),
-    ("DIMENSIONAL_REPORT", "RESULTS", "Dimensional · Results"),
-    ("DIMENSIONAL_REPORT", "FINAL_DECISION", "Dimensional · Final Decision"),
-    ("METLAB_REPORT", "ENTRY", "MetLAB · Entry"),
-    ("METLAB_REPORT", "CASE_DEPTH", "MetLAB · Case Depth Traverse"),
-    ("METLAB_REPORT", "MICROSTRUCTURE", "MetLAB · Microstructure Photographs"),
-    ("METLAB_REPORT", "FINAL_DECISION", "MetLAB · Final Decision"),
-    ("OSP_TRANSACTIONS", "MATERIAL_OUT", "OSP · Material Out"),
-    ("OSP_TRANSACTIONS", "SAMPLE", "OSP · Sample Receipt / Gate"),
-    ("OSP_TRANSACTIONS", "INWARD", "OSP · Inward"),
-    ("NPD_APQP", "PROCESS_FLOW", "NPD / APQP · Process Flow"),
-    ("NPD_APQP", "ORDER_STATUS", "NPD / APQP · Order Status"),
-    ("COMPLAINT_MANAGEMENT", "COMMERCIAL", "Complaints · Commercial / Debit Note"),
-    ("CALIBRATION_VALIDATION", "GAUGE_FIXTURE_LINKS", "Calibration · Part / Process Gauge-Fixture Links"),
-    ("CALIBRATION_VALIDATION", "CALIBRATION_RECORDS", "Calibration · Calibration / Validation Records"),
-    ("CALIBRATION_VALIDATION", "STANDARD_ROOM", "Calibration · Standard Room Inspection"),
+    ("USER_ACCESS", "USER_IDENTITY", "Users & Access · User / Employee Link"),
+    ("USER_ACCESS", "MODULE_PERMISSIONS", "Users & Access · Module Permissions"),
+    ("USER_ACCESS", "SECTION_PERMISSIONS", "Users & Access · Section Permissions"),
+    ("USER_ACCESS", "DEFAULTS_APPROVAL_ROUTES", "Users & Access · Role / Department Defaults & Approval Routes"),
+    ("USER_ACCESS", "AUDIT", "Users & Access · Activity Audit"),
 ]
+MODULE_LABELS = dict(MODULES)
+
 
 
 def _invoke(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -325,12 +368,13 @@ def render() -> None:
                         module_perm, _ = module_permissions_with_source(effective_profile, mod, repo)
                         view = bool(module_perm.get("can_view")); create = bool(module_perm.get("can_create")); edit = bool(module_perm.get("can_edit"))
                     sec_rows.append({
-                        "Override": configured is not None, "Section": label, "Module Key": mod, "Section Key": key,
+                        "Override": configured is not None, "Module": MODULE_LABELS.get(mod, mod), "Section": label, "Module Key": mod, "Section Key": key,
                         "View": view, "Create": create, "Edit": edit,
                     })
+                st.caption(f"Section rights are available for all {len(MODULES)} QCMS modules. Unticked Override rows inherit the effective module permission.")
                 sec_edit = st.data_editor(
-                    pd.DataFrame(sec_rows), hide_index=True, width="stretch", height=430,
-                    disabled=["Section", "Module Key", "Section Key"], key=f"section_matrix_{uid}",
+                    pd.DataFrame(sec_rows), hide_index=True, width="stretch", height=520,
+                    disabled=["Module", "Section", "Module Key", "Section Key"], key=f"section_matrix_{uid}",
                 )
                 c1, c2 = st.columns(2, gap="small")
                 if c1.button("Save Section Overrides", type="primary", width="stretch", key=f"save_sections_{uid}"):

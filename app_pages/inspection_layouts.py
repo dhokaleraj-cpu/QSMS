@@ -11,6 +11,10 @@ from core.access import current_permissions
 from core.attachments import AttachmentService
 from core.delete_service import password_delete_panel
 from core.inspection_service import InspectionService
+from core.inspection_layout_metadata import (
+    BEND_TEST, GENERAL_METLAB, METLAB_INSPECTION_METHODS, BEND_TEST_DEFAULT_CHARACTERISTICS,
+    characteristic_metadata, row_metadata,
+)
 from core.reporting import controlled_record_pdf_bytes
 from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, subpage_navigation, template_download_row
 from core.selection_labels import part_label
@@ -28,6 +32,7 @@ def _maps(service: InspectionService):
 def _rows_frame(rows: list[dict], default_sample: int) -> pd.DataFrame:
     records = []
     for position, row in enumerate(rows, start=1):
+        metadata = row_metadata(row)
         records.append({
             "Sequence": int(row.get("sequence_no") or position),
             "Characteristic No": row.get("characteristic_no") or str(position),
@@ -41,6 +46,8 @@ def _rows_frame(rows: list[dict], default_sample: int) -> pd.DataFrame:
             "Sample Size": int(row.get("sample_size") or default_sample or 1),
             "Allow NA": bool(row.get("allow_na")),
             "Mandatory": bool(row.get("is_mandatory", True)),
+            "Case Depth Traverse": bool(metadata.get("case_depth_traverse", False)),
+            "Traverse Location": str(metadata.get("case_depth_location") or ""),
             "Section": row.get("report_section") or "",
             "Status": row.get("status") or "ACTIVE",
             "_id": row.get("id"),
@@ -116,6 +123,22 @@ def render_entry() -> None:
     format_rev = c3.text_input("Format Revision", value=str((existing or {}).get("format_revision") or "00"), key=f"layout_format_rev_{editor_token}")
     effective = c4.date_input("Effective Date", value=date.fromisoformat(str((existing or {}).get("effective_date"))[:10]) if (existing or {}).get("effective_date") else date.today(), format="DD-MM-YYYY", key=f"layout_effective_{editor_token}")
 
+    inspection_method = GENERAL_METLAB
+    if layout_type == "METLAB":
+        method_labels = {key: label for key, label in METLAB_INSPECTION_METHODS}
+        method_options = list(method_labels)
+        current_method = service.plan_inspection_method(str((existing or {}).get("id") or "")) if existing else GENERAL_METLAB
+        inspection_method = st.selectbox(
+            "Inspection Method / Sub Category",
+            method_options,
+            index=method_options.index(current_method) if current_method in method_options else 0,
+            format_func=lambda value: method_labels[value],
+            key=f"layout_metlab_method_{editor_token}",
+            help="Select Bend Test to load the controlled Bend Test report structure. Case Depth Traverse is configured independently per characteristic below.",
+        )
+        if inspection_method == BEND_TEST:
+            st.info("Bend Test sub category active. QCMS uses the controlled MetLAB report engine, Bend Test-specific evidence labels and the Bend Test PDF layout.")
+
     imported = None
     if layout_type == "DIMENSIONAL":
         upload = st.file_uploader("Import Dimensional Layout (.xlsx)", type=["xlsx"], key=f"layout_import_{selected}")
@@ -170,29 +193,45 @@ def render_entry() -> None:
         default_sample = int(metadata.get("default_sample_size") or default_sample)
 
     section_bar("LAYOUT CHARACTERISTICS")
+    source_meta_by_id = {str(row.get("id")): row_metadata(row) for row in source_rows if row.get("id")}
     frame = _rows_frame(source_rows, int(default_sample))
     if not frame.empty:
         frame["Section"] = layout_type
-    if frame.empty:
+    if frame.empty and layout_type == "METLAB" and inspection_method == BEND_TEST:
+        frame = pd.DataFrame(BEND_TEST_DEFAULT_CHARACTERISTICS)
+        frame["Section"] = layout_type
+        frame["_id"] = None
+        st.success("Bend Test starter parameters loaded from the controlled report format. Adjust specifications for this Part before approval.")
+    elif frame.empty:
         frame = pd.DataFrame([{
             "Sequence": 10, "Characteristic No": "1", "Parameter": "", "Specification": "", "Minimum": None,
             "Maximum": None, "Unit": "", "Type": "NUMBER", "Checking Aid": "", "Sample Size": int(default_sample),
-            "Allow NA": False, "Mandatory": True, "Section": layout_type, "Status": "ACTIVE", "_id": None,
+            "Allow NA": False, "Mandatory": True, "Case Depth Traverse": False, "Traverse Location": "",
+            "Section": layout_type, "Status": "ACTIVE", "_id": None,
         }])
+    if layout_type != "METLAB":
+        frame = frame.drop(columns=["Case Depth Traverse", "Traverse Location"], errors="ignore")
+    disabled_columns = ["Section"]
+    column_config = {
+        "Type": st.column_config.SelectboxColumn(options=["NUMBER", "TEXT"], required=True),
+        "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"], required=True),
+        "Allow NA": st.column_config.CheckboxColumn(),
+        "Mandatory": st.column_config.CheckboxColumn(),
+        "_id": None,
+    }
+    if layout_type == "METLAB":
+        column_config.update({
+            "Case Depth Traverse": st.column_config.CheckboxColumn(help="Tick this parameter when it must create a Case Depth / Microhardness Traverse location."),
+            "Traverse Location": st.column_config.TextColumn(help="Required when Case Depth Traverse is ticked, e.g. Ground Face, ID, OD. Multiple rows create multiple traverse locations."),
+        })
     edited = st.data_editor(
         frame,
         hide_index=True,
         width="stretch",
         height=min(600, max(220, 95 + len(frame) * 34)),
         num_rows="dynamic",
-        disabled=["Section"],
-        column_config={
-            "Type": st.column_config.SelectboxColumn(options=["NUMBER", "TEXT"], required=True),
-            "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"], required=True),
-            "Allow NA": st.column_config.CheckboxColumn(),
-            "Mandatory": st.column_config.CheckboxColumn(),
-            "_id": None,
-        },
+        disabled=disabled_columns,
+        column_config=column_config,
         key=f"layout_grid_{selected}_{layout_type}",
     )
 
@@ -215,7 +254,7 @@ def render_entry() -> None:
                 "part_id": part_id, "process_id": process_id or None, "inspection_stage_id": stage_id or None, "inward_type": inward_type,
                 "plan_number": plan_no.strip(), "revision": revision.strip() or "00", "effective_date": effective.isoformat(),
                 "sample_plan": f"{int(default_sample)} samples", "status": status, "layout_type": layout_type,
-                "layout_name": layout_name.strip(), "report_title": report_title.strip() or None,
+                "layout_name": layout_name.strip(), "report_title": ("BEND TEST REPORT" if layout_type == "METLAB" and inspection_method == BEND_TEST and (not report_title.strip() or report_title.strip().upper() == "METLAB REPORT") else report_title.strip()) or None,
                 "format_number": format_no.strip() or None, "format_revision": format_rev.strip() or None,
                 "default_sample_size": int(default_sample),
                 "source_template_name": ((imported or {}).get("metadata") or {}).get("source_template_name") if imported else ((existing or {}).get("source_template_name") or ("PART_MASTER_OSP_PROCESS_GROUP" if osp_group else None)),
@@ -233,8 +272,13 @@ def render_entry() -> None:
                     if not specification:
                         raise ValueError(f"Text Specification is mandatory for {row.get('Parameter')}.")
                     lower = upper = None
-                elif lower is None and upper is None:
+                elif lower is None and upper is None and not (layout_type == "METLAB" and inspection_method == BEND_TEST and specification):
                     raise ValueError(f"Minimum or Maximum Specification is mandatory for numeric parameter {row.get('Parameter')}.")
+                traverse_enabled = bool(row.get("Case Depth Traverse", False)) if layout_type == "METLAB" else False
+                traverse_location = str(row.get("Traverse Location") or "").strip() if layout_type == "METLAB" else ""
+                if traverse_enabled and not traverse_location:
+                    raise ValueError(f"Traverse Location is required when Case Depth Traverse is ticked for {row.get('Parameter')}.")
+                original_meta = source_meta_by_id.get(str(row.get("_id") or ""), {})
                 rows.append({
                     "sequence_no": int(row.get("Sequence") or len(rows) + 1), "characteristic_no": row.get("Characteristic No"),
                     "characteristic": row.get("Parameter"), "specification": specification,
@@ -242,6 +286,7 @@ def render_entry() -> None:
                     "characteristic_type": ctype, "checking_aid_text": row.get("Checking Aid"),
                     "sample_size": int(row.get("Sample Size") or default_sample), "allow_na": bool(row.get("Allow NA")),
                     "is_mandatory": bool(row.get("Mandatory")), "report_section": layout_type,
+                    "layout_metadata": characteristic_metadata(original_meta, inspection_method=inspection_method, case_depth_traverse=traverse_enabled, traverse_location=traverse_location),
                     "status": row.get("Status") or "ACTIVE", "id": row.get("_id"),
                 })
             saved = service.save_plan(payload, rows, str(existing["id"]) if existing else None)
@@ -308,6 +353,7 @@ def render_records() -> None:
         "Layout Name": row.get("layout_name"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "FSI Part Number": (parts.get(str(row.get("part_id"))) or {}).get("fsi_part_number"),
         "Process": (processes.get(str(row.get("process_id"))) or {}).get("process_name"),
         "Stage": (stages.get(str(row.get("inspection_stage_id"))) or {}).get("stage_name"),
+        "Inspection Method": (service.plan_inspection_method(str(row.get("id"))).replace("_", " ").title() if str(row.get("layout_type")) == "METLAB" else "Dimensional"),
         "Samples": row.get("default_sample_size"), "Format": row.get("format_number"), "Status": row.get("status"),
     } for row in filtered])
     portal_table(display, hide_index=True, width="stretch", height=520)

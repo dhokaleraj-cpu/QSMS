@@ -12,6 +12,8 @@ from core.ui import portal_table
 from core.selection_labels import part_label
 
 from core.access import current_permissions
+from core.catalog import LearnedValueCatalog
+from core.inspection_layout_metadata import BEND_TEST, GENERAL_METLAB, row_metadata
 from core.password_edit import password_reopen_for_edit
 from core.delete_service import password_delete_panel
 from core.notification_service import NotificationService
@@ -129,6 +131,9 @@ def _layout_rows(service: InspectionService, plan_id: str | None, existing: dict
         "checking_method": row.get("checking_aid_text") or row.get("checking_method"), "actual_value": "",
         "result": "NOT_EVALUATED", "remarks": "", "applicability": "APPLICABLE",
         "characteristic_type": row.get("characteristic_type") or "VARIABLE",
+        "layout_metadata": row_metadata(row),
+        "case_depth_traverse": bool(row_metadata(row).get("case_depth_traverse", False)),
+        "case_depth_location": str(row_metadata(row).get("case_depth_location") or ""),
     } for position, row in enumerate(service.plan_characteristics(plan_id), start=1)]
 
 
@@ -148,7 +153,7 @@ def _case_depth_parameter(row: dict) -> str:
 
 
 def _has_case_depth_characteristic(rows: list[dict]) -> bool:
-    return any(bool(CASE_DEPTH_PARAMETER_RE.search(_case_depth_parameter(row))) for row in rows)
+    return any(bool(row.get("case_depth_traverse")) or bool(CASE_DEPTH_PARAMETER_RE.search(_case_depth_parameter(row))) for row in rows)
 
 
 def _case_depth_location_from_parameter(parameter: str) -> str:
@@ -191,11 +196,13 @@ def _case_depth_layout_locations(layout_rows: list[dict]) -> list[dict[str, Any]
     locations: list[dict[str, Any]] = []
     for row in layout_rows:
         parameter = _case_depth_parameter(row)
-        if not CASE_DEPTH_PARAMETER_RE.search(parameter):
+        explicit = bool(row.get("case_depth_traverse"))
+        if not explicit and not CASE_DEPTH_PARAMETER_RE.search(parameter):
             continue
+        location = str(row.get("case_depth_location") or "").strip() if explicit else ""
         locations.append({
             "sequence_no": int(row.get("sequence_no") or len(locations) + 1),
-            "location": _case_depth_location_from_parameter(parameter),
+            "location": location or _case_depth_location_from_parameter(parameter),
             "parameter": parameter,
             "specification": _case_depth_specification(row),
             "unit": str(row.get("unit") or "").strip() or None,
@@ -229,14 +236,14 @@ def _render_case_depth_traverse(existing: dict | None, *, key: str, layout_rows:
     if not locations:
         st.info(
             "Case Depth Traverse is not applicable because no Additional Layout Characteristic "
-            "Parameter contains the words 'Case Depth'. Add parameters such as "
+            "Case Depth Traverse tick is selected in Inspection Layout Master. You can also keep legacy Parameter names containing 'Case Depth'. Add/tick parameters such as "
             "'Effective Case Depth at Ground Face', '... at ID' or '... at OD' in the MetLAB layout to enable the traverse."
         )
         return {
             "case_depth_applicable": False,
             "case_depth_locations": [],
             "case_depth_traverse": [],
-            "case_depth_na_reason": "No Additional Layout Characteristic Parameter contains Case Depth.",
+            "case_depth_na_reason": "No Inspection Layout characteristic is ticked for Case Depth Traverse.",
         }, True
 
     location_names = [str(row.get("location") or "").strip() for row in locations]
@@ -244,7 +251,8 @@ def _render_case_depth_traverse(existing: dict | None, *, key: str, layout_rows:
     if duplicate_locations:
         st.error("Case Depth layout locations must be unique. Correct the duplicate Case Depth Parameter names in Inspection Layout Master.")
 
-    st.caption("Locations and specifications below are controlled by Additional Layout Characteristics. Only Traverse hardness readings are entered here.")
+    # Compatibility phrase retained for v4.14.14 verification: Locations and specifications below are controlled by Additional Layout Characteristics
+    st.caption("Locations and specifications below are controlled by Inspection Layout Master. Tick Case Depth Traverse and enter a Traverse Location (Ground Face, ID, OD, etc.) for every required location. Only distance-wise hardness readings are entered here.")
     st.markdown("**Case Depth Locations from Additional Layout Characteristics**")
     location_frame = pd.DataFrame([{
         "Sr No": row.get("sequence_no"),
@@ -311,6 +319,105 @@ def _render_case_depth_traverse(existing: dict | None, *, key: str, layout_rows:
     }, valid
 
 
+CHEMICAL_ELEMENT_ORDER = ("C", "Mn", "Si", "S", "P", "Cr", "Ni", "Mo", "V", "Al", "Cu", "Nb", "Ti")
+CHEMICAL_RATIO_KEY = "aln2ratio"
+
+
+def _chemical_element_key(value: Any) -> str:
+    text = re.sub(r"[^A-Za-z0-9]", "", str(value or "")).casefold()
+    aliases = {"carbon":"c", "manganese":"mn", "silicon":"si", "sulphur":"s", "sulfur":"s", "phosphorus":"p", "chromium":"cr", "nickel":"ni", "molybdenum":"mo", "vanadium":"v", "aluminium":"al", "aluminum":"al", "copper":"cu", "niobium":"nb", "titanium":"ti", "nitrogen":"n", "alnratio":"aln2ratio", "aln2ratio":"aln2ratio", "alnitrogenratio":"aln2ratio"}
+    return aliases.get(text, text)
+
+
+def _ordered_chemistry_source(rows: list[dict]) -> list[dict]:
+    """Attached-report order: C→Ti, configured extras, Al/N2 Ratio last."""
+    rank = {_chemical_element_key(name): index for index, name in enumerate(CHEMICAL_ELEMENT_ORDER)}
+    normal: list[dict] = []
+    extras: list[dict] = []
+    ratio: list[dict] = []
+    for source in rows:
+        row = dict(source)
+        key = _chemical_element_key(row.get("element"))
+        if key == CHEMICAL_RATIO_KEY:
+            ratio.append(row)
+        elif key in rank:
+            normal.append(row)
+        else:
+            extras.append(row)
+    normal.sort(key=lambda row: (rank[_chemical_element_key(row.get("element"))], str(row.get("element") or "")))
+    extras.sort(key=lambda row: str(row.get("element") or ""))
+    ratio.sort(key=lambda row: str(row.get("element") or ""))
+    return [*normal, *extras, *ratio]
+
+
+def _chemical_column_label(element: Any) -> str:
+    text = str(element or "").strip()
+    return text if "%" in text or "ratio" in text.casefold() else f"{text}%"
+
+
+def _chemical_horizontal_models(source_rows: list[dict], existing_chem: dict[str, dict]) -> tuple[pd.DataFrame, pd.DataFrame, list[dict], dict[str, str]]:
+    ordered = _ordered_chemistry_source(source_rows)
+    labels: dict[str, str] = {}
+    for row in ordered:
+        element = str(row.get("element") or "").strip()
+        if element:
+            labels[element] = _chemical_column_label(element)
+    preview_rows: list[dict[str, Any]] = []
+    for title, field in (("Spec. Min", "minimum_value"), ("Spec. Max", "maximum_value"), ("RMTC Achieved", "actual_value")):
+        item: dict[str, Any] = {"Row": title}
+        for row in ordered:
+            element = str(row.get("element") or "").strip()
+            item[labels[element]] = row.get(field) if row.get(field) not in (None, "") else "-"
+        preview_rows.append(item)
+    actual: dict[str, Any] = {"Row": "MetLAB Achieved"}
+    flag_rows: list[dict[str, Any]] = []
+    for row in ordered:
+        element = str(row.get("element") or "").strip()
+        saved = existing_chem.get(element) or {}
+        actual[labels[element]] = saved.get("actual_value")
+        flag_rows.append({
+            "Element": element,
+            "NA": saved.get("result") == "NOT_APPLICABLE",
+            "Result": saved.get("result") or "NOT_EVALUATED",
+            "Remark": saved.get("remarks") or "",
+        })
+    return pd.DataFrame(preview_rows), pd.DataFrame([actual]), ordered, labels
+
+
+def _reference_defaults(existing: dict | None) -> list[str]:
+    result_map = dict((existing or {}).get("results") or {})
+    return [str(value).strip() for value in (result_map.get("reference_documents") or []) if str(value).strip()]
+
+
+def _reference_controls(catalog: LearnedValueCatalog, existing: dict | None, current_spec: str, *, key: str) -> tuple[str, list[str]]:
+    spec_options = list(catalog.suggestions("metlab.specification_reference"))
+    if current_spec and current_spec not in spec_options:
+        spec_options.insert(0, current_spec)
+    if not spec_options:
+        spec_options = [""]
+    spec_ref = st.selectbox(
+        "Specification Reference",
+        spec_options,
+        index=spec_options.index(current_spec) if current_spec in spec_options else 0,
+        accept_new_options=True,
+        key=f"{key}_spec_ref",
+        help="Select a saved reference or type a new one. New values become reusable after the report is saved.",
+    )
+    saved_refs = _reference_defaults(existing)
+    reference_options = list(catalog.suggestions("metlab.reference_document"))
+    for value in saved_refs:
+        if value not in reference_options:
+            reference_options.append(value)
+    reference_documents = st.multiselect(
+        "Reference Documents / Statements",
+        reference_options,
+        default=saved_refs,
+        accept_new_options=True,
+        key=f"{key}_reference_docs",
+        help="Select one or more saved statements, or type a new statement and press Enter. QCMS stores it in the reusable reference list when you save the report.",
+    )
+    return str(spec_ref or ""), [str(value).strip() for value in reference_documents if str(value).strip()]
+
 
 STANDALONE_STAGES = {
     "RAW_MATERIAL_STAGE": "Raw Material Stage",
@@ -375,6 +482,10 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                 st.warning("No approved Raw Material Inward MetLAB layout is configured in Layout Master for this Part Number.")
             return
         plan_id = str(plan["id"])
+        inspection_method = service.plan_inspection_method(plan_id)
+        catalog = LearnedValueCatalog(service.repo)
+        if inspection_method == BEND_TEST:
+            st.success("Bend Test inspection method selected from the controlled layout.")
         if not process_id:
             process_id = str(plan.get("process_id") or "") or None
         process = processes.get(str(process_id or "")) or {}
@@ -419,16 +530,21 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
         sample_ref = c2.text_input("Sample / Reference", value=str((existing or {}).get("sample_reference") or ""))
         default_condition = (process_group or {}).get("process_specification") or process.get("process_name") or STANDALONE_STAGES[scope]
         supply_condition = st.text_input("Supply / Process Condition", value=str((existing or {}).get("supply_condition") or default_condition or ""))
-        spec_ref = st.text_input("Specification Reference", value=str((existing or {}).get("specification_reference") or plan.get("format_number") or part.get("drawing_number") or ""))
+        current_spec_ref = str((existing or {}).get("specification_reference") or plan.get("format_number") or part.get("drawing_number") or "")
+        spec_ref, reference_documents = _reference_controls(catalog, existing, current_spec_ref, key=f"standalone_metlab_ref_{existing_id or 'new'}_{plan_id}")
 
-    with stage_section("B", "MICROSTRUCTURE PHOTOGRAPHS", "Up to four report photographs with controlled titles.", key="metlab_standalone_photos"):
+    photo_title = "BEND TEST EVIDENCE / PHOTOGRAPHS" if inspection_method == BEND_TEST else "MICROSTRUCTURE PHOTOGRAPHS"
+    photo_help = "Photo 1 can hold the machine / Load-vs-CHT test report; remaining photos can show bend angle and plating condition." if inspection_method == BEND_TEST else "Up to four report photographs with controlled titles."
+    with stage_section("B", photo_title, photo_help, key="metlab_standalone_photos"):
         micro_cols = st.columns(4, gap="small"); micro_files = []; micro_captions = []
         for slot, col in enumerate(micro_cols, start=1):
             with col:
                 if (existing or {}).get(f"microstructure_image_{slot}_path"):
                     st.caption(f"Photo {slot} already uploaded")
                 micro_files.append(st.file_uploader(f"Photo {slot}", type=MICROSTRUCTURE_IMAGE_TYPES, key=f"standalone_metlab_photo_{slot}_{existing_id or 'new'}"))
-                micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or ""), key=f"standalone_metlab_caption_{slot}_{existing_id or 'new'}"))
+                bend_defaults = {1: "Load Vs CHT / Machine Test Report", 2: "Bend Test Part / Bend Angle", 3: "Plating Surface Condition", 4: "Additional Bend Test Evidence"}
+                default_caption = bend_defaults.get(slot, "") if inspection_method == BEND_TEST else ""
+                micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or default_caption), key=f"standalone_metlab_caption_{slot}_{existing_id or 'new'}"))
 
     with stage_section("C", "METLAB CHARACTERISTICS", "Characteristics are loaded from the controlled layout for this report stage. Raw Material Inward uses Layout Master only; Final Dispatch uses Part Master Final Metallurgical Requirements.", key="metlab_standalone_characteristics"):
         layout_source = _layout_rows(service, plan_id, existing)
@@ -445,11 +561,13 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
         disposition = c2.selectbox("Final Decision", disposition_options, index=disposition_options.index(current_decision) if current_decision in disposition_options else 0, format_func=disposition_label)
         reason = c3.text_input("Decision Reason", value=str((existing or {}).get("disposition_reason") or ""), help="Required for On Hold, Accepted Under Reserve and Rejected decisions.")
         conclusion = st.text_area("Conclusion", value=str((existing or {}).get("remarks") or ""), height=76, help="Controlled MetLAB conclusion. This prints separately from the Final Decision.")
+        conclusion_remark = st.text_area("Conclusion Remark (optional)", value=str(dict((existing or {}).get("results") or {}).get("conclusion_remark") or ""), height=68, help="Additional controlled remark shown in a separate highlighted row below the conclusion.")
         attachment = st.file_uploader("Attach MetLAB Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"standalone_metlab_attachment_{existing_id or 'new'}")
+        layout_metadata_by_id = {str(item.get("inspection_plan_characteristic_id") or ""): dict(item.get("layout_metadata") or {}) for item in layout_source}
         layout_rows = []
         for _, row in edited.iterrows():
             na = bool(row.get("NA")); result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, [row.get("Actual Value")], na)
-            layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type")})
+            layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type"), "layout_metadata": layout_metadata_by_id.get(str(row.get("_characteristic_id") or ""), {})})
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
         metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"standalone_metlab_notify_{existing_id or 'new'}", context={"part_number":(parts.get(str(part_id)) or {}).get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing_id)) if not existing_id else {"send":False,"confirmed":True,"preview":{}}
         if st.button("Save Standalone MetLAB Report", type="primary", width="stretch", disabled=not writable or not prepared or not sample_ref.strip() or not case_depth_valid or (metlab_notify_pref["send"] and not metlab_notify_pref["confirmed"])):
@@ -473,7 +591,14 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                     "vendor_batch_number_snapshot": vendor_batch_number.strip() or None,
                     **{f"microstructure_caption_{slot}": micro_captions[slot - 1].strip() or None for slot in range(1, 5)},
                 }
-                saved = service.save_metlab(payload, {"rows": layout_rows, "chemistry_rows": [], "jominy_rows": [], "requirement_rows": [], **case_depth_results}, existing_id or None)
+                catalog.remember("metlab.specification_reference", spec_ref)
+                catalog.remember_many("metlab.reference_document", reference_documents)
+                result_payload = {
+                    "rows": layout_rows, "chemistry_rows": [], "jominy_rows": [], "requirement_rows": [],
+                    "inspection_method": inspection_method, "reference_documents": reference_documents,
+                    "conclusion_remark": conclusion_remark.strip() or None, **case_depth_results,
+                }
+                saved = service.save_metlab(payload, result_payload, existing_id or None)
                 # Save report copy / microstructure evidence BEFORE notifying so first approval email carries the documents.
                 if attachment is not None:
                     service.upload_attachment("METLAB_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "lab_tests", "attachment_path")
@@ -617,6 +742,10 @@ def render_entry() -> None:
             st.error("No approved Raw Material Inward MetLAB layout is available in Layout Master for this Part. Create and approve a MetLAB layout before entering the Raw Material Inward report. Part Master Final Metallurgical Requirements cannot be used for this stage.")
             return
 
+        inspection_method = service.plan_inspection_method(plan_id)
+        catalog = LearnedValueCatalog(service.repo)
+        if inspection_method == BEND_TEST:
+            st.success("Bend Test inspection method selected from the approved Layout Master record.")
         layout_name = str(plan.get("layout_name") or "Raw Material Inward MetLAB")
         layout_type = str(plan.get("layout_type") or "METLAB")
         c1, c2, c3, c4 = st.columns(4, gap="small")
@@ -639,13 +768,16 @@ def render_entry() -> None:
         c4.text_input("Steel Quantity (kg)", value=f"{float(inward.get('steel_quantity_kg') or inward.get('quantity_received') or 0):,.3f}", disabled=True)
         c5.text_input("Production Quantity (pcs)", value=f"{float(inward.get('production_quantity_pcs') or 0):,.0f}", disabled=True)
 
-        c1, c2, c3 = st.columns(3, gap="small")
+        c1, c2 = st.columns(2, gap="small")
         sample_ref = c1.text_input("Sample Reference", value=str((existing or {}).get("sample_reference") or inward.get("inward_number") or ""))
-        spec_ref = c2.text_input("Specification Reference", value=str((existing or {}).get("specification_reference") or plan.get("format_number") or part.get("drawing_number") or ""))
-        attachment = c3.file_uploader("Attach MetLAB Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"metlab_attachment_{existing_id or 'new'}")
+        attachment = c2.file_uploader("Attach MetLAB Report", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"], key=f"metlab_attachment_{existing_id or 'new'}")
+        current_spec_ref = str((existing or {}).get("specification_reference") or plan.get("format_number") or part.get("drawing_number") or "")
+        spec_ref, reference_documents = _reference_controls(catalog, existing, current_spec_ref, key=f"linked_metlab_ref_{existing_id or 'new'}_{plan_id}")
 
         # Legacy test marker: MICROSTRUCTURE PHOTOS
-    with stage_section("B", 'MICROSTRUCTURE PHOTOGRAPHS', 'Upload up to four microstructure images and enter a title for each photograph.', key="metlab_report_render_entry_b"):
+    linked_photo_title = "BEND TEST EVIDENCE / PHOTOGRAPHS" if inspection_method == BEND_TEST else "MICROSTRUCTURE PHOTOGRAPHS"
+    linked_photo_help = "Photo 1 can hold the machine / Load-vs-CHT test report; remaining photos can show bend angle and plating condition." if inspection_method == BEND_TEST else "Upload up to four microstructure images and enter a title for each photograph."
+    with stage_section("B", linked_photo_title, linked_photo_help, key="metlab_report_render_entry_b"):
         micro_cols = st.columns(4, gap="small")
         micro_files = []
         micro_captions = []
@@ -654,19 +786,31 @@ def render_entry() -> None:
                 existing_path = str((existing or {}).get(f"microstructure_image_{slot}_path") or "")
                 if existing_path:
                     st.caption(f"Photo {slot} already uploaded")
-                micro_files.append(st.file_uploader(f"Microstructure Photo {slot}", type=MICROSTRUCTURE_IMAGE_TYPES, key=f"microstructure_{slot}_{existing_id or 'new'}"))
-                micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or ""), key=f"micro_caption_{slot}_{existing_id or 'new'}"))
+                photo_label = f"Bend Test Evidence {slot}" if inspection_method == BEND_TEST else f"Microstructure Photo {slot}"
+                micro_files.append(st.file_uploader(photo_label, type=MICROSTRUCTURE_IMAGE_TYPES, key=f"microstructure_{slot}_{existing_id or 'new'}"))
+                bend_defaults = {1: "Load Vs CHT / Machine Test Report", 2: "Bend Test Part / Bend Angle", 3: "Plating Surface Condition", 4: "Additional Bend Test Evidence"}
+                default_caption = bend_defaults.get(slot, "") if inspection_method == BEND_TEST else ""
+                micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or default_caption), key=f"micro_caption_{slot}_{existing_id or 'new'}"))
 
         existing_chem = {str(row.get("element")): row for row in _existing_rows(existing, "chemistry_rows")}
-        chem_frame = pd.DataFrame([{
-            "Element": row.get("element"), "Min": row.get("minimum_value"), "Max": row.get("maximum_value"),
-            "RMTC Actual": row.get("actual_value"), "MetLAB Actual": (existing_chem.get(str(row.get("element"))) or {}).get("actual_value"),
-            "Unit": row.get("unit") or "%", "NA": (existing_chem.get(str(row.get("element"))) or {}).get("result") == "NOT_APPLICABLE",
+        chem_preview, chem_actual_frame, chem_source_rows, chem_labels = _chemical_horizontal_models(list(snapshot.get("chemistry") or []), existing_chem)
+        chem_flag_frame = pd.DataFrame([{
+            "Element": str(row.get("element") or ""),
+            "NA": (existing_chem.get(str(row.get("element"))) or {}).get("result") == "NOT_APPLICABLE",
             "Result": (existing_chem.get(str(row.get("element"))) or {}).get("result") or "NOT_EVALUATED",
             "Remark": (existing_chem.get(str(row.get("element"))) or {}).get("remarks") or "",
-        } for row in snapshot.get("chemistry") or []])
-    with stage_section("C", 'CHEMICAL COMPOSITION', key="metlab_report_render_entry_c"):
-        chem_edit = st.data_editor(chem_frame, hide_index=True, width="stretch", disabled=["Element", "Min", "Max", "RMTC Actual", "Unit", "Result"], column_config={"NA": st.column_config.CheckboxColumn()}, key=f"metlab_chem_{existing_id or 'new'}_{inward_id}")
+        } for row in chem_source_rows])
+    with stage_section("C", 'CHEMICAL COMPOSITION', 'Horizontal grid follows the attached report order: C, Mn, Si, S, P, Cr, Ni, Mo, V, Al, Cu, Nb, Ti; configured extra elements follow, and Al/N2 Ratio is always placed last when configured.', key="metlab_report_render_entry_c"):
+        if not chem_preview.empty:
+            portal_table(chem_preview, hide_index=True, width="stretch", height=min(230, 80 + len(chem_preview) * 38))
+            st.markdown("**MetLAB Achieved · enter results horizontally**")
+            chem_actual_edit = st.data_editor(chem_actual_frame, hide_index=True, width="stretch", disabled=["Row"], key=f"metlab_chem_horizontal_{existing_id or 'new'}_{inward_id}")
+            with st.expander("Chemical element NA / Result / Remark", expanded=False):
+                chem_flag_edit = st.data_editor(chem_flag_frame, hide_index=True, width="stretch", disabled=["Element", "Result"], column_config={"NA": st.column_config.CheckboxColumn()}, key=f"metlab_chem_flags_{existing_id or 'new'}_{inward_id}")
+        else:
+            st.info("No RMTC chemical elements are available for this material snapshot.")
+            chem_actual_edit = pd.DataFrame()
+            chem_flag_edit = pd.DataFrame()
 
         existing_jom = {str(row.get("distance_label")): row for row in _existing_rows(existing, "jominy_rows")}
         jom_frame = pd.DataFrame([{
@@ -709,11 +853,18 @@ def render_entry() -> None:
         disposition = c2.selectbox("Final Decision", decision_options, index=decision_options.index(str((existing or {}).get("disposition") or "PENDING")), format_func=disposition_label)
         reason = c3.text_input("Decision Reason", value=str((existing or {}).get("disposition_reason") or ""))
         remarks = c4.text_input("Conclusion", value=str((existing or {}).get("remarks") or ""), help="Controlled report conclusion. This is separate from the Final Decision and Decision Reason.")
+        conclusion_remark = st.text_area("Conclusion Remark (optional)", value=str(dict((existing or {}).get("results") or {}).get("conclusion_remark") or ""), height=68, help="Additional controlled remark shown in a separate highlighted row below the conclusion.")
 
         chemistry_rows = []
-        for _, row in chem_edit.iterrows():
-            na = bool(row.get("NA")); result = _band_result(row.get("MetLAB Actual"), row.get("Min"), row.get("Max"), na)
-            chemistry_rows.append({"element": row.get("Element"), "minimum_value": row.get("Min"), "maximum_value": row.get("Max"), "rmtc_actual_value": row.get("RMTC Actual"), "actual_value": row.get("MetLAB Actual"), "unit": row.get("Unit"), "result": result, "remarks": row.get("Remark")})
+        actual_row = dict(chem_actual_edit.iloc[0]) if not chem_actual_edit.empty else {}
+        flags = {str(row.get("Element") or ""): dict(row) for _, row in chem_flag_edit.iterrows()} if not chem_flag_edit.empty else {}
+        for source_row in chem_source_rows:
+            element = str(source_row.get("element") or "")
+            flag = flags.get(element, {})
+            na = bool(flag.get("NA", False))
+            actual_value = actual_row.get(chem_labels.get(element, _chemical_column_label(element)))
+            result = _band_result(actual_value, source_row.get("minimum_value"), source_row.get("maximum_value"), na)
+            chemistry_rows.append({"element": element, "minimum_value": source_row.get("minimum_value"), "maximum_value": source_row.get("maximum_value"), "rmtc_actual_value": source_row.get("actual_value"), "actual_value": actual_value, "unit": source_row.get("unit") or "%", "result": result, "remarks": flag.get("Remark")})
         jominy_rows = []
         for _, row in jom_edit.iterrows():
             na = bool(row.get("NA")); result = _band_result(row.get("MetLAB Actual HRC"), row.get("Min HRC"), row.get("Max HRC"), na)
@@ -723,10 +874,11 @@ def render_entry() -> None:
             na = bool(row.get("NA")); low, high = _range_from_text(row.get("Requirement")); auto = _band_result(row.get("MetLAB Actual"), low, high, na)
             result = auto if auto != "NOT_EVALUATED" or str(row.get("Result") or "") == "NOT_EVALUATED" else str(row.get("Result") or "NOT_EVALUATED")
             requirement_rows.append({"requirement_name": row.get("Parameter"), "requirement_value": row.get("Requirement"), "rmtc_actual_value": row.get("RMTC Actual"), "actual_value": row.get("MetLAB Actual"), "unit": row.get("Unit"), "result": result, "remarks": row.get("Remark")})
+        layout_metadata_by_id = {str(item.get("inspection_plan_characteristic_id") or ""): dict(item.get("layout_metadata") or {}) for item in layout_source}
         layout_rows = []
         for _, row in layout_edit.iterrows():
             na = bool(row.get("NA")); result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, [row.get("Actual Value")], na)
-            layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type")})
+            layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type"), "layout_metadata": layout_metadata_by_id.get(str(row.get("_characteristic_id") or ""), {})})
 
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
         linked_metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"linked_metlab_notify_{str((existing or {}).get('id') or inward_id or 'new')}", context={"part_number":part.get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing)) if not existing else {"send":False,"confirmed":True,"preview":{}}
@@ -734,7 +886,13 @@ def render_entry() -> None:
             try:
                 final_number = report_no.strip() or service.next_number("METLAB")
                 payload = {"report_number": final_number, "test_type": "METLAB", "layout_plan_id": plan_id, "process_id": plan.get("process_id"), "inspection_stage_id": plan.get("inspection_stage_id"), "part_id": part_id, "inward_lot_id": inward_id, "rmtc_approval_id": inward.get("rmtc_approval_id"), "supplier_id": inward.get("supplier_id"), "steel_mill_id": rmtc.get("steel_mill_id"), "material_grade_id": part.get("material_grade_id"), "test_date": test_date.isoformat(), "sample_reference": sample_ref.strip(), "specification_reference": spec_ref.strip() or None, "overall_result": "NOT_EVALUATED", "status": str((existing or {}).get("status") or "DRAFT"), "remarks": remarks.strip() or None, "disposition": disposition, "disposition_reason": reason.strip() or None, "heat_number": inward.get("heat_number"), "heat_code": inward.get("heat_code"), "prepared_by_employee_id": prepared, "layout_name_snapshot": layout_name, "layout_type_name": layout_type, "steel_quantity_kg": inward.get("steel_quantity_kg") or inward.get("quantity_received"), "production_quantity_pcs": inward.get("production_quantity_pcs"), **{f"microstructure_caption_{slot}": micro_captions[slot-1].strip() or None for slot in range(1,5)}}
-                results = {"rows": layout_rows, "chemistry_rows": chemistry_rows, "jominy_rows": jominy_rows, "requirement_rows": requirement_rows, **case_depth_results}
+                catalog.remember("metlab.specification_reference", spec_ref)
+                catalog.remember_many("metlab.reference_document", reference_documents)
+                results = {
+                    "rows": layout_rows, "chemistry_rows": chemistry_rows, "jominy_rows": jominy_rows, "requirement_rows": requirement_rows,
+                    "inspection_method": inspection_method, "reference_documents": reference_documents,
+                    "conclusion_remark": conclusion_remark.strip() or None, **case_depth_results,
+                }
                 with st.spinner("Saving RMTC verification sections…"):
                     saved = service.save_metlab(payload, results, str(existing["id"]) if existing else None)
                     # Save report copy / microstructure evidence BEFORE notifying so first approval email carries the documents.

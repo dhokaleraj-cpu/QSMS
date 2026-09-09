@@ -317,11 +317,25 @@ def render_entry()->None:
             )
         selected_parts=st.multiselect('Part Numbers Covered by this Heat',list(part_map),default=existing_parts,format_func=lambda x:part_map[x],max_selections=30,key=f'rmtc_parts_{form_token}')
         primary_id=selected_parts[0] if selected_parts else str(existing.get('part_id') or next(iter(part_map)))
-        sources=svc.source_details(primary_id)
+        sources=svc.approved_source_options(primary_id)
         suppliers=svc.parties('SUPPLIER');mills=svc.parties('STEEL_MILL')
         supplier_map=_opts(suppliers,lambda r:party_label(r));mill_map=_opts(mills,lambda r:party_label(r))
-        source_map={str(s['id']):f"{supplier_map.get(str(s.get('supplier_id')),'Supplier')} · {s.get('section_size') or '-'} · {s.get('forging_route') or '-'}" for s in sources}
-        current_source=str(existing.get('selected_source_detail_id') or '')
+        def _source_label(source):
+            supplier = supplier_map.get(str(source.get('supplier_id')), 'Supplier')
+            mill = mill_map.get(str(source.get('steel_mill_id')), 'Any approved Steel Mill') if source.get('steel_mill_id') else 'Steel Mill selectable'
+            section = source.get('section_size') or 'RM detail pending'
+            route = source.get('forging_route') or '-'
+            approval = f" · Ref {source.get('approval_reference')}" if source.get('approval_reference') else ''
+            setup = ' · ⚠ Complete Raw Material Details' if not bool(source.get('source_ready', True)) else ''
+            return f"{supplier} · {mill} · {section} · {route}{approval}{setup}"
+        source_map={str(s.get('option_key') or s.get('id')):_source_label(s) for s in sources}
+        current_raw_source=str(existing.get('selected_source_detail_id') or '')
+        current_steel_source=str(existing.get('steel_mill_id') or '')
+        current_source=next((
+            str(s.get('option_key') or s.get('id')) for s in sources
+            if str(s.get('raw_material_detail_id') or s.get('id') or '') == current_raw_source
+            and (not current_steel_source or not s.get('steel_mill_id') or str(s.get('steel_mill_id')) == current_steel_source)
+        ), '')
         prepared_map=_employee_map(svc,'RMTC_PREPARE')
 
         c=st.columns(4,gap='small')
@@ -337,10 +351,18 @@ def render_entry()->None:
                 f"in {duplicate_supplier_rmtc.get('rmtc_number')}. Enter a different Supplier RMTC Number."
             )
         c=st.columns(4,gap='small')
-        source_id=c[0].selectbox('Approved Raw Material Source',['']+list(source_map),index=(['']+list(source_map)).index(current_source) if current_source in source_map else 0,format_func=lambda x:source_map.get(x,'— Select —'),key=f'rmtc_source_{form_token}')
-        source=next((s for s in sources if str(s['id'])==source_id),{})
-        steel_options=['']+list(mill_map); current_steel=str(existing.get('steel_mill_id') or '')
-        steel_id=c[1].selectbox('Steel Mill',steel_options,index=steel_options.index(current_steel) if current_steel in steel_options else 0,format_func=lambda x:mill_map.get(x,'— Select —'),key=f'rmtc_mill_{form_token}')
+        source_id=c[0].selectbox('Approved Raw Material Source',['']+list(source_map),index=(['']+list(source_map)).index(current_source) if current_source in source_map else 0,format_func=lambda x:source_map.get(x,'— Select —'),key=f'rmtc_source_{form_token}',help='Pulled from Part Master → Approved Sources and matched to the ACTIVE Raw Material Detail needed for RMTC genealogy.')
+        source=next((s for s in sources if str(s.get('option_key') or s.get('id'))==source_id),{})
+        approved_mill=str(source.get('steel_mill_id') or '')
+        if approved_mill and approved_mill in mill_map:
+            steel_options=['',approved_mill]
+            current_steel=str(existing.get('steel_mill_id') or approved_mill)
+        else:
+            steel_options=['']+list(mill_map)
+            current_steel=str(existing.get('steel_mill_id') or '')
+        steel_id=c[1].selectbox('Steel Mill',steel_options,index=steel_options.index(current_steel) if current_steel in steel_options else (1 if approved_mill and len(steel_options)>1 else 0),format_func=lambda x:mill_map.get(x,'— Select —'),key=f'rmtc_mill_{form_token}',disabled=bool(approved_mill),help='If Part Master Approved Sources specifies a Steel Mill, that approved mill is locked for this source.')
+        if source_id and not bool(source.get('source_ready', True)):
+            st.warning('This Supplier / Steel Mill is approved in Part Master, but it has no ACTIVE Raw Material Detail row. Complete Raw Material Type, Grade, Input Weight, Section Size and Forging Route in Part Master before saving this RMTC.')
         c[2].text_input('Selected Heat Number',value=heat_search,disabled=True,key=f'rmtc_selected_heat_{form_token}')
         heat=heat_search
         heat_code_default=str(existing.get('heat_code') or canonical_heat_code or '')
@@ -381,11 +403,13 @@ def render_entry()->None:
                     raise ValueError(f"Heat {heat.strip()} already uses Supplier RMTC Number {cert_ref.strip()}. Enter a different Supplier RMTC Number.")
                 if not all([rmtc_no.strip(),cert_ref.strip(),source_id,steel_id,heat.strip(),prepared_id]) or qty<=0:
                     raise ValueError('Complete all mandatory certificate, source, heat, quantity and employee fields.')
+                if not bool(source.get('source_ready', True)) or not source.get('raw_material_detail_id'):
+                    raise ValueError('The selected Approved Raw Material Source is missing its ACTIVE Raw Material Detail. Complete the Raw Material Details row in Part Master first.')
                 with st.spinner('Saving RMTC and preparing Part Worksheets...'):
                     final_heat_code=canonical_heat_code or heat_code.strip() or svc.next_heat_code(steel_id)
                     supplier_id=str(source.get('supplier_id') or '')
                     part=next(row for row in parts if str(row['id'])==primary_id)
-                    payload={'rmtc_number':rmtc_no.strip(),'entry_date':entry_date.isoformat(),'certificate_reference':cert_ref.strip(),'certificate_date':cert_date.isoformat(),'part_id':primary_id,'supplier_id':supplier_id,'steel_mill_id':steel_id,'material_grade_id':part.get('material_grade_id'),'heat_number':heat.strip(),'heat_code':final_heat_code,'certificate_quantity':qty,'chemistry_results':{},'chemistry_compliance':'NOT_EVALUATED','chemistry_failures':[],'mechanical_results':{},'status':str(existing.get('status') or 'DRAFT'),'selected_source_detail_id':source_id,'rm_section':source.get('section_size'),'forging_route':source.get('forging_route'),'prepared_by_employee_id':prepared_id,'prepared_at':existing.get('prepared_at') or datetime.now().isoformat(),'remarks':remarks.strip() or None,**{f'microstructure_caption_{slot}': (microstructure_titles.get(slot) or None) for slot in range(1,4)}}
+                    payload={'rmtc_number':rmtc_no.strip(),'entry_date':entry_date.isoformat(),'certificate_reference':cert_ref.strip(),'certificate_date':cert_date.isoformat(),'part_id':primary_id,'supplier_id':supplier_id,'steel_mill_id':steel_id,'material_grade_id':part.get('material_grade_id'),'heat_number':heat.strip(),'heat_code':final_heat_code,'certificate_quantity':qty,'chemistry_results':{},'chemistry_compliance':'NOT_EVALUATED','chemistry_failures':[],'mechanical_results':{},'status':str(existing.get('status') or 'DRAFT'),'selected_source_detail_id':source.get('raw_material_detail_id'),'rm_section':source.get('section_size'),'forging_route':source.get('forging_route'),'prepared_by_employee_id':prepared_id,'prepared_at':existing.get('prepared_at') or datetime.now().isoformat(),'remarks':remarks.strip() or None,**{f'microstructure_caption_{slot}': (microstructure_titles.get(slot) or None) for slot in range(1,4)}}
                     saved=svc.save_header(payload,selected_parts,str(existing['id']) if existing else None)
                     # The legacy atomic RMTC header RPC predates photo titles, so persist the title columns explicitly.
                     repo.update('rmtc_approvals', str(saved['id']), {

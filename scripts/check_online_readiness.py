@@ -196,11 +196,15 @@ required = [
     "supabase/functions/qcms-supply-digest-notifier/deno.json",
     "tests/test_v41428_osp_batch_two_day_excel.py",
     "QCMS_NEW_CHAT_HANDOVER_v4.14.28.md",
+    "core/inspection_layout_metadata.py",
+    "RELEASE_NOTES_v4.14.29.md",
+    "tests/test_v41429_rmtc_bend_chem_case_permissions.py",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.29.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.28 - OSP Batch Genealogy / Two-Day Excel Digests",
+    "phase": "QCMS 4.14.29 - RMTC / Bend Test / Chemical Grid / Case Depth / Permissions",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

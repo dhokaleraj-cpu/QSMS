@@ -982,8 +982,53 @@ if "rmtc_new_form_nonce" not in v41419_rmtc or "rmtc_direct_edit_selector" not i
 if "PO_CONFIRMATION_DAILY" not in v41419_notifier or "reminder_count" not in v41419_notifier:
     errors.append("v4.14.19 daily supplier PO confirmation reminder missing")
 
+# v4.14.29 RMTC approved-source join / universal section rights / Bend Test / horizontal chemistry / explicit case-depth / reusable references / highlighted conclusions / OSP batch identity.
+v41429_rmtc_service = (ROOT / "core" / "rmtc_service.py").read_text(encoding="utf-8")
+v41429_rmtc_ui = (ROOT / "app_pages" / "rmtc_pages.py").read_text(encoding="utf-8")
+v41429_user_access = (ROOT / "app_pages" / "user_access.py").read_text(encoding="utf-8")
+v41429_layout_meta = (ROOT / "core" / "inspection_layout_metadata.py").read_text(encoding="utf-8")
+v41429_layout_ui = (ROOT / "app_pages" / "inspection_layouts.py").read_text(encoding="utf-8")
+v41429_metlab = (ROOT / "app_pages" / "metlab_report.py").read_text(encoding="utf-8")
+v41429_reporting = (ROOT / "core" / "reporting.py").read_text(encoding="utf-8")
+v41429_osp = (ROOT / "app_pages" / "osp_transactions.py").read_text(encoding="utf-8")
+v41429_manifest = json.loads((ROOT / "DEPLOYMENT_MANIFEST.json").read_text(encoding="utf-8"))
+
+if not all(token in v41429_rmtc_service for token in ("def approved_source_options", "part_raw_material_details", "part_supplier_links", "source_ready")):
+    errors.append("v4.14.29 RMTC Approved Raw Material Source is not joined to Part Master approved sources/raw-material details")
+if not all(token in v41429_rmtc_ui for token in ("approved_source_options", "Approved Raw Material Source", "Complete the Raw Material Details row in Part Master")):
+    errors.append("v4.14.29 RMTC approved-source selector/controlled setup guard is incomplete")
+if not all(token in v41429_user_access for token in ("SECTION_CATALOG", "MODULE_LABELS", "Section rights are available for all")):
+    errors.append("v4.14.29 section-wise permission editor is not exposed for every controlled module")
+if not all(token in v41429_layout_meta for token in ("BEND_TEST = \"BEND_TEST\"", "BEND_TEST_DEFAULT_CHARACTERISTICS", "case_depth_traverse", "case_depth_location")):
+    errors.append("v4.14.29 Bend Test / case-depth characteristic metadata contract is incomplete")
+if not all(token in v41429_layout_ui for token in ("Inspection Method / Sub Category", "Case Depth Traverse", "Traverse Location", "BEND_TEST_DEFAULT_CHARACTERISTICS")):
+    errors.append("v4.14.29 inspection-layout Bend Test/case-depth controls are incomplete")
+if not all(token in v41429_metlab for token in ("CHEMICAL_ELEMENT_ORDER", "def _chemical_horizontal_models", "def _reference_controls", "reference_documents", "conclusion_remark")):
+    errors.append("v4.14.29 MetLAB horizontal chemistry/reference/conclusion controls are incomplete")
+if not all(token in v41429_metlab for token in ("def _has_case_depth_characteristic", "def _case_depth_layout_locations", "case_depth_traverse", "case_depth_location")):
+    errors.append("v4.14.29 explicit Case Depth Traverse checkbox/multiple-location logic is incomplete")
+if not all(token in v41429_reporting for token in ("def _chemical_horizontal_report_table", "CHEMICAL ANALYSIS · ASTM E 415 / IS 8811", "def _quality_conclusion_table", "Conclusion Remark", "PatternFill")):
+    errors.append("v4.14.29 report horizontal chemistry / highlighted conclusion styling is incomplete")
+if not all(token in v41429_reporting for token in ("BEND TEST REPORT", "BEND TEST RESULTS", "BEND TEST EVIDENCE / PART PHOTOGRAPHS", "REFERENCE DOCUMENTS / STATEMENTS")):
+    errors.append("v4.14.29 Bend Test print/report contract is incomplete")
+if not all(token in v41429_osp for token in ("FSI Batch Number", "Vendor Batch Number", "Source Batch / Lot")):
+    errors.append("v4.14.29 OSP transaction selectors do not expose controlled batch identity")
+if str(v41429_manifest.get("version")) != "4.14.29" or str(v41429_manifest.get("build")) != "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS":
+    errors.append("v4.14.29 deployment manifest release identity is incomplete")
+if str(v41429_manifest.get("database_schema_required")) != "4.14.28" or bool(v41429_manifest.get("database_migration_required")):
+    errors.append("v4.14.29 must remain a source-only release on the verified v4.14.28 database schema")
+
 report = {
-    "release": "QCMS 4.14.28 OSP Batch Genealogy / Two-Day Excel Digests",
+    "release": "QCMS 4.14.29 RMTC / Bend Test / Chemical Grid / Case Depth / Permissions",
+    "v41429_rmtc_approved_source_join": "def approved_source_options" in v41429_rmtc_service and "Approved Raw Material Source" in v41429_rmtc_ui,
+    "v41429_all_module_section_rights": "Section rights are available for all" in v41429_user_access,
+    "v41429_bend_test_subcategory": "BEND_TEST_DEFAULT_CHARACTERISTICS" in v41429_layout_ui and "BEND TEST REPORT" in v41429_reporting,
+    "v41429_horizontal_chemical_grid": "def _chemical_horizontal_models" in v41429_metlab and "def _chemical_horizontal_report_table" in v41429_reporting,
+    "v41429_case_depth_checkbox_locations": "Case Depth Traverse" in v41429_layout_ui and "case_depth_location" in v41429_metlab,
+    "v41429_reusable_references": "def _reference_controls" in v41429_metlab and "REFERENCE DOCUMENTS / STATEMENTS" in v41429_reporting,
+    "v41429_conclusion_remark_highlight": "conclusion_remark" in v41429_metlab and "def _quality_conclusion_table" in v41429_reporting,
+    "v41429_osp_batch_identity": "FSI Batch Number" in v41429_osp and "Vendor Batch Number" in v41429_osp,
+    "v41429_source_only_schema": str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required")),
     "v41419_live_employee_po_gate": "refresh_current_employee_link" in v41419_auth and "po_blockers" in v41419_supply,
     "v41419_supplier_po_confirmation": "supply_po_confirmations" in v41419_sql and "PO_CONFIRMATION_DAILY" in v41419_notifier,
     "v41419_universal_transaction_delete": "qcms_delete_transaction_row" in v41419_sql and "password_transaction_delete_panel" in v41419_delete,
