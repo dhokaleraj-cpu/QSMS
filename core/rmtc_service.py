@@ -32,87 +32,94 @@ class RMTCService:
         return self.repo.select('part_raw_material_details', eq={'part_id': value, 'status': 'ACTIVE'}, order_by='sequence_no', limit=200)
 
     def approved_source_options(self, part_id):
-        """Return RMTC source choices from Part Master Approved Sources + RM details.
+        """Return one RMTC-approved source option per Supplier.
 
-        Part Master deliberately stores commercial source approval in
-        ``part_supplier_links`` and production-weight/section data in
-        ``part_raw_material_details``.  Older RMTC screens looked only at the
-        latter table, so an approved Supplier / Steel Mill could disappear from
-        the **Approved Raw Material Source** selector.  This method joins both
-        masters without creating duplicate or synthetic production data.
-
-        When an approved Supplier does not yet have an ACTIVE Raw Material
-        Detail row, the source is still returned with ``source_ready=False`` so
-        the user can see the approval and receives a precise setup message.
-        RMTC save must continue to persist the real Raw Material Detail id.
+        Part Master can legitimately contain several ACTIVE raw-material detail
+        rows for the same Supplier (different grade/section/route), and older
+        data can also contain more than one approval-link row for that Supplier.
+        The RMTC **Approved Raw Material Source** control must therefore list a
+        Supplier only once.  The Supplier option carries its eligible raw
+        material rows in ``raw_material_details``; the RMTC UI selects the
+        required detail in a separate controlled field when more than one is
+        available.  This keeps the selector clean without losing genealogy.
         """
         value = str(part_id or '').strip()
         if not value:
             return []
-        raw_rows = self.source_details(value)
-        approved_links = self.repo.select(
+        raw_rows = [dict(row) for row in self.source_details(value)]
+        approved_links = [dict(row) for row in self.repo.select(
             'part_supplier_links',
             eq={'part_id': value, 'approved': True},
             order_by='valid_from',
             limit=500,
-        )
+        )]
 
-        # Backward compatibility: Parts created before Approved Sources became
-        # mandatory continue to use their ACTIVE Raw Material Detail rows.
-        if not approved_links:
-            return [{
-                **dict(row),
-                'option_key': f"RAW:{row.get('id')}",
-                'raw_material_detail_id': row.get('id'),
-                'approved_source_link_id': None,
-                'steel_mill_id': None,
-                'approval_reference': None,
-                'source_ready': True,
-                'approval_mode': 'LEGACY_RAW_DETAIL',
-            } for row in raw_rows]
-
-        raw_by_supplier = {}
+        raw_by_supplier: dict[str, list[dict]] = {}
         for row in raw_rows:
-            raw_by_supplier.setdefault(str(row.get('supplier_id') or ''), []).append(dict(row))
+            supplier_id = str(row.get('supplier_id') or '')
+            if supplier_id:
+                raw_by_supplier.setdefault(supplier_id, []).append(row)
 
-        options = []
+        # Parts created before Approved Sources became mandatory continue to
+        # work, but still show only one row per Supplier.
+        if not approved_links:
+            options: list[dict] = []
+            for supplier_id, details in raw_by_supplier.items():
+                selected = details[0]
+                options.append({
+                    **selected,
+                    'option_key': f"SUPPLIER:{supplier_id}",
+                    'supplier_id': supplier_id,
+                    'raw_material_detail_id': selected.get('id') if len(details) == 1 else None,
+                    'raw_material_details': details,
+                    'approved_source_link_id': None,
+                    'steel_mill_id': None,
+                    'approval_reference': None,
+                    'source_ready': bool(details),
+                    'approval_mode': 'LEGACY_RAW_DETAIL',
+                })
+            return options
+
+        # Resolve one current/best approval row per Supplier.  A currently
+        # effective approval wins; otherwise the latest Valid From wins.
+        today = datetime.now().date().isoformat()
+        links_by_supplier: dict[str, list[dict]] = {}
         for link in approved_links:
             supplier_id = str(link.get('supplier_id') or '')
-            matches = raw_by_supplier.get(supplier_id) or []
-            if matches:
-                for raw in matches:
-                    options.append({
-                        **raw,
-                        'option_key': f"APPROVED:{link.get('id')}:RAW:{raw.get('id')}",
-                        'raw_material_detail_id': raw.get('id'),
-                        'approved_source_link_id': link.get('id'),
-                        'steel_mill_id': link.get('steel_mill_id'),
-                        'approval_reference': link.get('approval_reference'),
-                        'supplier_part_number': link.get('supplier_part_number'),
-                        'valid_from': link.get('valid_from'),
-                        'valid_to': link.get('valid_to'),
-                        'source_ready': True,
-                        'approval_mode': 'APPROVED_SOURCE',
-                    })
-            else:
-                # Visible but intentionally non-saveable until the missing raw
-                # detail (weight / section / route) is completed in Part Master.
-                options.append({
-                    'option_key': f"APPROVED:{link.get('id')}:SETUP_REQUIRED",
-                    'raw_material_detail_id': None,
-                    'approved_source_link_id': link.get('id'),
-                    'part_id': value,
-                    'supplier_id': link.get('supplier_id'),
-                    'steel_mill_id': link.get('steel_mill_id'),
-                    'approval_reference': link.get('approval_reference'),
-                    'supplier_part_number': link.get('supplier_part_number'),
-                    'valid_from': link.get('valid_from'),
-                    'valid_to': link.get('valid_to'),
-                    'section_size': None,
-                    'forging_route': None,
-                    'source_ready': False,
-                    'approval_mode': 'APPROVED_SOURCE_SETUP_REQUIRED',
-                })
+            if supplier_id:
+                links_by_supplier.setdefault(supplier_id, []).append(link)
+
+        def link_score(link: dict) -> tuple[int, str, int, str]:
+            valid_from = str(link.get('valid_from') or '')
+            valid_to = str(link.get('valid_to') or '')
+            effective = int((not valid_from or valid_from <= today) and (not valid_to or valid_to >= today))
+            return (
+                effective,
+                valid_from,
+                int(bool(link.get('approval_reference'))),
+                str(link.get('updated_at') or link.get('created_at') or ''),
+            )
+
+        options: list[dict] = []
+        for supplier_id, supplier_links in links_by_supplier.items():
+            link = sorted(supplier_links, key=link_score, reverse=True)[0]
+            details = raw_by_supplier.get(supplier_id) or []
+            selected = details[0] if details else {}
+            options.append({
+                **selected,
+                'option_key': f"SUPPLIER:{supplier_id}",
+                'supplier_id': supplier_id,
+                'raw_material_detail_id': selected.get('id') if len(details) == 1 else None,
+                'raw_material_details': details,
+                'approved_source_link_id': link.get('id'),
+                'steel_mill_id': link.get('steel_mill_id'),
+                'approval_reference': link.get('approval_reference'),
+                'supplier_part_number': link.get('supplier_part_number'),
+                'valid_from': link.get('valid_from'),
+                'valid_to': link.get('valid_to'),
+                'source_ready': bool(details),
+                'approval_mode': 'APPROVED_SOURCE' if details else 'APPROVED_SOURCE_SETUP_REQUIRED',
+            })
         return options
 
     def employees(self,authority):

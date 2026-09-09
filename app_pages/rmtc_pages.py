@@ -321,20 +321,24 @@ def render_entry()->None:
         suppliers=svc.parties('SUPPLIER');mills=svc.parties('STEEL_MILL')
         supplier_map=_opts(suppliers,lambda r:party_label(r));mill_map=_opts(mills,lambda r:party_label(r))
         def _source_label(source):
+            # v4.14.30: the Approved Raw Material Source selector is intentionally
+            # one row per Supplier.  RM section/route choices are selected in the
+            # separate Raw Material Detail field below when the Supplier has more
+            # than one ACTIVE Part Master raw-material row.
             supplier = supplier_map.get(str(source.get('supplier_id')), 'Supplier')
-            mill = mill_map.get(str(source.get('steel_mill_id')), 'Any approved Steel Mill') if source.get('steel_mill_id') else 'Steel Mill selectable'
-            section = source.get('section_size') or 'RM detail pending'
-            route = source.get('forging_route') or '-'
+            mill = mill_map.get(str(source.get('steel_mill_id')), '') if source.get('steel_mill_id') else ''
             approval = f" · Ref {source.get('approval_reference')}" if source.get('approval_reference') else ''
+            mill_text = f" · {mill}" if mill else ''
             setup = ' · ⚠ Complete Raw Material Details' if not bool(source.get('source_ready', True)) else ''
-            return f"{supplier} · {mill} · {section} · {route}{approval}{setup}"
+            return f"{supplier}{mill_text}{approval} · APPROVED{setup}"
         source_map={str(s.get('option_key') or s.get('id')):_source_label(s) for s in sources}
         current_raw_source=str(existing.get('selected_source_detail_id') or '')
+        current_supplier_source=str(existing.get('supplier_id') or '')
         current_steel_source=str(existing.get('steel_mill_id') or '')
         current_source=next((
             str(s.get('option_key') or s.get('id')) for s in sources
-            if str(s.get('raw_material_detail_id') or s.get('id') or '') == current_raw_source
-            and (not current_steel_source or not s.get('steel_mill_id') or str(s.get('steel_mill_id')) == current_steel_source)
+            if (current_supplier_source and str(s.get('supplier_id') or '') == current_supplier_source)
+            or any(str(detail.get('id') or '') == current_raw_source for detail in (s.get('raw_material_details') or []))
         ), '')
         prepared_map=_employee_map(svc,'RMTC_PREPARE')
 
@@ -351,44 +355,57 @@ def render_entry()->None:
                 f"in {duplicate_supplier_rmtc.get('rmtc_number')}. Enter a different Supplier RMTC Number."
             )
         c=st.columns(4,gap='small')
-        source_id=c[0].selectbox('Approved Raw Material Source',['']+list(source_map),index=(['']+list(source_map)).index(current_source) if current_source in source_map else 0,format_func=lambda x:source_map.get(x,'— Select —'),key=f'rmtc_source_{form_token}',help='Pulled from Part Master → Approved Sources and matched to the ACTIVE Raw Material Detail needed for RMTC genealogy.')
-        source=next((s for s in sources if str(s.get('option_key') or s.get('id'))==source_id),{})
-        approved_mill=str(source.get('steel_mill_id') or '')
+        source_id=c[0].selectbox('Approved Raw Material Source',['']+list(source_map),index=(['']+list(source_map)).index(current_source) if current_source in source_map else 0,format_func=lambda x:source_map.get(x,'— Select —'),key=f'rmtc_source_{form_token}',help='One row per approved Supplier from Part Master. If that Supplier has multiple active Raw Material Detail rows, choose the required section/route in the next field.')
+        supplier_source=next((s for s in sources if str(s.get('option_key') or s.get('id'))==source_id),{})
+        raw_details=list(supplier_source.get('raw_material_details') or [])
+        def _raw_detail_label(raw):
+            section_name=str(raw.get('material_section_name') or 'Raw Material').strip()
+            section=str(raw.get('section_size') or '-').strip()
+            route=str(raw.get('forging_route') or '-').strip()
+            supplier_item=str(raw.get('supplier_rm_item_code') or '').strip()
+            suffix=f" · Item {supplier_item}" if supplier_item else ''
+            return f"{section_name} · {section} · {route}{suffix}"
+        raw_detail_map={str(raw.get('id')):_raw_detail_label(raw) for raw in raw_details if raw.get('id')}
+        detail_options=['']+list(raw_detail_map)
+        desired_detail=current_raw_source if current_raw_source in raw_detail_map else (next(iter(raw_detail_map)) if len(raw_detail_map)==1 else '')
+        raw_detail_id=c[1].selectbox('Raw Material Detail',detail_options,index=detail_options.index(desired_detail) if desired_detail in detail_options else 0,format_func=lambda x:raw_detail_map.get(x,'— Select RM Detail —'),key=f'rmtc_source_detail_{form_token}_{source_id or "none"}',disabled=not bool(source_id) or not bool(raw_detail_map),help='Select the controlled Part Master Raw Material section/route for this RMTC. This keeps the Supplier list unique while preserving exact genealogy.')
+        selected_raw=next((raw for raw in raw_details if str(raw.get('id'))==raw_detail_id),{})
+        source={**supplier_source,**selected_raw,'raw_material_detail_id':raw_detail_id or None,'source_ready':bool(raw_detail_id)}
+        approved_mill=str(supplier_source.get('steel_mill_id') or '')
         if approved_mill and approved_mill in mill_map:
             steel_options=['',approved_mill]
             current_steel=str(existing.get('steel_mill_id') or approved_mill)
         else:
             steel_options=['']+list(mill_map)
             current_steel=str(existing.get('steel_mill_id') or '')
-        steel_id=c[1].selectbox('Steel Mill',steel_options,index=steel_options.index(current_steel) if current_steel in steel_options else (1 if approved_mill and len(steel_options)>1 else 0),format_func=lambda x:mill_map.get(x,'— Select —'),key=f'rmtc_mill_{form_token}',disabled=bool(approved_mill),help='If Part Master Approved Sources specifies a Steel Mill, that approved mill is locked for this source.')
-        if source_id and not bool(source.get('source_ready', True)):
-            st.warning('This Supplier / Steel Mill is approved in Part Master, but it has no ACTIVE Raw Material Detail row. Complete Raw Material Type, Grade, Input Weight, Section Size and Forging Route in Part Master before saving this RMTC.')
-        c[2].text_input('Selected Heat Number',value=heat_search,disabled=True,key=f'rmtc_selected_heat_{form_token}')
+        steel_id=c[2].selectbox('Steel Mill',steel_options,index=steel_options.index(current_steel) if current_steel in steel_options else (1 if approved_mill and len(steel_options)>1 else 0),format_func=lambda x:mill_map.get(x,'— Select —'),key=f'rmtc_mill_{form_token}',disabled=bool(approved_mill),help='If Part Master Approved Sources specifies a Steel Mill, that approved mill is locked for this Supplier.')
+        c[3].text_input('Selected Heat Number',value=heat_search,disabled=True,key=f'rmtc_selected_heat_{form_token}')
         heat=heat_search
+        if source_id and not raw_details:
+            st.warning('This Supplier is approved in Part Master, but it has no ACTIVE Raw Material Detail row. Complete the Raw Material Details section in Part Master before saving this RMTC.')
+        elif source_id and len(raw_details)>1 and not raw_detail_id:
+            st.info(f'This approved Supplier has {len(raw_details)} active Raw Material Detail rows. Select the exact Raw Material Detail once; the Supplier itself appears only once in the Approved Raw Material Source list.')
+
+        c=st.columns(4,gap='small')
         heat_code_default=str(existing.get('heat_code') or canonical_heat_code or '')
-        heat_code=c[3].text_input(
+        heat_code=c[0].text_input(
             'Internal Heat Code', value=heat_code_default,
             placeholder='Auto on save: Steel Mill initial-0001',
             disabled=bool(canonical_heat_code and not existing),
             help='For an existing Heat Number, QCMS reuses the established Internal Heat Code across all Supplier RMTC certificates.',
             key=f'rmtc_heat_code_{form_token}',
         )
-        c=st.columns(4,gap='small')
         heat_global_qty=float(heat_summary.get('global_steel_quantity_kg') or 0) if heat_summary else 0.0
         same_heat_new = bool((not existing) and st.session_state.get('rmtc_same_heat_create_mode') and heat_summary)
-        # A second Supplier TC for an existing Heat contributes its own certified quantity
-        # to the shared Heat ledger.  Do not reuse/lock the existing Heat total as the new
-        # certificate quantity; that previously made the Add New RMTC action look inert and
-        # could double-count the old certificate if saved unchanged.
         qty_default=float(existing.get('certificate_quantity') or (0.0 if same_heat_new else heat_global_qty) or 0)
         qty_label='New RMTC / TC Certified Quantity (kg)' if same_heat_new else 'Global Heat Steel Quantity (kg)'
-        qty=c[0].number_input(qty_label,min_value=0.0,value=qty_default,step=1.0,disabled=bool(heat_summary and not same_heat_new and not existing),key=f'rmtc_qty_{form_token}',help=('Enter only the quantity certified on this NEW Supplier RMTC/TC. QCMS adds it to the shared global Heat quantity.' if same_heat_new else None))
+        qty=c[1].number_input(qty_label,min_value=0.0,value=qty_default,step=1.0,disabled=bool(heat_summary and not same_heat_new and not existing),key=f'rmtc_qty_{form_token}',help=('Enter only the quantity certified on this NEW Supplier RMTC/TC. QCMS adds it to the shared global Heat quantity.' if same_heat_new else None))
+        c[2].text_input('RM Section',value=str(source.get('section_size') or existing.get('rm_section') or ''),disabled=True,key=f'rmtc_section_{form_token}')
+        c[3].text_input('Forging Route / Root',value=str(source.get('forging_route') or existing.get('forging_route') or ''),disabled=True,key=f'rmtc_route_{form_token}')
         if same_heat_new:
             st.caption(f"Existing Heat balance before this TC: {heat_global_qty:,.3f} kg certified. The quantity entered above will be added as a separate certificate allocation after save/approval.")
-        c[1].text_input('RM Section',value=str(source.get('section_size') or existing.get('rm_section') or ''),disabled=True,key=f'rmtc_section_{form_token}')
-        c[2].text_input('Forging Route / Root',value=str(source.get('forging_route') or existing.get('forging_route') or ''),disabled=True,key=f'rmtc_route_{form_token}')
         prepared_options=['']+list(prepared_map);current_prepared=str(existing.get('prepared_by_employee_id') or '')
-        prepared_id=c[3].selectbox('Prepared By',prepared_options,index=prepared_options.index(current_prepared) if current_prepared in prepared_options else 0,format_func=lambda x:prepared_map.get(x,'— Select —'),key=f'rmtc_prepared_{form_token}')
+        prepared_id=st.selectbox('Prepared By',prepared_options,index=prepared_options.index(current_prepared) if current_prepared in prepared_options else 0,format_func=lambda x:prepared_map.get(x,'— Select —'),key=f'rmtc_prepared_{form_token}')
         remarks=st.text_area('RMTC Remarks',value=str(existing.get('remarks') or ''),height=70,key=f'rmtc_remarks_{form_token}')
         microstructure_uploads, microstructure_titles = _render_rmtc_microstructure_inputs(existing, repo, form_token)
         new_attachments = {} if existing else new_attachment_uploaders(

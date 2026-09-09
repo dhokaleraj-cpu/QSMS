@@ -9,11 +9,11 @@ def text(rel: str) -> str:
 
 
 def test_v41429_release_identity_source_only_schema_contract():
-    assert text("VERSION").strip() == "4.14.29"
-    assert "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS" in text("streamlit_app.py")
+    assert tuple(map(int, text("VERSION").strip().split("."))) >= (4, 14, 29)
+    assert "metlab_bend_test_subcategory" in text("DEPLOYMENT_MANIFEST.json")
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] == "4.14.29"
-    assert manifest["build"] == "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS"
+    assert tuple(map(int, manifest["version"].split("."))) >= (4, 14, 29)
+    assert "metlab_bend_test_subcategory" in manifest["features"]
     assert manifest["database_schema_required"] == "4.14.28"
     assert manifest["database_migration_required"] is False
     assert manifest["source_only_updater"] is True

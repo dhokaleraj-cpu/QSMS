@@ -1,5 +1,5 @@
 # QCMS 4.14.19 — PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES
-# BUILD 41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS
+# BUILD 41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH
 # QCMS 4.14.15 — DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
 # BUILD 41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
 # QCMS 4.14.13 — METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM
@@ -35,6 +35,7 @@ from app_pages import (
     dimensional_report,
     employee_master,
     email_settings,
+    global_search,
     inspection_home,
     inspection_layouts,
     master_home,
@@ -165,6 +166,10 @@ PAGE_ITEMS = (
     ("dimensional-records", st.Page(dimensional_report.render_records, title="Dimensional Records", icon=":material/table_view:", url_path="dimensional-records")),
     ("metlab-entry", st.Page(metlab_report.render_entry, title="MetLAB Report", icon=":material/science:", url_path="metlab-entry")),
     ("metlab-records", st.Page(metlab_report.render_records, title="MetLAB Records", icon=":material/table_view:", url_path="metlab-records")),
+    ("bend-test-entry", st.Page(metlab_report.render_bend_test_entry, title="Bend Test Report", icon=":material/architecture:", url_path="bend-test-entry")),
+    ("bend-test-records", st.Page(metlab_report.render_bend_test_records, title="Bend Test Records", icon=":material/table_view:", url_path="bend-test-records")),
+    ("bend-test-report", st.Page(metlab_report.render_bend_test_records, title="Bend Test Reports", icon=":material/assessment:", url_path="bend-test-report")),
+    ("global-search", st.Page(global_search.render, title="Global Search", icon=":material/search:", url_path="global-search")),
 )
 PAGES = tuple(page for _, page in PAGE_ITEMS)
 PAGE_BY_PATH = dict(PAGE_ITEMS)
@@ -256,8 +261,10 @@ MODULE_SUBMENUS = {
         ("inspection-layout-entry", "Layout Entry", ":material/edit_document:"),
         ("dimensional-entry", "Dimensional Entry", ":material/straighten:"),
         ("metlab-entry", "MetLAB Entry", ":material/science:"),
+        ("bend-test-entry", "Bend Test Entry", ":material/architecture:"),
         ("dimensional-report", "Dimensional Reports", ":material/assessment:"),
         ("metlab-report", "MetLAB Reports", ":material/assessment:"),
+        ("bend-test-report", "Bend Test Reports", ":material/assessment:"),
     ),
     "Records": (
         ("records-center", "Records Centre", ":material/table_view:"),
@@ -266,6 +273,7 @@ MODULE_SUBMENUS = {
         ("osp-records", "OSP", ":material/factory:"),
         ("dimensional-records", "Dimensional", ":material/straighten:"),
         ("metlab-records", "MetLAB", ":material/science:"),
+        ("bend-test-records", "Bend Test", ":material/architecture:"),
         ("inspection-layout-records", "Inspection Layouts", ":material/view_list:"),
         ("complaint-records", "Complaints", ":material/support_agent:"),
         ("qc-calculation-records", "QC Calculations", ":material/calculate:"),
@@ -286,6 +294,7 @@ MODULE_SUBMENUS = {
         ("inward-report", "Material Inward", ":material/input:"),
         ("dimensional-report", "Dimensional", ":material/straighten:"),
         ("metlab-report", "MetLAB", ":material/science:"),
+        ("bend-test-report", "Bend Test", ":material/architecture:"),
         ("complaints-report", "Complaints", ":material/support_agent:"),
         ("traceability-report", "Traceability", ":material/account_tree:"),
         ("npd-report", "NPD Status", ":material/timeline:"),
@@ -293,6 +302,9 @@ MODULE_SUBMENUS = {
         ("qc-report", "QC Calculations", ":material/calculate:"),
         ("inspection-layout-report", "Inspection Layouts", ":material/view_list:"),
         ("standards-report", "Customer Standards", ":material/menu_book:"),
+    ),
+    "Search": (
+        ("global-search", "Global Search", ":material/search:"),
     ),
     "Templates": (
         ("templates", "Download Templates", ":material/download:"),
@@ -303,7 +315,7 @@ MODULE_SUBMENUS = {
 # Entry and workflow pages remain under their operational modules.
 RECORD_ROUTES = {
     "records-center", "heat-ledger", "rmtc-records", "inward-records", "osp-records",
-    "dimensional-records", "metlab-records", "inspection-layout-records",
+    "dimensional-records", "metlab-records", "bend-test-records", "inspection-layout-records",
     "complaint-records", "qc-calculation-records", "part-records", "process-records",
     "grade-records", "reference-records", "employee-records", "standards-records",
 }
@@ -323,8 +335,9 @@ ROUTE_MODULE = {
     "supplier-complaint": "Complaints", "complaint-analysis": "Complaints",
     "calibration-validation": "Calibration & Validation", "standard-room-inspection": "Calibration & Validation",
     "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
-    "dimensional-entry": "Inspections", "metlab-entry": "Inspections",
-    "reports-home": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports", "supply-chain-report": "Reports", "rmtc-report": "Reports", "inward-report": "Reports", "dimensional-report": "Reports", "metlab-report": "Reports", "complaints-report": "Reports", "traceability-report": "Reports", "npd-report": "Reports", "apqp-report": "Reports", "qc-report": "Reports", "inspection-layout-report": "Reports", "standards-report": "Reports",
+    "dimensional-entry": "Inspections", "metlab-entry": "Inspections", "bend-test-entry": "Inspections",
+    "global-search": "Search",
+    "reports-home": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports", "supply-chain-report": "Reports", "rmtc-report": "Reports", "inward-report": "Reports", "dimensional-report": "Reports", "metlab-report": "Reports", "bend-test-report": "Reports", "complaints-report": "Reports", "traceability-report": "Reports", "npd-report": "Reports", "apqp-report": "Reports", "qc-report": "Reports", "inspection-layout-report": "Reports", "standards-report": "Reports",
     "templates": "Templates",
     **{path: "Records" for path in RECORD_ROUTES},
 }
@@ -355,6 +368,8 @@ PAGE_TITLE_TO_PATH = {
     "Inspection Layout Records": "inspection-layout-records",
     "Dimensional Report": "dimensional-entry", "Dimensional Records": "dimensional-records",
     "MetLAB Report": "metlab-entry", "MetLAB Records": "metlab-records",
+    "Bend Test Report": "bend-test-entry", "Bend Test Records": "bend-test-records", "Bend Test Reports": "bend-test-report",
+    "Global Search": "global-search",
 }
 
 
@@ -377,7 +392,7 @@ ROUTE_PERMISSION_MODULE = {
     "inward-entry":"MATERIAL_INWARD","inward-records":"MATERIAL_INWARD",
     "osp-home":"OSP_TRANSACTIONS","osp-material-out":"OSP_TRANSACTIONS","osp-sample-receipt":"OSP_TRANSACTIONS","osp-inward":"OSP_TRANSACTIONS","osp-records":"OSP_TRANSACTIONS",
     "osp-dimensional":"DIMENSIONAL_REPORT","osp-metlab":"METLAB_REPORT",
-    "dimensional-entry":"DIMENSIONAL_REPORT","dimensional-records":"DIMENSIONAL_REPORT","metlab-entry":"METLAB_REPORT","metlab-records":"METLAB_REPORT",
+    "dimensional-entry":"DIMENSIONAL_REPORT","dimensional-records":"DIMENSIONAL_REPORT","metlab-entry":"METLAB_REPORT","metlab-records":"METLAB_REPORT","bend-test-entry":"METLAB_REPORT","bend-test-records":"METLAB_REPORT","bend-test-report":"METLAB_REPORT",
     "inspection-layout-entry":"INSPECTION_LAYOUTS","inspection-layout-records":"INSPECTION_LAYOUTS",
     "supply-chain-home":"SUPPLY_CHAIN","supply-customer-orders":"SUPPLY_CHAIN","supply-opening-stock":"SUPPLY_CHAIN","supply-rm-procurement":"SUPPLY_CHAIN","supply-purchase-orders":"SUPPLY_CHAIN","supply-rm-receipt":"SUPPLY_CHAIN","supply-rm-dispatch":"SUPPLY_CHAIN","supply-forging":"SUPPLY_CHAIN","supply-downstream":"SUPPLY_CHAIN","supply-traceability":"SUPPLY_CHAIN","supply-order-mis":"SUPPLY_CHAIN",
     "npd-process-flow":"NPD_APQP","npd-status":"NPD_APQP","apqp":"NPD_APQP","qc-tools":"QC_CALCULATION_TOOLS","qc-calculation-records":"QC_CALCULATION_TOOLS",
@@ -400,6 +415,7 @@ HEADER_NAV = (
     (PAGE_BY_PATH["masters"], "Masters", "Masters"),
     (PAGE_BY_PATH["supply-chain-home"], "Supply Chain", "Supply Chain"),
     (PAGE_BY_PATH["inspection-home"], "Quality", quality_active_module),
+    (PAGE_BY_PATH["global-search"], "Search", "Search"),
     (PAGE_BY_PATH["reports-home"], "Reports", "Reports"),
     (PAGE_BY_PATH["records-center"], "Records", "Records"),
     (PAGE_BY_PATH["user-access"], "Admin", "Admin"),
@@ -416,6 +432,7 @@ RAIL_NAV = (
     (PAGE_BY_PATH["qc-tools"], "QC Tools", "QC Calculation Tools", ":material/calculate:"),
     (PAGE_BY_PATH["complaints-home"], "Complaints", "Complaints", ":material/support_agent:"),
     (PAGE_BY_PATH["calibration-validation"], "Calibration", "Calibration & Validation", ":material/straighten:"),
+    (PAGE_BY_PATH["global-search"], "Search", "Search", ":material/search:"),
     (PAGE_BY_PATH["records-center"], "Records", "Records", ":material/description:"),
     (PAGE_BY_PATH["reports-home"], "Reports", "Reports", ":material/assessment:"),
     (PAGE_BY_PATH["templates"], "Templates", "Templates", ":material/download:"),
@@ -425,7 +442,27 @@ RAIL_NAV = (
 if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
     logout()
 
-st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS")
+st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH")
+
+# v4.14.30 — persistent permission-aware Global Search launcher.  Search is
+# submitted explicitly (or by Enter) so ordinary typing never fans out into
+# multiple database requests on every rerun.
+with st.form("qcms_shell_global_search_form", border=False):
+    gs1, gs2 = st.columns([8.75, 1.25], gap="small")
+    shell_global_query = gs1.text_input(
+        "Global Search",
+        key="qcms_shell_global_search_query",
+        placeholder="Global Search · Part, Heat, RMTC, Batch, Supplier, Customer, PO, Report...",
+        label_visibility="collapsed",
+    )
+    shell_global_submit = gs2.form_submit_button("Search", icon=":material/search:", width="stretch")
+if shell_global_submit:
+    cleaned_global_query = str(shell_global_query or "").strip()
+    if len(cleaned_global_query) < 2:
+        st.warning("Enter at least 2 characters for Global Search.")
+    else:
+        st.session_state["_qcms_global_search_pending_query"] = cleaned_global_query
+        st.switch_page(PAGE_BY_PATH["global-search"])
 
 # v4.12.9 keeps the real two-column Streamlit workspace and hardens component styling.
 # v4.12.8 uses a real two-column Streamlit workspace. The charcoal navigation

@@ -145,7 +145,7 @@ expected_paths = {
     "user-access", "email-settings", "master-import", "standards-entry", "standards-records", "my-account", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
     "osp-material-out", "osp-sample-receipt", "osp-inward", "osp-dimensional", "osp-metlab", "osp-records",
     "inspection-layout-entry", "inspection-layout-records", "dimensional-entry",
-    "dimensional-records", "metlab-entry", "metlab-records",
+    "dimensional-records", "metlab-entry", "metlab-records", "bend-test-entry", "bend-test-records", "bend-test-report", "global-search",
 }
 if set(paths) != expected_paths or len(paths) != len(expected_paths):
     errors.append(f"Expected {len(expected_paths)} unique registered pages, found {paths}")
@@ -252,7 +252,7 @@ if "QCMS 4.10.9 — readability" not in ui_text or "font-weight:450!important" n
 # QCMS 4.11.1 central Records navigation and visible Zoho-inspired UI contract.
 record_routes = {
     "records-center", "heat-ledger", "rmtc-records", "inward-records", "osp-records",
-    "dimensional-records", "metlab-records", "inspection-layout-records",
+    "dimensional-records", "metlab-records", "bend-test-records", "inspection-layout-records",
     "complaint-records", "qc-calculation-records", "part-records", "process-records",
     "grade-records", "reference-records", "employee-records", "standards-records",
 }
@@ -1013,13 +1013,36 @@ if not all(token in v41429_reporting for token in ("BEND TEST REPORT", "BEND TES
     errors.append("v4.14.29 Bend Test print/report contract is incomplete")
 if not all(token in v41429_osp for token in ("FSI Batch Number", "Vendor Batch Number", "Source Batch / Lot")):
     errors.append("v4.14.29 OSP transaction selectors do not expose controlled batch identity")
-if str(v41429_manifest.get("version")) != "4.14.29" or str(v41429_manifest.get("build")) != "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS":
-    errors.append("v4.14.29 deployment manifest release identity is incomplete")
+current_release_version = str(v41429_manifest.get("version") or "")
+current_release_build = str(v41429_manifest.get("build") or "")
+if current_release_version != "4.14.30" or current_release_build != "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH":
+    errors.append("v4.14.30 deployment manifest release identity is incomplete")
 if str(v41429_manifest.get("database_schema_required")) != "4.14.28" or bool(v41429_manifest.get("database_migration_required")):
-    errors.append("v4.14.29 must remain a source-only release on the verified v4.14.28 database schema")
+    errors.append("v4.14.30 must remain a source-only release on the verified v4.14.28 database schema")
+
+# v4.14.30 RMTC supplier de-duplication / dedicated Bend Test discovery / permission-aware Global Search.
+v41430_global_search = (ROOT / "app_pages" / "global_search.py").read_text(encoding="utf-8")
+v41430_inspection_home = (ROOT / "app_pages" / "inspection_home.py").read_text(encoding="utf-8")
+v41430_reports = (ROOT / "app_pages" / "reports.py").read_text(encoding="utf-8")
+if not all(token in v41429_rmtc_service for token in ("raw_by_supplier", "links_by_supplier", "SUPPLIER:{supplier_id}", "raw_material_details")):
+    errors.append("v4.14.30 RMTC Approved Raw Material Source is not de-duplicated by Supplier")
+if not all(token in v41429_rmtc_ui for token in ("Approved Raw Material Source", "Raw Material Detail", "selected_source_detail_id")):
+    errors.append("v4.14.30 RMTC Supplier / Raw Material Detail two-step selector is incomplete")
+if not all(token in app_text for token in ("bend-test-entry", "bend-test-records", "bend-test-report", "global-search", "qcms_shell_global_search_form")):
+    errors.append("v4.14.30 dedicated Bend Test routes or persistent Global Search launcher are incomplete")
+if not all(token in v41429_metlab for token in ("render_bend_test_entry", "render_bend_test_records", "required_inspection_method")):
+    errors.append("v4.14.30 Bend Test dedicated report entry/register is incomplete")
+if not all(token in v41430_global_search for token in ("SEARCH_SOURCES", "search_everywhere", "module_permissions", "part_ids", "party_ids", "Open Selected Record")):
+    errors.append("v4.14.30 permission-aware relationship-expanded Global Search is incomplete")
+if "Bend Test Report" not in v41430_inspection_home or "Bend Test" not in v41430_reports:
+    errors.append("v4.14.30 Bend Test discovery cards are incomplete")
 
 report = {
-    "release": "QCMS 4.14.29 RMTC / Bend Test / Chemical Grid / Case Depth / Permissions",
+    "release": "QCMS 4.14.30 RMTC Supplier Dedup / Bend Test Discovery / Global Search",
+    "v41430_rmtc_supplier_dedup": "raw_by_supplier" in v41429_rmtc_service and "Raw Material Detail" in v41429_rmtc_ui,
+    "v41430_bend_test_discovery": "render_bend_test_entry" in v41429_metlab and "bend-test-report" in app_text,
+    "v41430_global_search": "search_everywhere" in v41430_global_search and "qcms_shell_global_search_form" in app_text,
+    "v41430_source_only_schema": str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required")),
     "v41429_rmtc_approved_source_join": "def approved_source_options" in v41429_rmtc_service and "Approved Raw Material Source" in v41429_rmtc_ui,
     "v41429_all_module_section_rights": "Section rights are available for all" in v41429_user_access,
     "v41429_bend_test_subcategory": "BEND_TEST_DEFAULT_CHARACTERISTICS" in v41429_layout_ui and "BEND TEST REPORT" in v41429_reporting,

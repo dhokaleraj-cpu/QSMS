@@ -1,10 +1,10 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.29
+## Current controlled release — v4.14.30
 
-Build: `41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS`
+Build: `41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH`
 
-v4.14.29 fixes the Part Master **Approved Sources → RMTC Approved Raw Material Source** linkage, completes section-wise permission rows for every QCMS module, adds **Bend Test** as a MetLAB inspection sub category, changes chemical analysis to the controlled horizontal sequence, adds an explicit **Case Depth Traverse** checkbox with multiple locations, adds reusable MetLAB reference statements, highlights conclusion/decision output, and expands OSP selectors with batch identity. This is a source-only release using the already-applied v4.14.28 database contract; no manual Supabase SQL is required.
+v4.14.30 shows each Supplier only once in **RMTC → Approved Raw Material Source** and moves exact material section/route selection to a separate **Raw Material Detail** control. It makes **Bend Test** directly discoverable through dedicated Entry, Records and Reports navigation and adds an app-wide, permission-aware **Global Search** for Parts, Heat/RMTC, Batches, Suppliers/Customers, POs, Reports and linked QCMS records. All v4.14.29 Chemical Analysis, Case Depth Traverse, reusable reference, conclusion styling, section-permission and OSP genealogy functions remain preserved.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.
@@ -18,6 +18,6 @@ v4.14.29 fixes the Part Master **Approved Sources → RMTC Approved Raw Material
 
 ## Deployment
 - Source-only release; no new Supabase migration is required.
-- Required live database baseline remains v4.14.28; v4.14.29 adds no schema migration.
+- Required live database baseline remains v4.14.28; v4.14.30 adds no schema migration.
 - Online Supabase baseline recheck is informational/non-blocking and cannot prevent Git/Streamlit source deployment.
 - Existing production/master/RMTC/OSP/Supply Chain data and local secrets are preserved.

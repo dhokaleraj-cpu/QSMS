@@ -200,11 +200,15 @@ required = [
     "RELEASE_NOTES_v4.14.29.md",
     "tests/test_v41429_rmtc_bend_chem_case_permissions.py",
     "QCMS_NEW_CHAT_HANDOVER_v4.14.29.md",
+    "app_pages/global_search.py",
+    "RELEASE_NOTES_v4.14.30.md",
+    "tests/test_v41430_supplier_dedup_bend_global_search.py",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.30.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.29 - RMTC / Bend Test / Chemical Grid / Case Depth / Permissions",
+    "phase": "QCMS 4.14.30 - RMTC Supplier Dedup / Bend Test Discovery / Global Search",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

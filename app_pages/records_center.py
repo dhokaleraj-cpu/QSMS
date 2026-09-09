@@ -291,7 +291,11 @@ def _open_selected_record_for_edit(table: str, record: dict) -> None:
     elif table == "inspection_reports":
         st.session_state["edit_dimensional_id"] = record_id; route = "dimensional-entry"
     elif table == "lab_tests":
-        st.session_state["edit_metlab_id"] = record_id; route = "metlab-entry"
+        st.session_state["edit_metlab_id"] = record_id
+        result_map = record.get("results") or {}
+        inspection_method = str(result_map.get("inspection_method") or "").upper() if isinstance(result_map, dict) else ""
+        method_text = " ".join(str(record.get(key) or "") for key in ("test_type", "layout_name_snapshot", "remarks")).upper()
+        route = "bend-test-entry" if inspection_method == "BEND_TEST" or "BEND TEST" in method_text else "metlab-entry"
     elif table == "npd_orders":
         st.session_state["npd_order_edit"] = record_id; route = "npd-status"
     elif table == "npd_process_flows":
@@ -305,6 +309,10 @@ def _open_selected_record_for_edit(table: str, record: dict) -> None:
         complaint_type = str(record.get("complaint_type") or "CUSTOMER").upper()
         st.session_state[f"selected_{complaint_type.lower()}_complaint"] = record_id
         route = "supplier-complaint" if complaint_type == "SUPPLIER" else "customer-complaint"
+    elif table in {"quality_assets", "quality_asset_calibration_records"}:
+        route = "calibration-validation"
+    elif table == "standard_room_inspection_records":
+        route = "standard-room-inspection"
     elif table == "supply_customer_orders":
         st.session_state["supply_customer_order_edit_select"] = record_id; route = "supply-customer-orders"
     elif table in {"supply_purchase_orders", "supply_purchase_order_items", "supply_po_confirmations"}:

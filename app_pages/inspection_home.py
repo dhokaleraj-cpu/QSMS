@@ -119,13 +119,15 @@ def render() -> None:
                 )
 
     with stage_section("B", "WORKSPACES", key="inspection_home_render_b"):
-        c1, c2, c3 = st.columns(3, gap="small")
+        c1, c2, c3, c4 = st.columns(4, gap="small")
         with c1:
             dashboard_card(title="Inspection Layouts", description="", count_text=f"{plans} layouts", color="#7C3AED", page_path="inspection-layout-entry", button_label="Open Layout Master")
         with c2:
             dashboard_card(title="Dimensional Report", description="", count_text=f"{dim_pending} pending", color="#1469A8", page_path="dimensional-entry", button_label="Open Dimensional")
         with c3:
             dashboard_card(title="MetLAB Report", description="", count_text=f"{met_pending} pending", color="#0F8B6D", page_path="metlab-entry", button_label="Open MetLAB")
+        with c4:
+            dashboard_card(title="Bend Test Report", description="Dedicated Bend Test entry and register", count_text="Layout-driven", color="#7C3AED", page_path="bend-test-entry", button_label="Open Bend Test")
 
     with stage_section("C", "OSP INSPECTION WORKSPACES", key="inspection_home_render_c"):
         c1, c2, c3 = st.columns(3, gap="small")

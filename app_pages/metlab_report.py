@@ -426,7 +426,30 @@ STANDALONE_STAGES = {
 }
 
 
-def _render_standalone_metlab(service: InspectionService, perms: dict, parts: dict[str, dict], parties: dict[str, dict], processes: dict[str, dict], stages: dict[str, dict], employee_map: dict[str, str], existing: dict | None) -> None:
+def _filter_plans_by_method(service: InspectionService, plans: list[dict], required_method: str | None) -> list[dict]:
+    if not required_method:
+        return list(plans)
+    required = str(required_method).upper()
+    return [row for row in plans if service.plan_inspection_method(str(row.get("id") or "")) == required]
+
+
+def _record_inspection_method(service: InspectionService, row: dict) -> str:
+    result_map = row.get("results") or {}
+    if isinstance(result_map, dict):
+        saved = str(result_map.get("inspection_method") or "").upper()
+        if saved in {GENERAL_METLAB, BEND_TEST}:
+            return saved
+    plan_id = str(row.get("layout_plan_id") or "")
+    if plan_id:
+        try:
+            return service.plan_inspection_method(plan_id)
+        except Exception:
+            pass
+    fallback = " ".join(str(row.get(key) or "") for key in ("layout_name_snapshot", "layout_type_name", "remarks"))
+    return BEND_TEST if "BEND TEST" in fallback.upper() else GENERAL_METLAB
+
+
+def _render_standalone_metlab(service: InspectionService, perms: dict, parts: dict[str, dict], parties: dict[str, dict], processes: dict[str, dict], stages: dict[str, dict], employee_map: dict[str, str], existing: dict | None, required_inspection_method: str | None = None) -> None:
     existing_id = str((existing or {}).get("id") or "")
     with stage_section("A", "STANDALONE METLAB CONTEXT", "Master-driven Part / Customer / Material / OSP context. No RMTC or inward transaction linkage is required.", key="metlab_standalone_context"):
         scope_keys = list(STANDALONE_STAGES)
@@ -462,19 +485,32 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             plan = None
         if plan and str(plan.get("status") or "").upper() != "APPROVED":
             st.warning("This saved report uses a historical MetLAB layout. QCMS loaded the original layout so the report can be edited without silently changing its specification basis.")
+        if plan and required_inspection_method and service.plan_inspection_method(str(plan.get("id") or "")) != str(required_inspection_method).upper():
+            st.error("The selected saved report is not a Bend Test report. Open it from MetLAB Records instead.")
+            return
         if not plan and scope == "RAW_MATERIAL_STAGE":
-            raw_plans = service.raw_material_metlab_plans(part_id, approved_only=True)
+            raw_plans = _filter_plans_by_method(service, service.raw_material_metlab_plans(part_id, approved_only=True), required_inspection_method)
             if not raw_plans:
-                st.warning("No approved Raw Material Inward MetLAB layout exists in Layout Master for this Part. Create/approve a MetLAB layout in Inspection Layout Master. Part Master Final Metallurgical Requirements are intentionally not available here.")
+                if required_inspection_method == BEND_TEST:
+                    st.warning("No APPROVED Bend Test layout exists in Layout Master for this Part. Create/approve a METLAB layout with Inspection Method / Sub Category = Bend Test first.")
+                    if (st.session_state.get("_qsms_pages") or {}).get("inspection-layout-entry"):
+                        st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Bend Test Layout", icon=":material/add:", width="stretch")
+                else:
+                    st.warning("No approved Raw Material Inward MetLAB layout exists in Layout Master for this Part. Create/approve a MetLAB layout in Inspection Layout Master. Part Master Final Metallurgical Requirements are intentionally not available here.")
                 return
             raw_plan_map = {str(row["id"]): f"{row.get('layout_name')} · {row.get('plan_number')} Rev {row.get('revision')}" for row in raw_plans}
             selected_raw_plan = st.selectbox("Raw Material Inward MetLAB Layout · Layout Master", list(raw_plan_map), format_func=lambda value: raw_plan_map[value], key=f"standalone_rm_metlab_layout_{existing_id or part_id}")
             plan = next(row for row in raw_plans if str(row.get("id")) == selected_raw_plan)
             st.caption("Source: Inspection Layout Master only. Part Master Final Metallurgical Requirements are reserved for Final Dispatch MetLAB.")
         elif not plan:
-            plan = service.auto_standalone_plan("METLAB", part_id, scope, process_id)
+            candidates = _filter_plans_by_method(service, service.standalone_plans("METLAB", part_id, scope, process_id), required_inspection_method)
+            plan = candidates[0] if candidates else None
         if not plan:
-            if scope == "OSP_STAGE":
+            if required_inspection_method == BEND_TEST:
+                st.warning("No APPROVED Bend Test layout is available for this Part and selected report stage. Create/approve a METLAB layout with Inspection Method / Sub Category = Bend Test in Inspection Layout Master, then return here.")
+                if (st.session_state.get("_qsms_pages") or {}).get("inspection-layout-entry"):
+                    st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Bend Test Layout", icon=":material/add:", width="stretch")
+            elif scope == "OSP_STAGE":
                 st.warning("The Part Master OSP MetLAB requirements exist, but the controlled OSP MetLAB layout has not been generated/approved. Use Part Master → OSP Inspection for MetLAB → Create / Update OSP MetLAB Inspection Layout.")
             elif scope == "FINAL_DISPATCH_STAGE":
                 st.warning("No approved Final Metallurgical layout is available for this Part. Generate it from Part Master → Final Dispatch Metallurgical Requirements.")
@@ -642,33 +678,46 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             _report_exports(service, existing_id, str(existing.get("report_number") or "MetLAB_Report"), key=f"met_standalone_export_{existing_id}")
 
 
-def render_entry() -> None:
-    subpage_navigation(("inspection-home", "Inspections", ":material/biotech:"), ("inward-records", "Material Inward", ":material/input:"), ("metlab-records", "MetLAB Records", ":material/table_view:"))
-    page_header("MetLAB Inspection Report", context="Linked or standalone Raw Material / OSP / Final Dispatch stage")
-    template_download_row([("MetLAB_Report_Layout_Template.xlsx", "Download MetLAB Report Template")], key_prefix="metlab_report")
+def _render_entry(required_inspection_method: str | None = None) -> None:
+    bend_mode = str(required_inspection_method or "").upper() == BEND_TEST
+    key_prefix = "bend_test" if bend_mode else "metlab"
+    records_route = "bend-test-records" if bend_mode else "metlab-records"
+    subpage_navigation(("inspection-home", "Inspections", ":material/biotech:"), ("inward-records", "Material Inward", ":material/input:"), (records_route, "Bend Test Records" if bend_mode else "MetLAB Records", ":material/table_view:"))
+    page_header("Bend Test Report" if bend_mode else "MetLAB Inspection Report", context="Controlled Bend Test · linked or standalone stage" if bend_mode else "Linked or standalone Raw Material / OSP / Final Dispatch stage")
+    template_download_row([("MetLAB_Report_Layout_Template.xlsx", "Download MetLAB / Bend Test Template" if bend_mode else "Download MetLAB Report Template")], key_prefix=f"{key_prefix}_report")
     service = InspectionService(); perms = current_permissions("METLAB_REPORT")
     parts, parties, processes, stages, employee_map = _maps(service)
     # DIRECT METLAB EDIT SELECTOR v4.14.6 — always visible
+    # v4.14.30: same controlled selector is method-filtered for dedicated Bend Test entry.
     existing_id = str(st.session_state.get("edit_metlab_id") or "")
-    report_rows = service.metlab_reports()
-    section_bar("NEW / EDIT EXISTING METLAB REPORT")
-    report_labels = {"": "— Create New MetLAB Report —"}
-    report_labels.update({str(row.get("id")): f"{row.get('report_number') or '-'} · {row.get('layout_name_snapshot') or row.get('test_type') or row.get('report_type') or 'MetLAB'} · {row.get('status') or '-'}" for row in report_rows if row.get("id")})
+    all_report_rows = service.metlab_reports()
+    report_rows = [row for row in all_report_rows if not required_inspection_method or _record_inspection_method(service, row) == str(required_inspection_method).upper()]
+    visible_ids = {str(row.get("id") or "") for row in report_rows}
+    if existing_id and existing_id not in visible_ids:
+        existing_id = ""
+        if bend_mode:
+            st.session_state.pop("edit_metlab_id", None)
+    if bend_mode:
+        section_bar("NEW / EDIT EXISTING BEND TEST REPORT")
+    else:
+        section_bar("NEW / EDIT EXISTING METLAB REPORT")
+    report_labels = {"": "— Create New Bend Test Report —" if bend_mode else "— Create New MetLAB Report —"}
+    report_labels.update({str(row.get("id")): f"{row.get('report_number') or '-'} · {row.get('layout_name_snapshot') or row.get('test_type') or row.get('report_type') or ('Bend Test' if bend_mode else 'MetLAB')} · {row.get('status') or '-'}" for row in report_rows if row.get("id")})
     report_ids = list(report_labels)
     selected_edit_id = st.selectbox(
-        "Select Existing MetLAB Report to Edit", report_ids,
+        "Select Existing Bend Test Report to Edit" if bend_mode else "Select Existing MetLAB Report to Edit", report_ids,
         index=report_ids.index(existing_id) if existing_id in report_ids else 0,
-        format_func=lambda value: report_labels[value], key="metlab_direct_edit_selector",
+        format_func=lambda value: report_labels[value], key=f"{key_prefix}_direct_edit_selector",
     )
     e1, e2 = st.columns(2, gap="small")
-    if e1.button("Load Selected MetLAB Report for Edit", type="primary", width="stretch", disabled=not selected_edit_id or not perms["can_edit"], key="metlab_direct_edit_load"):
+    if e1.button("Load Selected Bend Test Report for Edit" if bend_mode else "Load Selected MetLAB Report for Edit", type="primary", width="stretch", disabled=not selected_edit_id or not perms["can_edit"], key=f"{key_prefix}_direct_edit_load"):
         st.session_state["edit_metlab_id"] = selected_edit_id
         st.rerun()
-    if e2.button("Start New MetLAB Report", width="stretch", key="metlab_direct_edit_new"):
+    if e2.button("Start New Bend Test Report" if bend_mode else "Start New MetLAB Report", width="stretch", key=f"{key_prefix}_direct_edit_new"):
         st.session_state.pop("edit_metlab_id", None)
         st.rerun()
     if not report_rows:
-        st.info("No saved MetLAB reports are currently visible to this login. The edit control is active and will list reports as soon as records are available to your tenant/permissions.")
+        st.info("No saved Bend Test reports are currently visible. Create an approved Bend Test layout first, then create the report here." if bend_mode else "No saved MetLAB reports are currently visible to this login. The edit control is active and will list reports as soon as records are available to your tenant/permissions.")
     if not perms["can_edit"]:
         st.caption("Your user does not currently have MetLAB Edit permission. Administrator role is not required; module Edit permission is required.")
     existing_id = str(st.session_state.get("edit_metlab_id") or "")
@@ -689,7 +738,7 @@ def render_entry() -> None:
     standalone_existing = str((existing_record or {}).get("inspection_scope") or "") in STANDALONE_STAGES
     report_mode = st.radio("Report Linkage", ["QCMS Linked Flow", "Standalone Stage Report"], index=1 if standalone_existing else 0, horizontal=True, disabled=bool(existing_record), help="Standalone Stage Report does not require RMTC, Material Inward or Production linkage.")
     if report_mode == "Standalone Stage Report":
-        _render_standalone_metlab(service, perms, parts, parties, processes, stages, employee_map, existing_record)
+        _render_standalone_metlab(service, perms, parts, parties, processes, stages, employee_map, existing_record, required_inspection_method)
         return
     pending_queue = [row for row in service.inspection_queue() if row.get("metlab_pending")]
     with stage_section("A", 'METLAB PENDING LIST', key="metlab_report_render_entry_a"):
@@ -721,7 +770,7 @@ def render_entry() -> None:
         snapshot = service.rmtc_material_snapshot(inward)
         rmtc = snapshot.get("rmtc") or {}; grade = snapshot.get("grade") or {}; supplier = snapshot.get("supplier") or {}; steel_mill = snapshot.get("steel_mill") or {}
 
-        all_plans = service.raw_material_metlab_plans(part_id, approved_only=True)
+        all_plans = _filter_plans_by_method(service, service.raw_material_metlab_plans(part_id, approved_only=True), required_inspection_method)
         saved_plan_id = str((existing or {}).get("layout_plan_id") or "")
         if saved_plan_id and all(str(row.get("id")) != saved_plan_id for row in all_plans):
             historic_plan = service.get_plan(saved_plan_id) or {}
@@ -739,7 +788,12 @@ def render_entry() -> None:
                 st.caption("Required source: approved Inspection Layout Master. Part Master Final Metallurgical Requirements are excluded from Raw Material Inward inspection.")
             plan = next((row for row in all_plans if str(row.get("id")) == plan_id), {})
         else:
-            st.error("No approved Raw Material Inward MetLAB layout is available in Layout Master for this Part. Create and approve a MetLAB layout before entering the Raw Material Inward report. Part Master Final Metallurgical Requirements cannot be used for this stage.")
+            if bend_mode:
+                st.error("No APPROVED Bend Test layout is available in Layout Master for this Part. Create/approve a METLAB layout with Inspection Method / Sub Category = Bend Test first.")
+                if (st.session_state.get("_qsms_pages") or {}).get("inspection-layout-entry"):
+                    st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Bend Test Layout", icon=":material/add:", width="stretch")
+            else:
+                st.error("No approved Raw Material Inward MetLAB layout is available in Layout Master for this Part. Create and approve a MetLAB layout before entering the Raw Material Inward report. Part Master Final Metallurgical Requirements cannot be used for this stage.")
             return
 
         inspection_method = service.plan_inspection_method(plan_id)
@@ -942,17 +996,31 @@ def render_entry() -> None:
                 st.session_state.pop("edit_metlab_id", None); st.rerun()
 
 
-def render_records() -> None:
-    subpage_navigation(("inspection-home", "Inspections", ":material/biotech:"), ("metlab-entry", "New / Edit Report", ":material/edit_note:"))
-    page_header("MetLAB Report Records", context="Select before action")
+
+def render_entry() -> None:
+    _render_entry()
+
+
+def render_bend_test_entry() -> None:
+    _render_entry(BEND_TEST)
+
+
+def _render_records(required_inspection_method: str | None = None) -> None:
+    bend_mode = str(required_inspection_method or "").upper() == BEND_TEST
+    entry_route = "bend-test-entry" if bend_mode else "metlab-entry"
+    subpage_navigation(("inspection-home", "Inspections", ":material/biotech:"), (entry_route, "New / Edit Bend Test" if bend_mode else "New / Edit Report", ":material/edit_note:"))
+    page_header("Bend Test Report Records" if bend_mode else "MetLAB Report Records", context="Only controlled Bend Test reports" if bend_mode else "Select before action")
     service = InspectionService(); perms = current_permissions("METLAB_REPORT"); parts, parties, _, _, _ = _maps(service); grades = {str(row["id"]): row for row in service.material_grades()}
-    rows = service.metlab_reports(); search = st.text_input("Search Report, Part, Heat or Inward")
-    filtered = [row for row in rows if not search or search.casefold() in " ".join(str(row.get(key) or "") for key in ("report_number", "heat_number", "heat_code", "batch_number", "supplier_reference_number", "sample_reference", "remarks", "layout_name_snapshot")).casefold()]
+    rows = service.metlab_reports()
+    if required_inspection_method:
+        rows = [row for row in rows if _record_inspection_method(service, row) == str(required_inspection_method).upper()]
+    search = st.text_input("Search Bend Test Report, Part, Heat or Batch" if bend_mode else "Search Report, Part, Heat or Inward", key="bend_test_records_search" if bend_mode else "metlab_records_search")
+    filtered = [row for row in rows if not search or search.casefold() in " ".join(str(row.get(key) or "") for key in ("report_number", "heat_number", "heat_code", "batch_number", "vendor_batch_number_snapshot", "supplier_reference_number", "sample_reference", "remarks", "layout_name_snapshot")).casefold()]
     if filtered:
         labels = {str(row["id"]): f"{row.get('report_number')} · Heat {row.get('heat_number')} · {row.get('layout_name_snapshot') or 'Layout'} · {disposition_label(row.get('disposition'))}" for row in filtered}
-        selected = st.selectbox("Select MetLAB Report", list(labels), format_func=lambda value: labels[value]); selected_row = next(row for row in filtered if str(row["id"]) == selected); st.session_state["edit_metlab_id"] = selected
+        selected = st.selectbox("Select Bend Test Report" if bend_mode else "Select MetLAB Report", list(labels), format_func=lambda value: labels[value]); selected_row = next(row for row in filtered if str(row["id"]) == selected); st.session_state["edit_metlab_id"] = selected
         c1, c2, c3, c4 = st.columns(4, gap="small")
-        with c1: st.page_link(st.session_state["_qsms_pages"]["metlab-entry"], label="Open / Edit Selected MetLAB Report", icon=":material/edit:", width="stretch")
+        with c1: st.page_link(st.session_state["_qsms_pages"][entry_route], label="Open / Edit Selected Bend Test Report" if bend_mode else "Open / Edit Selected MetLAB Report", icon=":material/edit:", width="stretch")
         try:
             selected_payload = service.metlab_report_payload(selected)
             with c2:
@@ -969,6 +1037,14 @@ def render_records() -> None:
         with c4:
             if password_delete_panel(repo=service.repo, table="lab_tests", rows=[selected_row], labeler=lambda row: row.get("report_number"), key=f"delete_metlab_{selected}", can_delete=perms["can_archive"], title="Delete Selected MetLAB Report"):
                 st.rerun()
-    section_bar("METLAB REGISTER")
-    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("test_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "FSI Part Number": (parts.get(str(row.get("part_id"))) or {}).get("fsi_part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "OSP Vendor": (parties.get(str(row.get("osp_vendor_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Microstructure Photos": sum(1 for slot in range(1,5) if row.get(f"microstructure_image_{slot}_path")), "Conclusion": row.get("remarks"), "Result": row.get("overall_result"), "Final Decision": row.get("disposition"), "Decision Reason": row.get("disposition_reason"), "Status": row.get("status")} for row in filtered])
+    section_bar("BEND TEST REGISTER" if bend_mode else "METLAB REGISTER")
+    display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("test_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "FSI Part Number": (parts.get(str(row.get("part_id"))) or {}).get("fsi_part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "OSP Vendor": (parties.get(str(row.get("osp_vendor_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Inspection Method": "Bend Test" if _record_inspection_method(service, row) == BEND_TEST else "General MetLAB", "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Microstructure Photos": sum(1 for slot in range(1,5) if row.get(f"microstructure_image_{slot}_path")), "Conclusion": row.get("remarks"), "Result": row.get("overall_result"), "Final Decision": row.get("disposition"), "Decision Reason": row.get("disposition_reason"), "Status": row.get("status")} for row in filtered])
     portal_table(style_status_dataframe(display), hide_index=True, width="stretch", height=520)
+
+
+def render_records() -> None:
+    _render_records()
+
+
+def render_bend_test_records() -> None:
+    _render_records(BEND_TEST)

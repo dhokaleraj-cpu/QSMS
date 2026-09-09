@@ -147,9 +147,10 @@ def render_home() -> None:
         ("inward-report", "Material Inward", "Material inward, supplier, heat, RMTC and quantity records.", ":material/input:"),
         ("dimensional-report", "Dimensional Inspection", "Dimensional results, conclusion, final decision and controlled exports.", ":material/straighten:"),
         ("metlab-report", "MetLAB", "Metallurgical results, conclusion, final decision and controlled exports.", ":material/science:"),
+        ("bend-test-report", "Bend Test", "Dedicated Bend Test register, report entry and controlled PDF/Excel exports.", ":material/architecture:"),
         ("complaints-report", "Complaint Reports", "Customer/supplier complaints, analysis, RCA and CAPA records.", ":material/support_agent:"),
     )
-    cols = st.columns(4, gap="small")
+    cols = st.columns(5, gap="small")
     for col, (path, title, desc, icon) in zip(cols, quality):
         with col:
             with st.container(border=True, key=f"report_card_{path}"):

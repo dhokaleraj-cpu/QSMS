@@ -107,14 +107,16 @@ class InspectionService:
             and str(row.get("requirement_scope") or "GENERAL").upper() != "FINAL_METALLURGICAL"
         ]
 
-    def auto_standalone_plan(self, layout_type: str, part_id: str, scope: str, process_id: str | None = None) -> dict | None:
-        """Select the controlled approved layout for non-RM standalone stages.
-
-        Raw Material Inward MetLAB is deliberately selected manually from Layout Master in the UI.
-        """
-        candidates = self.plans(layout_type.upper(), part_id, approved_only=True)
+    def standalone_plans(self, layout_type: str, part_id: str, scope: str, process_id: str | None = None) -> list[dict]:
+        """Return controlled approved layouts eligible for a standalone stage."""
+        layout_type = layout_type.upper()
+        candidates = self.plans(layout_type, part_id, approved_only=True)
         if scope == "OSP_STAGE":
-            candidates = [row for row in candidates if str(row.get("process_id") or "") == str(process_id or "") and str(row.get("inward_type") or "") == "OSP_PROCESS"]
+            candidates = [
+                row for row in candidates
+                if str(row.get("process_id") or "") == str(process_id or "")
+                and str(row.get("inward_type") or "") == "OSP_PROCESS"
+            ]
         elif scope == "FINAL_DISPATCH_STAGE" and layout_type.upper() == "METLAB":
             final_rows = [row for row in candidates if str(row.get("requirement_scope") or "") == "FINAL_METALLURGICAL"]
             if final_rows:
@@ -122,15 +124,24 @@ class InspectionService:
             else:
                 candidates = [row for row in candidates if str(row.get("inward_type") or "MATERIAL_INWARD") == "MATERIAL_INWARD"]
         else:
-            if layout_type.upper() == "METLAB":
+            if layout_type == "METLAB":
                 general = self.raw_material_metlab_plans(part_id, approved_only=True)
             else:
-                general = [row for row in candidates if str(row.get("inward_type") or "MATERIAL_INWARD") == "MATERIAL_INWARD" and str(row.get("requirement_scope") or "GENERAL") != "FINAL_METALLURGICAL"]
+                general = [
+                    row for row in candidates
+                    if str(row.get("inward_type") or "MATERIAL_INWARD") == "MATERIAL_INWARD"
+                    and str(row.get("requirement_scope") or "GENERAL") != "FINAL_METALLURGICAL"
+                ]
             if general:
                 candidates = general
         def sort_key(row: dict) -> tuple[str, str, str]:
             return (str(row.get("effective_date") or ""), str(row.get("revision") or ""), str(row.get("updated_at") or ""))
-        return sorted(candidates, key=sort_key, reverse=True)[0] if candidates else None
+        return sorted(candidates, key=sort_key, reverse=True)
+
+    def auto_standalone_plan(self, layout_type: str, part_id: str, scope: str, process_id: str | None = None) -> dict | None:
+        """Select the highest-ranked controlled approved layout for a standalone stage."""
+        candidates = self.standalone_plans(layout_type, part_id, scope, process_id)
+        return candidates[0] if candidates else None
 
     def employees(self, authority: str | None = None) -> list[dict]:
         rows = self.repo.select("employees", eq={"status": "ACTIVE"}, order_by="first_name", limit=3000)

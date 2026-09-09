@@ -1,6 +1,6 @@
 {
-  "version": "4.14.29",
-  "build": "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS",
+  "version": "4.14.30",
+  "build": "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -179,23 +179,28 @@
     "metlab_case_depth_explicit_checkbox_locations",
     "metlab_reusable_reference_documents",
     "quality_conclusion_remark_highlight",
-    "osp_selector_batch_identity_expanded"
+    "osp_selector_batch_identity_expanded",
+    "rmtc_approved_supplier_deduplicated",
+    "rmtc_supplier_raw_detail_two_step_selector",
+    "bend_test_dedicated_entry_page",
+    "bend_test_dedicated_records_and_reports",
+    "global_search_permission_aware",
+    "global_search_relationship_expansion",
+    "global_search_persistent_shell_launcher"
   ],
   "source": "controlled_release",
-  "release_name": "QCMS v4.14.29 RMTC / Bend Test / Chemical Grid / Case Depth / Permissions",
+  "release_name": "QCMS v4.14.30 RMTC Supplier Dedup / Bend Test Discovery / Global Search",
   "database_schema_required": "4.14.28",
   "database_migration_required": false,
   "supabase_release_contract": "QCMS v4.14.28 live migration applied and verified during controlled release packaging",
   "deployment_notes": [
-    "v4.14.29 is a source-only controlled update. It uses the already-applied v4.14.28 database contract and requires no manual Supabase SQL or Supabase CLI login.",
-    "RMTC Approved Raw Material Source now combines Part Master Approved Sources with the ACTIVE Raw Material Detail required for section, route and weight genealogy; incomplete approved sources remain visible with a setup warning instead of silently disappearing.",
-    "Users & Access now exposes section-wise View/Create/Edit rights for every QCMS module instead of only a partial section catalog.",
-    "MetLAB Layout Master adds Bend Test as an Inspection Method / Sub Category with controlled starter parameters based on the supplied Bend Test report.",
-    "Chemical analysis entry and PDF use a horizontal grid ordered C, Mn, Si, S, P, Cr, Ni, Mo, V, Al, Cu, Nb, Ti, configured extras and Al/N2 Ratio last when configured.",
-    "Case Depth Traverse can be explicitly ticked per MetLAB characteristic and multiple controlled Traverse Locations can be configured.",
-    "MetLAB Specification Reference and Reference Documents / Statements use reusable controlled-value lists, and conclusion remarks are highlighted separately in report output.",
-    "OSP selectors show FSI Batch Number, Vendor Batch Number and source batch/lot identity where applicable.",
-    "All v4.14.28 OSP genealogy, two-day XLSX digests, MetLAB boundary, PO confirmation and existing data remain preserved."
+    "v4.14.30 is a source-only controlled update using the already-applied v4.14.28 database contract; no manual Supabase SQL is required.",
+    "RMTC Approved Raw Material Source now shows exactly one row per approved Supplier. When that Supplier has multiple active Part Master Raw Material Detail rows, the exact section/route is selected once in a separate Raw Material Detail field so genealogy is preserved without duplicate Supplier rows.",
+    "Bend Test now has dedicated visible navigation in Inspection workspace, Inspections submenu, Reports and Records, while continuing to use controlled METLAB layouts with Inspection Method / Sub Category = Bend Test.",
+    "A permission-aware Global Search is available from the persistent app search bar and a dedicated Search module. It searches major masters and transactions for Part, FSI Part, Heat, RMTC, Batch, Supplier/Customer, PO, report, complaint and related identifiers.",
+    "Global Search expands Part and Party matches through controlled foreign-key relationships so linked RMTC, Inward, OSP, Supply Chain and quality records can be surfaced without duplicating human-readable master data into transactions.",
+    "Search results respect existing module View permissions plus tenant/RLS controls and open records through their controlled source modules.",
+    "All v4.14.29 Bend Test, horizontal chemical analysis, case-depth traverse, reusable reference, conclusion formatting, permission and OSP genealogy functions remain preserved."
   ],
   "item_wise_po_technical_data": true,
   "po_supplier_technical_grid": true,
@@ -210,16 +215,17 @@
   "calibration_validation_module": true,
   "standard_room_inspection_module": true,
   "npd_email_stage_cards": true,
-  "registered_pages": 83,
-  "full_pytest_passed": 482,
+  "registered_pages": 87,
+  "full_pytest_passed": 488,
   "live_supabase_schema_applied": true,
   "live_overdue_notifier_version": 4,
   "live_overdue_notifier_status": "ACTIVE",
   "source_only_updater": true,
   "release_notes": [
-    "v4.14.29 fixes the Part Master Approved Source \u2192 RMTC source selector gap and completes the section-permission editor across all modules.",
-    "Adds Bend Test, horizontal chemical analysis, explicit multi-location Case Depth Traverse control, reusable MetLAB references and highlighted conclusion remarks.",
-    "No database migration is required for v4.14.29; existing layout_metadata, report results JSON and master_value_catalog are reused."
+    "v4.14.30 removes duplicate Supplier rows from the RMTC Approved Raw Material Source selector while preserving multiple supplier-specific RM detail/route choices in a second controlled field.",
+    "Makes Bend Test directly discoverable as a dedicated report entry, records register and report card.",
+    "Adds permission-aware Global Search across QCMS with a persistent header launcher and relationship-aware linked-record results.",
+    "No database migration is required; production/master/transaction data and the v4.14.28 database contract remain unchanged."
   ],
   "final_metlab_part_master_only": true,
   "raw_material_inward_metlab_layout_master_only": true,
@@ -229,5 +235,6 @@
   "live_supply_digest_notifier_status": "ACTIVE",
   "live_supply_digest_cron": "qcms-supply-digest-notifier-hourly",
   "schema_change_for_v41429": false,
-  "previous_controlled_release": "4.14.28"
+  "previous_controlled_release": "4.14.29",
+  "schema_change_for_v41430": false
 }

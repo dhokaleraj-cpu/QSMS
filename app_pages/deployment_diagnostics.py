@@ -91,6 +91,11 @@ def render() -> None:
         ("Supplier notification addresses", "core/master_definitions.py", "notification_emails"),
         ("PO Ship-To master selector", "app_pages/supply_chain.py", "SHIP-TO ADDRESS · MASTER CONTROLLED"),
         ("PO login employee requisitioner", "app_pages/supply_chain.py", "Requisitioner (Logged-in Employee)"),
+        ("RMTC supplier de-duplication", "core/rmtc_service.py", "one RMTC-approved source option per Supplier"),
+        ("RMTC Raw Material Detail selector", "app_pages/rmtc_pages.py", "Raw Material Detail"),
+        ("Dedicated Bend Test entry", "app_pages/metlab_report.py", "render_bend_test_entry"),
+        ("Global Search", "app_pages/global_search.py", "search_everywhere"),
+        ("Persistent Global Search launcher", "streamlit_app.py", "qcms_shell_global_search_form"),
     ]
     with stage_section("B", "REQUESTED FEATURE PROOF", key="deployment_diag_features"):
         data = []
@@ -112,6 +117,8 @@ def render() -> None:
                 "app_pages/dimensional_report.py",
                 "app_pages/supply_chain.py",
                 "app_pages/part_master.py",
+                "app_pages/rmtc_pages.py",
+                "app_pages/global_search.py",
             )
         ]
         portal_table(pd.DataFrame(hash_rows), hide_index=True, width="stretch", height=300)
