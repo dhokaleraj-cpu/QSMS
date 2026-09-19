@@ -29,13 +29,18 @@ def _payload(number: str):
 
 
 def test_release_identity_source_only():
-    build = "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK"
-    assert text("VERSION").strip() == "4.14.33"
+    version = text("VERSION").strip()
+    builds = {
+        "4.14.33": ("41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK", "4.14.32"),
+        "4.14.34": ("41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD", "4.14.33"),
+    }
+    assert version in builds
+    build, previous = builds[version]
     assert build in text("streamlit_app.py")
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] == "4.14.33"
+    assert manifest["version"] == version
     assert manifest["build"] == build
-    assert manifest["previous_controlled_release"] == "4.14.32"
+    assert manifest["previous_controlled_release"] == previous
     assert manifest["database_schema_required"] == "4.14.28"
     assert manifest["database_migration_required"] is False
 
@@ -73,7 +78,7 @@ def test_batch_print_and_email_ui_contract():
 
 def test_android_helper_bootstraps_sdk_when_missing():
     helper = text("mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command")
-    assert "QCMS Mobile v0.1.1" in helper
+    assert ("QCMS Mobile v0.1.1" in helper or "QCMS Mobile v0.1.2" in helper)
     assert "ANDROID SDK / CLI BOOTSTRAP" in helper
     assert "https://dl.google.com/android/cli/latest/" in helper
     assert '"platforms;android-35"' in helper

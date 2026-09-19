@@ -216,11 +216,15 @@ required = [
     "RELEASE_NOTES_v4.14.33.md",
     "tests/test_v41433_po_portrait_batch_android_sdk.py",
     "QCMS_NEW_CHAT_HANDOVER_v4.14.33.md",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.34.md",
+    "RELEASE_NOTES_v4.14.34.md",
+    "tests/test_v41434_individual_po_exports.py",
+    ".github/workflows/qcms-android-test-apk.yml",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.33 - Portrait PO Terms / Batch Print & Email / Android SDK Bootstrap",
+    "phase": "QCMS 4.14.34 - Individual PO PDFs / ZIP / Android APK Build Workflow",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

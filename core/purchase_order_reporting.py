@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from io import BytesIO
+import re
+import unicodedata
+from zipfile import ZIP_DEFLATED, ZipFile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -643,6 +646,90 @@ def _compact_terms_portrait(terms_path: Path, *, po_number: str, order_date: str
     packed = out.tobytes(garbage=3, deflate=True)
     out.close(); src.close()
     return list(PdfReader(BytesIO(packed)).pages)
+
+
+def _po_pdf_filename(header: Mapping[str, Any], position: int, used_names: set[str]) -> str:
+    """Make a cross-platform, collision-safe basename; never a path inside the ZIP."""
+    number = str(header.get("po_number") or header.get("id") or f"PO_{position:03d}").strip()
+    number = unicodedata.normalize("NFKC", number)
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", number).strip(" ._")[:100] or f"PO_{position:03d}"
+    if stem.lower().endswith(".pdf"):
+        stem = stem[:-4] or f"PO_{position:03d}"
+    # Reserved Windows device names are invalid even with an extension.
+    if stem.split(".", 1)[0].upper() in {"CON", "PRN", "AUX", "NUL", *[f"COM{i}" for i in range(1, 10)], *[f"LPT{i}" for i in range(1, 10)]}:
+        stem = "PO_" + stem
+    candidate = f"{stem}.pdf"
+    suffix = 2
+    while candidate.casefold() in used_names:
+        candidate = f"{stem}__{suffix}.pdf"
+        suffix += 1
+    used_names.add(candidate.casefold())
+    return candidate
+
+
+def purchase_order_pdf_files(
+    purchase_orders: Sequence[tuple[Mapping[str, Any], Sequence[Mapping[str, Any]]]],
+    *, copies_per_order: int = 1, terms_path: str | Path | None = None,
+) -> list[tuple[str, bytes]]:
+    """Generate one complete PDF per distinct PO, with no inter-order merging.
+
+    Multiple print copies repeat pages *inside that PO's file only*. Duplicate
+    selections of the same saved PO id are ignored, but different PO ids that
+    share a display number still receive separate, collision-safe filenames.
+    A missing/invalid document stops generation; never return an incomplete ZIP
+    presented as a successful full batch. This function does not mutate records.
+    """
+    if isinstance(copies_per_order, bool) or not isinstance(copies_per_order, int) or not 1 <= copies_per_order <= 5:
+        raise ValueError("Copies per PO must be a whole number between 1 and 5.")
+    if not purchase_orders:
+        raise ValueError("Select at least one Purchase Order.")
+    files: list[tuple[str, bytes]] = []
+    used_names: set[str] = set()
+    seen_ids: set[str] = set()
+    for position, (header, items) in enumerate(purchase_orders, 1):
+        if not isinstance(header, Mapping) or not header:
+            raise ValueError(f"Selected PO {position}: the Purchase Order no longer exists or is not accessible.")
+        po_id = str(header.get("id") or "").strip()
+        if po_id and po_id in seen_ids:
+            continue
+        po_number = str(header.get("po_number") or po_id or position)
+        if not items:
+            raise ValueError(f"{po_number}: no printable Purchase Order items were found.")
+        pdf = purchase_order_pdf_bytes(header, list(items), terms_path=terms_path)
+        if copies_per_order > 1:
+            # Never pass more than this one PO to a combined document writer.
+            if PdfReader is None or PdfWriter is None:
+                raise RuntimeError("pypdf is required to generate print copies.")
+            reader = PdfReader(BytesIO(pdf))
+            writer = PdfWriter()
+            for _ in range(copies_per_order):
+                for page in reader.pages:
+                    writer.add_page(page)
+            out = BytesIO()
+            writer.write(out)
+            pdf = out.getvalue()
+        files.append((_po_pdf_filename(header, position, used_names), pdf))
+        if po_id:
+            seen_ids.add(po_id)
+    return files
+
+
+def purchase_order_files_zip_bytes(files: Sequence[tuple[str, bytes]]) -> bytes:
+    """Package already generated per-PO PDFs without changing their contents."""
+    if not files:
+        raise ValueError("No Purchase Order PDFs were generated.")
+    buffer = BytesIO()
+    names: set[str] = set()
+    with ZipFile(buffer, "w", compression=ZIP_DEFLATED, compresslevel=6) as archive:
+        for name, pdf in files:
+            if (not name or "/" in name or "\\" in name or name.startswith(".")
+                    or not name.lower().endswith(".pdf") or name.casefold() in names):
+                raise ValueError("Purchase Order PDF filenames must be safe, unique basenames.")
+            if not isinstance(pdf, bytes) or not pdf.startswith(b"%PDF-"):
+                raise ValueError(f"{name}: generated content is not a PDF.")
+            names.add(name.casefold())
+            archive.writestr(name, pdf)
+    return buffer.getvalue()
 
 
 def batch_purchase_order_pdf_bytes(

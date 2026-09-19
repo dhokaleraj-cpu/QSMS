@@ -10,25 +10,27 @@ def text(rel: str) -> str:
 
 def test_v41430_release_identity_source_only_contract():
     version = text("VERSION").strip()
-    assert version in {"4.14.30", "4.14.31", "4.14.32", "4.14.33"}
+    assert version in {"4.14.30", "4.14.31", "4.14.32", "4.14.33", "4.14.34"}
     app = text("streamlit_app.py")
     assert any(marker in app for marker in (
         "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH",
         "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF",
         "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK",
+        "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD",
     ))
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.30", "4.14.31", "4.14.32", "4.14.33"}
+    assert manifest["version"] in {"4.14.30", "4.14.31", "4.14.32", "4.14.33", "4.14.34"}
     assert manifest["build"] in {
         "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH",
         "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF",
         "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST",
         "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK",
+        "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD",
     }
     assert manifest["database_schema_required"] == "4.14.28"
     assert manifest["database_migration_required"] is False
     assert manifest["source_only_updater"] is True
-    assert manifest["previous_controlled_release"] == ("4.14.32" if version == "4.14.33" else ("4.14.31" if version == "4.14.32" else ("4.14.30" if version == "4.14.31" else "4.14.29")))
+    assert manifest["previous_controlled_release"] == {"4.14.30": "4.14.29", "4.14.31": "4.14.30", "4.14.32": "4.14.31", "4.14.33": "4.14.32", "4.14.34": "4.14.33"}[manifest["version"]]
 
 
 def test_rmtc_approved_source_returns_one_option_per_supplier():

@@ -1,0 +1,81 @@
+name: QCMS Android Test APK
+
+# Builds only the mobile source. Does not deploy QCMS, access Supabase, or send emails.
+# The first deployment of v4.14.34 triggers this automatically after the Git push.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'mobile/android_qcms/**'
+      - '.github/workflows/qcms-android-test-apk.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qcms-android-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Setup Gradle 8.9
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+        with:
+          gradle-version: '8.9'
+      - name: Reuse test signing key when available
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: qcms-android-test-key-${{ github.repository_id }}-v1
+      - name: Install Android API 35 tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          MANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$MANAGER" ]; then
+            MANAGER="$(find "$SDK/cmdline-tools" -name sdkmanager -type f | head -1)"
+          fi
+          [ -x "$MANAGER" ] || { echo 'Android SDK manager is missing from the build runner.'; exit 1; }
+          set +o pipefail
+          yes | "$MANAGER" --sdk_root="$SDK" --licenses >/dev/null
+          RC=${PIPESTATUS[1]}
+          set -o pipefail
+          [ "$RC" -eq 0 ] || exit "$RC"
+          "$MANAGER" --sdk_root="$SDK" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+          printf 'sdk.dir=%s\n' "$SDK" > mobile/android_qcms/local.properties
+          printf 'QCMS_ANDROID_SDK=%s\n' "$SDK" >> "$GITHUB_ENV"
+      - name: Compile APK and run Android lint
+        working-directory: mobile/android_qcms
+        run: gradle --no-daemon :app:assembleDebug :app:lintDebug
+      - name: Verify signature, alignment and APK contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p apk-artifacts
+          APK=apk-artifacts/QCMS_Mobile_v0.1.2_TEST.apk
+          cp mobile/android_qcms/app/build/outputs/apk/debug/app-debug.apk "$APK"
+          BT="$QCMS_ANDROID_SDK/build-tools/35.0.0"
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-artifacts/SIGNATURE_VERIFICATION.txt
+          "$BT/zipalign" -c -P 16 -v 4 "$APK" > apk-artifacts/ALIGNMENT_VERIFICATION.txt
+          "$BT/aapt" dump badging "$APK" > apk-artifacts/APK_PACKAGE_INFO.txt
+          grep -q "com.fourstar.qcms.test" apk-artifacts/APK_PACKAGE_INFO.txt
+          grep -q "versionName='0.1.2'" apk-artifacts/APK_PACKAGE_INFO.txt
+          (cd apk-artifacts && sha256sum QCMS_Mobile_v0.1.2_TEST.apk > SHA256SUMS.txt)
+          cp mobile/android_qcms/INSTALL_APK_ON_SAMSUNG.md apk-artifacts/INSTALL_README.md
+          printf '## QCMS APK built and verified\nDownload **QCMS-Mobile-v0.1.2-TEST-APK** below, extract the ZIP and install the .apk on your Samsung. This is a test-signed online WebView app, not a Play Store release.\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Downloadable APK package
+        uses: actions/upload-artifact@v4
+        with:
+          name: QCMS-Mobile-v0.1.2-TEST-APK
+          path: apk-artifacts/
+          if-no-files-found: error
+          retention-days: 30

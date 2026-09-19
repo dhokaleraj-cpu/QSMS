@@ -15,15 +15,18 @@ def text(rel: str) -> str:
 
 def test_v41432_release_identity_and_source_only_schema():
     version = text("VERSION").strip()
-    assert version in {"4.14.32", "4.14.33"}
+    assert version in {"4.14.32", "4.14.33", "4.14.34"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert manifest["version"] == version
     if version == "4.14.32":
         assert manifest["build"] == "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST"
         assert manifest["previous_controlled_release"] == "4.14.31"
-    else:
+    elif version == "4.14.33":
         assert manifest["build"] == "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK"
         assert manifest["previous_controlled_release"] == "4.14.32"
+    else:
+        assert manifest["build"] == "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD"
+        assert manifest["previous_controlled_release"] == "4.14.33"
     assert manifest["database_schema_required"] == "4.14.28"
     assert manifest["database_migration_required"] is False
 
@@ -107,7 +110,7 @@ def test_android_test_shell_and_samsung_install_helper_are_packaged():
     installer = (mobile / "BUILD_AND_INSTALL_SAMSUNG.command").read_text(encoding="utf-8")
     assert "android.permission.INTERNET" in manifest
     assert 'android:usesCleartextTraffic="false"' in manifest
-    assert "https://" in activity and ("QCMSMobile/0.1.0" in activity or "QCMSMobile/0.1.1" in activity)
+    assert "https://" in activity and ("QCMSMobile/0.1.0" in activity or "QCMSMobile/0.1.1" in activity or "QCMSMobile/0.1.2" in activity)
     assert "service-role" not in activity.lower()
     assert "targetSdk 35" in build and "minSdk 26" in build
     assert "adb" in installer and "install -r" in installer and "assembleDebug" in installer

@@ -19,7 +19,7 @@ def v41418_sql() -> str:
 
 def test_version_build_manifest_and_release_docs_are_v41418():
     # v4.14.18 remains a preserved non-regression baseline even on later controlled releases.
-    assert text("VERSION").strip() in {"4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33"}
+    assert text("VERSION").strip() in {"4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33", '4.14.34'}
     app = text("streamlit_app.py")
     assert any(marker in app for marker in (
         "41418-PERMISSIONS-AUDIT-EMPLOYEE-OSP-RMTC-METLAB-RLS-PDF",
@@ -33,7 +33,7 @@ def test_version_build_manifest_and_release_docs_are_v41418():
         "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS", "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH", "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF",
     ))
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33"}
+    assert manifest["version"] in {"4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33", '4.14.34'}
     assert manifest["build"] in {
         "41418-PERMISSIONS-AUDIT-EMPLOYEE-OSP-RMTC-METLAB-RLS-PDF",
         "41419-PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES",
@@ -49,7 +49,7 @@ def test_version_build_manifest_and_release_docs_are_v41418():
         "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS", "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH", "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF",
         "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST",
         "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK",
-    }
+     '41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD'}
     assert (ROOT / "docs/RELEASE_4_14_18.md").exists()
     assert (ROOT / "QCMS_NEW_CHAT_HANDOVER_v4.14.18.md").exists()
 

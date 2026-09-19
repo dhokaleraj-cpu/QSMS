@@ -8,10 +8,10 @@ def text(path: str) -> str:
 
 
 def test_release_markers_are_v41427():
-    assert text("VERSION").strip() in {"4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33"}
+    assert text("VERSION").strip() in {"4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33", '4.14.34'}
     app = text("streamlit_app.py")
-    assert any(x in app for x in ("41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL", "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS", "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH", "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF", "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST", "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK"))
-    assert any(x in text("DEPLOYMENT_MANIFEST.json") for x in ('"version": "4.14.27"', '"version": "4.14.28"', '"version": "4.14.29"', '"version": "4.14.30"', '"version": "4.14.31"', '"version": "4.14.32"', '"version": "4.14.33"'))
+    assert any(x in app for x in ("41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL", "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS", "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH", "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF", "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST", "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK", '41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD'))
+    assert any(x in text("DEPLOYMENT_MANIFEST.json") for x in ('"version": "4.14.27"', '"version": "4.14.28"', '"version": "4.14.29"', '"version": "4.14.30"', '"version": "4.14.31"', '"version": "4.14.32"', '"version": "4.14.33"', '"version": "4.14.34"'))
 
 
 def test_part_master_metallurgy_is_final_dispatch_only():

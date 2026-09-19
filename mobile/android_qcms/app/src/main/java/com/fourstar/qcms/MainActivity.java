@@ -62,11 +62,28 @@ public class MainActivity extends Activity {
         return view;
     }
 
+    private void applySafeInsets(View root) {
+        final int left = root.getPaddingLeft(), top = root.getPaddingTop();
+        final int right = root.getPaddingRight(), bottom = root.getPaddingBottom();
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets safe = insets.getInsets(
+                    android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
+                view.setPadding(left + safe.left, top + safe.top, right + safe.right, bottom + safe.bottom);
+            } else {
+                view.setPadding(left + insets.getSystemWindowInsetLeft(), top + insets.getSystemWindowInsetTop(),
+                    right + insets.getSystemWindowInsetRight(), bottom + insets.getSystemWindowInsetBottom());
+            }
+            return insets;
+        });
+    }
+
     private void showSetupScreen() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(24), dp(36), dp(24), dp(24));
         root.setBackgroundColor(Color.WHITE);
+        applySafeInsets(root);
 
         TextView title = label("QCMS Mobile", 28, true);
         title.setTextColor(Color.rgb(122, 23, 52));
@@ -107,7 +124,7 @@ public class MainActivity extends Activity {
         if (value.isEmpty()) return null;
         if (!value.startsWith("https://")) return null;
         Uri uri = Uri.parse(value);
-        if (uri.getHost() == null || uri.getHost().trim().isEmpty()) return null;
+        if (uri.getHost() == null || uri.getHost().trim().isEmpty() || uri.getUserInfo() != null) return null;
         return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 
@@ -115,6 +132,7 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.WHITE);
+        applySafeInsets(root);
 
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
@@ -158,7 +176,7 @@ public class MainActivity extends Activity {
         ws.setAllowFileAccess(false);
         ws.setAllowContentAccess(true);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.1.1");
+        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.1.2");
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -190,6 +208,7 @@ public class MainActivity extends Activity {
                 try {
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST);
                 } catch (Exception ex) {
+                    fileCallback.onReceiveValue(null);
                     fileCallback = null;
                     Toast.makeText(MainActivity.this, "No file picker is available.", Toast.LENGTH_LONG).show();
                     return false;
@@ -214,7 +233,16 @@ public class MainActivity extends Activity {
                 manager.enqueue(request);
                 Toast.makeText(MainActivity.this, "Downloading " + fileName, Toast.LENGTH_SHORT).show();
             } catch (Exception ex) {
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)));
+                // Browser downloads use that browser's own login session. Never launch
+                // untrusted intent:/file: URLs as a fallback for blob/data downloads.
+                new AlertDialog.Builder(MainActivity.this)
+                    .setTitle("Open download in browser")
+                    .setMessage("This download requires the phone browser. Open QCMS there, sign in if required, and download the PDF or ZIP again.")
+                    .setPositiveButton("Open QCMS", (dialog, which) -> {
+                        try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); }
+                        catch (Exception ignored) { Toast.makeText(MainActivity.this, "No browser is available.", Toast.LENGTH_LONG).show(); }
+                    })
+                    .setNegativeButton("Cancel", null).show();
             }
         });
 
@@ -223,14 +251,24 @@ public class MainActivity extends Activity {
         refresh.setOnClickListener(v -> webView.reload());
         settings.setOnClickListener(v -> new AlertDialog.Builder(this)
             .setTitle("QCMS Mobile")
-            .setItems(new String[]{"Change QCMS URL", "Open current URL in Chrome", "Android WebView settings"}, (dialog, which) -> {
+            .setItems(new String[]{"Change QCMS URL", "Open QCMS in browser", "Android WebView settings"}, (dialog, which) -> {
                 if (which == 0) {
                     prefs.edit().remove(PREF_URL).apply();
                     showSetupScreen();
                 } else if (which == 1) {
                     startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(prefs.getString(PREF_URL, url))));
                 } else {
-                    startActivity(new Intent(Settings.ACTION_WEBVIEW_SETTINGS));
+                    try {
+                        android.content.pm.PackageInfo provider = WebView.getCurrentWebViewPackage();
+                        if (provider != null) {
+                            startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.parse("package:" + provider.packageName)));
+                        } else {
+                            startActivity(new Intent(Settings.ACTION_SETTINGS));
+                        }
+                    } catch (Exception ex) {
+                        Toast.makeText(MainActivity.this, "Open WebView settings from Android Settings.", Toast.LENGTH_LONG).show();
+                    }
                 }
             }).show());
         webView.loadUrl(url);

@@ -16,3 +16,14 @@ updates/processed/
 # Supabase CLI local state
 supabase/.temp/
 supabase/.branches/
+
+# Android local build artifacts (source and CI workflow stay tracked)
+mobile/android_qcms/.gradle/
+mobile/android_qcms/local.properties
+mobile/android_qcms/build/
+mobile/android_qcms/app/build/
+*.jks
+*.keystore
+*.apk
+*.aab
+apk-artifacts/

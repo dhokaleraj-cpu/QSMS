@@ -1,12 +1,15 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.33
+## Current controlled release — v4.14.34
+Build `41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD`.
 
-Build `41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK`.
+Batch PO print now provides separate PDFs per PO and one ZIP containing those files,
+with individual download buttons. Portrait terms, Part Description, supplier-specific
+emails and all previous controlled features are preserved. No new database schema change.
 
-v4.14.33 keeps the supplier Purchase Order Standard Terms **portrait-only** and compacts the controlled content into otherwise unused white space, reducing the current 12-source-page terms section to about 7 portrait A4 pages. The Purchase Order PDF page now supports **batch print** for multiple selected POs with copies-per-order and controlled **batch Supplier email**. The Samsung Android helper now bootstraps the official Android CLI/SDK automatically when the Mac SDK folder is missing.
-
-Required live database baseline remains v4.14.28; v4.14.33 adds no schema migration.
+The Android 0.1.2 source includes a GitHub APK build workflow and an APK-only Mac helper.
+No precompiled APK was produced in this environment. Use a successful Android CI or
+local build; see mobile/android_qcms/INSTALL_APK_ON_SAMSUNG.md.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.

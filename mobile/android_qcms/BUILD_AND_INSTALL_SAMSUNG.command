@@ -11,7 +11,7 @@ say(){ printf '\n=== %s ===\n' "$1"; }
 fail(){ printf '\nERROR: %s\n' "$1" >&2; exit 1; }
 
 echo "============================================================"
-echo " QCMS Mobile v0.1.1 - Samsung Android build & install"
+echo " QCMS Mobile v0.1.2 - Samsung Android build & install"
 echo "============================================================"
 echo "Project : $HERE"
 echo "SDK     : $SDK"
@@ -99,6 +99,14 @@ say "BUILD DEBUG APK"
 "$GRADLE_HOME/bin/gradle" --no-daemon clean :app:assembleDebug
 APK="$HERE/app/build/outputs/apk/debug/app-debug.apk"
 [ -f "$APK" ] || fail "APK not produced: $APK"
+# Keep the user-facing APK in Downloads even when no phone/ADB device is attached.
+mkdir -p "$HOME/Downloads"
+OUTPUT_APK="$HOME/Downloads/QCMS_Mobile_v0.1.2_TEST.apk"
+cp -p "$APK" "$OUTPUT_APK"
+"$SDK/build-tools/35.0.0/apksigner" verify --verbose "$OUTPUT_APK" || fail "APK signature verification failed."
+printf '\nAPK READY: %s\n' "$OUTPUT_APK"
+shasum -a 256 "$OUTPUT_APK" > "$OUTPUT_APK.sha256"
+if [ "${QCMS_BUILD_ONLY:-0}" = "1" ]; then exit 0; fi
 
 echo
 "$ADB" start-server >/dev/null

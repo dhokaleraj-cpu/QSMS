@@ -1015,10 +1015,10 @@ if not all(token in v41429_osp for token in ("FSI Batch Number", "Vendor Batch N
     errors.append("v4.14.29 OSP transaction selectors do not expose controlled batch identity")
 current_release_version = str(v41429_manifest.get("version") or "")
 current_release_build = str(v41429_manifest.get("build") or "")
-if current_release_version != "4.14.33" or current_release_build != "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK":
-    errors.append("v4.14.33 deployment manifest release identity is incomplete")
+if current_release_version != "4.14.34" or current_release_build != "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD":
+    errors.append("v4.14.34 deployment manifest release identity is incomplete")
 if str(v41429_manifest.get("database_schema_required")) != "4.14.28" or bool(v41429_manifest.get("database_migration_required")):
-    errors.append("v4.14.33 must remain a source-only release on the verified v4.14.28 database schema")
+    errors.append("v4.14.34 must remain a source-only release on the verified v4.14.28 database schema")
 
 # v4.14.30 RMTC supplier de-duplication / dedicated Bend Test discovery / permission-aware Global Search.
 v41430_global_search = (ROOT / "app_pages" / "global_search.py").read_text(encoding="utf-8")
@@ -1078,8 +1078,16 @@ if not all(token in v41433_supply for token in ("BATCH PRINT / EMAIL MULTIPLE PU
 if not all(token in v41433_android for token in ("ANDROID SDK / CLI BOOTSTRAP", "https://dl.google.com/android/cli/latest/", "platforms;android-35")):
     errors.append("v4.14.33 Android SDK bootstrap helper contract is incomplete")
 
+# v4.14.34: separate files, never silently combined across POs.
+if not all(token in v41433_po_reporting for token in ("def purchase_order_pdf_files", "def purchase_order_files_zip_bytes", "ZIP_DEFLATED")):
+    errors.append("v4.14.34 separate PO PDF / ZIP export implementation is incomplete")
+if "batch_purchase_order_pdf_bytes(" in v41433_supply or "Individual PO PDFs (ZIP)" not in v41433_supply:
+    errors.append("v4.14.34 batch UI still merges different POs or lacks the ZIP download")
+if not (ROOT / ".github/workflows/qcms-android-test-apk.yml").exists():
+    errors.append("v4.14.34 Android APK build workflow missing")
+
 report = {
-    "release": "QCMS 4.14.33 Portrait PO Terms / Batch Print & Email / Android SDK Bootstrap",
+    "release": "QCMS 4.14.34 Individual PO PDFs / ZIP / Android APK Build Workflow",
     "v41431_po_workspace": all(route in app_text for route in ("supply-po-order-list", "supply-po-edit", "supply-po-pdf", "supply-po-approval")),
     "v41431_preapproval_edit": "Supplier Confirmation is NOT required" in v41431_supply and "supplier_confirmation_blocks_edit" in v41431_service,
     "v41431_customer_reference_pdf": "def _draw_customer_reference" in v41431_po_reporting and "purchase_order_source_summary" in v41431_service,

@@ -16,7 +16,7 @@ from core.branch_context import branch_label, branch_snapshot, resolve_current_b
 from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, AttachmentSlot, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
-from core.purchase_order_reporting import purchase_order_pdf_bytes, batch_purchase_order_pdf_bytes, DEFAULT_SPECIAL_INSTRUCTIONS
+from core.purchase_order_reporting import purchase_order_pdf_bytes, purchase_order_pdf_files, purchase_order_files_zip_bytes, DEFAULT_SPECIAL_INSTRUCTIONS
 from core.notification_service import NotificationService
 from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
 from core.selection_labels import part_label, party_label
@@ -1656,7 +1656,7 @@ def render_purchase_order_pdf_page() -> None:
                 include_supplier=True,
             )
 
-    with stage_section("B", "BATCH PRINT / EMAIL MULTIPLE PURCHASE ORDERS", "Select several POs once. QCMS creates one combined print PDF and can send each approved PO separately to its own Supplier.", key="po_pdf_batch"):
+    with stage_section("B", "BATCH PRINT / EMAIL MULTIPLE PURCHASE ORDERS", "Select several POs once. Download a separate complete PDF for each PO, or all individual PDFs in one ZIP. Approved POs are emailed separately to their own Suppliers.", key="po_pdf_batch"):
         selected_batch = st.multiselect(
             "Purchase Orders for Batch Print / Email",
             list(labels),
@@ -1669,28 +1669,42 @@ def render_purchase_order_pdf_page() -> None:
         if selected_batch:
             summary_rows, blockers = _batch_po_email_rows(service, selected_batch)
             portal_table(pd.DataFrame(summary_rows).drop(columns=["_po_id"], errors="ignore"), hide_index=True, width="stretch", height=min(360, 90 + len(summary_rows) * 38))
-            records = []
-            for po_id in selected_batch:
-                po_header = service.purchase_order(po_id) or {}
-                po_items = service.purchase_order_items_for_print(po_id)
-                if po_header and po_items:
-                    records.append((po_header, po_items))
             try:
-                batch_pdf = batch_purchase_order_pdf_bytes(records, copies_per_order=copies)
+                records = []
+                for po_id in dict.fromkeys(selected_batch):
+                    po_header = service.purchase_order(po_id) or {}
+                    if not po_header:
+                        raise ValueError(f"Selected PO {po_id} was removed or is not accessible. Refresh the selection.")
+                    po_items = service.purchase_order_items_for_print(po_id)
+                    if not po_items:
+                        raise ValueError(f"{po_header.get('po_number') or po_id}: no printable items were found.")
+                    records.append((po_header, po_items))
+                po_files = purchase_order_pdf_files(records, copies_per_order=copies)
+                zip_data = purchase_order_files_zip_bytes(po_files)
                 c[1].download_button(
-                    f"Download / Print {len(records)} Selected PO(s)", batch_pdf,
-                    file_name=f"QCMS_Purchase_Orders_{len(records)}_Selected.pdf", mime="application/pdf",
-                    icon=":material/print:", type="primary", width="stretch", key="po_batch_pdf_download",
+                    f"Download {len(po_files)} Individual PO PDFs (ZIP)", zip_data,
+                    file_name=f"QCMS_Individual_POs_{len(po_files)}.zip", mime="application/zip",
+                    icon=":material/folder_zip:", type="primary", width="stretch", key="po_batch_zip_download",
                 )
+                st.caption("One file per PO. Each file includes that PO's own portrait Terms & Conditions. "
+                           "Copies per PO repeats only that PO inside its own file. No different POs are merged.")
+                with st.expander(f"Individual PDF downloads ({len(po_files)})", expanded=True):
+                    for index, (filename, pdf_data) in enumerate(po_files):
+                        st.download_button(
+                            f"Download / Print {filename}", pdf_data,
+                            file_name=filename, mime="application/pdf",
+                            icon=":material/picture_as_pdf:", width="stretch", key=f"po_batch_individual_pdf_{index}",
+                        )
             except Exception as exc:
-                c[1].error(f"Batch Purchase Order PDF could not be generated: {exc}")
+                c[1].error(f"Individual Purchase Order files could not be generated: {exc}")
+                st.warning("No incomplete batch has been offered for download. Correct the affected PO and retry.")
             if blockers:
                 c[2].button("Send Selected POs by Email", width="stretch", disabled=True, key="po_batch_send_disabled")
                 st.warning("Email requires every selected PO to be APPROVED, not cancelled, and to have a Supplier email. Printing remains available.")
             elif c[2].button("Send Selected POs by Email", icon=":material/forward_to_inbox:", width="stretch", key="po_batch_send"):
                 _batch_po_email_dialog(service, selected_batch)
         else:
-            st.info("Select two or more Purchase Orders for batch printing/email, or keep one selected if you need multiple physical copies of the same PO.")
+            st.info("Select one or more Purchase Orders. Each PO is downloaded as its own PDF, individually or inside a ZIP archive.")
 
         result_message = str(st.session_state.pop("po_batch_email_result", "") or "")
         if result_message:

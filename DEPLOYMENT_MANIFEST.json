@@ -1,6 +1,6 @@
 {
-  "version": "4.14.33",
-  "build": "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK",
+  "version": "4.14.34",
+  "build": "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -203,20 +203,26 @@
     "po_terms_portrait_compact_reflow",
     "po_batch_print_multiple_orders",
     "po_batch_supplier_email",
-    "android_sdk_cli_bootstrap"
+    "android_sdk_cli_bootstrap",
+    "po_batch_individual_pdf_files",
+    "po_batch_zip_individual_pdfs",
+    "po_export_safe_unique_filenames",
+    "android_test_apk_ci_workflow",
+    "android_apk_only_downloads_output"
   ],
   "source": "controlled_release",
-  "release_name": "QCMS v4.14.33 Portrait PO Terms / Batch Print & Email / Android SDK Bootstrap",
+  "release_name": "QCMS v4.14.34 Individual PO PDFs / ZIP / Android APK Build Workflow",
   "database_schema_required": "4.14.28",
   "database_migration_required": false,
   "supabase_release_contract": "QCMS v4.14.28 live migration applied and verified during controlled release packaging",
   "deployment_notes": [
-    "v4.14.33 is source-only on the already-applied v4.14.28 database contract; no manual Supabase SQL is required.",
-    "Purchase Order Standard Terms are portrait A4 only. Visible controlled terms content is packed into otherwise blank white space while preserving clause wording and order.",
-    "The supplied 2023 terms template compacts from 12 physical source pages to approximately 7 portrait A4 terms pages; no landscape terms pages are generated.",
-    "Purchase Order PDF workspace supports selecting multiple POs, choosing 1-5 physical copies per PO, and downloading one combined print-ready PDF.",
-    "Batch email sends each selected APPROVED PO separately to its own configured Supplier email with the controlled PO PDF attached. Unapproved/cancelled/missing-email POs block email but not printing.",
-    "Samsung Android helper v0.1.1 bootstraps the official Google Android CLI when ~/Library/Android/sdk is missing, then installs Platform 35/Build Tools/Platform Tools and builds/installs the APK."
+    "Source-only on the inherited v4.14.28 database contract. No new SQL or data migration.",
+    "Batch output: separate PDF per selected PO and a ZIP containing those same individual PDFs; no combined inter-PO PDF from the UI.",
+    "Each PO PDF includes its own portrait terms. Copies repeat within the corresponding PO only.",
+    "Unique safe filenames; duplicate saved PO selections are deduplicated. Missing/invalid records block incomplete batch output.",
+    "Existing separate supplier emails and approval controls preserved.",
+    "GitHub Actions mobile workflow runs after matching source pushes or by manual dispatch, compiles and validates an APK before artifact upload.",
+    "Android v0.1.2 is supplied as source, not as a compiled APK. Test signing is not production signing."
   ],
   "item_wise_po_technical_data": true,
   "po_supplier_technical_grid": true,
@@ -232,17 +238,16 @@
   "standard_room_inspection_module": true,
   "npd_email_stage_cards": true,
   "registered_pages": 87,
-  "full_pytest_passed": 504,
+  "full_pytest_passed": 528,
   "live_supabase_schema_applied": true,
   "live_overdue_notifier_version": 4,
   "live_overdue_notifier_status": "ACTIVE",
   "source_only_updater": true,
   "release_notes": [
-    "Keeps all Purchase Order Terms & Conditions pages in portrait orientation and compacts content vertically to reduce page count.",
-    "Adds batch Purchase Order print with multi-select and copies-per-PO.",
-    "Adds controlled batch Supplier email for multiple approved Purchase Orders.",
-    "Fixes Samsung build helper so a missing Android SDK no longer immediately stops the workflow; the helper bootstraps Android CLI/SDK packages.",
-    "Preserves v4.14.32 supplier-safe PO print, Part Description, controlled Raw Material Types and all earlier QCMS functions."
+    "Individual PO PDF downloads plus bulk ZIP replace combined batch PDF output.",
+    "Portrait terms, master description, RM types, edit/reapproval and supplier email controls preserved.",
+    "Adds mobile APK CI workflow and APK-only helper output to Downloads; no phone required for compilation.",
+    "No claim of an APK build, live deployment or Samsung runtime test from this preparation environment."
   ],
   "final_metlab_part_master_only": true,
   "raw_material_inward_metlab_layout_master_only": true,
@@ -252,9 +257,13 @@
   "live_supply_digest_notifier_status": "ACTIVE",
   "live_supply_digest_cron": "qcms-supply-digest-notifier-hourly",
   "schema_change_for_v41429": false,
-  "previous_controlled_release": "4.14.32",
+  "previous_controlled_release": "4.14.33",
   "schema_change_for_v41430": false,
   "schema_change_for_v41431": false,
   "schema_change_for_v41432": false,
-  "schema_change_for_v41433": false
+  "schema_change_for_v41433": false,
+  "schema_change_for_v41434": false,
+  "android_apk_compiled_in_preparation": false,
+  "android_build_status": "Not compiled here: Android SDK absent and SDK downloads failed. CI workflow supplied; a successful remote/local build is required.",
+  "verification_scope": "Source/package tests only. No live production DB, Mac deployment, GitHub Actions run or Samsung device validation performed for this release."
 }
