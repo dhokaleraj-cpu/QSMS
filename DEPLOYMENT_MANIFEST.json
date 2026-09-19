@@ -1,6 +1,6 @@
 {
-  "version": "4.14.30",
-  "build": "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH",
+  "version": "4.14.31",
+  "build": "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -186,21 +186,28 @@
     "bend_test_dedicated_records_and_reports",
     "global_search_permission_aware",
     "global_search_relationship_expansion",
-    "global_search_persistent_shell_launcher"
+    "global_search_persistent_shell_launcher",
+    "purchase_order_dedicated_subpages",
+    "purchase_order_order_list_page",
+    "purchase_order_preapproval_edit_without_supplier_confirmation",
+    "purchase_order_pdf_page",
+    "purchase_order_approval_confirmation_page",
+    "purchase_order_customer_po_position_part_qty_selector",
+    "purchase_order_customer_reference_pdf_table",
+    "supplier_confirmation_never_blocks_po_edit"
   ],
   "source": "controlled_release",
-  "release_name": "QCMS v4.14.30 RMTC Supplier Dedup / Bend Test Discovery / Global Search",
+  "release_name": "QCMS v4.14.31 Purchase Order Workspace / Pre-Approval Edit / Customer Reference PDF",
   "database_schema_required": "4.14.28",
   "database_migration_required": false,
   "supabase_release_contract": "QCMS v4.14.28 live migration applied and verified during controlled release packaging",
   "deployment_notes": [
-    "v4.14.30 is a source-only controlled update using the already-applied v4.14.28 database contract; no manual Supabase SQL is required.",
-    "RMTC Approved Raw Material Source now shows exactly one row per approved Supplier. When that Supplier has multiple active Part Master Raw Material Detail rows, the exact section/route is selected once in a separate Raw Material Detail field so genealogy is preserved without duplicate Supplier rows.",
-    "Bend Test now has dedicated visible navigation in Inspection workspace, Inspections submenu, Reports and Records, while continuing to use controlled METLAB layouts with Inspection Method / Sub Category = Bend Test.",
-    "A permission-aware Global Search is available from the persistent app search bar and a dedicated Search module. It searches major masters and transactions for Part, FSI Part, Heat, RMTC, Batch, Supplier/Customer, PO, report, complaint and related identifiers.",
-    "Global Search expands Part and Party matches through controlled foreign-key relationships so linked RMTC, Inward, OSP, Supply Chain and quality records can be surfaced without duplicating human-readable master data into transactions.",
-    "Search results respect existing module View permissions plus tenant/RLS controls and open records through their controlled source modules.",
-    "All v4.14.29 Bend Test, horizontal chemical analysis, case-depth traverse, reusable reference, conclusion formatting, permission and OSP genealogy functions remain preserved."
+    "v4.14.31 is a source-only controlled update using the already-applied v4.14.28 database contract; no manual Supabase SQL is required.",
+    "Purchase Orders now have dedicated workspace pages for PO Entry, Order List, Edit Purchase Order, Purchase Order PDF and Approval / Supplier Confirmation.",
+    "Pending Approval POs can be edited directly without Supplier Confirmation. Supplier Confirmation is a separate downstream stage and never blocks editing.",
+    "Editing an already approved PO returns it to Pending Approval; the prior supplier acknowledgement is reset only for an approved PO revision and is requested again after re-approval.",
+    "PO selectors, Order List and PDF source reference now expose Customer, Customer PO Number, PO Position, Part Number and allocated quantity for the linked Customer Order / Schedule sources.",
+    "All v4.14.30 RMTC Supplier de-duplication, Bend Test discovery, Global Search and earlier QCMS functions remain preserved."
   ],
   "item_wise_po_technical_data": true,
   "po_supplier_technical_grid": true,
@@ -216,16 +223,17 @@
   "standard_room_inspection_module": true,
   "npd_email_stage_cards": true,
   "registered_pages": 87,
-  "full_pytest_passed": 488,
+  "full_pytest_passed": 495,
   "live_supabase_schema_applied": true,
   "live_overdue_notifier_version": 4,
   "live_overdue_notifier_status": "ACTIVE",
   "source_only_updater": true,
   "release_notes": [
-    "v4.14.30 removes duplicate Supplier rows from the RMTC Approved Raw Material Source selector while preserving multiple supplier-specific RM detail/route choices in a second controlled field.",
-    "Makes Bend Test directly discoverable as a dedicated report entry, records register and report card.",
-    "Adds permission-aware Global Search across QCMS with a persistent header launcher and relationship-aware linked-record results.",
-    "No database migration is required; production/master/transaction data and the v4.14.28 database contract remain unchanged."
+    "Adds dedicated Purchase Order tabs/pages: PO Entry, Order List, Edit Purchase Order, Purchase Order PDF and Approval / Supplier Confirmation.",
+    "Allows controlled PO editing before approval without supplier confirmation being required.",
+    "Adds Customer PO Number, PO Position, Part Number and PO source quantity to selectors, registers and controlled Purchase Order PDF source reference tables.",
+    "Keeps Supplier Confirmation independent from editing and actionable after controlled PO approval/release.",
+    "No database migration is required; production data and the v4.14.28 database contract remain unchanged."
   ],
   "final_metlab_part_master_only": true,
   "raw_material_inward_metlab_layout_master_only": true,
@@ -235,6 +243,7 @@
   "live_supply_digest_notifier_status": "ACTIVE",
   "live_supply_digest_cron": "qcms-supply-digest-notifier-hourly",
   "schema_change_for_v41429": false,
-  "previous_controlled_release": "4.14.29",
-  "schema_change_for_v41430": false
+  "previous_controlled_release": "4.14.30",
+  "schema_change_for_v41430": false,
+  "schema_change_for_v41431": false
 }

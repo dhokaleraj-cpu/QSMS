@@ -138,7 +138,7 @@ def _block(c: canvas.Canvas, x: float, y_top: float, width: float, title: str, l
     return y
 
 
-FIRST_HISTORY_ROWS = 8
+FIRST_HISTORY_ROWS = 3
 CONT_HISTORY_ROWS = 28
 HISTORY_ONLY_ROWS = 42
 
@@ -223,6 +223,58 @@ def _price_history_rows(item: Mapping[str, Any]) -> list[dict[str, Any]]:
         })
     rows.sort(key=lambda r: (str(r.get("start_date") or ""), str(r.get("end_date") or "9999-12-31")))
     return rows
+
+
+
+def _customer_source_rows(item: Mapping[str, Any]) -> list[dict[str, Any]]:
+    raw = item.get("customer_source_rows") or []
+    if not isinstance(raw, list):
+        return []
+    return [dict(row) for row in raw if isinstance(row, Mapping)]
+
+
+def _customer_reference_height(item: Mapping[str, Any]) -> float:
+    rows = _customer_source_rows(item)
+    shown = min(max(len(rows), 1), 4)
+    return 30.0 + shown * 14.0
+
+
+def _draw_customer_reference(c: canvas.Canvas, item: Mapping[str, Any], *, top: float, left: float, right: float, page_width: float) -> float:
+    """Print Customer PO/position/Part/quantity traceability on the controlled PO."""
+    total_w = page_width - left - right
+    rows = _customer_source_rows(item)
+    shown = rows[:4]
+    height = _customer_reference_height(item)
+    bottom = top - height
+    _bar(c, left, top, total_w, "CUSTOMER PO / SOURCE REFERENCE", height=15)
+    y = top - 15
+    widths = [112, 92, 45, 96, 70, 48, total_w - 463]
+    titles = ["CUSTOMER", "CUSTOMER PO NO.", "POS", "PART NUMBER", "QTY", "UOM", "DELIVERY"]
+    x = left
+    for sw, title in zip(widths, titles):
+        c.setFillColor(HexColor("#E5E7EB")); c.rect(x, y-14, sw, 14, stroke=1, fill=1)
+        _draw_text(c, x+3, y-9.8, title, size=4.8, bold=True, color=HexColor("#111827"), max_width=sw-6)
+        x += sw
+    y -= 14
+    if not shown:
+        c.setFillColor(white); c.rect(left, y-14, total_w, 14, stroke=1, fill=1)
+        _draw_text(c, left+4, y-9.8, "No linked Customer Order / Schedule source stored for this historical PO line.", size=5.3, color=HexColor("#6B7280"), max_width=total_w-8)
+        y -= 14
+    else:
+        for row in shown:
+            x = left
+            values = [
+                row.get("customer"), row.get("customer_po_number"), row.get("po_position"), row.get("part_number"),
+                f"{_n(row.get('quantity')):,.3f}".rstrip("0").rstrip("."), row.get("uom"), _date(row.get("customer_delivery_date")),
+            ]
+            for sw, value in zip(widths, values):
+                c.setFillColor(white); c.rect(x, y-14, sw, 14, stroke=1, fill=1)
+                _draw_text(c, x+3, y-9.8, value, size=5.0, max_width=sw-6)
+                x += sw
+            y -= 14
+        if len(rows) > len(shown):
+            _draw_text(c, left+4, bottom+3, f"+ {len(rows)-len(shown)} additional linked source(s) retained in QCMS genealogy.", size=5.0, bold=True, color=NAVY, max_width=total_w-8)
+    return bottom
 
 
 # No vertical grid lines in the PO item body; item identity and values use open-column spacing.
@@ -387,9 +439,10 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     item = dict(items[0])
     y_item_top = y_strip-45
     row_bottom = _draw_item_row(c, item, y_top=y_item_top, left=left, right=right, page_width=w)
+    source_bottom = _draw_customer_reference(c, item, top=row_bottom, left=left, right=right, page_width=w)
     po_type = _s(header.get("po_type") or "FORGING").upper()
-    tech_bottom = row_bottom-_technical_height(item, po_type=po_type)
-    _draw_technical(c, item, po_type=po_type, top=row_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
+    tech_bottom = source_bottom-_technical_height(item, po_type=po_type)
+    _draw_technical(c, item, po_type=po_type, top=source_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
     history = _price_history_rows(item)
     _draw_price_history(c, item, history, top=tech_bottom-4, bottom=245, left=left, right=right, page_width=w, max_rows=FIRST_HISTORY_ROWS)
 
@@ -413,9 +466,10 @@ def _continuation_items_bytes(header: Mapping[str, Any], items: Sequence[Mapping
         item = dict(item_src)
         w,h,left,right = _draw_continuation_header(c, header, title="PURCHASE ORDER · ITEM CONTINUED")
         row_bottom = _draw_item_row(c, item, y_top=h-92, left=left, right=right, page_width=w)
+        source_bottom = _draw_customer_reference(c, item, top=row_bottom, left=left, right=right, page_width=w)
         po_type = _s(header.get("po_type") or "FORGING").upper()
-        tech_bottom = row_bottom-_technical_height(item, po_type=po_type)
-        _draw_technical(c, item, po_type=po_type, top=row_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
+        tech_bottom = source_bottom-_technical_height(item, po_type=po_type)
+        _draw_technical(c, item, po_type=po_type, top=source_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
         history = _price_history_rows(item)
         rendered = _draw_price_history(c, item, history, top=tech_bottom-6, bottom=50, left=left, right=right, page_width=w, max_rows=CONT_HISTORY_ROWS)
         c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",5.8); c.drawCentredString(w/2,27,"QCMS controlled continuation · Technical data and Price Revision History are item-specific and supplier-specific.")
@@ -455,15 +509,14 @@ def _terms_with_dynamic_header(terms_path: Path, *, po_number: str, order_date: 
     return result
 
 
-# original/customer part number remains an internal QCMS field and is never printed on supplier Purchase Orders.
 def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any] | Sequence[Mapping[str, Any]], *, terms_path: str | Path | None = None) -> bytes:
     """Return the controlled FSI Purchase Order PDF.
 
-    Page 1 prints one supplier-facing FSI Part Number line with its own supplier-specific
-    technical data and complete Price Revision History. Additional items continue on
-    controlled item pages with the same structure. The original/customer part number
-    remains an internal QCMS field and is never printed. Closed historical price revisions
-    remain visible; Start Date / End Date / Price / Remark are printed for every item.
+    Page 1 prints one supplier-facing item line plus a controlled Customer PO / source
+    reference table containing Customer, Customer PO Number, PO Position, Part Number and
+    allocated quantity. Each supplier item retains its technical data and Price Revision
+    History; additional items continue on controlled item pages. Closed historical price
+    revisions remain visible.
     """
     if PdfReader is None or PdfWriter is None:
         raise RuntimeError("pypdf is not installed. Add pypdf to requirements.txt.")

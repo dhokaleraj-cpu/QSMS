@@ -317,7 +317,7 @@ def _open_selected_record_for_edit(table: str, record: dict) -> None:
         st.session_state["supply_customer_order_edit_select"] = record_id; route = "supply-customer-orders"
     elif table in {"supply_purchase_orders", "supply_purchase_order_items", "supply_po_confirmations"}:
         po_id = record_id if table == "supply_purchase_orders" else str(record.get("purchase_order_id") or "")
-        st.session_state["supply_po_edit_request_id"] = po_id; route = "supply-purchase-orders"
+        st.session_state["supply_po_edit_request_id"] = po_id; route = "supply-po-edit"
     elif table == "supply_opening_stock":
         st.session_state["opening_stock_edit_select"] = record_id; route = "supply-opening-stock"
     elif table == "supply_rm_purchase_orders":

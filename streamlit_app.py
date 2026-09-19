@@ -1,5 +1,5 @@
 # QCMS 4.14.19 — PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES
-# BUILD 41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH
+# BUILD 41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF
 # QCMS 4.14.15 — DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
 # BUILD 41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
 # QCMS 4.14.13 — METLAB-CASE-DEPTH-RECORD-EMAIL-TEMPLATE-TEST-CONFIRM
@@ -94,6 +94,10 @@ PAGE_ITEMS = (
     ("supply-opening-stock", st.Page(supply_chain.render_opening_stock, title="Opening Stock & Import", icon=":material/inventory_2:", url_path="supply-opening-stock")),
     ("supply-rm-procurement", st.Page(supply_chain.render_rm_procurement, title="Supply RM Procurement", icon=":material/shopping_cart:", url_path="supply-rm-procurement")),
     ("supply-purchase-orders", st.Page(supply_chain.render_purchase_orders, title="Supply Purchase Orders", icon=":material/request_quote:", url_path="supply-purchase-orders")),
+    ("supply-po-order-list", st.Page(supply_chain.render_purchase_order_list, title="Purchase Order List", icon=":material/list_alt:", url_path="supply-po-order-list")),
+    ("supply-po-edit", st.Page(supply_chain.render_purchase_order_edit_page, title="Edit Purchase Order", icon=":material/edit_note:", url_path="supply-po-edit")),
+    ("supply-po-pdf", st.Page(supply_chain.render_purchase_order_pdf_page, title="Purchase Order PDF", icon=":material/picture_as_pdf:", url_path="supply-po-pdf")),
+    ("supply-po-approval", st.Page(supply_chain.render_purchase_order_approval_page, title="Purchase Order Approval", icon=":material/approval:", url_path="supply-po-approval")),
     ("supply-rm-receipt", st.Page(supply_chain.render_rm_receipt, title="Supply RM Receipt", icon=":material/inventory:", url_path="supply-rm-receipt")),
     ("supply-rm-dispatch", st.Page(supply_chain.render_rm_dispatch, title="Supply RM to Forging", icon=":material/local_shipping:", url_path="supply-rm-dispatch")),
     ("supply-forging", st.Page(supply_chain.render_forging, title="Supply Forging", icon=":material/factory:", url_path="supply-forging")),
@@ -328,7 +332,7 @@ ROUTE_MODULE = {
     "inward-entry": "Inward",
     "osp-home": "OSP", "osp-material-out": "OSP", "osp-sample-receipt": "OSP",
     "osp-inward": "OSP", "osp-dimensional": "OSP", "osp-metlab": "OSP",
-    "supply-chain-home": "Supply Chain", "supply-customer-orders": "Supply Chain", "supply-opening-stock": "Supply Chain", "supply-rm-procurement": "Supply Chain", "supply-purchase-orders": "Supply Chain", "supply-rm-receipt": "Supply Chain", "supply-rm-dispatch": "Supply Chain", "supply-forging": "Supply Chain", "supply-downstream": "Supply Chain", "supply-traceability": "Supply Chain", "supply-order-mis": "Supply Chain",
+    "supply-chain-home": "Supply Chain", "supply-customer-orders": "Supply Chain", "supply-opening-stock": "Supply Chain", "supply-rm-procurement": "Supply Chain", "supply-purchase-orders": "Supply Chain", "supply-po-order-list": "Supply Chain", "supply-po-edit": "Supply Chain", "supply-po-pdf": "Supply Chain", "supply-po-approval": "Supply Chain", "supply-rm-receipt": "Supply Chain", "supply-rm-dispatch": "Supply Chain", "supply-forging": "Supply Chain", "supply-downstream": "Supply Chain", "supply-traceability": "Supply Chain", "supply-order-mis": "Supply Chain",
     "npd-process-flow": "NPD & APQP", "npd-status": "NPD & APQP", "apqp": "NPD & APQP",
     "qc-tools": "QC Calculation Tools",
     "complaints-home": "Complaints", "customer-complaint": "Complaints",
@@ -360,7 +364,7 @@ PAGE_TITLE_TO_PATH = {
     "OSP Material Out": "osp-material-out", "OSP Sample Receipt": "osp-sample-receipt",
     "OSP Material Inward": "osp-inward", "OSP Dimensional": "osp-dimensional",
     "OSP MetLAB": "osp-metlab", "OSP Records": "osp-records",
-    "Supply Chain": "supply-chain-home", "Supply Customer Orders": "supply-customer-orders", "Supply Opening Stock": "supply-opening-stock", "Opening Stock & Import": "supply-opening-stock", "Supply RM Procurement": "supply-rm-procurement", "Supply Purchase Orders": "supply-purchase-orders", "Supply RM Receipt": "supply-rm-receipt", "Supply RM to Forging": "supply-rm-dispatch", "Supply Forging": "supply-forging", "Supply Downstream": "supply-downstream", "Supply Traceability": "supply-traceability", "Supply Order MIS": "supply-order-mis",
+    "Supply Chain": "supply-chain-home", "Supply Customer Orders": "supply-customer-orders", "Supply Opening Stock": "supply-opening-stock", "Opening Stock & Import": "supply-opening-stock", "Supply RM Procurement": "supply-rm-procurement", "Supply Purchase Orders": "supply-purchase-orders", "Purchase Order List": "supply-po-order-list", "Edit Purchase Order": "supply-po-edit", "Purchase Order PDF": "supply-po-pdf", "Purchase Order Approval": "supply-po-approval", "Supply RM Receipt": "supply-rm-receipt", "Supply RM to Forging": "supply-rm-dispatch", "Supply Forging": "supply-forging", "Supply Downstream": "supply-downstream", "Supply Traceability": "supply-traceability", "Supply Order MIS": "supply-order-mis",
     "Process Flow Designer": "npd-process-flow", "NPD Status": "npd-status", "APQP": "apqp",
     "QC Calculation Tools": "qc-tools", "QC Calculation Records": "qc-calculation-records",
     "Complaint Management": "complaints-home", "Customer Complaint": "customer-complaint", "Supplier Complaint": "supplier-complaint", "Complaint Analysis & CAPA": "complaint-analysis", "Complaint Records": "complaint-records",
@@ -394,7 +398,7 @@ ROUTE_PERMISSION_MODULE = {
     "osp-dimensional":"DIMENSIONAL_REPORT","osp-metlab":"METLAB_REPORT",
     "dimensional-entry":"DIMENSIONAL_REPORT","dimensional-records":"DIMENSIONAL_REPORT","metlab-entry":"METLAB_REPORT","metlab-records":"METLAB_REPORT","bend-test-entry":"METLAB_REPORT","bend-test-records":"METLAB_REPORT","bend-test-report":"METLAB_REPORT",
     "inspection-layout-entry":"INSPECTION_LAYOUTS","inspection-layout-records":"INSPECTION_LAYOUTS",
-    "supply-chain-home":"SUPPLY_CHAIN","supply-customer-orders":"SUPPLY_CHAIN","supply-opening-stock":"SUPPLY_CHAIN","supply-rm-procurement":"SUPPLY_CHAIN","supply-purchase-orders":"SUPPLY_CHAIN","supply-rm-receipt":"SUPPLY_CHAIN","supply-rm-dispatch":"SUPPLY_CHAIN","supply-forging":"SUPPLY_CHAIN","supply-downstream":"SUPPLY_CHAIN","supply-traceability":"SUPPLY_CHAIN","supply-order-mis":"SUPPLY_CHAIN",
+    "supply-chain-home":"SUPPLY_CHAIN","supply-customer-orders":"SUPPLY_CHAIN","supply-opening-stock":"SUPPLY_CHAIN","supply-rm-procurement":"SUPPLY_CHAIN","supply-purchase-orders":"SUPPLY_CHAIN","supply-po-order-list":"SUPPLY_CHAIN","supply-po-edit":"SUPPLY_CHAIN","supply-po-pdf":"SUPPLY_CHAIN","supply-po-approval":"SUPPLY_CHAIN","supply-rm-receipt":"SUPPLY_CHAIN","supply-rm-dispatch":"SUPPLY_CHAIN","supply-forging":"SUPPLY_CHAIN","supply-downstream":"SUPPLY_CHAIN","supply-traceability":"SUPPLY_CHAIN","supply-order-mis":"SUPPLY_CHAIN",
     "npd-process-flow":"NPD_APQP","npd-status":"NPD_APQP","apqp":"NPD_APQP","qc-tools":"QC_CALCULATION_TOOLS","qc-calculation-records":"QC_CALCULATION_TOOLS",
     "complaints-home":"COMPLAINT_MANAGEMENT","customer-complaint":"COMPLAINT_MANAGEMENT","supplier-complaint":"COMPLAINT_MANAGEMENT","complaint-analysis":"COMPLAINT_MANAGEMENT","complaint-records":"COMPLAINT_MANAGEMENT",
     "calibration-validation":"CALIBRATION_VALIDATION","standard-room-inspection":"CALIBRATION_VALIDATION",

@@ -6,7 +6,7 @@ def text(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 def test_release_build_marker():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30"}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.13.8", "4.13.9", "4.14.0", "4.14.2", "4.14.3", "4.14.4", "4.14.5", "4.14.6", "4.14.7", "4.14.8", "4.14.9", "4.14.10", "4.14.11", "4.14.12", "4.14.13", "4.14.14", "4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31"}
     marker = "4138-MULTI-RM-PO-PRICE-HISTORY-TECH-DATA"
     for rel in ("streamlit_app.py", "core/ui.py", "core/auth.py"):
         assert marker in text(rel)
@@ -62,12 +62,15 @@ def test_po_pdf_supports_multiple_vendor_lines_and_item_specific_history():
     assert "_continuation_items_bytes" in reporting
     assert "RAW MATERIAL / FORGING PARAMETERS & SUPPLIER TECHNICAL DATA" in reporting
     assert "PRICE REVISION HISTORY" in reporting
-    assert "original/customer part number remains an internal qcms field" in reporting.lower()
+    # v4.14.31 keeps supplier-facing FSI item identity and now adds the requested
+    # controlled Customer PO / source reference table for purchasing traceability.
+    assert "CUSTOMER PO / SOURCE REFERENCE" in reporting
+    assert "customer_source_rows" in reporting
     if (ROOT / "VERSION").read_text().strip() == "4.14.0":
         assert "display_items = list(items)[:3]" in reporting
     else:
         assert "One complete item pocket on the first page" in reporting
-        assert "complete Price Revision History" in reporting
+        assert "Price Revision History" in reporting
 
 def test_v4137_po_history_is_backfilled_into_sources_and_price_history():
     sql = text("supabase/migrations/20260822213100_qcms_multi_rm_po_history_backfill_v4138.sql")

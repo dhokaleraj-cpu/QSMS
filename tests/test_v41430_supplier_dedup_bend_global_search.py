@@ -9,15 +9,23 @@ def text(rel: str) -> str:
 
 
 def test_v41430_release_identity_source_only_contract():
-    assert text("VERSION").strip() == "4.14.30"
-    assert "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH" in text("streamlit_app.py")
+    version = text("VERSION").strip()
+    assert version in {"4.14.30", "4.14.31"}
+    app = text("streamlit_app.py")
+    assert any(marker in app for marker in (
+        "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH",
+        "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF",
+    ))
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] == "4.14.30"
-    assert manifest["build"] == "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH"
+    assert manifest["version"] in {"4.14.30", "4.14.31"}
+    assert manifest["build"] in {
+        "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH",
+        "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF",
+    }
     assert manifest["database_schema_required"] == "4.14.28"
     assert manifest["database_migration_required"] is False
     assert manifest["source_only_updater"] is True
-    assert manifest["previous_controlled_release"] == "4.14.29"
+    assert manifest["previous_controlled_release"] == ("4.14.30" if version == "4.14.31" else "4.14.29")
 
 
 def test_rmtc_approved_source_returns_one_option_per_supplier():

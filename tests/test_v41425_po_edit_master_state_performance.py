@@ -9,11 +9,11 @@ def text(rel):
 
 
 def test_v41425_release_identity_and_source_only_baseline():
-    assert text("VERSION").strip() in {"4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30"}
+    assert text("VERSION").strip() in {"4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30"}
-    assert manifest["build"] in {"41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL", "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS", "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH"}
-    assert manifest["database_schema_required"] in {"4.14.22", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30"}
+    assert manifest["version"] in {"4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31"}
+    assert manifest["build"] in {"41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL", "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS", "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH", "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF"}
+    assert manifest["database_schema_required"] in {"4.14.22", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31"}
     assert manifest["database_migration_required"] is False
 
 
@@ -24,7 +24,10 @@ def test_po_register_exposes_controlled_edit_and_reapproval():
     assert "def _render_purchase_order_edit" in page
     assert "def update_purchase_order" in service
     assert '"approval_status":"PENDING_APPROVAL"' in service.replace(" ", "")
-    assert "PO revised; supplier reconfirmation required" in service
+    # v4.14.31: Supplier Confirmation remains downstream and never blocks PO editing.
+    assert "Supplier Confirmation never gates editing" in service
+    assert "supplier_confirmation_blocks_edit" in service
+    assert "if confirmation and was_approved" in service
 
 
 def test_po_edit_refreshes_latest_master_and_protects_identity_genealogy():
@@ -89,4 +92,4 @@ def test_po_page_uses_bulk_request_cache_instead_of_n_plus_one_reads():
 
 def test_live_build_marker_is_v41425():
     source = text("streamlit_app.py")
-    assert any(marker in source for marker in ("41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL", "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS", "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH"))
+    assert any(marker in source for marker in ("41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL", "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS", "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH", "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF"))

@@ -1,10 +1,12 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.30
+## Current controlled release — v4.14.31
 
-Build: `41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH`
+Build `41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF`.
 
-v4.14.30 shows each Supplier only once in **RMTC → Approved Raw Material Source** and moves exact material section/route selection to a separate **Raw Material Detail** control. It makes **Bend Test** directly discoverable through dedicated Entry, Records and Reports navigation and adds an app-wide, permission-aware **Global Search** for Parts, Heat/RMTC, Batches, Suppliers/Customers, POs, Reports and linked QCMS records. All v4.14.29 Chemical Analysis, Case Depth Traverse, reusable reference, conclusion styling, section-permission and OSP genealogy functions remain preserved.
+v4.14.31 adds a dedicated Purchase Order workspace with separate pages for **PO Entry, Order List, Edit Purchase Order, Purchase Order PDF, and Approval / Supplier Confirmation**. Pending-approval POs can be edited without supplier confirmation. PO selectors and controlled PDFs now expose **Customer PO Number, PO Position, Part Number, and source quantity**. Supplier Confirmation remains a downstream stage and never blocks PO editing.
+
+Required live database baseline remains v4.14.28; v4.14.31 adds no schema migration.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.

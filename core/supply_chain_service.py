@@ -520,11 +520,16 @@ class SupplyChainService:
         } for r in rows]
 
     def purchase_order_items_for_print(self, purchase_order_id: str) -> list[dict]:
-        """Return PO items enriched with complete price history for reliable reprints."""
+        """Return PO items enriched for reliable reprints and Customer PO traceability."""
         header = self.purchase_order(purchase_order_id) or {}
         supplier_id = str(header.get("supplier_id") or "")
         po_date = header.get("order_date")
         items = [dict(r) for r in self.purchase_order_items(purchase_order_id)]
+        sources_by_item: dict[str, list[dict]] = {}
+        for source in self.purchase_order_sources(purchase_order_id):
+            sources_by_item.setdefault(str(source.get("purchase_order_item_id") or ""), []).append(source)
+        orders = {str(r.get("id") or ""): r for r in self.customer_orders()}
+        parts, parties, _grades = self.master_maps()
         for item in items:
             part_id = str(item.get("part_id") or "")
             raw_id = str(item.get("raw_material_detail_id") or "")
@@ -536,7 +541,66 @@ class SupplyChainService:
                 )
                 if history:
                     item["price_history_snapshot"] = history
+            customer_sources: list[dict[str, Any]] = []
+            item_sources = sources_by_item.get(str(item.get("id") or ""), [])
+            if not item_sources and item.get("customer_order_id"):
+                item_sources = [{
+                    "customer_order_id": item.get("customer_order_id"),
+                    "allocated_qty": item.get("quantity"),
+                    "allocation_uom": item.get("uom"),
+                }]
+            for source in item_sources:
+                order = orders.get(str(source.get("customer_order_id") or "")) or {}
+                part = parts.get(str(order.get("part_id") or item.get("part_id") or "")) or {}
+                customer = parties.get(str(order.get("customer_id") or "")) or {}
+                customer_sources.append({
+                    "customer": customer.get("party_name"),
+                    "customer_po_number": order.get("customer_order_no") or order.get("master_reference_no"),
+                    "po_position": order.get("order_position"),
+                    "part_number": part.get("part_number") or item.get("original_part_number_snapshot"),
+                    "fsi_part_number": part.get("fsi_part_number"),
+                    "schedule_reference": order.get("master_reference_no"),
+                    "quantity": number(source.get("allocated_qty") or item.get("quantity")),
+                    "uom": source.get("allocation_uom") or item.get("uom"),
+                    "customer_delivery_date": order.get("customer_delivery_date"),
+                })
+            item["customer_source_rows"] = customer_sources
         return items
+
+    def purchase_order_source_summary(self, purchase_order_id: str) -> list[dict]:
+        """Return Customer Order/Part source rows used by PO selectors, list pages and PDF previews."""
+        items = {str(r.get("id") or ""): r for r in self.purchase_order_items(purchase_order_id)}
+        orders = {str(r.get("id") or ""): r for r in self.customer_orders()}
+        parts, parties, _grades = self.master_maps()
+        rows: list[dict] = []
+        sources = self.purchase_order_sources(purchase_order_id)
+        if not sources:
+            for item in items.values():
+                if item.get("customer_order_id"):
+                    sources.append({
+                        "purchase_order_item_id": item.get("id"),
+                        "customer_order_id": item.get("customer_order_id"),
+                        "allocated_qty": item.get("quantity"),
+                        "allocation_uom": item.get("uom"),
+                    })
+        for source in sources:
+            item = items.get(str(source.get("purchase_order_item_id") or "")) or {}
+            order = orders.get(str(source.get("customer_order_id") or item.get("customer_order_id") or "")) or {}
+            part = parts.get(str(order.get("part_id") or item.get("part_id") or "")) or {}
+            customer = parties.get(str(order.get("customer_id") or "")) or {}
+            rows.append({
+                "Customer": customer.get("party_name") or "-",
+                "Customer PO Number": order.get("customer_order_no") or order.get("master_reference_no") or "-",
+                "PO Position": order.get("order_position") or "-",
+                "Customer Order / Schedule": order.get("master_reference_no") or order.get("customer_order_no") or "-",
+                "Part Number": part.get("part_number") or item.get("original_part_number_snapshot") or "-",
+                "FSI Part Number": part.get("fsi_part_number") or item.get("fsi_part_number_snapshot") or "-",
+                "PO Qty": round(number(source.get("allocated_qty") or item.get("quantity")), 3),
+                "UOM": source.get("allocation_uom") or item.get("uom") or "-",
+                "Customer Delivery Date": order.get("customer_delivery_date") or "-",
+            })
+        rows.sort(key=lambda row: (str(row.get("Customer PO Number") or ""), str(row.get("PO Position") or ""), str(row.get("Part Number") or "")))
+        return rows
 
     def current_price(
         self,
@@ -1077,11 +1141,13 @@ class SupplyChainService:
         Supplier and source Part identities remain immutable; supplier changes continue to
         use Cancel & Reissue.  Editable commercial/header fields and source allocations are
         revised in place, audited by the normal row audit trigger, and the PO is returned to
-        controlled approval/confirmation when a meaningful revision is saved.
+        controlled approval when a meaningful revision is saved. Supplier Confirmation is a
+        separate downstream stage and never an edit prerequisite.
         """
         p=dict(payload or {}); header=self.purchase_order(purchase_order_id) or {}
         if not header: raise ValueError("Purchase Order was not found.")
         if str(header.get("status") or "").upper()=="CANCELLED": raise ValueError("Cancelled Purchase Orders are not edited. Use Cancel & Reissue to create the replacement PO.")
+        was_approved = str(header.get("approval_status") or "").upper() == "APPROVED"
         supplier_id=str(header.get("supplier_id") or ""); supplier=self.repo.get("parties",supplier_id) or {}
         if not supplier: raise ValueError("The PO Supplier no longer exists in Supplier Master.")
         employee_id=current_employee_id(refresh=True)
@@ -1177,12 +1243,14 @@ class SupplyChainService:
             "approval_status":"PENDING_APPROVAL","status":"PENDING_APPROVAL","approver_employee_id":None,"approved_at":None,"approval_remarks":None,"submitted_by_employee_id":employee_id,"submitted_at":datetime.now(timezone.utc).isoformat(),
         }
         revised_header=self.repo.update("supply_purchase_orders",purchase_order_id,header_payload)
-        # Any revised approved PO requires the supplier to acknowledge the new revision.
+        # Supplier Confirmation never gates editing. Only a revision of an already-approved
+        # PO invalidates the prior supplier acknowledgement; a pending-approval edit simply
+        # stays in the approval workflow with no supplier-confirmation dependency.
         confirmation=self.purchase_order_confirmation(purchase_order_id)
-        if confirmation:
-            self.repo.update("supply_po_confirmations",str(confirmation.get("id")),{"confirmation_status":"PENDING","requested_at":datetime.now(timezone.utc).isoformat(),"confirmation_reference":None,"confirmation_date":None,"confirmed_delivery_date":None,"remarks":"PO revised; supplier reconfirmation required."})
+        if confirmation and was_approved:
+            self.repo.update("supply_po_confirmations",str(confirmation.get("id")),{"confirmation_status":"PENDING","requested_at":datetime.now(timezone.utc).isoformat(),"confirmation_reference":None,"confirmation_date":None,"confirmed_delivery_date":None,"remarks":"PO revised after approval; supplier acknowledgement will be requested again after re-approval."})
         self._invalidate_transactions()
-        return {"header":revised_header,"items":revised_items,"reapproval_required":True,"supplier_reconfirmation_required":True}
+        return {"header":revised_header,"items":revised_items,"reapproval_required":was_approved,"supplier_reconfirmation_required":was_approved,"supplier_confirmation_blocks_edit":False}
 
     def cancel_purchase_order(self, purchase_order_id: str, reason: str) -> dict:
         result = self.repo.rpc("qcms_cancel_purchase_order", {"p_purchase_order_id": purchase_order_id, "p_reason": reason})
@@ -1319,19 +1387,29 @@ class SupplyChainService:
                 received=sum(forging_receipts_by_stage.get(str(stage.get("id") or ""),0.0) for stage in forging_stages_by_po.get(po_id,[]))
             confirmation = confirmations.get(po_id) or {}
             ordered = number(item.get("quantity"))
-            source_labels=[]
+            source_labels=[]; customer_names=[]; customer_pos=[]; customer_po_numbers=[]; source_part_numbers=[]; source_qty_labels=[]
             sources=sources_by_item.get(item_id,[])
-            for source in sources:
+            source_detail_rows=sources or ([{"customer_order_id":item.get("customer_order_id"),"allocated_qty":item.get("quantity"),"allocation_uom":item.get("uom")}] if item.get("customer_order_id") else [])
+            for source in source_detail_rows:
                 src_order=orders.get(str(source.get("customer_order_id") or "")) or {}
-                source_labels.append(f"{src_order.get('master_reference_no') or '-'} ({number(source.get('allocated_qty')):,.3f} {source.get('allocation_uom') or item.get('uom')})")
-            if not source_labels and item.get("customer_order_id"):
-                src_order=orders.get(str(item.get("customer_order_id") or "")) or {}
-                if src_order: source_labels.append(str(src_order.get("master_reference_no") or src_order.get("customer_order_no") or "-"))
+                src_part=parts.get(str(src_order.get("part_id") or item.get("part_id") or "")) or {}
+                src_customer=parties.get(str(src_order.get("customer_id") or "")) or {}
+                source_labels.append(f"{src_order.get('master_reference_no') or src_order.get('customer_order_no') or '-'} ({number(source.get('allocated_qty')):,.3f} {source.get('allocation_uom') or item.get('uom')})")
+                customer_names.append(str(src_customer.get("party_name") or "-") )
+                customer_po_numbers.append(str(src_order.get("customer_order_no") or src_order.get("master_reference_no") or "-"))
+                customer_pos.append(str(src_order.get("order_position") or "-"))
+                source_part_numbers.append(str(src_part.get("part_number") or item.get("original_part_number_snapshot") or "-"))
+                source_qty_labels.append(f"{number(source.get('allocated_qty') or item.get('quantity')):,.3f}")
             rows.append({
                 "PO Number": header.get("po_number"), "PO Type": str(header.get("po_type") or "").replace("_", " ").title(), "PO Date": header.get("order_date"),
                 "Delivery Date": header.get("delivery_date"), "Supplier": party_label(supplier), "Part Number": item.get("original_part_number_snapshot") or part.get("part_number"),
                 "FSI Part Number": item.get("fsi_part_number_snapshot") or part.get("fsi_part_number"), "HSN / SAC": item.get("hsn_sac_code") or part.get("hsn_sac_code"), "Part Description": item.get("item_description") or part.get("part_name"),
                 "Customer Orders / Schedules": " · ".join(source_labels) if source_labels else "",
+                "Customer": " · ".join(dict.fromkeys(customer_names)) if customer_names else "",
+                "Customer PO Number": " · ".join(dict.fromkeys(customer_po_numbers)) if customer_po_numbers else "",
+                "PO Position": " · ".join(dict.fromkeys(customer_pos)) if customer_pos else "",
+                "Source Part Number": " · ".join(dict.fromkeys(source_part_numbers)) if source_part_numbers else "",
+                "PO Source Qty": " · ".join(source_qty_labels) if source_qty_labels else f"{ordered:,.3f}",
                 "Material Grade": grade.get("grade_code"), "RM Section": item.get("rm_section"), "Ordered Qty": ordered, "UOM": item.get("uom"),
                 "Received Qty": received, "Pending Qty": max(ordered-received, 0), "Unit Price": item.get("unit_price"), "GST %": item.get("gst_percent"),
                 "Total": header.get("grand_total"), "Approval Status": header.get("approval_status") or "APPROVED",

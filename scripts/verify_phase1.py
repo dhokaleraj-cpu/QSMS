@@ -138,7 +138,7 @@ for item in required:
 app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
-    "dashboard", "deployment-diagnostics", "masters", "company-branch-entry", "company-branch-records", "rmtc-entry", "rmtc-approved-worksheet", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-opening-stock", "supply-rm-procurement", "supply-purchase-orders", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "supply-order-mis", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "calibration-validation", "standard-room-inspection", "inspection-home", "records-center", "heat-ledger",
+    "dashboard", "deployment-diagnostics", "masters", "company-branch-entry", "company-branch-records", "rmtc-entry", "rmtc-approved-worksheet", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-opening-stock", "supply-rm-procurement", "supply-purchase-orders", "supply-po-order-list", "supply-po-edit", "supply-po-pdf", "supply-po-approval", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "supply-order-mis", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "calibration-validation", "standard-room-inspection", "inspection-home", "records-center", "heat-ledger",
     "reports-home", "heat-transaction-report", "osp-balance-report", "supply-chain-report", "rmtc-report", "inward-report", "dimensional-report", "metlab-report", "complaints-report", "traceability-report", "npd-report", "apqp-report", "qc-report", "inspection-layout-report", "standards-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
@@ -1015,10 +1015,10 @@ if not all(token in v41429_osp for token in ("FSI Batch Number", "Vendor Batch N
     errors.append("v4.14.29 OSP transaction selectors do not expose controlled batch identity")
 current_release_version = str(v41429_manifest.get("version") or "")
 current_release_build = str(v41429_manifest.get("build") or "")
-if current_release_version != "4.14.30" or current_release_build != "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH":
-    errors.append("v4.14.30 deployment manifest release identity is incomplete")
+if current_release_version != "4.14.31" or current_release_build != "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF":
+    errors.append("v4.14.31 deployment manifest release identity is incomplete")
 if str(v41429_manifest.get("database_schema_required")) != "4.14.28" or bool(v41429_manifest.get("database_migration_required")):
-    errors.append("v4.14.30 must remain a source-only release on the verified v4.14.28 database schema")
+    errors.append("v4.14.31 must remain a source-only release on the verified v4.14.28 database schema")
 
 # v4.14.30 RMTC supplier de-duplication / dedicated Bend Test discovery / permission-aware Global Search.
 v41430_global_search = (ROOT / "app_pages" / "global_search.py").read_text(encoding="utf-8")
@@ -1037,8 +1037,28 @@ if not all(token in v41430_global_search for token in ("SEARCH_SOURCES", "search
 if "Bend Test Report" not in v41430_inspection_home or "Bend Test" not in v41430_reports:
     errors.append("v4.14.30 Bend Test discovery cards are incomplete")
 
+# v4.14.31 dedicated Purchase Order workspace / pre-approval edit / source reference PDF.
+v41431_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v41431_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v41431_po_reporting = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
+for route in ("supply-po-order-list", "supply-po-edit", "supply-po-pdf", "supply-po-approval"):
+    if route not in app_text:
+        errors.append(f"v4.14.31 Purchase Order route missing: {route}")
+if not all(token in v41431_supply for token in ("def _purchase_order_subnav", "def render_purchase_order_list", "def render_purchase_order_edit_page", "def render_purchase_order_pdf_page", "def render_purchase_order_approval_page")):
+    errors.append("v4.14.31 dedicated Purchase Order subpages are incomplete")
+if not all(token in v41431_supply for token in ("Supplier Confirmation is NOT required to edit or save it.", "Customer PO Number", "PO Position", "PO Source Qty")):
+    errors.append("v4.14.31 pre-approval edit / key PO source UI contract is incomplete")
+if not all(token in v41431_service for token in ("def purchase_order_source_summary", "supplier_confirmation_blocks_edit", "Customer PO Number", "PO Position", "PO Source Qty")):
+    errors.append("v4.14.31 Purchase Order source summary / non-blocking confirmation service contract is incomplete")
+if not all(token in v41431_po_reporting for token in ("CUSTOMER PO / SOURCE REFERENCE", "CUSTOMER PO NO.", "PART NUMBER", "def _draw_customer_reference")):
+    errors.append("v4.14.31 controlled Purchase Order PDF customer-reference table is incomplete")
+
 report = {
-    "release": "QCMS 4.14.30 RMTC Supplier Dedup / Bend Test Discovery / Global Search",
+    "release": "QCMS 4.14.31 Purchase Order Workspace / Pre-Approval Edit / Customer Reference PDF",
+    "v41431_po_workspace": all(route in app_text for route in ("supply-po-order-list", "supply-po-edit", "supply-po-pdf", "supply-po-approval")),
+    "v41431_preapproval_edit": "Supplier Confirmation is NOT required" in v41431_supply and "supplier_confirmation_blocks_edit" in v41431_service,
+    "v41431_customer_reference_pdf": "CUSTOMER PO / SOURCE REFERENCE" in v41431_po_reporting and "purchase_order_source_summary" in v41431_service,
+    "v41431_source_only_schema": str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required")),
     "v41430_rmtc_supplier_dedup": "raw_by_supplier" in v41429_rmtc_service and "Raw Material Detail" in v41429_rmtc_ui,
     "v41430_bend_test_discovery": "render_bend_test_entry" in v41429_metlab and "bend-test-report" in app_text,
     "v41430_global_search": "search_everywhere" in v41430_global_search and "qcms_shell_global_search_form" in app_text,

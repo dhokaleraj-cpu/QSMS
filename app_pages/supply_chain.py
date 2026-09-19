@@ -33,6 +33,7 @@ from core.supply_chain_service import (
 )
 from core.ui import (
     kpi_grid,
+    module_submenu,
     page_header,
     record_widget_token,
     safe,
@@ -808,6 +809,55 @@ def render_rm_procurement() -> None:
 
 
 
+
+def _purchase_order_subnav() -> None:
+    """Dedicated Purchase Order workspace tabs (v4.14.31)."""
+    module_submenu(
+        "Purchase Orders",
+        ("supply-purchase-orders", "PO Entry", ":material/add_shopping_cart:"),
+        ("supply-po-order-list", "Order List", ":material/list_alt:"),
+        ("supply-po-edit", "Edit Purchase Order", ":material/edit_note:"),
+        ("supply-po-pdf", "Purchase Order PDF", ":material/picture_as_pdf:"),
+        ("supply-po-approval", "Approval / Supplier Confirmation", ":material/approval:"),
+        max_columns=5,
+    )
+
+
+def _purchase_order_selector_labels(service: SupplyChainService, headers: Mapping[str, Mapping[str, Any]], supplier_labels: Mapping[str, str]) -> dict[str, str]:
+    """Human-readable PO selector with Customer PO / position / Part / source quantity."""
+    labels: dict[str, str] = {}
+    for po_id, header in headers.items():
+        source_rows = service.purchase_order_source_summary(po_id)
+        first = source_rows[0] if source_rows else {}
+        extra = max(len(source_rows) - 1, 0)
+        source_text = " · ".join(
+            value for value in (
+                f"Customer PO {first.get('Customer PO Number') or '-'}" if first else "",
+                f"Pos {first.get('PO Position') or '-'}" if first else "",
+                f"Part {first.get('Part Number') or '-'}" if first else "",
+                f"Qty {first.get('PO Qty') or '-'} {first.get('UOM') or ''}".strip() if first else "",
+            ) if value
+        )
+        if extra:
+            source_text += f" · +{extra} source(s)"
+        labels[str(po_id)] = (
+            f"{header.get('po_number') or '-'} · {supplier_labels.get(str(header.get('supplier_id') or ''), 'Supplier')}"
+            f" · {source_text or 'No source details'} · {header.get('approval_status') or header.get('status') or '-'}"
+        )
+    return labels
+
+
+def _render_purchase_order_key_information(service: SupplyChainService, purchase_order_id: str, *, key: str) -> None:
+    rows = service.purchase_order_source_summary(purchase_order_id)
+    section_bar(
+        "PURCHASE ORDER SOURCE / CUSTOMER REFERENCE",
+        "Key source information shown in the selection list and controlled PO PDF: Part Number, Customer PO Number, PO Position and allocated quantity.",
+    )
+    if rows:
+        portal_table(pd.DataFrame(rows), hide_index=True, width="stretch", height=min(340, 78 + len(rows) * 38))
+    else:
+        st.info("No Customer Order / Schedule source information is stored for this historical Purchase Order.")
+
 def _render_purchase_order_edit(
     service: SupplyChainService, *, purchase_order_id: str, header: Mapping[str, Any],
     parts: Mapping[str, Mapping[str, Any]], parties: Mapping[str, Mapping[str, Any]],
@@ -827,7 +877,7 @@ def _render_purchase_order_edit(
     supplier = parties.get(supplier_id) or service.repo.get("parties", supplier_id) or {}
     st.warning(
         "Supplier and source Part identities are controlled genealogy and cannot be changed in-place. "
-        "Use Cancel & Reissue for a Supplier change. Saving a PO revision sends it back for approval and supplier reconfirmation."
+        "Use Cancel & Reissue for a Supplier change. Supplier Confirmation is a separate downstream stage and NEVER blocks PO editing."
     )
     st.caption(
         "Latest master-data refresh is ON by default. When a Part/Supplier/Branch master is changed, opening this PO for edit and saving it refreshes the PO snapshots, technical data, HSN and current master price while the audit log preserves the previous values."
@@ -920,8 +970,10 @@ def _render_purchase_order_edit(
         )
         remarks = st.text_area("Remarks", value=str(header.get("remarks") or ""), height=70)
         instructions = st.text_area("Comments / Special Instructions", value=str(header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS), height=130)
-        confirm = st.checkbox("I confirm this PO revision must be re-approved and re-confirmed by the supplier.", value=False)
-        submitted = st.form_submit_button("Save Revised Purchase Order & Submit for Re-Approval", type="primary", width="stretch", disabled=not bool(login_employee_id) or not confirm)
+        current_approval = str(header.get("approval_status") or header.get("status") or "PENDING_APPROVAL").upper()
+        save_label = "Save / Update Purchase Order · Keep Pending Approval" if current_approval != "APPROVED" else "Save Revised Purchase Order · Submit for Re-Approval"
+        st.caption("Supplier confirmation is not required to save or edit this Purchase Order. After approval/release, the Supplier Confirmation stage remains available separately.")
+        submitted = st.form_submit_button(save_label, type="primary", width="stretch", disabled=not bool(login_employee_id))
     if submitted:
         try:
             allocations = [{"id": row.get("Source ID"), "allocated_qty": row.get("Allocated Qty")} for _, row in source_edit.iterrows()] if not source_edit.empty else []
@@ -941,14 +993,24 @@ def _render_purchase_order_edit(
                 recipient_email=str(target.get("email") or "").strip() or None, recipient_name=str(target.get("employee_name") or "").strip() or None,
                 context={"po_number": revised.get("po_number"), "supplier_name": supplier_labels.get(supplier_id,"Supplier"), "supplier_id": supplier_id, "next_stage": str(target.get("level_name") or "Re-Approval")},
             )
-            save_success_popup("Purchase Order revised using the latest master data and submitted for re-approval. Supplier reconfirmation is required after approval.", queue_for_rerun=True)
-            st.rerun()
+            if str(header.get("approval_status") or "").upper() == "APPROVED":
+                message = "Purchase Order revised and returned for re-approval. Supplier Confirmation remains a separate downstream stage and does not block editing."
+            else:
+                message = "Purchase Order updated successfully and remains Pending Approval. Supplier Confirmation is not required for editing."
+            save_success_popup(message, queue_for_rerun=True)
+            st.session_state["supply_po_approval_request_id"] = purchase_order_id
+            target_page = st.session_state.get("_qsms_pages", {}).get("supply-po-approval")
+            if target_page:
+                st.switch_page(target_page)
+            else:
+                st.rerun()
         except Exception as exc:
             st.error(str(exc))
 
 
 def render_purchase_orders() -> None:
-    page_header("Purchase Orders · Raw Material / Forging", "Controlled supplier Purchase Orders with multi-order RM consolidation, FSI Part confidentiality, supplier price history and Part Master technical data", "Supply Chain")
+    page_header("Purchase Order Entry · Raw Material / Forging", "Create controlled supplier POs. Use the dedicated Purchase Order tabs for Order List, Edit, PDF and Approval / Supplier Confirmation.", "Supply Chain")
+    _purchase_order_subnav()
     service=SupplyChainService(); perms=current_permissions("SUPPLY_CHAIN")
     profile=current_profile() or {}
     # v4.14.19 resolves the Employee Master relationship live. A role/employee link may
@@ -985,7 +1047,7 @@ def render_purchase_orders() -> None:
                 pending=pending_by_id.get(str(row.get("id"))) or {}
                 row["rm_ordered_kg"]=number(pending.get("rm_ordered_kg"))
                 row["rm_balance_kg"]=number(pending.get("rm_balance_kg") or max(number(row.get("required_rm_kg"))-number(pending.get("rm_ordered_kg")),0.0))
-            labels={str(r["id"]):f"{r.get('master_reference_no')} · Customer {(parties.get(str(r.get('customer_id'))) or {}).get('party_name') or '-'} · Part {(parts.get(str(r.get('part_id'))) or {}).get('part_number') or '-'} · FSI {(parts.get(str(r.get('part_id'))) or {}).get('fsi_part_number') or 'ENTER AT PO'} · Pos {r.get('order_position') or '-'} · RM Balance {number(r.get('rm_balance_kg')):,.3f} kg · Due {r.get('customer_delivery_date') or '-'}" for r in eligible_orders}
+            labels={str(r["id"]):f"{r.get('master_reference_no')} · Customer PO {r.get('customer_order_no') or r.get('master_reference_no') or '-'} · Pos {r.get('order_position') or '-'} · Customer {(parties.get(str(r.get('customer_id'))) or {}).get('party_name') or '-'} · Part {(parts.get(str(r.get('part_id'))) or {}).get('part_number') or '-'} · Order Qty {number(r.get('order_qty_pcs')):,.0f} pcs · FSI {(parts.get(str(r.get('part_id'))) or {}).get('fsi_part_number') or 'ENTER AT PO'} · RM Balance {number(r.get('rm_balance_kg')):,.3f} kg · Due {r.get('customer_delivery_date') or '-'}" for r in eligible_orders}
             pre=str(st.session_state.pop("supply_po_source_order_id","") or "")
             reissue_defaults=[str(v) for v in (st.session_state.pop("supply_po_reissue_source_ids",[]) or []) if str(v) in labels]
             defaults=reissue_defaults or ([pre] if pre in labels else [])
@@ -1017,7 +1079,7 @@ def render_purchase_orders() -> None:
                 src_order=service.order(str(r.get('_customer_order_id') or '')) or {}
                 src_part=parts.get(str(src_order.get('part_id'))) or {}
                 src_customer=parties.get(str(src_order.get('customer_id'))) or {}
-                labels[str(i)]=f"{src_order.get('master_reference_no')} · Customer {src_customer.get('party_name') or '-'} · Part {src_part.get('part_number') or '-'} · {r.get('_source_type')} · Balance {number(r.get('_balance_pcs')):,.0f} pcs"
+                labels[str(i)]=f"{src_order.get('master_reference_no')} · Customer PO {src_order.get('customer_order_no') or src_order.get('master_reference_no') or '-'} · Pos {src_order.get('order_position') or '-'} · Customer {src_customer.get('party_name') or '-'} · Part {src_part.get('part_number') or '-'} · Order Qty {number(src_order.get('order_qty_pcs')):,.0f} pcs · {r.get('_source_type')} · Balance {number(r.get('_balance_pcs')):,.0f} pcs"
             chosen=st.multiselect("Select ELIGIBLE Forging PO Source(s)",list(labels),format_func=lambda v:labels[v],key="supply_po_forging_sources",help="Select multiple sources only when they use the same Supplier Forging Part No. in Part Master. QCMS consolidates the supplier item but retains each finished-Part allocation.") if labels else []
             if chosen:
                 selected_forging_sources=[pending[int(value)] for value in chosen]
@@ -1230,7 +1292,7 @@ def render_purchase_orders() -> None:
                     target_name=str(approval_target.get("employee_name") or "").strip()
                     target_stage=str(approval_target.get("level_name") or "Manager Approval").strip()
                     NotificationService(service.repo).notify("PO_APPROVAL_PENDING",related_table="supply_purchase_orders",related_id=str(header_result.get("id") or ""),recipient_email=target_email or None,recipient_name=target_name or None,context={"po_number":header_result.get("po_number"),"requisitioner":requisitioner_name,"supplier_name":supplier_labels.get(str(supplier_id),"Supplier"),"supplier_id":str(supplier_id or ""),"next_stage":target_stage})
-                    save_success_popup(f"Purchase Order {header_result.get('po_number')} created and submitted for approval. It becomes effective only after approval.",queue_for_rerun=True); st.rerun()
+                    save_success_popup(f"Purchase Order {header_result.get('po_number')} created and submitted for approval. You may edit it at any time before approval from the Edit Purchase Order tab; Supplier Confirmation is not required for editing.",queue_for_rerun=True); st.session_state["supply_po_edit_request_id"] = str(header_result.get("id") or ""); st.rerun()
                 except Exception as exc: st.error(str(exc))
 
             last_id=str(st.session_state.get("last_supply_purchase_order_id") or "")
@@ -1397,6 +1459,258 @@ def render_purchase_orders() -> None:
             elif report_name=="Supplier Orders": report=report.sort_values(["Supplier","Delivery Date"],na_position="last")
             elif report_name=="RM for Part Number Orders": report=report[report["PO Type"]=="Raw Material"].sort_values(["Part Number","FSI Part Number","Delivery Date"],na_position="last")
         _searchable_grid(report.drop(columns=["_po_id","_item_id","_part_id","_supplier_id"],errors="ignore"),title=report_name,key="supply_po_management_report",height=520)
+
+
+def render_purchase_order_list() -> None:
+    page_header("Purchase Order · Order List", "All controlled Purchase Orders with Customer PO, PO Position, Part Number, quantity, approval and Supplier Confirmation status", "Supply Chain")
+    _purchase_order_subnav()
+    service = SupplyChainService(); perms = current_permissions("SUPPLY_CHAIN")
+    parts, parties, grades = _maps(service)
+    supplier_labels = {str(r["id"]): party_label(r) for r in service.suppliers()}
+    rows = service.purchase_order_rows()
+    frame = pd.DataFrame(rows)
+    with stage_section("A", "PURCHASE ORDER LIST", "Search or filter the PO register. Key source fields are shown directly in the list.", key="po_dedicated_order_list"):
+        if frame.empty:
+            st.info("No Purchase Orders are available.")
+            return
+        c = st.columns(3, gap="small")
+        type_options = ["ALL"] + sorted({str(v) for v in frame.get("PO Type", pd.Series(dtype=str)).dropna().unique()})
+        status_options = ["ALL"] + sorted({str(v) for v in frame.get("Approval Status", pd.Series(dtype=str)).dropna().unique()})
+        selected_type = c[0].selectbox("PO Type", type_options, key="po_list_type_filter")
+        selected_status = c[1].selectbox("Approval Status", status_options, key="po_list_approval_filter")
+        confirmation_options = ["ALL"] + sorted({str(v) for v in frame.get("Supplier Confirmation", pd.Series(dtype=str)).dropna().unique()})
+        selected_confirmation = c[2].selectbox("Supplier Confirmation", confirmation_options, key="po_list_confirmation_filter")
+        filtered = frame.copy()
+        if selected_type != "ALL": filtered = filtered[filtered["PO Type"].astype(str) == selected_type]
+        if selected_status != "ALL": filtered = filtered[filtered["Approval Status"].astype(str) == selected_status]
+        if selected_confirmation != "ALL": filtered = filtered[filtered["Supplier Confirmation"].astype(str) == selected_confirmation]
+        preferred = [
+            "PO Number", "PO Type", "PO Date", "Supplier", "Customer", "Customer PO Number", "PO Position",
+            "Part Number", "FSI Part Number", "PO Source Qty", "UOM", "Delivery Date", "Approval Status",
+            "Supplier Confirmation", "Status",
+        ]
+        display_cols = [c for c in preferred if c in filtered.columns]
+        _searchable_grid(filtered[display_cols], title="Purchase Orders", key="po_dedicated_order_grid", height=560)
+
+    headers = {str(r.get("id")): r for r in service.purchase_orders()}
+    labels = _purchase_order_selector_labels(service, headers, supplier_labels)
+    with stage_section("B", "OPEN PURCHASE ORDER", "Select a PO and open the exact Edit, PDF or Approval page.", key="po_order_list_actions"):
+        if not labels:
+            st.info("No Purchase Orders are available.")
+            return
+        selected = st.selectbox("Select Purchase Order", list(labels), format_func=lambda v: labels[v], key="po_order_list_select")
+        _render_purchase_order_key_information(service, selected, key="po_list_source")
+        c = st.columns(3, gap="small")
+        if c[0].button("Open Edit Purchase Order", type="primary", width="stretch", disabled=not perms.get("can_edit", False), key="po_list_open_edit"):
+            st.session_state["supply_po_edit_request_id"] = selected
+            st.switch_page(st.session_state["_qsms_pages"]["supply-po-edit"])
+        if c[1].button("Open Purchase Order PDF", width="stretch", key="po_list_open_pdf"):
+            st.session_state["supply_po_pdf_request_id"] = selected
+            st.switch_page(st.session_state["_qsms_pages"]["supply-po-pdf"])
+        if c[2].button("Open Approval / Confirmation", width="stretch", key="po_list_open_approval"):
+            st.session_state["supply_po_approval_request_id"] = selected
+            st.switch_page(st.session_state["_qsms_pages"]["supply-po-approval"])
+
+
+def render_purchase_order_edit_page() -> None:
+    page_header("Purchase Order · Edit", "Dedicated controlled editor. Pending-approval POs can be edited without Supplier Confirmation.", "Supply Chain")
+    _purchase_order_subnav()
+    service = SupplyChainService(); perms = current_permissions("SUPPLY_CHAIN")
+    login_employee_id = current_employee_id(refresh=True)
+    parts, parties, grades = _maps(service)
+    supplier_labels = {str(r["id"]): party_label(r) for r in service.suppliers()}
+    headers = {str(r.get("id")): r for r in service.purchase_orders() if str(r.get("status") or "").upper() != "CANCELLED"}
+    labels = _purchase_order_selector_labels(service, headers, supplier_labels)
+    if not labels:
+        st.info("No editable Purchase Orders are available.")
+        return
+    requested = str(st.session_state.pop("supply_po_edit_request_id", "") or "")
+    if requested in labels:
+        st.session_state["po_dedicated_edit_select"] = requested
+    elif st.session_state.get("po_dedicated_edit_select") not in labels:
+        st.session_state["po_dedicated_edit_select"] = next(iter(labels))
+    selected = st.selectbox("Purchase Order to Edit", list(labels), format_func=lambda v: labels[v], key="po_dedicated_edit_select")
+    header = service.purchase_order(selected) or {}
+    status = str(header.get("approval_status") or header.get("status") or "").upper()
+    if status == "PENDING_APPROVAL":
+        st.success("This PO is Pending Approval and may be edited now. Supplier Confirmation is NOT required to edit or save it.")
+    elif status == "APPROVED":
+        st.warning("This PO is already approved. Saving a revision will send it back for re-approval. Supplier Confirmation still does not block editing.")
+    _render_purchase_order_key_information(service, selected, key="po_edit_source")
+    _render_purchase_order_edit(
+        service, purchase_order_id=selected, header=header, parts=parts, parties=parties,
+        supplier_labels=supplier_labels, perms=perms, login_employee_id=login_employee_id,
+    )
+
+
+def render_purchase_order_pdf_page() -> None:
+    page_header("Purchase Order · PDF", "Select, review and print the controlled PO with Customer PO / position / Part / quantity reference information", "Supply Chain")
+    _purchase_order_subnav()
+    service = SupplyChainService(); perms = current_permissions("SUPPLY_CHAIN")
+    supplier_labels = {str(r["id"]): party_label(r) for r in service.suppliers()}
+    headers = {str(r.get("id")): r for r in service.purchase_orders()}
+    labels = _purchase_order_selector_labels(service, headers, supplier_labels)
+    if not labels:
+        st.info("No Purchase Orders are available.")
+        return
+    requested = str(st.session_state.pop("supply_po_pdf_request_id", "") or "")
+    if requested in labels:
+        st.session_state["po_dedicated_pdf_select"] = requested
+    elif st.session_state.get("po_dedicated_pdf_select") not in labels:
+        st.session_state["po_dedicated_pdf_select"] = next(iter(labels))
+    selected = st.selectbox("Purchase Order for PDF", list(labels), format_func=lambda v: labels[v], key="po_dedicated_pdf_select")
+    service.sync_purchase_order_status(selected)
+    header = service.purchase_order(selected) or {}
+    items = service.purchase_order_items_for_print(selected)
+    _render_purchase_order_key_information(service, selected, key="po_pdf_source")
+    c = st.columns(2, gap="small")
+    try:
+        c[0].download_button(
+            "Download / Print Purchase Order PDF", purchase_order_pdf_bytes(header, items),
+            file_name=f"{header.get('po_number')}.pdf", mime="application/pdf", icon=":material/picture_as_pdf:",
+            type="primary", width="stretch", key=f"dedicated_po_pdf_{selected}",
+        )
+    except Exception as exc:
+        c[0].error(f"Purchase Order PDF could not be generated: {exc}")
+    po_event = "RM_PO_CREATED" if str(header.get("po_type") or "").upper() == "RAW_MATERIAL" else "FORGING_PO_CREATED"
+    with c[1]:
+        record_email_sender(
+            NotificationService(service.repo), po_event,
+            related_table="supply_purchase_orders", related_id=selected, key=f"dedicated_po_record_email_{selected}",
+            context={"po_number": header.get("po_number"), "supplier_id": str(header.get("supplier_id") or ""), "next_task": "Supplier Confirmation / Receipt"},
+            include_supplier=True,
+        )
+
+
+def _render_supplier_confirmation_stage(service: SupplyChainService, *, selected_po: str, header: Mapping[str, Any], perms: Mapping[str, bool]) -> None:
+    """Supplier Confirmation is downstream and never an edit prerequisite."""
+    approval_status = str(header.get("approval_status") or "").upper()
+    section_bar("SUPPLIER PURCHASE ORDER CONFIRMATION", "This stage is separate from PO editing. It becomes actionable after controlled approval/release and never blocks Edit Purchase Order.")
+    if approval_status != "APPROVED":
+        st.info("Supplier Confirmation is waiting for Purchase Order approval. You may continue editing the PO from the Edit Purchase Order tab without any supplier confirmation.")
+        return
+    if str(header.get("status") or "").upper() == "CANCELLED":
+        st.info("Cancelled Purchase Orders do not require Supplier Confirmation.")
+        return
+    try:
+        confirmation = service.purchase_order_confirmation(selected_po) or service.ensure_purchase_order_confirmation(selected_po)
+    except Exception as exc:
+        st.error(f"Supplier confirmation stage could not be initialized: {exc}")
+        return
+    if not confirmation:
+        st.warning("Supplier Confirmation record could not be initialized.")
+        return
+    conf_status = str(confirmation.get("confirmation_status") or "PENDING").upper()
+    cconf = st.columns(4, gap="small")
+    cconf[0].metric("Confirmation Status", conf_status.replace("_", " ").title())
+    cconf[1].metric("Priority", "HIGH")
+    cconf[2].metric("Reminder Count", int(confirmation.get("reminder_count") or 0))
+    cconf[3].metric("Requested", str(confirmation.get("requested_at") or "")[:10] or "-")
+    if conf_status != "CONFIRMED":
+        cc = st.columns(3, gap="small")
+        confirmation_reference = cc[0].text_input("Supplier Confirmation Reference", value=str(confirmation.get("confirmation_reference") or ""), key=f"po_ded_conf_ref_{selected_po}")
+        confirmation_date = cc[1].date_input("Supplier Confirmation Date", value=date.today(), format="DD-MM-YYYY", key=f"po_ded_conf_date_{selected_po}")
+        confirmed_delivery = cc[2].date_input("Supplier Confirmed Delivery Date", value=_iso_date(header.get("delivery_date")), format="DD-MM-YYYY", key=f"po_ded_conf_delivery_{selected_po}")
+        confirmation_remarks = st.text_area("Supplier Confirmation Remarks", value=str(confirmation.get("remarks") or ""), height=70, key=f"po_ded_conf_remarks_{selected_po}")
+        confirmation_file = st.file_uploader("Supplier PO Confirmation Attachment", type=ALLOWED_ATTACHMENT_TYPES, key=f"po_ded_conf_file_{selected_po}")
+        caction = st.columns(2, gap="small")
+        if caction[0].button("Save Supplier Confirmation", type="primary", width="stretch", disabled=not perms.get("can_edit", False) or confirmation_file is None or not confirmation_reference.strip(), key=f"po_ded_save_conf_{selected_po}"):
+            try:
+                AttachmentService(service.repo).upload(
+                    entity_type="PO_CONFIRMATION", entity_id=str(confirmation.get("id")), folder="supply-po-confirmation",
+                    slot=AttachmentSlot("SUPPLIER_PO_CONFIRMATION", "Supplier PO Confirmation", "Supplier acknowledgement / signed confirmation"), file=confirmation_file,
+                )
+                saved = service.confirm_purchase_order(selected_po, {"confirmation_reference": confirmation_reference, "confirmation_date": confirmation_date.isoformat(), "confirmed_delivery_date": confirmed_delivery.isoformat(), "remarks": confirmation_remarks})
+                supplier = service.repo.get("parties", str(header.get("supplier_id") or "")) or {}
+                NotificationService(service.repo).notify(
+                    "PO_CONFIRMATION_RECEIVED", related_table="supply_po_confirmations", related_id=str(saved.get("id") or confirmation.get("id")),
+                    context={"po_number": header.get("po_number"), "supplier_id": str(header.get("supplier_id") or ""), "supplier_name": supplier.get("party_name"), "confirmation_reference": confirmation_reference, "next_stage": "Raw Material / Forging receipt execution"},
+                )
+                save_success_popup("Supplier PO Confirmation saved. Editing remains available independently from the Edit Purchase Order tab.", queue_for_rerun=True); st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+        if caction[1].button("Send Priority Reminder Now", width="stretch", disabled=not perms.get("can_edit", False), key=f"po_ded_conf_reminder_{selected_po}"):
+            try:
+                supplier = service.repo.get("parties", str(header.get("supplier_id") or "")) or {}
+                NotificationService(service.repo).notify(
+                    "PO_CONFIRMATION_REQUIRED", related_table="supply_po_confirmations", related_id=str(confirmation.get("id")),
+                    recipient_email=str(supplier.get("email") or "").strip() or None, recipient_name=str(supplier.get("party_name") or "").strip() or None,
+                    include_supplier=True, context={"po_number": header.get("po_number"), "supplier_id": str(header.get("supplier_id") or ""), "supplier_name": supplier.get("party_name"), "next_stage": "Supplier PO Confirmation"},
+                )
+                service.repo.update("supply_po_confirmations", str(confirmation.get("id")), {"last_reminder_at": datetime.now(timezone.utc).isoformat(), "reminder_count": int(confirmation.get("reminder_count") or 0) + 1})
+                save_success_popup("Supplier Confirmation reminder queued.", queue_for_rerun=True); st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+    else:
+        st.success(f"Supplier confirmed this PO · Reference: {confirmation.get('confirmation_reference') or '-'} · Confirmed delivery: {confirmation.get('confirmed_delivery_date') or '-'}")
+    render_attachment_manager(
+        repo=service.repo, entity_type="PO_CONFIRMATION", entity_id=str(confirmation.get("id")), folder="supply-po-confirmation",
+        slots=(AttachmentSlot("SUPPLIER_PO_CONFIRMATION", "Supplier PO Confirmation", "Supplier acknowledgement / signed confirmation"),),
+        key_prefix=f"dedicated_supplier_po_confirmation_{selected_po}", can_add_or_replace=bool(perms.get("can_edit")), can_delete=bool(perms.get("can_archive")), title="SUPPLIER CONFIRMATION ATTACHMENT",
+    )
+
+
+def render_purchase_order_approval_page() -> None:
+    page_header("Purchase Order · Approval / Supplier Confirmation", "Controlled approval and downstream supplier acknowledgement. Supplier Confirmation never blocks PO editing.", "Supply Chain")
+    _purchase_order_subnav()
+    service = SupplyChainService(); perms = current_permissions("SUPPLY_CHAIN")
+    profile = current_profile() or {}
+    login_employee_id = current_employee_id(refresh=True)
+    supplier_labels = {str(r["id"]): party_label(r) for r in service.suppliers()}
+    headers = {str(r.get("id")): r for r in service.purchase_orders()}
+    labels = _purchase_order_selector_labels(service, headers, supplier_labels)
+    if not labels:
+        st.info("No Purchase Orders are available.")
+        return
+    requested = str(st.session_state.pop("supply_po_approval_request_id", "") or "")
+    if requested in labels:
+        st.session_state["po_dedicated_approval_select"] = requested
+    elif st.session_state.get("po_dedicated_approval_select") not in labels:
+        pending = next((pid for pid, h in headers.items() if str(h.get("approval_status") or "").upper() == "PENDING_APPROVAL"), None)
+        st.session_state["po_dedicated_approval_select"] = pending or next(iter(labels))
+    selected = st.selectbox("Purchase Order for Approval / Supplier Confirmation", list(labels), format_func=lambda v: labels[v], key="po_dedicated_approval_select")
+    service.sync_purchase_order_status(selected)
+    header = service.purchase_order(selected) or {}
+    _render_purchase_order_key_information(service, selected, key="po_approval_source")
+    approval_status = str(header.get("approval_status") or "APPROVED").upper()
+    section_bar("PURCHASE ORDER APPROVAL", "Pending Purchase Orders remain editable until approval. Saving an edit keeps or returns the PO to Pending Approval.")
+    if approval_status == "PENDING_APPROVAL":
+        st.warning("This Purchase Order is awaiting controlled approval and is not effective for receipt/procurement execution yet.")
+        target = service.purchase_order_approval_target(selected)
+        target_employee_id = str(target.get("employee_id") or "")
+        submitted_by = str(header.get("submitted_by_employee_id") or "")
+        is_admin_user = str(profile.get("role") or "").upper() == "ADMIN"
+        route_allows_user = is_admin_user or (bool(target_employee_id) and login_employee_id == target_employee_id) or (not target_employee_id and bool(login_employee_id) and login_employee_id != submitted_by)
+        if target_employee_id:
+            st.info(f"Required Approver: **{target.get('employee_name') or target_employee_id}** · Route: **{str(target.get('source') or '').replace('_',' ').title()}** · Level: **{target.get('level_name') or 'Approval'}**")
+        else:
+            st.info("No configured route employee / Reports-To manager is available. A different employee with Supply Chain Approve permission may approve; self-approval remains blocked.")
+        c = st.columns([3, 1], gap="small")
+        approval_note = c[0].text_input("Approval Remark", key=f"po_ded_approval_note_{selected}")
+        if c[1].button("Approve Purchase Order", type="primary", width="stretch", disabled=(not perms.get("can_approve", False)) or (not route_allows_user), key=f"po_ded_approve_{selected}"):
+            try:
+                approved = service.approve_purchase_order(selected, approval_note)
+                supplier = service.repo.get("parties", str(approved.get("supplier_id") or "")) or {}
+                notification = NotificationService(service.repo)
+                release_event = "RM_PO_CREATED" if str(approved.get("po_type") or "").upper() == "RAW_MATERIAL" else "FORGING_PO_CREATED"
+                notification.notify(
+                    release_event, related_table="supply_purchase_orders", related_id=selected,
+                    recipient_email=str(supplier.get("email") or "").strip() or None, recipient_name=str(supplier.get("party_name") or "").strip() or None,
+                    include_supplier=True, context={"po_number": approved.get("po_number"), "supplier_id": str(approved.get("supplier_id") or ""), "supplier_name": supplier.get("party_name"), "delivery_date": approved.get("delivery_date"), "next_stage": "Raw Material Receipt" if release_event == "RM_PO_CREATED" else "Forging Receipt"},
+                )
+                service.ensure_purchase_order_confirmation(selected)
+                save_success_popup("Purchase Order approved and released. Supplier Confirmation is now open as a separate downstream stage.", queue_for_rerun=True); st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+        if st.button("Open Edit Purchase Order", width="stretch", disabled=not perms.get("can_edit", False), key=f"po_approval_open_edit_{selected}"):
+            st.session_state["supply_po_edit_request_id"] = selected
+            st.switch_page(st.session_state["_qsms_pages"]["supply-po-edit"])
+    else:
+        st.success(f"Approval Status: {approval_status.replace('_', ' ').title()}")
+        if st.button("Open Edit Purchase Order", width="stretch", disabled=not perms.get("can_edit", False), key=f"po_approved_open_edit_{selected}"):
+            st.session_state["supply_po_edit_request_id"] = selected
+            st.switch_page(st.session_state["_qsms_pages"]["supply-po-edit"])
+    _render_supplier_confirmation_stage(service, selected_po=selected, header=service.purchase_order(selected) or header, perms=perms)
 
 def render_rm_receipt() -> None:
     page_header("Raw Material Receipt · Material Inward Link","Material Inward is the source of truth; no duplicate RM receipt entry","Supply Chain")
