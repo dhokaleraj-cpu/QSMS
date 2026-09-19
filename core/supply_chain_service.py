@@ -554,10 +554,13 @@ class SupplyChainService:
                 part = parts.get(str(order.get("part_id") or item.get("part_id") or "")) or {}
                 customer = parties.get(str(order.get("customer_id") or "")) or {}
                 customer_sources.append({
+                    # Customer identity is retained in QCMS genealogy/UI, but the supplier-facing
+                    # PO print deliberately omits the customer name from v4.14.32 onward.
                     "customer": customer.get("party_name"),
                     "customer_po_number": order.get("customer_order_no") or order.get("master_reference_no"),
                     "po_position": order.get("order_position"),
                     "part_number": part.get("part_number") or item.get("original_part_number_snapshot"),
+                    "part_description": part.get("part_name"),
                     "fsi_part_number": part.get("fsi_part_number"),
                     "schedule_reference": order.get("master_reference_no"),
                     "quantity": number(source.get("allocated_qty") or item.get("quantity")),
@@ -565,6 +568,16 @@ class SupplyChainService:
                     "customer_delivery_date": order.get("customer_delivery_date"),
                 })
             item["customer_source_rows"] = customer_sources
+            descriptions = []
+            for source_row in customer_sources:
+                desc = str(source_row.get("part_description") or "").strip()
+                if desc and desc not in descriptions:
+                    descriptions.append(desc)
+            part_master = parts.get(part_id) or {}
+            fallback_description = str(part_master.get("part_name") or "").strip()
+            if fallback_description and fallback_description not in descriptions:
+                descriptions.append(fallback_description)
+            item["part_description_master"] = " / ".join(descriptions) or item.get("item_description") or ""
         return items
 
     def purchase_order_source_summary(self, purchase_order_id: str) -> list[dict]:
@@ -594,6 +607,7 @@ class SupplyChainService:
                 "PO Position": order.get("order_position") or "-",
                 "Customer Order / Schedule": order.get("master_reference_no") or order.get("customer_order_no") or "-",
                 "Part Number": part.get("part_number") or item.get("original_part_number_snapshot") or "-",
+                "Part Description": part.get("part_name") or item.get("item_description") or "-",
                 "FSI Part Number": part.get("fsi_part_number") or item.get("fsi_part_number_snapshot") or "-",
                 "PO Qty": round(number(source.get("allocated_qty") or item.get("quantity")), 3),
                 "UOM": source.get("allocation_uom") or item.get("uom") or "-",

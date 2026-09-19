@@ -835,8 +835,8 @@ v41412_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf
 v41412_service = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
 v41412_po = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
 v41412_sql = (ROOT / "supabase" / "migrations" / "20260826183000_qcms_raw_material_type_po_v41412.sql").read_text(encoding="utf-8")
-if 'RAW_MATERIAL_TYPE_DEFAULTS = ("Round Black Bar", "Bright Bar")' not in v41412_part or '"Raw Material Type"' not in v41412_part:
-    errors.append("QCMS 4.14.12 controlled Raw Material Type list is incomplete")
+if not any(token in v41412_part for token in ('RAW_MATERIAL_TYPE_DEFAULTS = ("Round Black Bar", "Bright Bar")', 'RAW_MATERIAL_TYPE_DEFAULTS = ("Forging", "Round Black Bar", "Casting", "Bright Bar", "Ground Bar")')) or '"Raw Material Type"' not in v41412_part:
+    errors.append("QCMS 4.14.12+ controlled Raw Material Type list is incomplete")
 if "duplicate_word_check=True" not in v41412_part or "MasterService._fuzzy_word_duplicate" not in v41412_part:
     errors.append("QCMS 4.14.12 Section Size/Forging Route duplicate-word guard is incomplete")
 if 'RAW MATERIAL DETAILS & SUPPLIER TECHNICAL DATA' not in v41412_po or 'RAW MATERIAL / FORGING PARAMETERS & SUPPLIER TECHNICAL DATA' not in v41412_po:
@@ -1015,10 +1015,10 @@ if not all(token in v41429_osp for token in ("FSI Batch Number", "Vendor Batch N
     errors.append("v4.14.29 OSP transaction selectors do not expose controlled batch identity")
 current_release_version = str(v41429_manifest.get("version") or "")
 current_release_build = str(v41429_manifest.get("build") or "")
-if current_release_version != "4.14.31" or current_release_build != "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF":
-    errors.append("v4.14.31 deployment manifest release identity is incomplete")
+if current_release_version != "4.14.32" or current_release_build != "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST":
+    errors.append("v4.14.32 deployment manifest release identity is incomplete")
 if str(v41429_manifest.get("database_schema_required")) != "4.14.28" or bool(v41429_manifest.get("database_migration_required")):
-    errors.append("v4.14.31 must remain a source-only release on the verified v4.14.28 database schema")
+    errors.append("v4.14.32 must remain a source-only release on the verified v4.14.28 database schema")
 
 # v4.14.30 RMTC supplier de-duplication / dedicated Bend Test discovery / permission-aware Global Search.
 v41430_global_search = (ROOT / "app_pages" / "global_search.py").read_text(encoding="utf-8")
@@ -1050,14 +1050,32 @@ if not all(token in v41431_supply for token in ("Supplier Confirmation is NOT re
     errors.append("v4.14.31 pre-approval edit / key PO source UI contract is incomplete")
 if not all(token in v41431_service for token in ("def purchase_order_source_summary", "supplier_confirmation_blocks_edit", "Customer PO Number", "PO Position", "PO Source Qty")):
     errors.append("v4.14.31 Purchase Order source summary / non-blocking confirmation service contract is incomplete")
-if not all(token in v41431_po_reporting for token in ("CUSTOMER PO / SOURCE REFERENCE", "CUSTOMER PO NO.", "PART NUMBER", "def _draw_customer_reference")):
-    errors.append("v4.14.31 controlled Purchase Order PDF customer-reference table is incomplete")
+if not all(token in v41431_po_reporting for token in ("PO SOURCE REFERENCE", "CUSTOMER PO NO.", "PART NUMBER", "def _draw_customer_reference")):
+    errors.append("v4.14.32 controlled Purchase Order PDF source-reference table is incomplete")
+
+# v4.14.32 supplier-safe PO print / compact terms / controlled RM types / Android test shell.
+v41432_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
+v41432_mobile = ROOT / "mobile" / "android_qcms"
+if not all(token in v41431_po_reporting for token in ("PO SOURCE REFERENCE", "PART DESCRIPTION", "part_description_master", "def _compact_terms_two_up", "landscape(A4)")):
+    errors.append("v4.14.32 supplier-safe PO print / Part Description / compact terms contract is incomplete")
+if 'row.get("customer")' in v41431_po_reporting:
+    errors.append("v4.14.32 supplier-facing PO print still exposes Customer identity")
+if 'RAW_MATERIAL_TYPE_DEFAULTS = ("Forging", "Round Black Bar", "Casting", "Bright Bar", "Ground Bar")' not in v41432_part:
+    errors.append("v4.14.32 controlled Raw Material Type list is incomplete")
+for rel in ("settings.gradle", "build.gradle", "app/build.gradle", "app/src/main/AndroidManifest.xml", "app/src/main/java/com/fourstar/qcms/MainActivity.java", "BUILD_AND_INSTALL_SAMSUNG.command"):
+    if not (v41432_mobile / rel).exists():
+        errors.append(f"v4.14.32 Android test shell missing: {rel}")
 
 report = {
-    "release": "QCMS 4.14.31 Purchase Order Workspace / Pre-Approval Edit / Customer Reference PDF",
+    "release": "QCMS 4.14.32 PO Supplier-Safe Print / Compact Terms / Controlled RM Types / Android Test Shell",
     "v41431_po_workspace": all(route in app_text for route in ("supply-po-order-list", "supply-po-edit", "supply-po-pdf", "supply-po-approval")),
     "v41431_preapproval_edit": "Supplier Confirmation is NOT required" in v41431_supply and "supplier_confirmation_blocks_edit" in v41431_service,
-    "v41431_customer_reference_pdf": "CUSTOMER PO / SOURCE REFERENCE" in v41431_po_reporting and "purchase_order_source_summary" in v41431_service,
+    "v41431_customer_reference_pdf": "def _draw_customer_reference" in v41431_po_reporting and "purchase_order_source_summary" in v41431_service,
+    "v41432_supplier_safe_po_print": "PO SOURCE REFERENCE" in v41431_po_reporting and 'row.get("customer")' not in v41431_po_reporting,
+    "v41432_part_description_print": "part_description_master" in v41431_service and "PART DESCRIPTION" in v41431_po_reporting,
+    "v41432_compact_terms": "def _compact_terms_two_up" in v41431_po_reporting and "landscape(A4)" in v41431_po_reporting,
+    "v41432_rm_type_control": 'RAW_MATERIAL_TYPE_DEFAULTS = ("Forging", "Round Black Bar", "Casting", "Bright Bar", "Ground Bar")' in v41432_part,
+    "v41432_android_test_shell": (v41432_mobile / "app/src/main/java/com/fourstar/qcms/MainActivity.java").exists(),
     "v41431_source_only_schema": str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required")),
     "v41430_rmtc_supplier_dedup": "raw_by_supplier" in v41429_rmtc_service and "Raw Material Detail" in v41429_rmtc_ui,
     "v41430_bend_test_discovery": "render_bend_test_entry" in v41429_metlab and "bend-test-report" in app_text,

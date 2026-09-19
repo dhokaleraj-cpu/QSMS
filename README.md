@@ -1,12 +1,12 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.31
+## Current controlled release — v4.14.32
 
-Build `41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF`.
+Build `41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST`.
 
-v4.14.31 adds a dedicated Purchase Order workspace with separate pages for **PO Entry, Order List, Edit Purchase Order, Purchase Order PDF, and Approval / Supplier Confirmation**. Pending-approval POs can be edited without supplier confirmation. PO selectors and controlled PDFs now expose **Customer PO Number, PO Position, Part Number, and source quantity**. Supplier Confirmation remains a downstream stage and never blocks PO editing.
+v4.14.32 makes the supplier-facing PO safer and more compact: Customer identity/name is removed from the print, Part Master **Part Description** is added, Customer PO Number/Position remain as source references, and the controlled Standard Terms are imposed two-up on landscape A4 to reduce the terms section from 12 to 6 physical pages. Part Master Raw Material Type is controlled to **Forging, Round Black Bar, Casting, Bright Bar, Ground Bar**. The release also includes an Android QCMS test shell and Mac build/install helper for Samsung testing.
 
-Required live database baseline remains v4.14.28; v4.14.31 adds no schema migration.
+Required live database baseline remains v4.14.28; v4.14.32 adds no schema migration.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.

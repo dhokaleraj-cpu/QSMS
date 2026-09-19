@@ -32,7 +32,7 @@ DRAWING_TYPES = (
     ("HEAT_TREATMENT_DRAWING", "Heat Treatment Drawing"),
 )
 
-RAW_MATERIAL_TYPE_DEFAULTS = ("Round Black Bar", "Bright Bar")
+RAW_MATERIAL_TYPE_DEFAULTS = ("Forging", "Round Black Bar", "Casting", "Bright Bar", "Ground Bar")
 
 
 def _labels(rows: list[dict], code: str, name: str) -> dict[str, str]:
@@ -910,18 +910,22 @@ def render_entry() -> None:
             "Section Size": r.get("section_size"), "Forging Route": r.get("forging_route"),
             "Status": r.get("status") or "ACTIVE"
         } for r in raw], columns=["Raw Material Type", "Material Grade", "Supplier Name / Location", "Supplier RM Item Code", "Supplier Forging Part No.", "HSN / SAC Code", "Lead Time (Days)", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
-        rm_type_options = _catalog_options(catalog, "part.rm_type", [*RAW_MATERIAL_TYPE_DEFAULTS, *[r.get("material_section_name") for r in raw]])
+        # v4.14.32: Raw Material Type is a controlled business list. Keep any legacy
+        # value already stored on a Part visible for safe editing, but do not learn/add
+        # arbitrary new material types from the reusable catalog.
+        legacy_rm_types = [str(r.get("material_section_name") or "").strip() for r in raw if str(r.get("material_section_name") or "").strip()]
+        rm_type_options = list(dict.fromkeys([*RAW_MATERIAL_TYPE_DEFAULTS, *legacy_rm_types]))
         section_options = _catalog_options(catalog, "part.rm_section", [r.get("section_size") for r in raw])
         route_options = _catalog_options(catalog, "part.forging_route", [r.get("forging_route") for r in raw])
-        with st.expander("Manage reusable Raw Material Type, Section Size and Forging Route lists", expanded=False):
-            _catalog_add_control(catalog, "part.rm_type", "Raw Material Type", rm_type_options, f"rm_type_{part_id}")
+        st.caption("Raw Material Type is controlled to: Forging, Round Black Bar, Casting, Bright Bar and Ground Bar.")
+        with st.expander("Manage reusable Section Size and Forging Route lists", expanded=False):
             _catalog_add_control(catalog, "part.rm_section", "Section Size", section_options, f"section_{part_id}", duplicate_word_check=True)
             _catalog_add_control(catalog, "part.forging_route", "Forging Route", route_options, f"route_{part_id}", duplicate_word_check=True)
         with st.form(f"raw_material_grid_form_{part_id}"):
             raw_edit = st.data_editor(
                 raw_df, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"raw_{part_id}", disabled=not writable,
                 column_config={
-                    "Raw Material Type": st.column_config.SelectboxColumn(options=rm_type_options or list(RAW_MATERIAL_TYPE_DEFAULTS), required=True, help="Controlled material form/type for this supplier row, e.g. Round Black Bar or Bright Bar."),
+                    "Raw Material Type": st.column_config.SelectboxColumn(options=rm_type_options or list(RAW_MATERIAL_TYPE_DEFAULTS), required=True, help="Controlled Raw Material Type: Forging, Round Black Bar, Casting, Bright Bar or Ground Bar."),
                     "Material Grade": st.column_config.SelectboxColumn(options=list(grade_by_name), required=True),
                     "Supplier Name / Location": st.column_config.SelectboxColumn(options=list(supplier_by_name), required=True),
                     "Supplier RM Item Code": st.column_config.TextColumn(help="Optional common supplier-facing RM item code. Use the SAME code on different finished Parts when they buy the exact same RM. QCMS can consolidate those sources into one RM PO line while retaining each finished-Part allocation."),
@@ -944,7 +948,7 @@ def render_entry() -> None:
                     grade_name = str(row.get("Material Grade") or "").strip(); row_grade_id = grade_by_name.get(grade_name)
                     if not sid: return {}
                     if not row_grade_id: raise ValueError(f"Material Grade is required for {name}.")
-                    catalog.remember_many("part.rm_type", [row.get("Raw Material Type")]); catalog.remember_many("part.rm_section", [row.get("Section Size")]); catalog.remember_many("part.forging_route", [row.get("Forging Route")])
+                    catalog.remember_many("part.rm_section", [row.get("Section Size")]); catalog.remember_many("part.forging_route", [row.get("Forging Route")])
                     input_weight = None if pd.isna(row.get("Input Weight kg/part")) else row.get("Input Weight kg/part")
                     if input_weight is None or float(input_weight) <= 0:
                         raise ValueError(f"Input Weight kg/part is required for {name}.")

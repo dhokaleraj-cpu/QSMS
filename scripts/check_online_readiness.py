@@ -207,11 +207,17 @@ required = [
     "RELEASE_NOTES_v4.14.31.md",
     "tests/test_v41431_po_workspace_preapproval_pdf.py",
     "QCMS_NEW_CHAT_HANDOVER_v4.14.31.md",
+    "RELEASE_NOTES_v4.14.32.md",
+    "tests/test_v41432_po_print_rm_android.py",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.32.md",
+    "mobile/android_qcms/app/src/main/AndroidManifest.xml",
+    "mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java",
+    "mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.31 - Purchase Order Workspace / Pre-Approval Edit / Customer Reference PDF",
+    "phase": "QCMS 4.14.32 - PO Supplier-Safe Print / Compact Terms / Controlled RM Types / Android Test Shell",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

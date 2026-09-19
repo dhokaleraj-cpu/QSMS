@@ -1,0 +1,110 @@
+from io import BytesIO
+from pathlib import Path
+import json
+
+from pypdf import PdfReader
+
+from core.purchase_order_reporting import purchase_order_pdf_bytes
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def text(rel: str) -> str:
+    return (ROOT / rel).read_text(encoding="utf-8")
+
+
+def test_v41432_release_identity_and_source_only_schema():
+    build = "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST"
+    assert text("VERSION").strip() == "4.14.32"
+    assert build in text("streamlit_app.py")
+    manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
+    assert manifest["version"] == "4.14.32"
+    assert manifest["build"] == build
+    assert manifest["previous_controlled_release"] == "4.14.31"
+    assert manifest["database_schema_required"] == "4.14.28"
+    assert manifest["database_migration_required"] is False
+
+
+def test_po_print_omits_customer_identity_adds_part_description_and_compacts_terms():
+    header = {
+        "po_number": "PD90190900001",
+        "order_date": "2026-09-19",
+        "delivery_date": "2026-09-30",
+        "po_type": "FORGING",
+        "vendor_snapshot": {"party_name": "TEST FORGING SUPPLIER", "city": "Pune"},
+        "ship_to_snapshot": {"party_name": "Four Star Industries Private Limited D9", "city": "Pune"},
+        "plant_snapshot": {"name": "Four Star Industries Private Limited D9", "address1": "Chakan MIDC", "address2": "Pune"},
+        "requisitioner": "Purchasing Team",
+        "subtotal": 1000,
+        "grand_total": 1000,
+    }
+    item = {
+        "item_no": "FSI-40256626",
+        "item_description": "FORGING 24MM",
+        "part_description_master": "DIFF SHAFT PINION",
+        "hsn_sac_code": "73269099",
+        "quantity": 100,
+        "unit_price": 10,
+        "uom": "NOS",
+        "gst_percent": 0,
+        "gst_amount": 0,
+        "line_total": 1000,
+        "technical_data_snapshot": [],
+        "price_history_snapshot": [],
+        "customer_source_rows": [{
+            "customer": "SECRET CUSTOMER NAME MUST NOT PRINT",
+            "customer_po_number": "CPO-778899",
+            "po_position": "20",
+            "part_number": "40256626",
+            "part_description": "DIFF SHAFT PINION",
+            "quantity": 100,
+            "uom": "NOS",
+            "customer_delivery_date": "2026-09-30",
+        }],
+    }
+    pdf = purchase_order_pdf_bytes(header, [item])
+    reader = PdfReader(BytesIO(pdf))
+    all_text = "\n".join((p.extract_text() or "") for p in reader.pages)
+    first_text = reader.pages[0].extract_text() or ""
+    assert "SECRET CUSTOMER NAME MUST NOT PRINT" not in all_text
+    assert "PO SOURCE REFERENCE" in first_text
+    assert "CPO-778899" in first_text
+    assert "40256626" in first_text
+    assert "DIFF SHAFT PINION" in first_text
+    assert "PART DESCRIPTION" in first_text.upper()
+    # 1 supplier PO page + 12 authoritative terms source pages imposed 2-up => 6 terms sheets.
+    assert len(reader.pages) == 7
+    assert float(reader.pages[1].mediabox.width) > float(reader.pages[1].mediabox.height)
+
+
+def test_controlled_raw_material_type_list():
+    part = text("app_pages/part_master.py")
+    assert 'RAW_MATERIAL_TYPE_DEFAULTS = ("Forging", "Round Black Bar", "Casting", "Bright Bar", "Ground Bar")' in part
+    assert '_catalog_add_control(catalog, "part.rm_type"' not in part
+    for value in ("Forging", "Round Black Bar", "Casting", "Bright Bar", "Ground Bar"):
+        assert value in part
+
+
+def test_android_test_shell_and_samsung_install_helper_are_packaged():
+    mobile = ROOT / "mobile" / "android_qcms"
+    required = [
+        "settings.gradle",
+        "build.gradle",
+        "app/build.gradle",
+        "app/src/main/AndroidManifest.xml",
+        "app/src/main/java/com/fourstar/qcms/MainActivity.java",
+        "BUILD_AND_INSTALL_SAMSUNG.command",
+        "README_ANDROID.md",
+    ]
+    for rel in required:
+        assert (mobile / rel).exists(), rel
+    manifest = (mobile / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+    activity = (mobile / "app/src/main/java/com/fourstar/qcms/MainActivity.java").read_text(encoding="utf-8")
+    build = (mobile / "app/build.gradle").read_text(encoding="utf-8")
+    installer = (mobile / "BUILD_AND_INSTALL_SAMSUNG.command").read_text(encoding="utf-8")
+    assert "android.permission.INTERNET" in manifest
+    assert 'android:usesCleartextTraffic="false"' in manifest
+    assert "https://" in activity and "QCMSMobile/0.1.0" in activity
+    assert "service-role" not in activity.lower()
+    assert "targetSdk 35" in build and "minSdk 26" in build
+    assert "adb" in installer and "install -r" in installer and "assembleDebug" in installer

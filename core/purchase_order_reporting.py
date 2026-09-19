@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from reportlab.lib.colors import Color, HexColor, black, white
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
@@ -240,16 +240,16 @@ def _customer_reference_height(item: Mapping[str, Any]) -> float:
 
 
 def _draw_customer_reference(c: canvas.Canvas, item: Mapping[str, Any], *, top: float, left: float, right: float, page_width: float) -> float:
-    """Print Customer PO/position/Part/quantity traceability on the controlled PO."""
+    """Print supplier-safe PO source traceability without exposing Customer identity."""
     total_w = page_width - left - right
     rows = _customer_source_rows(item)
     shown = rows[:4]
     height = _customer_reference_height(item)
     bottom = top - height
-    _bar(c, left, top, total_w, "CUSTOMER PO / SOURCE REFERENCE", height=15)
+    _bar(c, left, top, total_w, "PO SOURCE REFERENCE", height=15)
     y = top - 15
-    widths = [112, 92, 45, 96, 70, 48, total_w - 463]
-    titles = ["CUSTOMER", "CUSTOMER PO NO.", "POS", "PART NUMBER", "QTY", "UOM", "DELIVERY"]
+    widths = [95, 42, 82, 150, 55, 38, total_w - 462]
+    titles = ["CUSTOMER PO NO.", "POS", "PART NUMBER", "PART DESCRIPTION", "QTY", "UOM", "DELIVERY"]
     x = left
     for sw, title in zip(widths, titles):
         c.setFillColor(HexColor("#E5E7EB")); c.rect(x, y-14, sw, 14, stroke=1, fill=1)
@@ -258,13 +258,13 @@ def _draw_customer_reference(c: canvas.Canvas, item: Mapping[str, Any], *, top: 
     y -= 14
     if not shown:
         c.setFillColor(white); c.rect(left, y-14, total_w, 14, stroke=1, fill=1)
-        _draw_text(c, left+4, y-9.8, "No linked Customer Order / Schedule source stored for this historical PO line.", size=5.3, color=HexColor("#6B7280"), max_width=total_w-8)
+        _draw_text(c, left+4, y-9.8, "No linked order / schedule source stored for this historical PO line.", size=5.3, color=HexColor("#6B7280"), max_width=total_w-8)
         y -= 14
     else:
         for row in shown:
             x = left
             values = [
-                row.get("customer"), row.get("customer_po_number"), row.get("po_position"), row.get("part_number"),
+                row.get("customer_po_number"), row.get("po_position"), row.get("part_number"), row.get("part_description"),
                 f"{_n(row.get('quantity')):,.3f}".rstrip("0").rstrip("."), row.get("uom"), _date(row.get("customer_delivery_date")),
             ]
             for sw, value in zip(widths, values):
@@ -285,17 +285,20 @@ def _draw_item_row(c: canvas.Canvas, item: Mapping[str, Any], *, y_top: float, l
     for sw, title in zip(widths, titles):
         _bar(c, x, y_top, sw, title, height=14); x += sw
     row_top = y_top - 14
-    row_bottom = row_top - 34
-    c.setFillColor(white); c.rect(left, row_bottom, page_width-left-right, 34, stroke=1, fill=1)
+    row_bottom = row_top - 42
+    c.setFillColor(white); c.rect(left, row_bottom, page_width-left-right, 42, stroke=1, fill=1)
     item_display = " ".join(v for v in (_s(item.get("item_no") or item.get("fsi_part_number_snapshot")), _s(item.get("item_description"))) if v)
     vals = [item_display, f"{_n(item.get('quantity')):,.2f}".rstrip("0").rstrip("."), _money(item.get("unit_price")), item.get("uom"), f"{_n(item.get('gst_percent')):g}%", _money(item.get("gst_amount")), _money(item.get("line_total"))]
     x = left
     for idx, (sw, value) in enumerate(zip(widths, vals)):
         if idx == 0:
-            _wrap(c, x+5, row_top-10, value, sw-10, size=7.0, leading=7.8, max_lines=2)
+            _draw_text(c, x+5, row_top-10, value, size=6.7, bold=True, max_width=sw-10)
+            part_description = _s(item.get("part_description_master"))
+            if part_description:
+                _draw_text(c, x+5, row_top-21, f"Part Description: {part_description}", size=5.7, color=HexColor("#374151"), max_width=sw-10)
             hsn = _s(item.get("hsn_sac_code"))
             if hsn:
-                _draw_text(c, x+5, row_top-28, f"HSN / SAC: {hsn}", size=5.8, bold=True, color=HexColor("#4B5563"), max_width=sw-10)
+                _draw_text(c, x+5, row_top-34, f"HSN / SAC: {hsn}", size=5.6, bold=True, color=HexColor("#4B5563"), max_width=sw-10)
         else:
             _draw_text(c, x+4, row_top-20, value, size=6.7, max_width=sw-8)
         x += sw
@@ -509,14 +512,50 @@ def _terms_with_dynamic_header(terms_path: Path, *, po_number: str, order_date: 
     return result
 
 
+def _compact_terms_two_up(terms_path: Path, *, po_number: str, order_date: str) -> list[Any]:
+    """Place two controlled terms pages on each landscape A4 sheet.
+
+    The source terms PDF remains authoritative and unedited; this only changes the
+    print imposition so unused page area is utilised and the terms section uses about
+    half as many physical pages while remaining readable.
+    """
+    if PdfReader is None:
+        raise RuntimeError("pypdf is required for the controlled Purchase Order terms pages.")
+    try:
+        from pypdf import PageObject, Transformation
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("pypdf PageObject/Transformation is required for compact terms printing.") from exc
+    source_pages = _terms_with_dynamic_header(terms_path, po_number=po_number, order_date=order_date)
+    land_w, land_h = landscape(A4)
+    margin = 12.0
+    gutter = 8.0
+    slot_w = (land_w - 2 * margin - gutter) / 2.0
+    slot_h = land_h - 2 * margin
+    compact: list[Any] = []
+    for offset in range(0, len(source_pages), 2):
+        target = PageObject.create_blank_page(width=land_w, height=land_h)
+        for slot, source_page in enumerate(source_pages[offset:offset+2]):
+            src_w = float(source_page.mediabox.width)
+            src_h = float(source_page.mediabox.height)
+            scale = min(slot_w / src_w, slot_h / src_h)
+            placed_w = src_w * scale
+            placed_h = src_h * scale
+            x0 = margin + slot * (slot_w + gutter) + (slot_w - placed_w) / 2.0
+            y0 = margin + (slot_h - placed_h) / 2.0
+            target.merge_transformed_page(source_page, Transformation().scale(scale).translate(x0, y0))
+        compact.append(target)
+    return compact
+
+
 def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any] | Sequence[Mapping[str, Any]], *, terms_path: str | Path | None = None) -> bytes:
     """Return the controlled FSI Purchase Order PDF.
 
-    Page 1 prints one supplier-facing item line plus a controlled Customer PO / source
-    reference table containing Customer, Customer PO Number, PO Position, Part Number and
-    allocated quantity. Each supplier item retains its technical data and Price Revision
-    History; additional items continue on controlled item pages. Closed historical price
-    revisions remain visible.
+    Page 1 prints one supplier-facing item line plus a supplier-safe source reference
+    table containing Customer PO Number, PO Position, Part Number, Part Description and
+    allocated quantity. Customer identity is intentionally omitted from the supplier print.
+    Each supplier item retains its technical data and Price Revision History. Standard terms
+    are imposed two-up on landscape A4 sheets to reduce physical page count without altering
+    the authoritative terms content.
     """
     if PdfReader is None or PdfWriter is None:
         raise RuntimeError("pypdf is not installed. Add pypdf to requirements.txt.")
@@ -536,6 +575,7 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
         for page in continuation.pages: writer.add_page(page)
     path = Path(terms_path) if terms_path else Path(__file__).resolve().parent.parent / "templates" / "FSI_STANDARD_PO_TERMS_2023.pdf"
     if path.exists():
-        for page in _terms_with_dynamic_header(path, po_number=_s(header.get("po_number")), order_date=_s(header.get("order_date"))): writer.add_page(page)
+        for page in _compact_terms_two_up(path, po_number=_s(header.get("po_number")), order_date=_s(header.get("order_date"))):
+            writer.add_page(page)
     out = BytesIO(); writer.write(out); return out.getvalue()
 

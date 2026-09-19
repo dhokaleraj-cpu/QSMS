@@ -60,6 +60,6 @@ def test_forging_po_retains_forging_parameters():
 def test_part_master_rm_type_and_duplicate_word_controls_present():
     source = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
     assert '"Raw Material Type"' in source
-    assert 'RAW_MATERIAL_TYPE_DEFAULTS = ("Round Black Bar", "Bright Bar")' in source
+    assert 'RAW_MATERIAL_TYPE_DEFAULTS = ("Forging", "Round Black Bar", "Casting", "Bright Bar", "Ground Bar")' in source
     assert 'duplicate_word_check=True' in source
     assert 'MasterService._fuzzy_word_duplicate' in source

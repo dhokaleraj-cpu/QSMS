@@ -850,8 +850,8 @@ def _purchase_order_selector_labels(service: SupplyChainService, headers: Mappin
 def _render_purchase_order_key_information(service: SupplyChainService, purchase_order_id: str, *, key: str) -> None:
     rows = service.purchase_order_source_summary(purchase_order_id)
     section_bar(
-        "PURCHASE ORDER SOURCE / CUSTOMER REFERENCE",
-        "Key source information shown in the selection list and controlled PO PDF: Part Number, Customer PO Number, PO Position and allocated quantity.",
+        "PURCHASE ORDER SOURCE REFERENCE",
+        "Key source information shown in the selection list and controlled PO PDF: Part Number, Part Description, Customer PO Number, PO Position and allocated quantity. Customer identity is not printed on the supplier PO.",
     )
     if rows:
         portal_table(pd.DataFrame(rows), hide_index=True, width="stretch", height=min(340, 78 + len(rows) * 38))

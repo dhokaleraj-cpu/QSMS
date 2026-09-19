@@ -9,13 +9,13 @@ def text(rel: str) -> str:
 
 
 def test_v41431_release_identity_and_source_only_schema_contract():
-    assert text("VERSION").strip() == "4.14.31"
-    build = "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF"
-    assert build in text("streamlit_app.py")
+    assert text("VERSION").strip() in {"4.14.31", "4.14.32"}
+    builds = {"41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF", "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST"}
+    assert any(build in text("streamlit_app.py") for build in builds)
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] == "4.14.31"
-    assert manifest["build"] == build
-    assert manifest["previous_controlled_release"] == "4.14.30"
+    assert manifest["version"] in {"4.14.31", "4.14.32"}
+    assert manifest["build"] in builds
+    assert manifest["previous_controlled_release"] == ("4.14.31" if manifest["version"] == "4.14.32" else "4.14.30")
     assert manifest["database_schema_required"] == "4.14.28"
     assert manifest["database_migration_required"] is False
     assert manifest["source_only_updater"] is True
@@ -71,7 +71,7 @@ def test_po_source_selectors_and_list_show_customer_po_position_part_and_qty():
 def test_controlled_po_pdf_prints_customer_source_reference_table():
     reporting = text("core/purchase_order_reporting.py")
     service = text("core/supply_chain_service.py")
-    assert "CUSTOMER PO / SOURCE REFERENCE" in reporting
+    assert ("CUSTOMER PO / SOURCE REFERENCE" in reporting) or ("PO SOURCE REFERENCE" in reporting)
     assert "CUSTOMER PO NO." in reporting
     assert '"POS"' in reporting
     assert '"PART NUMBER"' in reporting
@@ -89,7 +89,7 @@ def test_records_center_routes_purchase_order_edit_to_dedicated_page():
 def test_v41431_online_verification_knows_new_po_release():
     phase = text("scripts/verify_phase1.py")
     readiness = text("scripts/check_online_readiness.py")
-    assert "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF" in phase
+    assert ("41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF" in phase) or ("41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST" in phase)
     assert "v41431_po_workspace" in phase
     assert "v41431_preapproval_edit" in phase
     assert "v41431_customer_reference_pdf" in phase
