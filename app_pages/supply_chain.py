@@ -16,7 +16,7 @@ from core.branch_context import branch_label, branch_snapshot, resolve_current_b
 from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, AttachmentSlot, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
-from core.purchase_order_reporting import purchase_order_pdf_bytes, DEFAULT_SPECIAL_INSTRUCTIONS
+from core.purchase_order_reporting import purchase_order_pdf_bytes, batch_purchase_order_pdf_bytes, DEFAULT_SPECIAL_INSTRUCTIONS
 from core.notification_service import NotificationService
 from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
 from core.selection_labels import part_label, party_label
@@ -1543,8 +1543,81 @@ def render_purchase_order_edit_page() -> None:
     )
 
 
+
+def _batch_po_email_rows(service: SupplyChainService, purchase_order_ids: Sequence[str]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Build the confirmed supplier-recipient table for a batch PO send."""
+    rows: list[dict[str, Any]] = []
+    blockers: list[str] = []
+    for po_id in purchase_order_ids:
+        header = service.purchase_order(po_id) or {}
+        supplier = service.repo.get("parties", str(header.get("supplier_id") or "")) or {}
+        po_number = str(header.get("po_number") or po_id)
+        approval = str(header.get("approval_status") or "").upper()
+        status = str(header.get("status") or "").upper()
+        email = str(supplier.get("email") or "").strip()
+        rows.append({
+            "PO Number": po_number,
+            "Supplier": supplier.get("party_name") or supplier.get("party_code") or "-",
+            "Supplier Email": email or "NOT CONFIGURED",
+            "Approval Status": approval or "-",
+            "Status": status or "-",
+            "_po_id": po_id,
+        })
+        if approval != "APPROVED": blockers.append(f"{po_number}: Purchase Order is not APPROVED")
+        if status == "CANCELLED": blockers.append(f"{po_number}: Purchase Order is CANCELLED")
+        if not email or "@" not in email: blockers.append(f"{po_number}: supplier email is not configured")
+    return rows, blockers
+
+
+def _batch_po_email_dialog(service: SupplyChainService, purchase_order_ids: Sequence[str]) -> None:
+    rows, blockers = _batch_po_email_rows(service, purchase_order_ids)
+
+    @st.dialog("Confirm Batch Purchase Order Emails")
+    def _dialog() -> None:
+        st.markdown("Each selected Purchase Order will be sent as a **separate controlled email to its own Supplier**, with that PO PDF attached.")
+        if rows:
+            portal_table(pd.DataFrame(rows).drop(columns=["_po_id"], errors="ignore"), hide_index=True, width="stretch", height=min(360, 90 + len(rows) * 38))
+        if blockers:
+            st.error("Batch email is blocked until all selected Purchase Orders are approved and have a valid Supplier email.\n\n" + "\n".join(f"- {item}" for item in blockers))
+        c1, c2 = st.columns(2, gap="small")
+        if c1.button("Confirm & Send Selected POs", type="primary", width="stretch", disabled=bool(blockers) or not rows, key="po_batch_email_confirm"):
+            notifier = NotificationService(service.repo)
+            queued: list[dict] = []
+            for row in rows:
+                po_id = str(row.get("_po_id") or "")
+                header = service.purchase_order(po_id) or {}
+                supplier = service.repo.get("parties", str(header.get("supplier_id") or "")) or {}
+                event = "RM_PO_CREATED" if str(header.get("po_type") or "").upper() == "RAW_MATERIAL" else "FORGING_PO_CREATED"
+                queued_row = notifier.enqueue(
+                    event,
+                    related_table="supply_purchase_orders",
+                    related_id=po_id,
+                    recipient_email=str(supplier.get("email") or "").strip(),
+                    recipient_name=str(supplier.get("party_name") or "").strip() or None,
+                    include_supplier=False,
+                    context={
+                        "po_number": header.get("po_number"),
+                        "supplier_id": str(header.get("supplier_id") or ""),
+                        "supplier_name": supplier.get("party_name"),
+                        "delivery_date": header.get("delivery_date"),
+                        "next_stage": "Raw Material Receipt" if event == "RM_PO_CREATED" else "Forging Receipt",
+                    },
+                )
+                if queued_row:
+                    queued.append(queued_row)
+            result = notifier.dispatch(queued)
+            if result.get("error"):
+                st.session_state["po_batch_email_result"] = f"{len(queued)} Purchase Order email(s) queued; delivery returned: {result.get('error')}"
+            else:
+                st.session_state["po_batch_email_result"] = f"{len(queued)} Purchase Order email(s) queued / delivery requested successfully."
+            st.rerun()
+        if c2.button("Cancel", width="stretch", key="po_batch_email_cancel"):
+            st.rerun()
+    _dialog()
+
+
 def render_purchase_order_pdf_page() -> None:
-    page_header("Purchase Order · PDF", "Select, review and print the controlled PO with Customer PO / position / Part / quantity reference information", "Supply Chain")
+    page_header("Purchase Order · PDF / Batch Print", "Review one PO or print/email multiple controlled Purchase Orders at once. Standard Terms remain portrait A4.", "Supply Chain")
     _purchase_order_subnav()
     service = SupplyChainService(); perms = current_permissions("SUPPLY_CHAIN")
     supplier_labels = {str(r["id"]): party_label(r) for r in service.suppliers()}
@@ -1553,33 +1626,75 @@ def render_purchase_order_pdf_page() -> None:
     if not labels:
         st.info("No Purchase Orders are available.")
         return
-    requested = str(st.session_state.pop("supply_po_pdf_request_id", "") or "")
-    if requested in labels:
-        st.session_state["po_dedicated_pdf_select"] = requested
-    elif st.session_state.get("po_dedicated_pdf_select") not in labels:
-        st.session_state["po_dedicated_pdf_select"] = next(iter(labels))
-    selected = st.selectbox("Purchase Order for PDF", list(labels), format_func=lambda v: labels[v], key="po_dedicated_pdf_select")
-    service.sync_purchase_order_status(selected)
-    header = service.purchase_order(selected) or {}
-    items = service.purchase_order_items_for_print(selected)
-    _render_purchase_order_key_information(service, selected, key="po_pdf_source")
-    c = st.columns(2, gap="small")
-    try:
-        c[0].download_button(
-            "Download / Print Purchase Order PDF", purchase_order_pdf_bytes(header, items),
-            file_name=f"{header.get('po_number')}.pdf", mime="application/pdf", icon=":material/picture_as_pdf:",
-            type="primary", width="stretch", key=f"dedicated_po_pdf_{selected}",
+
+    with stage_section("A", "SINGLE PURCHASE ORDER PDF / EMAIL", "Review, print or email one controlled Purchase Order.", key="po_pdf_single"):
+        requested = str(st.session_state.pop("supply_po_pdf_request_id", "") or "")
+        if requested in labels:
+            st.session_state["po_dedicated_pdf_select"] = requested
+        elif st.session_state.get("po_dedicated_pdf_select") not in labels:
+            st.session_state["po_dedicated_pdf_select"] = next(iter(labels))
+        selected = st.selectbox("Purchase Order for PDF", list(labels), format_func=lambda v: labels[v], key="po_dedicated_pdf_select")
+        service.sync_purchase_order_status(selected)
+        header = service.purchase_order(selected) or {}
+        items = service.purchase_order_items_for_print(selected)
+        _render_purchase_order_key_information(service, selected, key="po_pdf_source")
+        c = st.columns(2, gap="small")
+        try:
+            c[0].download_button(
+                "Download / Print Purchase Order PDF", purchase_order_pdf_bytes(header, items),
+                file_name=f"{header.get('po_number')}.pdf", mime="application/pdf", icon=":material/picture_as_pdf:",
+                type="primary", width="stretch", key=f"dedicated_po_pdf_{selected}",
+            )
+        except Exception as exc:
+            c[0].error(f"Purchase Order PDF could not be generated: {exc}")
+        po_event = "RM_PO_CREATED" if str(header.get("po_type") or "").upper() == "RAW_MATERIAL" else "FORGING_PO_CREATED"
+        with c[1]:
+            record_email_sender(
+                NotificationService(service.repo), po_event,
+                related_table="supply_purchase_orders", related_id=selected, key=f"dedicated_po_record_email_{selected}",
+                context={"po_number": header.get("po_number"), "supplier_id": str(header.get("supplier_id") or ""), "next_task": "Supplier Confirmation / Receipt"},
+                include_supplier=True,
+            )
+
+    with stage_section("B", "BATCH PRINT / EMAIL MULTIPLE PURCHASE ORDERS", "Select several POs once. QCMS creates one combined print PDF and can send each approved PO separately to its own Supplier.", key="po_pdf_batch"):
+        selected_batch = st.multiselect(
+            "Purchase Orders for Batch Print / Email",
+            list(labels),
+            default=[selected] if selected in labels else [],
+            format_func=lambda v: labels[v],
+            key="po_batch_pdf_select",
         )
-    except Exception as exc:
-        c[0].error(f"Purchase Order PDF could not be generated: {exc}")
-    po_event = "RM_PO_CREATED" if str(header.get("po_type") or "").upper() == "RAW_MATERIAL" else "FORGING_PO_CREATED"
-    with c[1]:
-        record_email_sender(
-            NotificationService(service.repo), po_event,
-            related_table="supply_purchase_orders", related_id=selected, key=f"dedicated_po_record_email_{selected}",
-            context={"po_number": header.get("po_number"), "supplier_id": str(header.get("supplier_id") or ""), "next_task": "Supplier Confirmation / Receipt"},
-            include_supplier=True,
-        )
+        c = st.columns([1, 2, 2], gap="small")
+        copies = int(c[0].number_input("Copies per PO", min_value=1, max_value=5, value=1, step=1, key="po_batch_copies"))
+        if selected_batch:
+            summary_rows, blockers = _batch_po_email_rows(service, selected_batch)
+            portal_table(pd.DataFrame(summary_rows).drop(columns=["_po_id"], errors="ignore"), hide_index=True, width="stretch", height=min(360, 90 + len(summary_rows) * 38))
+            records = []
+            for po_id in selected_batch:
+                po_header = service.purchase_order(po_id) or {}
+                po_items = service.purchase_order_items_for_print(po_id)
+                if po_header and po_items:
+                    records.append((po_header, po_items))
+            try:
+                batch_pdf = batch_purchase_order_pdf_bytes(records, copies_per_order=copies)
+                c[1].download_button(
+                    f"Download / Print {len(records)} Selected PO(s)", batch_pdf,
+                    file_name=f"QCMS_Purchase_Orders_{len(records)}_Selected.pdf", mime="application/pdf",
+                    icon=":material/print:", type="primary", width="stretch", key="po_batch_pdf_download",
+                )
+            except Exception as exc:
+                c[1].error(f"Batch Purchase Order PDF could not be generated: {exc}")
+            if blockers:
+                c[2].button("Send Selected POs by Email", width="stretch", disabled=True, key="po_batch_send_disabled")
+                st.warning("Email requires every selected PO to be APPROVED, not cancelled, and to have a Supplier email. Printing remains available.")
+            elif c[2].button("Send Selected POs by Email", icon=":material/forward_to_inbox:", width="stretch", key="po_batch_send"):
+                _batch_po_email_dialog(service, selected_batch)
+        else:
+            st.info("Select two or more Purchase Orders for batch printing/email, or keep one selected if you need multiple physical copies of the same PO.")
+
+        result_message = str(st.session_state.pop("po_batch_email_result", "") or "")
+        if result_message:
+            st.success(result_message)
 
 
 def _render_supplier_confirmation_stage(service: SupplyChainService, *, selected_po: str, header: Mapping[str, Any], perms: Mapping[str, bool]) -> None:

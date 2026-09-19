@@ -213,11 +213,14 @@ required = [
     "mobile/android_qcms/app/src/main/AndroidManifest.xml",
     "mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java",
     "mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command",
+    "RELEASE_NOTES_v4.14.33.md",
+    "tests/test_v41433_po_portrait_batch_android_sdk.py",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.33.md",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.32 - PO Supplier-Safe Print / Compact Terms / Controlled RM Types / Android Test Shell",
+    "phase": "QCMS 4.14.33 - Portrait PO Terms / Batch Print & Email / Android SDK Bootstrap",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

@@ -1,4 +1,4 @@
-# QCMS Mobile - Android test shell v0.1.0
+# QCMS Mobile - Android test shell v0.1.1
 
 This project is the first Samsung/Android test client for the existing QCMS Streamlit application.
 It does **not** copy or fork QCMS data. It loads the existing live HTTPS QCMS URL inside a hardened Android WebView, so the same login, Supabase data, RLS, permissions, audit records, PDFs and workflows are used.
@@ -26,5 +26,9 @@ It does **not** copy or fork QCMS data. It loads the existing live HTTPS QCMS UR
 - Login cookies are handled by Android WebView.
 - Existing QCMS server-side permissions/RLS remain authoritative.
 
-## Scope of v0.1.0
+## Scope of v0.1.1
 This is an intentionally lightweight mobile shell for immediate device testing. A later native mobile phase can add push notifications, QR/barcode scanning, direct camera capture, controlled offline inspection queues and biometric re-authentication without replacing the existing QCMS backend.
+
+
+## v0.1.1 SDK bootstrap
+If `~/Library/Android/sdk` is missing, `BUILD_AND_INSTALL_SAMSUNG.command` now installs the official Google Android CLI for the current Mac user, then uses `android sdk install` to install Platform 35, Build Tools 35.0.0 and Platform Tools automatically before building the APK. A legacy `sdkmanager` fallback is retained for older environments.

@@ -1015,10 +1015,10 @@ if not all(token in v41429_osp for token in ("FSI Batch Number", "Vendor Batch N
     errors.append("v4.14.29 OSP transaction selectors do not expose controlled batch identity")
 current_release_version = str(v41429_manifest.get("version") or "")
 current_release_build = str(v41429_manifest.get("build") or "")
-if current_release_version != "4.14.32" or current_release_build != "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST":
-    errors.append("v4.14.32 deployment manifest release identity is incomplete")
+if current_release_version != "4.14.33" or current_release_build != "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK":
+    errors.append("v4.14.33 deployment manifest release identity is incomplete")
 if str(v41429_manifest.get("database_schema_required")) != "4.14.28" or bool(v41429_manifest.get("database_migration_required")):
-    errors.append("v4.14.32 must remain a source-only release on the verified v4.14.28 database schema")
+    errors.append("v4.14.33 must remain a source-only release on the verified v4.14.28 database schema")
 
 # v4.14.30 RMTC supplier de-duplication / dedicated Bend Test discovery / permission-aware Global Search.
 v41430_global_search = (ROOT / "app_pages" / "global_search.py").read_text(encoding="utf-8")
@@ -1053,11 +1053,11 @@ if not all(token in v41431_service for token in ("def purchase_order_source_summ
 if not all(token in v41431_po_reporting for token in ("PO SOURCE REFERENCE", "CUSTOMER PO NO.", "PART NUMBER", "def _draw_customer_reference")):
     errors.append("v4.14.32 controlled Purchase Order PDF source-reference table is incomplete")
 
-# v4.14.32 supplier-safe PO print / compact terms / controlled RM types / Android test shell.
+# v4.14.32 supplier-safe PO print / controlled RM types / Android test shell.
 v41432_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
 v41432_mobile = ROOT / "mobile" / "android_qcms"
-if not all(token in v41431_po_reporting for token in ("PO SOURCE REFERENCE", "PART DESCRIPTION", "part_description_master", "def _compact_terms_two_up", "landscape(A4)")):
-    errors.append("v4.14.32 supplier-safe PO print / Part Description / compact terms contract is incomplete")
+if not all(token in v41431_po_reporting for token in ("PO SOURCE REFERENCE", "PART DESCRIPTION", "part_description_master")):
+    errors.append("v4.14.32 supplier-safe PO print / Part Description contract is incomplete")
 if 'row.get("customer")' in v41431_po_reporting:
     errors.append("v4.14.32 supplier-facing PO print still exposes Customer identity")
 if 'RAW_MATERIAL_TYPE_DEFAULTS = ("Forging", "Round Black Bar", "Casting", "Bright Bar", "Ground Bar")' not in v41432_part:
@@ -1066,16 +1066,32 @@ for rel in ("settings.gradle", "build.gradle", "app/build.gradle", "app/src/main
     if not (v41432_mobile / rel).exists():
         errors.append(f"v4.14.32 Android test shell missing: {rel}")
 
+
+# v4.14.33 portrait terms / batch print-email / Android SDK bootstrap.
+v41433_po_reporting = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
+v41433_supply = (ROOT / "app_pages" / "supply_chain.py").read_text(encoding="utf-8")
+v41433_android = (ROOT / "mobile" / "android_qcms" / "BUILD_AND_INSTALL_SAMSUNG.command").read_text(encoding="utf-8")
+if not all(token in v41433_po_reporting for token in ("def _compact_terms_portrait", "def batch_purchase_order_pdf_bytes", "PyMuPDF")):
+    errors.append("v4.14.33 portrait terms / batch PDF reporting contract is incomplete")
+if not all(token in v41433_supply for token in ("BATCH PRINT / EMAIL MULTIPLE PURCHASE ORDERS", "Confirm Batch Purchase Order Emails", "Send Selected POs by Email")):
+    errors.append("v4.14.33 Purchase Order batch print/email UI contract is incomplete")
+if not all(token in v41433_android for token in ("ANDROID SDK / CLI BOOTSTRAP", "https://dl.google.com/android/cli/latest/", "platforms;android-35")):
+    errors.append("v4.14.33 Android SDK bootstrap helper contract is incomplete")
+
 report = {
-    "release": "QCMS 4.14.32 PO Supplier-Safe Print / Compact Terms / Controlled RM Types / Android Test Shell",
+    "release": "QCMS 4.14.33 Portrait PO Terms / Batch Print & Email / Android SDK Bootstrap",
     "v41431_po_workspace": all(route in app_text for route in ("supply-po-order-list", "supply-po-edit", "supply-po-pdf", "supply-po-approval")),
     "v41431_preapproval_edit": "Supplier Confirmation is NOT required" in v41431_supply and "supplier_confirmation_blocks_edit" in v41431_service,
     "v41431_customer_reference_pdf": "def _draw_customer_reference" in v41431_po_reporting and "purchase_order_source_summary" in v41431_service,
     "v41432_supplier_safe_po_print": "PO SOURCE REFERENCE" in v41431_po_reporting and 'row.get("customer")' not in v41431_po_reporting,
     "v41432_part_description_print": "part_description_master" in v41431_service and "PART DESCRIPTION" in v41431_po_reporting,
-    "v41432_compact_terms": "def _compact_terms_two_up" in v41431_po_reporting and "landscape(A4)" in v41431_po_reporting,
+    "v41432_compact_terms": ("def _compact_terms_two_up" in v41431_po_reporting) or ("def _compact_terms_portrait" in v41431_po_reporting),
     "v41432_rm_type_control": 'RAW_MATERIAL_TYPE_DEFAULTS = ("Forging", "Round Black Bar", "Casting", "Bright Bar", "Ground Bar")' in v41432_part,
     "v41432_android_test_shell": (v41432_mobile / "app/src/main/java/com/fourstar/qcms/MainActivity.java").exists(),
+    "v41433_portrait_terms": "def _compact_terms_portrait" in v41433_po_reporting and "landscape(A4)" not in v41433_po_reporting,
+    "v41433_batch_po_pdf": "def batch_purchase_order_pdf_bytes" in v41433_po_reporting,
+    "v41433_batch_po_email": "Confirm Batch Purchase Order Emails" in v41433_supply,
+    "v41433_android_sdk_bootstrap": "ANDROID SDK / CLI BOOTSTRAP" in v41433_android,
     "v41431_source_only_schema": str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required")),
     "v41430_rmtc_supplier_dedup": "raw_by_supplier" in v41429_rmtc_service and "Raw Material Detail" in v41429_rmtc_ui,
     "v41430_bend_test_discovery": "render_bend_test_entry" in v41429_metlab and "bend-test-report" in app_text,

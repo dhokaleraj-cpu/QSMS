@@ -1,12 +1,12 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.32
+## Current controlled release — v4.14.33
 
-Build `41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST`.
+Build `41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK`.
 
-v4.14.32 makes the supplier-facing PO safer and more compact: Customer identity/name is removed from the print, Part Master **Part Description** is added, Customer PO Number/Position remain as source references, and the controlled Standard Terms are imposed two-up on landscape A4 to reduce the terms section from 12 to 6 physical pages. Part Master Raw Material Type is controlled to **Forging, Round Black Bar, Casting, Bright Bar, Ground Bar**. The release also includes an Android QCMS test shell and Mac build/install helper for Samsung testing.
+v4.14.33 keeps the supplier Purchase Order Standard Terms **portrait-only** and compacts the controlled content into otherwise unused white space, reducing the current 12-source-page terms section to about 7 portrait A4 pages. The Purchase Order PDF page now supports **batch print** for multiple selected POs with copies-per-order and controlled **batch Supplier email**. The Samsung Android helper now bootstraps the official Android CLI/SDK automatically when the Mac SDK folder is missing.
 
-Required live database baseline remains v4.14.28; v4.14.32 adds no schema migration.
+Required live database baseline remains v4.14.28; v4.14.33 adds no schema migration.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.

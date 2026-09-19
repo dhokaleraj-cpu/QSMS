@@ -14,13 +14,16 @@ def text(rel: str) -> str:
 
 
 def test_v41432_release_identity_and_source_only_schema():
-    build = "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST"
-    assert text("VERSION").strip() == "4.14.32"
-    assert build in text("streamlit_app.py")
+    version = text("VERSION").strip()
+    assert version in {"4.14.32", "4.14.33"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] == "4.14.32"
-    assert manifest["build"] == build
-    assert manifest["previous_controlled_release"] == "4.14.31"
+    assert manifest["version"] == version
+    if version == "4.14.32":
+        assert manifest["build"] == "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST"
+        assert manifest["previous_controlled_release"] == "4.14.31"
+    else:
+        assert manifest["build"] == "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK"
+        assert manifest["previous_controlled_release"] == "4.14.32"
     assert manifest["database_schema_required"] == "4.14.28"
     assert manifest["database_migration_required"] is False
 
@@ -72,9 +75,9 @@ def test_po_print_omits_customer_identity_adds_part_description_and_compacts_ter
     assert "40256626" in first_text
     assert "DIFF SHAFT PINION" in first_text
     assert "PART DESCRIPTION" in first_text.upper()
-    # 1 supplier PO page + 12 authoritative terms source pages imposed 2-up => 6 terms sheets.
-    assert len(reader.pages) == 7
-    assert float(reader.pages[1].mediabox.width) > float(reader.pages[1].mediabox.height)
+    # v4.14.33 supersedes the landscape imposition: controlled terms are compact portrait A4.
+    assert 2 <= len(reader.pages) <= 9
+    assert all(float(page.mediabox.width) < float(page.mediabox.height) for page in reader.pages[1:])
 
 
 def test_controlled_raw_material_type_list():
@@ -104,7 +107,7 @@ def test_android_test_shell_and_samsung_install_helper_are_packaged():
     installer = (mobile / "BUILD_AND_INSTALL_SAMSUNG.command").read_text(encoding="utf-8")
     assert "android.permission.INTERNET" in manifest
     assert 'android:usesCleartextTraffic="false"' in manifest
-    assert "https://" in activity and "QCMSMobile/0.1.0" in activity
+    assert "https://" in activity and ("QCMSMobile/0.1.0" in activity or "QCMSMobile/0.1.1" in activity)
     assert "service-role" not in activity.lower()
     assert "targetSdk 35" in build and "minSdk 26" in build
     assert "adb" in installer and "install -r" in installer and "assembleDebug" in installer

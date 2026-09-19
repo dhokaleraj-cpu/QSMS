@@ -1,6 +1,6 @@
 {
-  "version": "4.14.32",
-  "build": "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST",
+  "version": "4.14.33",
+  "build": "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -197,23 +197,26 @@
     "supplier_confirmation_never_blocks_po_edit",
     "po_print_customer_identity_removed",
     "po_print_part_master_description",
-    "po_terms_two_up_compact_landscape",
     "part_raw_material_type_five_value_control",
     "android_qcms_mobile_test_shell",
-    "android_samsung_usb_install_script"
+    "android_samsung_usb_install_script",
+    "po_terms_portrait_compact_reflow",
+    "po_batch_print_multiple_orders",
+    "po_batch_supplier_email",
+    "android_sdk_cli_bootstrap"
   ],
   "source": "controlled_release",
-  "release_name": "QCMS v4.14.32 PO Supplier-Safe Print / Compact Terms / Controlled RM Types / Android Test Shell",
+  "release_name": "QCMS v4.14.33 Portrait PO Terms / Batch Print & Email / Android SDK Bootstrap",
   "database_schema_required": "4.14.28",
   "database_migration_required": false,
   "supabase_release_contract": "QCMS v4.14.28 live migration applied and verified during controlled release packaging",
   "deployment_notes": [
-    "v4.14.32 is a source-only controlled update using the already-applied v4.14.28 database contract; no manual Supabase SQL is required.",
-    "Supplier-facing PO print no longer exposes Customer name/identity. Customer PO Number and PO Position remain only as controlled source references, together with Part Number, Part Description and quantity.",
-    "Part Description is resolved from Part Master for PO print and included in the source-reference grid.",
-    "The existing authoritative FSI Standard Purchase Order Terms PDF is imposed two pages per landscape A4 sheet, reducing the 12-page terms section to 6 physical pages while preserving the terms content.",
-    "Part Master Raw Material Type is controlled to Forging, Round Black Bar, Casting, Bright Bar and Ground Bar; historical stored values remain visible for safe legacy editing.",
-    "A lightweight Android QCMS test shell is included under mobile/android_qcms for Samsung/Android testing against the existing live Streamlit QCMS URL."
+    "v4.14.33 is source-only on the already-applied v4.14.28 database contract; no manual Supabase SQL is required.",
+    "Purchase Order Standard Terms are portrait A4 only. Visible controlled terms content is packed into otherwise blank white space while preserving clause wording and order.",
+    "The supplied 2023 terms template compacts from 12 physical source pages to approximately 7 portrait A4 terms pages; no landscape terms pages are generated.",
+    "Purchase Order PDF workspace supports selecting multiple POs, choosing 1-5 physical copies per PO, and downloading one combined print-ready PDF.",
+    "Batch email sends each selected APPROVED PO separately to its own configured Supplier email with the controlled PO PDF attached. Unapproved/cancelled/missing-email POs block email but not printing.",
+    "Samsung Android helper v0.1.1 bootstraps the official Google Android CLI when ~/Library/Android/sdk is missing, then installs Platform 35/Build Tools/Platform Tools and builds/installs the APK."
   ],
   "item_wise_po_technical_data": true,
   "po_supplier_technical_grid": true,
@@ -229,18 +232,17 @@
   "standard_room_inspection_module": true,
   "npd_email_stage_cards": true,
   "registered_pages": 87,
-  "full_pytest_passed": 499,
+  "full_pytest_passed": 504,
   "live_supabase_schema_applied": true,
   "live_overdue_notifier_version": 4,
   "live_overdue_notifier_status": "ACTIVE",
   "source_only_updater": true,
   "release_notes": [
-    "Removes Customer identity/name from supplier-facing Purchase Order print while preserving Customer PO Number/Position source references.",
-    "Adds Part Master Part Description to the Purchase Order print.",
-    "Compacts Terms & Conditions two-up on landscape A4 to reduce physical page count.",
-    "Controls Raw Material Type to Forging, Round Black Bar, Casting, Bright Bar and Ground Bar.",
-    "Adds Android QCMS test shell source and a Mac build/install script for Samsung device testing.",
-    "No database migration is required; production data and the v4.14.28 database contract remain unchanged."
+    "Keeps all Purchase Order Terms & Conditions pages in portrait orientation and compacts content vertically to reduce page count.",
+    "Adds batch Purchase Order print with multi-select and copies-per-PO.",
+    "Adds controlled batch Supplier email for multiple approved Purchase Orders.",
+    "Fixes Samsung build helper so a missing Android SDK no longer immediately stops the workflow; the helper bootstraps Android CLI/SDK packages.",
+    "Preserves v4.14.32 supplier-safe PO print, Part Description, controlled Raw Material Types and all earlier QCMS functions."
   ],
   "final_metlab_part_master_only": true,
   "raw_material_inward_metlab_layout_master_only": true,
@@ -250,8 +252,9 @@
   "live_supply_digest_notifier_status": "ACTIVE",
   "live_supply_digest_cron": "qcms-supply-digest-notifier-hourly",
   "schema_change_for_v41429": false,
-  "previous_controlled_release": "4.14.31",
+  "previous_controlled_release": "4.14.32",
   "schema_change_for_v41430": false,
   "schema_change_for_v41431": false,
-  "schema_change_for_v41432": false
+  "schema_change_for_v41432": false,
+  "schema_change_for_v41433": false
 }

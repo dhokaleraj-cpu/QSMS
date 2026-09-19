@@ -9,3 +9,4 @@ httpx>=0.28,<1
 reportlab>=4.4,<5
 
 pypdf>=5,<7
+PyMuPDF>=1.26,<2

@@ -1,0 +1,81 @@
+from io import BytesIO
+from pathlib import Path
+import json
+from pypdf import PdfReader
+
+from core.purchase_order_reporting import purchase_order_pdf_bytes, batch_purchase_order_pdf_bytes
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def text(rel: str) -> str:
+    return (ROOT / rel).read_text(encoding="utf-8")
+
+
+def _payload(number: str):
+    header = {
+        "po_number": number, "order_date": "2026-09-19", "delivery_date": "2026-09-30", "po_type": "FORGING",
+        "vendor_snapshot": {"party_name": "TEST SUPPLIER", "city": "Pune"},
+        "ship_to_snapshot": {"party_name": "Four Star Industries Private Limited D9", "city": "Pune"},
+        "plant_snapshot": {"name": "Four Star Industries Private Limited D9", "address1": "Chakan MIDC", "address2": "Pune"},
+        "requisitioner": "Purchasing Team", "subtotal": 1000, "grand_total": 1000,
+    }
+    item = {
+        "item_no": "FSI-40256626", "item_description": "FORGING 24MM", "part_description_master": "DIFF SHAFT PINION",
+        "quantity": 100, "unit_price": 10, "uom": "NOS", "gst_percent": 0, "gst_amount": 0, "line_total": 1000,
+        "technical_data_snapshot": [], "price_history_snapshot": [],
+        "customer_source_rows": [{"customer_po_number": "CPO-1", "po_position": "20", "part_number": "40256626", "part_description": "DIFF SHAFT PINION", "quantity": 100, "uom": "NOS", "customer_delivery_date": "2026-09-30"}],
+    }
+    return header, [item]
+
+
+def test_release_identity_source_only():
+    build = "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK"
+    assert text("VERSION").strip() == "4.14.33"
+    assert build in text("streamlit_app.py")
+    manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
+    assert manifest["version"] == "4.14.33"
+    assert manifest["build"] == build
+    assert manifest["previous_controlled_release"] == "4.14.32"
+    assert manifest["database_schema_required"] == "4.14.28"
+    assert manifest["database_migration_required"] is False
+
+
+def test_terms_are_portrait_and_compacted():
+    header, items = _payload("PD90190900033")
+    pdf = purchase_order_pdf_bytes(header, items)
+    reader = PdfReader(BytesIO(pdf))
+    # PO front page + about seven portrait terms pages on the controlled 2023 terms source.
+    assert 7 <= len(reader.pages) <= 9
+    for page in reader.pages[1:]:
+        assert float(page.mediabox.width) < float(page.mediabox.height)
+
+
+def test_batch_pdf_combines_multiple_pos_and_multiple_copies_without_terms():
+    a = _payload("PD-A"); b = _payload("PD-B")
+    missing = ROOT / "tests" / "__missing_terms_v41433.pdf"
+    single_pages = len(PdfReader(BytesIO(purchase_order_pdf_bytes(*a, terms_path=missing))).pages)
+    combined = batch_purchase_order_pdf_bytes([a, b], copies_per_order=2, terms_path=missing)
+    assert len(PdfReader(BytesIO(combined)).pages) == single_pages * 4
+
+
+def test_batch_print_and_email_ui_contract():
+    source = text("app_pages/supply_chain.py")
+    for token in (
+        "BATCH PRINT / EMAIL MULTIPLE PURCHASE ORDERS",
+        "Purchase Orders for Batch Print / Email",
+        "Copies per PO",
+        "Send Selected POs by Email",
+        "Confirm Batch Purchase Order Emails",
+        "approval != \"APPROVED\"",
+    ):
+        assert token in source
+
+
+def test_android_helper_bootstraps_sdk_when_missing():
+    helper = text("mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command")
+    assert "QCMS Mobile v0.1.1" in helper
+    assert "ANDROID SDK / CLI BOOTSTRAP" in helper
+    assert "https://dl.google.com/android/cli/latest/" in helper
+    assert '"platforms;android-35"' in helper
+    assert '"build-tools;35.0.0"' in helper
+    assert "install -r" in helper

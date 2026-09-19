@@ -6,10 +6,10 @@ ROOT=Path(__file__).resolve().parents[1]
 def text(path): return (ROOT/path).read_text(encoding='utf-8')
 
 def test_release_identity_and_source_only_schema_baseline():
-    assert text('VERSION').strip() in {'4.14.23','4.14.24','4.14.25','4.14.26','4.14.27','4.14.28','4.14.29','4.14.30','4.14.31','4.14.32'}
+    assert text('VERSION').strip() in {'4.14.23','4.14.24','4.14.25','4.14.26','4.14.27','4.14.28','4.14.29','4.14.30','4.14.31','4.14.32','4.14.33'}
     manifest=json.loads(text('DEPLOYMENT_MANIFEST.json'))
-    assert manifest['version'] in {'4.14.23','4.14.24','4.14.25','4.14.26','4.14.27','4.14.28','4.14.29','4.14.30','4.14.31','4.14.32'}
-    assert manifest['build'] in {'41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE','41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE', '41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE', '41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS', '41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS','41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL','41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS', '41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH', '41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF','41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST'}
+    assert manifest['version'] in {'4.14.23','4.14.24','4.14.25','4.14.26','4.14.27','4.14.28','4.14.29','4.14.30','4.14.31','4.14.32','4.14.33'}
+    assert manifest['build'] in {'41423-SOURCE-ONLY-DEPLOY-RMTC-MASTER-DELETE','41424-PO-TECH-GRID-LIVE-IMPORT-APQP-DATE', '41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE', '41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS', '41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS','41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL','41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS', '41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH', '41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF','41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST','41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK'}
     assert manifest['database_schema_required'] in {'4.14.22','4.14.26','4.14.27','4.14.28'}
     assert manifest['database_migration_required'] is False
     assert manifest['supabase_release_contract'] in {'QCMS_V41422_FULL_READY','QCMS v4.14.26 live migration applied and verified during controlled release packaging','QCMS v4.14.27 live migration applied and verified during controlled release packaging','QCMS v4.14.28 live migration applied and verified during controlled release packaging'}

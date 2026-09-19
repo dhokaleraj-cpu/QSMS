@@ -158,7 +158,7 @@ public class MainActivity extends Activity {
         ws.setAllowFileAccess(false);
         ws.setAllowContentAccess(true);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.1.0");
+        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.1.1");
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);

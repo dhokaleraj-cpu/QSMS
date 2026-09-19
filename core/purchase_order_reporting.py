@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from reportlab.lib.colors import Color, HexColor, black, white
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
@@ -13,6 +13,11 @@ try:
     from pypdf import PdfReader, PdfWriter
 except Exception:  # pragma: no cover - surfaced at runtime with a clear message
     PdfReader = PdfWriter = None  # type: ignore[assignment]
+
+try:
+    import fitz  # PyMuPDF - used only to compact the authoritative terms into portrait pages.
+except Exception:  # pragma: no cover - updater installs requirements; fallback preserves portrait source pages.
+    fitz = None  # type: ignore[assignment]
 
 
 NAVY = HexColor("#0B2E63")
@@ -512,39 +517,154 @@ def _terms_with_dynamic_header(terms_path: Path, *, po_number: str, order_date: 
     return result
 
 
-def _compact_terms_two_up(terms_path: Path, *, po_number: str, order_date: str) -> list[Any]:
-    """Place two controlled terms pages on each landscape A4 sheet.
-
-    The source terms PDF remains authoritative and unedited; this only changes the
-    print imposition so unused page area is utilised and the terms section uses about
-    half as many physical pages while remaining readable.
-    """
-    if PdfReader is None:
+def _stamped_terms_pdf_bytes(terms_path: Path, *, po_number: str, order_date: str) -> bytes:
+    """Return the authoritative terms with the live PO/date stamp applied."""
+    if PdfWriter is None:
         raise RuntimeError("pypdf is required for the controlled Purchase Order terms pages.")
-    try:
-        from pypdf import PageObject, Transformation
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError("pypdf PageObject/Transformation is required for compact terms printing.") from exc
+    writer = PdfWriter()
+    for page in _terms_with_dynamic_header(terms_path, po_number=po_number, order_date=order_date):
+        writer.add_page(page)
+    out = BytesIO(); writer.write(out); return out.getvalue()
+
+
+def _compact_terms_portrait(terms_path: Path, *, po_number: str, order_date: str) -> list[Any]:
+    """Compact the controlled terms into portrait A4 pages without changing clause wording.
+
+    v4.14.33 removes blank vertical space by clipping the visible text blocks from the
+    authoritative FSI/703/F04 source and packing them sequentially on portrait A4. The
+    original clause order and visible wording are retained. A known duplicate carry-over
+    source page is skipped only when the duplicate signature is present in the template.
+    If PyMuPDF is unavailable, the stamped source pages are returned unchanged (still portrait).
+    """
     source_pages = _terms_with_dynamic_header(terms_path, po_number=po_number, order_date=order_date)
-    land_w, land_h = landscape(A4)
-    margin = 12.0
-    gutter = 8.0
-    slot_w = (land_w - 2 * margin - gutter) / 2.0
-    slot_h = land_h - 2 * margin
-    compact: list[Any] = []
-    for offset in range(0, len(source_pages), 2):
-        target = PageObject.create_blank_page(width=land_w, height=land_h)
-        for slot, source_page in enumerate(source_pages[offset:offset+2]):
-            src_w = float(source_page.mediabox.width)
-            src_h = float(source_page.mediabox.height)
-            scale = min(slot_w / src_w, slot_h / src_h)
-            placed_w = src_w * scale
-            placed_h = src_h * scale
-            x0 = margin + slot * (slot_w + gutter) + (slot_w - placed_w) / 2.0
-            y0 = margin + (slot_h - placed_h) / 2.0
-            target.merge_transformed_page(source_page, Transformation().scale(scale).translate(x0, y0))
-        compact.append(target)
-    return compact
+    if fitz is None:
+        return source_pages
+
+    # Open a stamped in-memory copy so every compact page carries the current PO/date.
+    stamped = _stamped_terms_pdf_bytes(terms_path, po_number=po_number, order_date=order_date)
+    src = fitz.open(stream=stamped, filetype="pdf")
+    out = fitz.open()
+    a4_w, a4_h = A4
+    margin_x = 18.0
+    footer_h = 24.0
+    gap = 3.0
+    usable_w = float(a4_w) - 2 * margin_x
+
+    # The controlled 2023 source contains one accidental carry-over page where clause 6
+    # and clauses 1-5 are repeated. Skip it only when both the duplicate and the next-page
+    # clause-6 continuation signatures are present. No other page is suppressed.
+    skip_pages: set[int] = set()
+    if len(src) >= 3:
+        duplicate_text = " ".join(src[1].get_text("text").split()).casefold()
+        next_text = " ".join(src[2].get_text("text").split()).casefold()
+        if (
+            "6. supplier quality and development" in duplicate_text
+            and "1. acceptance:" in duplicate_text
+            and "6. supplier quality and development" in next_text
+        ):
+            skip_pages.add(1)
+
+    segments: list[tuple[int, Any]] = []
+    for pno, page in enumerate(src):
+        if pno in skip_pages:
+            continue
+        for block in page.get_text("blocks", sort=True):
+            x0, y0, x1, y1, text, *_ = block
+            if not " ".join(str(text or "").split()):
+                continue
+            # Remove the repeated per-page PURCHASE ORDER header and controlled footer.
+            # The full title area on the first source page is re-used once as the compact
+            # terms title. All other visible terms content remains in sequence.
+            if y0 >= 738:
+                continue
+            if pno == 0 and y0 < 150:
+                continue
+            clip_y0 = max(float(y0), 86.0)
+            clip_y1 = min(float(y1), 735.0)
+            if clip_y1 - clip_y0 < 4.0:
+                continue
+            rect = fitz.Rect(
+                max(20.0, float(x0) - 2.0),
+                max(84.0, clip_y0 - 1.5),
+                min(595.0, float(x1) + 2.0),
+                min(735.0, clip_y1 + 1.5),
+            )
+            segments.append((pno, rect))
+
+    page = None
+    y = 0.0
+    page_no = 0
+
+    def _new_compact_page(first: bool) -> tuple[Any, float]:
+        nonlocal page_no
+        target_page = out.new_page(width=float(a4_w), height=float(a4_h))
+        page_no += 1
+        if first:
+            # Full title + plant + dynamic PO/date from terms source page 1.
+            header_clip = fitz.Rect(20.0, 35.0, 595.0, 148.0)
+            target = fitz.Rect(
+                margin_x, 18.0, float(a4_w) - margin_x,
+                18.0 + header_clip.height * (usable_w / header_clip.width),
+            )
+            target_page.show_pdf_page(target, src, 0, clip=header_clip)
+            return target_page, target.y1 + 7.0
+        # Use a source page whose header is cleanly separated from the first clause.
+        normal_header_source = 9 if len(src) > 9 else 0
+        header_clip = fitz.Rect(20.0, 35.0, 595.0, 84.5)
+        target = fitz.Rect(
+            margin_x, 15.0, float(a4_w) - margin_x,
+            15.0 + header_clip.height * (usable_w / header_clip.width),
+        )
+        target_page.show_pdf_page(target, src, normal_header_source, clip=header_clip)
+        return target_page, target.y1 + 6.0
+
+    for pno, clip in segments:
+        # 0.86 retains comfortable printed readability while reducing the current terms
+        # from 12 physical source pages to about 7 portrait A4 pages on the 2023 template.
+        scale = min(0.86, usable_w / float(clip.width))
+        h = float(clip.height) * scale
+        if page is None:
+            page, y = _new_compact_page(True)
+        bottom_limit = float(a4_h) - footer_h - 10.0
+        if y + h > bottom_limit:
+            page, y = _new_compact_page(False)
+        target = fitz.Rect(margin_x, y, margin_x + float(clip.width) * scale, y + h)
+        page.show_pdf_page(target, src, pno, clip=clip)
+        y = target.y1 + gap
+
+    total_pages = len(out)
+    for idx, target_page in enumerate(out):
+        fy = float(a4_h) - 12.0
+        target_page.insert_text((18.0, fy), "STANDARD PURCHASE ORDER TERMS AND CONDITIONS", fontsize=6.3, fontname="helv")
+        target_page.insert_text((237.0, fy), "FSI/703/F04", fontsize=6.3, fontname="helv")
+        target_page.insert_text((315.0, fy), "1st April 2023", fontsize=6.3, fontname="helv")
+        target_page.insert_text((500.0, fy), f"Terms {idx + 1} of {total_pages}", fontsize=6.3, fontname="helv")
+
+    packed = out.tobytes(garbage=3, deflate=True)
+    out.close(); src.close()
+    return list(PdfReader(BytesIO(packed)).pages)
+
+
+def batch_purchase_order_pdf_bytes(
+    purchase_orders: Sequence[tuple[Mapping[str, Any], Sequence[Mapping[str, Any]]]],
+    *, copies_per_order: int = 1, terms_path: str | Path | None = None,
+) -> bytes:
+    """Combine multiple controlled Purchase Orders into one print-ready PDF.
+
+    Each selected PO remains a complete controlled document with its own portrait terms.
+    copies_per_order supports physical duplicate copies without requiring repeated downloads.
+    """
+    if PdfReader is None or PdfWriter is None:
+        raise RuntimeError("pypdf is not installed. Add pypdf to requirements.txt.")
+    copies = max(1, min(int(copies_per_order or 1), 10))
+    writer = PdfWriter()
+    for header, items in purchase_orders:
+        pdf = purchase_order_pdf_bytes(header, list(items), terms_path=terms_path)
+        pages = list(PdfReader(BytesIO(pdf)).pages)
+        for _copy in range(copies):
+            for page in pages:
+                writer.add_page(page)
+    out = BytesIO(); writer.write(out); return out.getvalue()
 
 
 def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any] | Sequence[Mapping[str, Any]], *, terms_path: str | Path | None = None) -> bytes:
@@ -554,8 +674,8 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
     table containing Customer PO Number, PO Position, Part Number, Part Description and
     allocated quantity. Customer identity is intentionally omitted from the supplier print.
     Each supplier item retains its technical data and Price Revision History. Standard terms
-    are imposed two-up on landscape A4 sheets to reduce physical page count without altering
-    the authoritative terms content.
+    are compacted only into portrait A4 pages by moving visible controlled content into unused
+    white space; clause wording and order remain unchanged.
     """
     if PdfReader is None or PdfWriter is None:
         raise RuntimeError("pypdf is not installed. Add pypdf to requirements.txt.")
@@ -575,7 +695,7 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
         for page in continuation.pages: writer.add_page(page)
     path = Path(terms_path) if terms_path else Path(__file__).resolve().parent.parent / "templates" / "FSI_STANDARD_PO_TERMS_2023.pdf"
     if path.exists():
-        for page in _compact_terms_two_up(path, po_number=_s(header.get("po_number")), order_date=_s(header.get("order_date"))):
+        for page in _compact_terms_portrait(path, po_number=_s(header.get("po_number")), order_date=_s(header.get("order_date"))):
             writer.add_page(page)
     out = BytesIO(); writer.write(out); return out.getvalue()
 
