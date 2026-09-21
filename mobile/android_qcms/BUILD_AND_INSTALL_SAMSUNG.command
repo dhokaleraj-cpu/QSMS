@@ -11,7 +11,7 @@ say(){ printf '\n=== %s ===\n' "$1"; }
 fail(){ printf '\nERROR: %s\n' "$1" >&2; exit 1; }
 
 echo "============================================================"
-echo " QCMS Mobile v0.1.5 - Samsung Android build & install"
+echo " QCMS Mobile v0.1.6 - Samsung Android build & install"
 echo "============================================================"
 echo "Project : $HERE"
 echo "SDK     : $SDK"
@@ -101,7 +101,7 @@ APK="$HERE/app/build/outputs/apk/debug/app-debug.apk"
 [ -f "$APK" ] || fail "APK not produced: $APK"
 # Keep the user-facing APK in Downloads even when no phone/ADB device is attached.
 mkdir -p "$HOME/Downloads"
-OUTPUT_APK="$HOME/Downloads/QCMS_Mobile_v0.1.5_TEST.apk"
+OUTPUT_APK="$HOME/Downloads/QCMS_Mobile_v0.1.6_TEST.apk"
 cp -p "$APK" "$OUTPUT_APK"
 "$SDK/build-tools/35.0.0/apksigner" verify --verbose "$OUTPUT_APK" || fail "APK signature verification failed."
 printf '\nAPK READY: %s\n' "$OUTPUT_APK"

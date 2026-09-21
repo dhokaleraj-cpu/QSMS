@@ -30,8 +30,13 @@ def pdf_text(blob):
 
 def test_v41434_controlled_release_identity():
     manifest = json.loads((ROOT / 'DEPLOYMENT_MANIFEST.json').read_text())
-    assert (ROOT / 'VERSION').read_text().strip() == manifest['version'] in {'4.14.34','4.14.35', '4.14.36', '4.14.37'}
-    if manifest['version'] == '4.14.37':
+    assert (ROOT / 'VERSION').read_text().strip() == manifest['version'] in {'4.14.34','4.14.35', '4.14.36', '4.14.37', '4.14.38'}
+    if manifest['version'] == '4.14.38':
+        assert manifest['build'] == '41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE'
+        assert manifest['previous_controlled_release'] == '4.14.37'
+        assert manifest['database_schema_required'] == '4.14.36'
+        assert manifest['database_migration_required'] is True
+    elif manifest['version'] == '4.14.37':
         assert manifest['build'] == '41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL'
         assert manifest['previous_controlled_release'] == '4.14.36'
         assert manifest['database_schema_required'] == '4.14.36'
@@ -168,9 +173,9 @@ def test_android_ci_is_read_only_and_uploads_only_verified_apk():
     ET.parse(ROOT / 'mobile/android_qcms/app/src/main/AndroidManifest.xml')
     helper = (ROOT / 'mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command').read_text()
     assert 'QCMS_BUILD_ONLY' in helper
-    expected_apk = ('$HOME/Downloads/QCMS_Mobile_v0.1.5_TEST.apk' if (ROOT / 'VERSION').read_text().strip() == '4.14.37' else ('$HOME/Downloads/QCMS_Mobile_v0.1.4_TEST.apk' if (ROOT / 'VERSION').read_text().strip() == '4.14.36' else ('$HOME/Downloads/QCMS_Mobile_v0.1.3_TEST.apk' if (ROOT / 'VERSION').read_text().strip() == '4.14.35' else '$HOME/Downloads/QCMS_Mobile_v0.1.2_TEST.apk')))
+    expected_apk = ('$HOME/Downloads/QCMS_Mobile_v0.1.6_TEST.apk' if (ROOT / 'VERSION').read_text().strip() == '4.14.38' else ('$HOME/Downloads/QCMS_Mobile_v0.1.5_TEST.apk' if (ROOT / 'VERSION').read_text().strip() == '4.14.37' else ('$HOME/Downloads/QCMS_Mobile_v0.1.4_TEST.apk' if (ROOT / 'VERSION').read_text().strip() == '4.14.36' else ('$HOME/Downloads/QCMS_Mobile_v0.1.3_TEST.apk' if (ROOT / 'VERSION').read_text().strip() == '4.14.35' else '$HOME/Downloads/QCMS_Mobile_v0.1.2_TEST.apk'))))
     assert expected_apk in helper
     source = (ROOT / 'mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java').read_text()
     assert 'Settings.ACTION_WEBVIEW_SETTINGS' not in source
-    expected_ua = ('QCMSMobile/0.1.5' if (ROOT / 'VERSION').read_text().strip() == '4.14.37' else ('QCMSMobile/0.1.4' if (ROOT / 'VERSION').read_text().strip() == '4.14.36' else ('QCMSMobile/0.1.3' if (ROOT / 'VERSION').read_text().strip() == '4.14.35' else 'QCMSMobile/0.1.2')))
+    expected_ua = ('QCMSMobile/0.1.6' if (ROOT / 'VERSION').read_text().strip() == '4.14.38' else ('QCMSMobile/0.1.5' if (ROOT / 'VERSION').read_text().strip() == '4.14.37' else ('QCMSMobile/0.1.4' if (ROOT / 'VERSION').read_text().strip() == '4.14.36' else ('QCMSMobile/0.1.3' if (ROOT / 'VERSION').read_text().strip() == '4.14.35' else 'QCMSMobile/0.1.2'))))
     assert expected_ua in source

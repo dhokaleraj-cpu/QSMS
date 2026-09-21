@@ -7,10 +7,15 @@ def text(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 def test_v41437_release_identity():
-    assert text("VERSION").strip() == "4.14.37"
+    version = text("VERSION").strip()
+    assert version in {"4.14.37", "4.14.38"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] == "4.14.37"
-    assert manifest["build"] == "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL"
+    assert manifest["version"] == version
+    expected = {
+        "4.14.37": "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL",
+        "4.14.38": "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE",
+    }
+    assert manifest["build"] == expected[version]
 
 def test_complaint_dashboard_cards_and_email_attachments_external_copy():
     src = text("app_pages/complaints.py")
@@ -35,9 +40,16 @@ def test_native_streamlit_content_only_mode_replaces_web_rails():
 def test_android_full_expandable_navigation_and_fixed_bottom_bar():
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
     gradle = text("mobile/android_qcms/app/build.gradle")
-    assert "versionName '0.1.5'" in gradle
-    for token in ("QCMSMobile/0.1.5", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", '"Home"', '"Search"', '"Complaints"'):
-        assert token in java
+    version = text("VERSION").strip()
+    if version == "4.14.37":
+        assert "versionName '0.1.5'" in gradle
+        for token in ("QCMSMobile/0.1.5", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", '"Home"', '"Search"', '"Complaints"'):
+            assert token in java
+    else:
+        assert "versionName '0.1.6'" in gradle
+        for token in ("QCMSMobile/0.1.6", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "__qcmsNativeNavigate"):
+            assert token in java
+        assert "LinearLayout bottom=new LinearLayout" not in java
 
 def test_ios_full_expandable_navigation_and_fixed_bottom_bar():
     content = text("mobile/ios_qcms/QCMSMobileIOS/ContentView.swift")

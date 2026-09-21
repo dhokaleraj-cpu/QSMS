@@ -1,13 +1,13 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.37
-Build `41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL`.
+## Current controlled release — v4.14.38
+Build `41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE`.
 
-Complaint dashboard status is now card-based; Complaint email can attach controlled PDF/documents and explicitly copy the Customer/Supplier before confirmation. Purchase Order Approval has a Pending Approval KPI/table and multi-PO approver-email action with PENDING APPROVAL watermarked draft PDFs.
+Android 0.1.6 fixes the mobile menu login-loop by routing drawer selections through hidden Streamlit `st.page_link` elements instead of hard `WebView.loadUrl()` page loads. This keeps the existing authenticated Streamlit session alive while changing QCMS pages.
 
-Native Android 0.1.5 and iPhone/iPad 0.1.2 render QCMS content-only inside the WebView and use the native expandable drawer plus fixed Home/Search/Complaints bottom navigation, eliminating the long Streamlit rails/submenus from the mobile app.
+The Android fixed Home/Search/Complaints footer has been removed and mobile content now uses the reclaimed screen height. The top-bar hard-refresh control is also removed so an accidental full browser reload cannot drop the in-memory QCMS login.
 
-The v4.14.36 Complaint email/reminder database configuration and qcms-overdue-notifier v6 remain the controlled runtime baseline; v4.14.37 requires no additional schema migration.
+Complaint dashboard cards, Complaint PDF/document email with optional Customer/Supplier copy, Purchase Order Pending Approval worklist/draft approver email, all permissions/audit controls and the v4.14.36 live database/notification baseline remain preserved. v4.14.38 requires no new Supabase schema migration.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.

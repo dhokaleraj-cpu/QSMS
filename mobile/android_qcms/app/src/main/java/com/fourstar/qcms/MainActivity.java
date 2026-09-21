@@ -32,6 +32,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 701;
     private static final String PREFS = "qcms_mobile";
@@ -166,12 +168,11 @@ public class MainActivity extends Activity {
         Button hamburger = iconButton("☰",22); top.addView(hamburger,new LinearLayout.LayoutParams(dp(50),dp(54)));
         ImageView logo = new ImageView(this); logo.setImageResource(R.drawable.stawn_icon); logo.setScaleType(ImageView.ScaleType.CENTER_CROP); LinearLayout.LayoutParams lpLogo=new LinearLayout.LayoutParams(dp(34),dp(34)); lpLogo.setMargins(0,0,dp(8),0); top.addView(logo,lpLogo);
         TextView title = new TextView(this); title.setText("QCMS"); title.setTextColor(Color.WHITE); title.setTextSize(18); title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); top.addView(title,new LinearLayout.LayoutParams(0,dp(54),1));
-        Button refresh=iconButton("↻",19); top.addView(refresh,new LinearLayout.LayoutParams(dp(48),dp(54)));
         Button more=iconButton("⋮",22); top.addView(more,new LinearLayout.LayoutParams(dp(48),dp(54)));
         main.addView(top,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
 
         webView = new WebView(this);
-        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.1.5");
+        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.1.6");
         CookieManager cm=CookieManager.getInstance(); cm.setAcceptCookie(true); cm.setAcceptThirdPartyCookies(webView,true);
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageFinished(WebView view,String pageUrl){ super.onPageFinished(view,pageUrl); installMobileChromeSuppressor(); }
@@ -185,12 +186,6 @@ public class MainActivity extends Activity {
             catch(Exception ex){ new AlertDialog.Builder(MainActivity.this).setTitle("Open download in browser").setMessage("Open QCMS in the phone browser and download again using the same login.").setPositiveButton("Open QCMS",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(baseUrl)))).setNegativeButton("Cancel",null).show(); }
         });
         main.addView(webView,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1));
-
-        LinearLayout bottom=new LinearLayout(this); bottom.setOrientation(LinearLayout.HORIZONTAL); bottom.setGravity(Gravity.CENTER); bottom.setPadding(dp(4),0,dp(4),0); bottom.setBackgroundColor(Color.WHITE); bottom.setElevation(dp(8));
-        Button home=bottomButton("⌂","Home"); bottom.addView(home,new LinearLayout.LayoutParams(0,dp(66),1));
-        Button search=new Button(this); search.setText("⌕"); search.setTextSize(28); search.setTextColor(Color.WHITE); search.setBackground(rounded(Color.rgb(0,120,212),32)); LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(58),dp(58)); sp.setMargins(dp(12),0,dp(12),0); bottom.addView(search,sp);
-        Button complaints=bottomButton("◇","Complaints"); bottom.addView(complaints,new LinearLayout.LayoutParams(0,dp(66),1));
-        main.addView(bottom,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(68)));
 
         drawerLayer=new FrameLayout(this); drawerLayer.setVisibility(View.GONE); root.addView(drawerLayer,new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
         drawerScrim=new View(this); drawerScrim.setBackgroundColor(0x66000000); drawerLayer.addView(drawerScrim,new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT)); drawerScrim.setOnClickListener(v->closeDrawer());
@@ -214,7 +209,7 @@ public class MainActivity extends Activity {
         drawerPanel.addView(drawerSection("⚙","Admin","user-access",new String[][]{{"Users & Access","user-access"},{"Email Server & Notifications","email-settings"},{"Deployment Diagnostics","deployment-diagnostics"}}));
 
         setContentView(root);
-        hamburger.setOnClickListener(v->openDrawer()); refresh.setOnClickListener(v->webView.reload()); home.setOnClickListener(v->navigate("dashboard")); search.setOnClickListener(v->navigate("global-search")); complaints.setOnClickListener(v->navigate("complaints-home"));
+        hamburger.setOnClickListener(v->openDrawer());
         more.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("QCMS Mobile").setItems(new String[]{"Open QCMS in browser","Change QCMS URL","Android WebView settings"},(d,which)->{ if(which==0)startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(baseUrl))); else if(which==1){prefs.edit().remove(PREF_URL).apply();showSetupScreen();} else {try{android.content.pm.PackageInfo provider=WebView.getCurrentWebViewPackage(); if(provider!=null)startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+provider.packageName))); else startActivity(new Intent(Settings.ACTION_SETTINGS));}catch(Exception ex){startActivity(new Intent(Settings.ACTION_SETTINGS));}}}).show());
         webView.loadUrl(nativeUrl(""));
     }
@@ -226,14 +221,34 @@ public class MainActivity extends Activity {
         Uri.Builder b = uri.buildUpon().clearQuery().appendQueryParameter("native_mobile","1");
         return b.build().toString();
     }
-    private void navigate(String path){ if(webView==null)return; webView.loadUrl(nativeUrl(path)); }
+    private void navigate(String path){
+        if(webView==null)return;
+        String route = path == null ? "dashboard" : path.trim();
+        if(route.isEmpty()) route = "dashboard";
+        tryNavigate(route, 0);
+    }
+
+    private void tryNavigate(String route, int attempt){
+        if(webView==null)return;
+        String script = "(function(){try{return window.__qcmsNativeNavigate?window.__qcmsNativeNavigate(" + JSONObject.quote(route) + "): 'QCMS_NAV_BRIDGE_MISSING';}catch(e){return 'QCMS_NAV_ERROR';}})();";
+        webView.evaluateJavascript(script, result -> {
+            String value = result == null ? "" : result;
+            if(value.contains("QCMS_NAV_OK")) return;
+            if(attempt < 9){
+                webView.postDelayed(() -> tryNavigate(route, attempt + 1), 180);
+                return;
+            }
+            Toast.makeText(MainActivity.this, "QCMS navigation is still loading. Please try the menu again.", Toast.LENGTH_SHORT).show();
+        });
+    }
     private void openDrawer(){ if(drawerLayer!=null){drawerLayer.setVisibility(View.VISIBLE);drawerLayer.bringToFront();} }
     private void closeDrawer(){ if(drawerLayer!=null)drawerLayer.setVisibility(View.GONE); }
 
     private void installMobileChromeSuppressor(){
         if(webView==null)return;
         String script="(function(){function apply(){"+
-            "var style=document.getElementById('qcms-mobile-native-style');if(!style){style=document.createElement('style');style.id='qcms-mobile-native-style';style.textContent='div.st-key-fsi_shell,[class~=\\\"st-key-fsi_shell\\\"],.st-key-fsi_left_rail,[class~=\\\"st-key-fsi_left_rail\\\"],[class*=\\\"st-key-fsi_module_subnav_\\\"]{display:none!important}div.st-key-qcms_workspace [data-testid=\\\"stHorizontalBlock\\\"]{display:block!important}.st-key-qcms_content,[class~=\\\"st-key-qcms_content\\\"]{width:100%!important;max-width:100%!important}div[data-testid=\\\"stMainBlockContainer\\\"],.block-container{padding:.55rem .55rem 5.2rem!important}.fsi-page-head{margin-top:0!important}.qcms-enterprise-table-wrap{max-height:72vh!important}';document.head.appendChild(style);} " +
+            "var style=document.getElementById('qcms-mobile-native-style');if(!style){style=document.createElement('style');style.id='qcms-mobile-native-style';style.textContent='div.st-key-fsi_shell,[class~=\\\"st-key-fsi_shell\\\"],.st-key-fsi_left_rail,[class~=\\\"st-key-fsi_left_rail\\\"],[class*=\\\"st-key-fsi_module_subnav_\\\"]{display:none!important}.st-key-qcms_native_nav_bridge,[class~=\\\"st-key-qcms_native_nav_bridge\\\"]{position:fixed!important;left:-200vw!important;top:0!important;width:1px!important;height:1px!important;overflow:hidden!important;opacity:.001!important;z-index:-1!important}div.st-key-qcms_workspace [data-testid=\\\"stHorizontalBlock\\\"]{display:block!important}.st-key-qcms_content,[class~=\\\"st-key-qcms_content\\\"]{width:100%!important;max-width:100%!important}div[data-testid=\\\"stMainBlockContainer\\\"],.block-container{padding:.55rem .55rem 1rem!important}.fsi-page-head{margin-top:0!important}.qcms-enterprise-table-wrap{max-height:78vh!important}';document.head.appendChild(style);} "+
+            "window.__qcmsNativeNavigate=function(route){var p=(route||'').toString().replace(/^\\/+|\\/+$/g,'');var marker='QCMS_NAV::'+p;var root=document.querySelector('.st-key-qcms_native_nav_bridge,[class~=\\\"st-key-qcms_native_nav_bridge\\\"]')||document;var nodes=root.querySelectorAll('[data-testid=\\\"stPageLink\\\"],a[href]');for(var i=0;i<nodes.length;i++){var n=nodes[i];var text=(n.textContent||'').trim();if(text.indexOf(marker)>=0){var target=(n.tagName==='A'?n:(n.querySelector('a')||n.querySelector('button')||n));target.click();return 'QCMS_NAV_OK';}}var anchors=root.querySelectorAll('a[href]');for(var j=0;j<anchors.length;j++){try{var a=anchors[j],u=new URL(a.href,window.location.href),clean=u.pathname.replace(/\\/+$/,'');if(clean.endsWith('/'+p)||clean===('/'+p)){a.click();return 'QCMS_NAV_OK';}}catch(e){}}return 'QCMS_NAV_MISSING';};"+
             "var rail=document.querySelector('.st-key-fsi_left_rail,[class~=\\\"st-key-fsi_left_rail\\\"]');var rc=rail?rail.closest('[data-testid=\\\"column\\\"]'):null;if(rc)rc.style.display='none';var content=document.querySelector('.st-key-qcms_content,[class~=\\\"st-key-qcms_content\\\"]');var cc=content?content.closest('[data-testid=\\\"column\\\"]'):null;if(cc){cc.style.display='block';cc.style.width='100%';cc.style.flex='1 1 100%';}}window.__qcmsMobileApply=apply;if(window.__qcmsMobileObserver){try{window.__qcmsMobileObserver.disconnect()}catch(e){}}window.__qcmsMobileObserver=new MutationObserver(function(){requestAnimationFrame(apply)});window.__qcmsMobileObserver.observe(document.documentElement,{childList:true,subtree:true});apply();})();";
         webView.evaluateJavascript(script,null);
     }

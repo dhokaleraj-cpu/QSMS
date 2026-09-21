@@ -9,10 +9,10 @@ def text(rel: str) -> str:
 
 
 def test_v41436_release_identity_and_routes():
-    assert text("VERSION").strip() in {"4.14.36", "4.14.37"}
+    assert text("VERSION").strip() in {"4.14.36", "4.14.37", "4.14.38"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.36", "4.14.37"}
-    assert manifest["build"] in {"41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER", "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL"}
+    assert manifest["version"] in {"4.14.36", "4.14.37", "4.14.38"}
+    assert manifest["build"] in {"41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER", "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL", "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE"}
     app = text("streamlit_app.py")
     for route in ("customer-complaint-register", "supplier-complaint-register", "complaint-email-settings"):
         assert route in app
@@ -44,7 +44,7 @@ def test_v41436_complaint_schedule_migration_and_worker():
 def test_v41436_android_reference_video_style_navigation():
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
     gradle = text("mobile/android_qcms/app/build.gradle")
-    assert any(v in gradle for v in ("versionName '0.1.4'", "versionName '0.1.5'"))
+    assert any(v in gradle for v in ("versionName '0.1.4'", "versionName '0.1.5'", "versionName '0.1.6'"))
     for token in ("openDrawer", "closeDrawer", "drawerPanel", "global-search", "complaints-home", "stawn_icon"):
         assert token in java
     assert (ROOT / "mobile/android_qcms/app/src/main/res/drawable-nodpi/stawn_icon.png").exists()

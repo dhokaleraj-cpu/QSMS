@@ -235,11 +235,14 @@ required = [
     "QCMS_NEW_CHAT_HANDOVER_v4.14.37.md",
     "RELEASE_NOTES_v4.14.37.md",
     "tests/test_v41437_mobile_complaint_cards_po_approval_email.py",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.38.md",
+    "RELEASE_NOTES_v4.14.38.md",
+    "tests/test_v41438_android_nav_session_footer.py",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.37 - Mobile Full Navigation / Complaint Cards / PO Approval Draft Email",
+    "phase": "QCMS 4.14.38 - Android Session-Safe Navigation / Footer Removal",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

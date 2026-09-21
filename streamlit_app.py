@@ -1,3 +1,5 @@
+# QCMS 4.14.38 — ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE
+# BUILD 41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE
 # QCMS 4.14.19 — PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES
 # BUILD 41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD
 # QCMS 4.14.15 — DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
@@ -467,7 +469,7 @@ if not native_mobile:
     if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
         logout()
 
-    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL")
+    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE")
 
     # Persistent permission-aware Global Search launcher for desktop/web.
     with st.form("qcms_shell_global_search_form", border=False):
@@ -501,19 +503,28 @@ if not native_mobile:
                 app_footer()
 else:
     # Native-mobile content mode: the Android/iOS application provides the top
-    # bar, slide-out navigation and fixed bottom bar, so QCMS renders content only.
+    # bar and slide-out navigation, so QCMS renders content only.
     st.markdown(
         """<style>
         header[data-testid="stHeader"],div[data-testid="stToolbar"],div[data-testid="stDecoration"],
         section[data-testid="stSidebar"],.st-key-fsi_shell,[class~="st-key-fsi_shell"],
         .st-key-fsi_left_rail,[class~="st-key-fsi_left_rail"],[class*="st-key-fsi_module_subnav_"]{display:none!important}
-        div[data-testid="stMainBlockContainer"],.block-container{padding:.45rem .55rem 1rem!important;max-width:100%!important}
+        .st-key-qcms_native_nav_bridge,[class~="st-key-qcms_native_nav_bridge"]{position:fixed!important;left:-200vw!important;top:0!important;width:1px!important;height:1px!important;overflow:hidden!important;opacity:.001!important;z-index:-1!important}
+        div[data-testid="stMainBlockContainer"],.block-container{padding:.45rem .55rem .8rem!important;max-width:100%!important}
         .st-key-qcms_content,[class~="st-key-qcms_content"]{width:100%!important;max-width:100%!important;margin:0!important}
         .fsi-page-head{margin-top:0!important}
         @media(max-width:900px){.qcms-enterprise-table-wrap{max-height:67vh!important}.fsi-kpi-grid,.fsi-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
         </style>""",
         unsafe_allow_html=True,
     )
+    # Native wrappers must navigate through Streamlit's own page-link mechanism.
+    # A WebView.loadUrl("/route") starts a new Streamlit browser session and drops
+    # the in-memory QCMS login. These hidden page links are clicked by the native
+    # Android bridge so page changes stay inside the existing authenticated session.
+    with st.container(border=False, key="qcms_native_nav_bridge"):
+        for _native_route, _native_page in PAGE_ITEMS:
+            st.page_link(_native_page, label=f"QCMS_NAV::{_native_route}")
+
     with st.container(border=False, key="qcms_workspace"):
         with st.container(border=False, key="qcms_content"):
             if not bool(current_route_permission.get("can_view", True)):

@@ -36,6 +36,7 @@ def test_release_identity_source_only():
         "4.14.35": ("41435-PO-WATERMARK-REMINDER-MOBILE-IOS", "4.14.34"),
         "4.14.36": ("41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER", "4.14.35"),
         "4.14.37": ("41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL", "4.14.36"),
+        "4.14.38": ("41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE", "4.14.37"),
     }
     assert version in builds
     build, previous = builds[version]
@@ -44,8 +45,8 @@ def test_release_identity_source_only():
     assert manifest["version"] == version
     assert manifest["build"] == build
     assert manifest["previous_controlled_release"] == previous
-    if version in {"4.14.35", "4.14.36", "4.14.37"}:
-        assert manifest["database_schema_required"] == ("4.14.36" if version == "4.14.37" else version)
+    if version in {"4.14.35", "4.14.36", "4.14.37", "4.14.38"}:
+        assert manifest["database_schema_required"] == ("4.14.36" if version in {"4.14.37", "4.14.38"} else version)
         assert manifest["database_migration_required"] is True
     else:
         assert manifest["database_schema_required"] == "4.14.28"
@@ -85,7 +86,7 @@ def test_batch_print_and_email_ui_contract():
 
 def test_android_helper_bootstraps_sdk_when_missing():
     helper = text("mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command")
-    assert ("QCMS Mobile v0.1.1" in helper or "QCMS Mobile v0.1.2" in helper or "QCMS Mobile v0.1.3" in helper or "QCMS Mobile v0.1.4" in helper or "QCMS Mobile v0.1.5" in helper)
+    assert ("QCMS Mobile v0.1.1" in helper or "QCMS Mobile v0.1.2" in helper or "QCMS Mobile v0.1.3" in helper or "QCMS Mobile v0.1.4" in helper or "QCMS Mobile v0.1.5" in helper or "QCMS Mobile v0.1.6" in helper)
     assert "ANDROID SDK / CLI BOOTSTRAP" in helper
     assert "https://dl.google.com/android/cli/latest/" in helper
     assert '"platforms;android-35"' in helper
