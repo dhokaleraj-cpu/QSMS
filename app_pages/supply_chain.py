@@ -16,7 +16,7 @@ from core.branch_context import branch_label, branch_snapshot, resolve_current_b
 from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, AttachmentSlot, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
-from core.purchase_order_reporting import purchase_order_pdf_bytes, purchase_order_pdf_files, purchase_order_files_zip_bytes, DEFAULT_SPECIAL_INSTRUCTIONS
+from core.purchase_order_reporting import purchase_order_pdf_bytes, purchase_order_excel_bytes, purchase_order_pdf_files, purchase_order_files_zip_bytes, DEFAULT_SPECIAL_INSTRUCTIONS
 from core.notification_service import NotificationService
 from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
 from core.selection_labels import part_label, party_label
@@ -1638,7 +1638,7 @@ def render_purchase_order_pdf_page() -> None:
         header = service.purchase_order(selected) or {}
         items = service.purchase_order_items_for_print(selected)
         _render_purchase_order_key_information(service, selected, key="po_pdf_source")
-        c = st.columns(2, gap="small")
+        c = st.columns(3, gap="small")
         try:
             c[0].download_button(
                 "Download / Print Purchase Order PDF", purchase_order_pdf_bytes(header, items),
@@ -1647,8 +1647,16 @@ def render_purchase_order_pdf_page() -> None:
             )
         except Exception as exc:
             c[0].error(f"Purchase Order PDF could not be generated: {exc}")
+        try:
+            c[1].download_button(
+                "Download Purchase Order Excel", purchase_order_excel_bytes(header, items),
+                file_name=f"{header.get('po_number')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                icon=":material/table_view:", width="stretch", key=f"dedicated_po_excel_{selected}",
+            )
+        except Exception as exc:
+            c[1].error(f"Purchase Order Excel could not be generated: {exc}")
         po_event = "RM_PO_CREATED" if str(header.get("po_type") or "").upper() == "RAW_MATERIAL" else "FORGING_PO_CREATED"
-        with c[1]:
+        with c[2]:
             record_email_sender(
                 NotificationService(service.repo), po_event,
                 related_table="supply_purchase_orders", related_id=selected, key=f"dedicated_po_record_email_{selected}",
@@ -1682,11 +1690,11 @@ def render_purchase_order_pdf_page() -> None:
                 po_files = purchase_order_pdf_files(records, copies_per_order=copies)
                 zip_data = purchase_order_files_zip_bytes(po_files)
                 c[1].download_button(
-                    f"Download {len(po_files)} Individual PO PDFs (ZIP)", zip_data,
+                    f"Download All Selected POs - {len(po_files)} Separate PDFs (ZIP)", zip_data,
                     file_name=f"QCMS_Individual_POs_{len(po_files)}.zip", mime="application/zip",
                     icon=":material/folder_zip:", type="primary", width="stretch", key="po_batch_zip_download",
                 )
-                st.caption("One file per PO. Each file includes that PO's own portrait Terms & Conditions. "
+                st.caption("Individual PO PDFs (ZIP) · One file per PO. Each file includes that PO's own portrait Terms & Conditions. "
                            "Copies per PO repeats only that PO inside its own file. No different POs are merged.")
                 with st.expander(f"Individual PDF downloads ({len(po_files)})", expanded=True):
                     for index, (filename, pdf_data) in enumerate(po_files):
@@ -1704,7 +1712,7 @@ def render_purchase_order_pdf_page() -> None:
             elif c[2].button("Send Selected POs by Email", icon=":material/forward_to_inbox:", width="stretch", key="po_batch_send"):
                 _batch_po_email_dialog(service, selected_batch)
         else:
-            st.info("Select one or more Purchase Orders. Each PO is downloaded as its own PDF, individually or inside a ZIP archive.")
+            st.info("Select one or more Purchase Orders, then use the one-click ZIP button to download all selected POs as separate PDF files.")
 
         result_message = str(st.session_state.pop("po_batch_email_result", "") or "")
         if result_message:

@@ -446,7 +446,7 @@ RAIL_NAV = (
 if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
     logout()
 
-st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH")
+st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41435-PO-WATERMARK-REMINDER-MOBILE-IOS")
 
 # v4.14.30 — persistent permission-aware Global Search launcher.  Search is
 # submitted explicitly (or by Enter) so ordinary typing never fans out into

@@ -30,11 +30,17 @@ def pdf_text(blob):
 
 def test_v41434_controlled_release_identity():
     manifest = json.loads((ROOT / 'DEPLOYMENT_MANIFEST.json').read_text())
-    assert (ROOT / 'VERSION').read_text().strip() == manifest['version'] == '4.14.34'
-    assert manifest['build'] == '41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD'
-    assert manifest['previous_controlled_release'] == '4.14.33'
-    assert manifest['database_schema_required'] == '4.14.28'
-    assert manifest['database_migration_required'] is False
+    assert (ROOT / 'VERSION').read_text().strip() == manifest['version'] in {'4.14.34','4.14.35'}
+    if manifest['version'] == '4.14.35':
+        assert manifest['build'] == '41435-PO-WATERMARK-REMINDER-MOBILE-IOS'
+        assert manifest['previous_controlled_release'] == '4.14.34'
+        assert manifest['database_schema_required'] == '4.14.35'
+        assert manifest['database_migration_required'] is True
+    else:
+        assert manifest['build'] == '41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD'
+        assert manifest['previous_controlled_release'] == '4.14.33'
+        assert manifest['database_schema_required'] == '4.14.28'
+        assert manifest['database_migration_required'] is False
     assert manifest['android_apk_compiled_in_preparation'] is False
 
 
@@ -145,14 +151,16 @@ def test_android_ci_is_read_only_and_uploads_only_verified_apk():
     workflow = (ROOT / '.github/workflows/qcms-android-test-apk.yml').read_text()
     for token in ['workflow_dispatch:', 'contents: read', ':app:assembleDebug', ':app:lintDebug',
                   'apksigner', 'verify --verbose', 'zipalign', 'actions/upload-artifact@v4',
-                  'if-no-files-found: error', 'QCMS_Mobile_v0.1.2_TEST.apk']:
+                  'if-no-files-found: error', 'QCMS_Mobile_v0.1.2_TEST.apk' if (ROOT / 'VERSION').read_text().strip() == '4.14.34' else 'QCMS_Mobile_v0.1.3_TEST.apk']:
         assert token in workflow
     assert 'pull_request_target' not in workflow
     assert 'SUPABASE' not in workflow
     ET.parse(ROOT / 'mobile/android_qcms/app/src/main/AndroidManifest.xml')
     helper = (ROOT / 'mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command').read_text()
     assert 'QCMS_BUILD_ONLY' in helper
-    assert '$HOME/Downloads/QCMS_Mobile_v0.1.2_TEST.apk' in helper
+    expected_apk = '$HOME/Downloads/QCMS_Mobile_v0.1.3_TEST.apk' if (ROOT / 'VERSION').read_text().strip() == '4.14.35' else '$HOME/Downloads/QCMS_Mobile_v0.1.2_TEST.apk'
+    assert expected_apk in helper
     source = (ROOT / 'mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java').read_text()
     assert 'Settings.ACTION_WEBVIEW_SETTINGS' not in source
-    assert 'QCMSMobile/0.1.2' in source
+    expected_ua = 'QCMSMobile/0.1.3' if (ROOT / 'VERSION').read_text().strip() == '4.14.35' else 'QCMSMobile/0.1.2'
+    assert expected_ua in source

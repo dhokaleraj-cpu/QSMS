@@ -14,9 +14,14 @@ def test_v41429_release_identity_source_only_schema_contract():
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert tuple(map(int, manifest["version"].split("."))) >= (4, 14, 29)
     assert "metlab_bend_test_subcategory" in manifest["features"]
-    assert manifest["database_schema_required"] == "4.14.28"
-    assert manifest["database_migration_required"] is False
-    assert manifest["source_only_updater"] is True
+    if manifest["version"] == "4.14.35":
+        assert manifest["database_schema_required"] == "4.14.35"
+        assert manifest["database_migration_required"] is True
+        assert manifest["source_only_updater"] is False
+    else:
+        assert manifest["database_schema_required"] == "4.14.28"
+        assert manifest["database_migration_required"] is False
+        assert manifest["source_only_updater"] is True
 
 
 def test_rmtc_approved_source_selector_joins_part_approval_and_rm_detail():

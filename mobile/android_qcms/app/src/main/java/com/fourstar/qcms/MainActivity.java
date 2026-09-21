@@ -35,6 +35,7 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
     private SharedPreferences prefs;
+    private boolean navigationExpanded = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -147,6 +148,13 @@ public class MainActivity extends Activity {
         title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         bar.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1));
 
+        Button navButton = new Button(this);
+        navButton.setText("☰");
+        navButton.setTextSize(20);
+        navButton.setTextColor(Color.WHITE);
+        navButton.setBackgroundColor(Color.TRANSPARENT);
+        bar.addView(navButton, new LinearLayout.LayoutParams(dp(52), dp(48)));
+
         Button refresh = new Button(this);
         refresh.setText("↻");
         refresh.setTextSize(19);
@@ -176,13 +184,20 @@ public class MainActivity extends Activity {
         ws.setAllowFileAccess(false);
         ws.setAllowContentAccess(true);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.1.2");
+        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.1.3");
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(webView, true);
 
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String pageUrl) {
+                super.onPageFinished(view, pageUrl);
+                navigationExpanded = false;
+                installMobileNavigationController();
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
                 Uri target = request.getUrl();
@@ -248,6 +263,10 @@ public class MainActivity extends Activity {
 
         root.addView(webView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(root);
+        navButton.setOnClickListener(v -> {
+            navigationExpanded = !navigationExpanded;
+            setMobileNavigationExpanded(navigationExpanded);
+        });
         refresh.setOnClickListener(v -> webView.reload());
         settings.setOnClickListener(v -> new AlertDialog.Builder(this)
             .setTitle("QCMS Mobile")
@@ -272,6 +291,38 @@ public class MainActivity extends Activity {
                 }
             }).show());
         webView.loadUrl(url);
+    }
+
+    private void installMobileNavigationController() {
+        if (webView == null) return;
+        String script = "(function(){" +
+            "window.__qcmsMobileNavOpen=false;" +
+            "function apply(){" +
+            "var open=!!window.__qcmsMobileNavOpen;" +
+            "var workspace=document.querySelector('.st-key-qcms_workspace,[class~=\\\"st-key-qcms_workspace\\\"]');" +
+            "var row=workspace?workspace.querySelector('[data-testid=\\\"stHorizontalBlock\\\"]'):null;" +
+            "if(row){row.style.flexDirection=open?'column':'row';row.style.alignItems='stretch';}" +
+            "var rail=document.querySelector('.st-key-fsi_left_rail,[class~=\\\"st-key-fsi_left_rail\\\"]');" +
+            "var railCol=rail?rail.closest('[data-testid=\\\"column\\\"]'):null;" +
+            "if(railCol){railCol.style.display=open?'block':'none';railCol.style.width=open?'100%':'0';railCol.style.flex=open?'1 1 100%':'0 0 0';}" +
+            "var content=document.querySelector('.st-key-qcms_content,[class~=\\\"st-key-qcms_content\\\"]');" +
+            "var contentCol=content?content.closest('[data-testid=\\\"column\\\"]'):null;" +
+            "if(contentCol){contentCol.style.display='block';contentCol.style.width='100%';contentCol.style.flex='1 1 100%';}" +
+            "document.querySelectorAll('[class*=\\\"st-key-fsi_module_subnav_\\\"]').forEach(function(el){el.style.display=open?'block':'none';});" +
+            "}" +
+            "window.__qcmsApplyMobileNav=apply;" +
+            "if(window.__qcmsMobileNavObserver){try{window.__qcmsMobileNavObserver.disconnect();}catch(e){}}" +
+            "window.__qcmsMobileNavObserver=new MutationObserver(function(){requestAnimationFrame(apply);});" +
+            "window.__qcmsMobileNavObserver.observe(document.documentElement,{childList:true,subtree:true});" +
+            "apply();" +
+            "})();";
+        webView.evaluateJavascript(script, null);
+    }
+
+    private void setMobileNavigationExpanded(boolean expanded) {
+        if (webView == null) return;
+        String value = expanded ? "true" : "false";
+        webView.evaluateJavascript("window.__qcmsMobileNavOpen=" + value + ";if(window.__qcmsApplyMobileNav){window.__qcmsApplyMobileNav();}", null);
     }
 
     @Override

@@ -248,7 +248,11 @@ def _customer_reference_height(item: Mapping[str, Any]) -> float:
 
 
 def _draw_customer_reference(c: canvas.Canvas, item: Mapping[str, Any], *, top: float, left: float, right: float, page_width: float) -> float:
-    """Print supplier-safe PO source traceability without exposing Customer identity."""
+    """Print supplier-safe source traceability without customer part/delivery disclosure.
+
+    Customer identity, customer Part Number and customer Delivery Date stay inside QCMS
+    genealogy and are intentionally excluded from the supplier-facing Purchase Order.
+    """
     total_w = page_width - left - right
     rows = _customer_source_rows(item)
     shown = rows[:4]
@@ -256,12 +260,12 @@ def _draw_customer_reference(c: canvas.Canvas, item: Mapping[str, Any], *, top: 
     bottom = top - height
     _bar(c, left, top, total_w, "PO SOURCE REFERENCE", height=15)
     y = top - 15
-    widths = [95, 42, 82, 150, 55, 38, total_w - 462]
-    titles = ["CUSTOMER PO NO.", "POS", "PART NUMBER", "PART DESCRIPTION", "QTY", "UOM", "DELIVERY"]
+    widths = [130, 55, 245, 72, total_w - 502]
+    titles = ["CUSTOMER PO NO.", "POS", "PART DESCRIPTION", "QTY", "UOM"]
     x = left
     for sw, title in zip(widths, titles):
         c.setFillColor(HexColor("#E5E7EB")); c.rect(x, y-14, sw, 14, stroke=1, fill=1)
-        _draw_text(c, x+3, y-9.8, title, size=4.8, bold=True, color=HexColor("#111827"), max_width=sw-6)
+        _draw_text(c, x+3, y-9.8, title, size=5.0, bold=True, color=HexColor("#111827"), max_width=sw-6)
         x += sw
     y -= 14
     if not shown:
@@ -272,8 +276,8 @@ def _draw_customer_reference(c: canvas.Canvas, item: Mapping[str, Any], *, top: 
         for row in shown:
             x = left
             values = [
-                row.get("customer_po_number"), row.get("po_position"), row.get("part_number"), row.get("part_description"),
-                f"{_n(row.get('quantity')):,.3f}".rstrip("0").rstrip("."), row.get("uom"), _date(row.get("customer_delivery_date")),
+                row.get("customer_po_number"), row.get("po_position"), row.get("part_description"),
+                f"{_n(row.get('quantity')):,.3f}".rstrip("0").rstrip("."), row.get("uom"),
             ]
             for sw, value in zip(widths, values):
                 c.setFillColor(white); c.rect(x, y-14, sw, 14, stroke=1, fill=1)
@@ -754,12 +758,114 @@ def batch_purchase_order_pdf_bytes(
     out = BytesIO(); writer.write(out); return out.getvalue()
 
 
+def _po_approval_watermark(header: Mapping[str, Any]) -> str:
+    return "APPROVED" if _s(header.get("approval_status")).upper() == "APPROVED" else "PENDING APPROVAL"
+
+
+def _watermark_pdf_bytes(pdf_data: bytes, label: str) -> bytes:
+    """Apply a light diagonal approval watermark to every PDF page."""
+    if PdfReader is None or PdfWriter is None:
+        raise RuntimeError("pypdf is required for Purchase Order watermarks.")
+    reader = PdfReader(BytesIO(pdf_data))
+    writer = PdfWriter()
+    for page in reader.pages:
+        width = float(page.mediabox.width)
+        height = float(page.mediabox.height)
+        overlay_buf = BytesIO()
+        wc = canvas.Canvas(overlay_buf, pagesize=(width, height))
+        wc.saveState()
+        try:
+            wc.setFillAlpha(0.055)
+        except Exception:
+            pass
+        wc.setFillColor(HexColor("#98A2B3"))
+        wc.setFont("Helvetica-Bold", 46 if label == "APPROVED" else 34)
+        wc.translate(width / 2.0, height / 2.0)
+        wc.rotate(38)
+        text_width = stringWidth(label, "Helvetica-Bold", 46 if label == "APPROVED" else 34)
+        wc.drawString(-text_width / 2.0, -10, label)
+        wc.restoreState()
+        wc.save(); overlay_buf.seek(0)
+        overlay_page = PdfReader(overlay_buf).pages[0]
+        page.merge_page(overlay_page)
+        writer.add_page(page)
+    out = BytesIO(); writer.write(out); return out.getvalue()
+
+
+def purchase_order_excel_bytes(header: Mapping[str, Any], items: Mapping[str, Any] | Sequence[Mapping[str, Any]]) -> bytes:
+    """Return a supplier-facing Purchase Order workbook with print-page watermark headers.
+
+    The Excel print intentionally omits customer identity, customer Part Number and
+    customer Delivery Date while preserving Customer PO / Position traceability,
+    Part Master description, purchased item identity and controlled commercial data.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.worksheet.page import PageMargins
+
+    normalized = [dict(items)] if isinstance(items, Mapping) else [dict(v) for v in items]
+    if not normalized:
+        raise ValueError("At least one Purchase Order line is required.")
+    wb = Workbook(); ws = wb.active; ws.title = "Purchase Order"
+    ws.sheet_view.showGridLines = False
+    ws.page_setup.orientation = "portrait"; ws.page_setup.paperSize = ws.PAPERSIZE_A4; ws.page_setup.fitToWidth = 1; ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_margins = PageMargins(left=0.25, right=0.25, top=0.45, bottom=0.45, header=0.15, footer=0.15)
+    watermark = _po_approval_watermark(header)
+    for header_obj in (ws.oddHeader, ws.evenHeader, ws.firstHeader):
+        header_obj.center.text = watermark
+        header_obj.center.font = "Arial,Bold"
+        header_obj.center.size = 28
+        header_obj.center.color = "D9DDE3"
+    ws.oddFooter.center.text = "Four Star Industries Pvt. Ltd. | QCMS Controlled Purchase Order"
+    ws.evenFooter.center.text = ws.oddFooter.center.text
+    ws.firstFooter.center.text = ws.oddFooter.center.text
+
+    navy = "0B2E63"; light = "E8EEF7"; border = Side(style="thin", color="B8C0CC")
+    ws.merge_cells("A1:G1"); ws["A1"] = "PURCHASE ORDER"; ws["A1"].font = Font(size=16, bold=True, color="FFFFFF"); ws["A1"].fill = PatternFill("solid", fgColor=navy); ws["A1"].alignment = Alignment(horizontal="center")
+    header_rows = [
+        ("PO Number", header.get("po_number"), "Order Date", _date(header.get("order_date"))),
+        ("Supplier", (header.get("supplier_snapshot") or {}).get("party_name") or header.get("supplier_name"), "PO Type", _s(header.get("po_type")).replace("_", " ")),
+        ("Approval Status", watermark, "Currency", header.get("currency") or "INR"),
+    ]
+    r=3
+    for l1,v1,l2,v2 in header_rows:
+        ws[f"A{r}"]=l1; ws[f"B{r}"]=v1 or ""; ws.merge_cells(start_row=r,start_column=2,end_row=r,end_column=3)
+        ws[f"D{r}"]=l2; ws[f"E{r}"]=v2 or ""; ws.merge_cells(start_row=r,start_column=5,end_row=r,end_column=7)
+        for cell in (ws[f"A{r}"],ws[f"D{r}"]): cell.font=Font(bold=True,color=navy)
+        r+=1
+    r+=1
+    titles=["ITEM / FSI PART", "PART DESCRIPTION", "QTY", "UNIT", "UNIT PRICE", "GST %", "TOTAL"]
+    for cidx,title in enumerate(titles,1):
+        cell=ws.cell(r,cidx,title); cell.font=Font(bold=True,color="FFFFFF"); cell.fill=PatternFill("solid",fgColor=navy); cell.alignment=Alignment(horizontal="center",vertical="center",wrap_text=True); cell.border=Border(bottom=border)
+    r+=1
+    for item in normalized:
+        vals=[item.get("item_no") or item.get("fsi_part_number_snapshot"), item.get("part_description_master") or item.get("item_description"), item.get("quantity"), item.get("uom"), item.get("unit_price"), item.get("gst_percent"), item.get("line_total")]
+        for cidx,val in enumerate(vals,1):
+            cell=ws.cell(r,cidx,val or 0 if cidx in (3,5,6,7) else val or ""); cell.alignment=Alignment(vertical="top",wrap_text=True); cell.border=Border(bottom=border)
+        # Supplier-safe source traceability: no customer part number or customer delivery date.
+        src=_customer_source_rows(item)
+        if src:
+            r+=1; ws.cell(r,1,"Source Ref").font=Font(bold=True,color=navy)
+            refs=[]
+            for row in src:
+                refs.append("PO {po} | Pos {pos} | {desc} | Qty {qty} {uom}".format(po=_s(row.get("customer_po_number")) or "-", pos=_s(row.get("po_position")) or "-", desc=_s(row.get("part_description")) or "-", qty=f"{_n(row.get('quantity')):g}", uom=_s(row.get("uom"))))
+            ws.merge_cells(start_row=r,start_column=2,end_row=r,end_column=7); ws.cell(r,2,"\n".join(refs)); ws.cell(r,2).alignment=Alignment(wrap_text=True,vertical="top")
+        r+=1
+    r+=1; ws.cell(r,1,"Special Instructions").font=Font(bold=True,color=navy); ws.merge_cells(start_row=r,start_column=2,end_row=r,end_column=7); ws.cell(r,2,_s(header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS)); ws.cell(r,2).alignment=Alignment(wrap_text=True,vertical="top")
+    widths={"A":22,"B":34,"C":12,"D":13,"E":15,"F":10,"G":16}
+    for col,width in widths.items(): ws.column_dimensions[col].width=width
+    ws.freeze_panes="A8"; ws.print_area=f"A1:G{r}"
+    out=BytesIO(); wb.save(out); return out.getvalue()
+
+
 def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any] | Sequence[Mapping[str, Any]], *, terms_path: str | Path | None = None) -> bytes:
     """Return the controlled FSI Purchase Order PDF.
 
     Page 1 prints one supplier-facing item line plus a supplier-safe source reference
-    table containing Customer PO Number, PO Position, Part Number, Part Description and
-    allocated quantity. Customer identity is intentionally omitted from the supplier print.
+    table containing Customer PO Number, PO Position, Part Description and allocated quantity.
+    Customer identity, customer Part Number and customer Delivery Date are intentionally
+    omitted from the supplier print.
     Each supplier item retains its technical data and Price Revision History. Standard terms
     are compacted only into portrait A4 pages by moving visible controlled content into unused
     white space; clause wording and order remain unchanged.
@@ -784,5 +890,6 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
     if path.exists():
         for page in _compact_terms_portrait(path, po_number=_s(header.get("po_number")), order_date=_s(header.get("order_date"))):
             writer.add_page(page)
-    out = BytesIO(); writer.write(out); return out.getvalue()
+    out = BytesIO(); writer.write(out)
+    return _watermark_pdf_bytes(out.getvalue(), _po_approval_watermark(header))
 
