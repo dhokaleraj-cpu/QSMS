@@ -9,10 +9,10 @@ def text(rel: str) -> str:
 
 
 def test_v41436_release_identity_and_routes():
-    assert text("VERSION").strip() == "4.14.36"
+    assert text("VERSION").strip() in {"4.14.36", "4.14.37"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] == "4.14.36"
-    assert manifest["build"] == "41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER"
+    assert manifest["version"] in {"4.14.36", "4.14.37"}
+    assert manifest["build"] in {"41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER", "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL"}
     app = text("streamlit_app.py")
     for route in ("customer-complaint-register", "supplier-complaint-register", "complaint-email-settings"):
         assert route in app
@@ -44,8 +44,8 @@ def test_v41436_complaint_schedule_migration_and_worker():
 def test_v41436_android_reference_video_style_navigation():
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
     gradle = text("mobile/android_qcms/app/build.gradle")
-    assert "versionName '0.1.4'" in gradle
-    for token in ("QCMSMobile/0.1.4", "openDrawer", "closeDrawer", "drawerPanel", "global-search", "complaints-home", "stawn_icon"):
+    assert any(v in gradle for v in ("versionName '0.1.4'", "versionName '0.1.5'"))
+    for token in ("openDrawer", "closeDrawer", "drawerPanel", "global-search", "complaints-home", "stawn_icon"):
         assert token in java
     assert (ROOT / "mobile/android_qcms/app/src/main/res/drawable-nodpi/stawn_icon.png").exists()
 
@@ -56,6 +56,6 @@ def test_v41436_ios_reference_video_style_navigation():
     project = text("mobile/ios_qcms/QCMSMobileIOS.xcodeproj/project.pbxproj")
     for token in ("drawerOpen", "qcmsNavigate", "global-search", "complaints-home", "AppIconPreview", "Home", "Search", "Complaints"):
         assert token in content
-    assert "QCMSMobileIOS/0.1.1" in web
-    assert "MARKETING_VERSION = 0.1.1" in project
+    assert any(v in web for v in ("QCMSMobileIOS/0.1.1", "QCMSMobileIOS/0.1.2"))
+    assert any(v in project for v in ("MARKETING_VERSION = 0.1.1", "MARKETING_VERSION = 0.1.2"))
     assert "TARGETED_DEVICE_FAMILY = \"1,2\"" in project

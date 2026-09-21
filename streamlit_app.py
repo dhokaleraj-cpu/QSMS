@@ -76,6 +76,19 @@ if not is_logged_in():
     render_login(); st.stop()
 profile = current_profile() or {}
 
+# Native Android / iPhone / iPad wrappers own the navigation chrome. Once the
+# wrapper marks the session, never render the long desktop rail/module submenu or
+# Streamlit footer inside the WebView. This survives Streamlit page switches even
+# if the query string is later normalized by the framework.
+_native_value = str(st.query_params.get("native_mobile", "") or "").strip().casefold()
+try:
+    _native_user_agent = str(st.context.headers.get("User-Agent", "") or "")
+except Exception:
+    _native_user_agent = ""
+if _native_value in {"1", "true", "yes", "native"} or "QCMSMobile/" in _native_user_agent or "QCMSMobileIOS/" in _native_user_agent:
+    st.session_state["_qcms_native_mobile"] = True
+native_mobile = bool(st.session_state.get("_qcms_native_mobile"))
+
 # Keep an explicit route-to-Page registry. Streamlit may expose the default
 # page at the root URL even when a url_path was supplied, so deriving this
 # mapping from page.url_path can drop the "dashboard" key.
@@ -450,44 +463,60 @@ RAIL_NAV = (
     (PAGE_BY_PATH["user-access"], "Admin", "Admin", ":material/groups:"),
 )
 
-if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
-    logout()
+if not native_mobile:
+    if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
+        logout()
 
-st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER")
+    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL")
 
-# v4.14.30 — persistent permission-aware Global Search launcher.  Search is
-# submitted explicitly (or by Enter) so ordinary typing never fans out into
-# multiple database requests on every rerun.
-with st.form("qcms_shell_global_search_form", border=False):
-    gs1, gs2 = st.columns([8.75, 1.25], gap="small")
-    shell_global_query = gs1.text_input(
-        "Global Search",
-        key="qcms_shell_global_search_query",
-        placeholder="Global Search · Part, Heat, RMTC, Batch, Supplier, Customer, PO, Report...",
-        label_visibility="collapsed",
+    # Persistent permission-aware Global Search launcher for desktop/web.
+    with st.form("qcms_shell_global_search_form", border=False):
+        gs1, gs2 = st.columns([8.75, 1.25], gap="small")
+        shell_global_query = gs1.text_input(
+            "Global Search",
+            key="qcms_shell_global_search_query",
+            placeholder="Global Search · Part, Heat, RMTC, Batch, Supplier, Customer, PO, Report...",
+            label_visibility="collapsed",
+        )
+        shell_global_submit = gs2.form_submit_button("Search", icon=":material/search:", width="stretch")
+    if shell_global_submit:
+        cleaned_global_query = str(shell_global_query or "").strip()
+        if len(cleaned_global_query) < 2:
+            st.warning("Enter at least 2 characters for Global Search.")
+        else:
+            st.session_state["_qcms_global_search_pending_query"] = cleaned_global_query
+            st.switch_page(PAGE_BY_PATH["global-search"])
+
+    with st.container(border=False, key="qcms_workspace"):
+        rail_col, content_col = st.columns([1.22, 8.78], gap="small", vertical_alignment="top")
+        with rail_col:
+            render_left_navigation(current_module, RAIL_NAV)
+        with content_col:
+            with st.container(border=False, key="qcms_content"):
+                if not bool(current_route_permission.get("can_view", True)):
+                    st.error("You do not have View permission for this module. Ask the QCMS administrator to enable the module or department default in Admin → Users & Access.")
+                else:
+                    module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=8)
+                    nav.run()
+                app_footer()
+else:
+    # Native-mobile content mode: the Android/iOS application provides the top
+    # bar, slide-out navigation and fixed bottom bar, so QCMS renders content only.
+    st.markdown(
+        """<style>
+        header[data-testid="stHeader"],div[data-testid="stToolbar"],div[data-testid="stDecoration"],
+        section[data-testid="stSidebar"],.st-key-fsi_shell,[class~="st-key-fsi_shell"],
+        .st-key-fsi_left_rail,[class~="st-key-fsi_left_rail"],[class*="st-key-fsi_module_subnav_"]{display:none!important}
+        div[data-testid="stMainBlockContainer"],.block-container{padding:.45rem .55rem 1rem!important;max-width:100%!important}
+        .st-key-qcms_content,[class~="st-key-qcms_content"]{width:100%!important;max-width:100%!important;margin:0!important}
+        .fsi-page-head{margin-top:0!important}
+        @media(max-width:900px){.qcms-enterprise-table-wrap{max-height:67vh!important}.fsi-kpi-grid,.fsi-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+        </style>""",
+        unsafe_allow_html=True,
     )
-    shell_global_submit = gs2.form_submit_button("Search", icon=":material/search:", width="stretch")
-if shell_global_submit:
-    cleaned_global_query = str(shell_global_query or "").strip()
-    if len(cleaned_global_query) < 2:
-        st.warning("Enter at least 2 characters for Global Search.")
-    else:
-        st.session_state["_qcms_global_search_pending_query"] = cleaned_global_query
-        st.switch_page(PAGE_BY_PATH["global-search"])
-
-# v4.12.9 keeps the real two-column Streamlit workspace and hardens component styling.
-# v4.12.8 uses a real two-column Streamlit workspace. The charcoal navigation
-# rail occupies its own column instead of being fixed over the application body.
-# This prevents all progressive scaling/overlap issues seen in v4.12.7.
-with st.container(border=False, key="qcms_workspace"):
-    rail_col, content_col = st.columns([1.22, 8.78], gap="small", vertical_alignment="top")
-    with rail_col:
-        render_left_navigation(current_module, RAIL_NAV)
-    with content_col:
+    with st.container(border=False, key="qcms_workspace"):
         with st.container(border=False, key="qcms_content"):
             if not bool(current_route_permission.get("can_view", True)):
                 st.error("You do not have View permission for this module. Ask the QCMS administrator to enable the module or department default in Admin → Users & Access.")
             else:
-                module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=8)
                 nav.run()
-            app_footer()

@@ -4,6 +4,7 @@ struct ContentView: View {
     @AppStorage("qcmsURL") private var qcmsURL = ""
     @State private var draftURL = ""
     @State private var drawerOpen = false
+    @State private var expandedSections: Set<String> = []
 
     private let bar = Color(red: 0.10, green: 0.11, blue: 0.13)
     private let accent = Color(red: 0.10, green: 0.42, blue: 0.72)
@@ -78,34 +79,62 @@ struct ContentView: View {
                             Image("AppIconPreview").resizable().scaledToFit().frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 12))
                             VStack(alignment: .leading, spacing: 2) { Text("QCMS").font(.title2.bold()); Text("Four Star Industries").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
+                            Button { withAnimation(.easeIn(duration: 0.14)) { drawerOpen = false } } label: { Image(systemName: "xmark").frame(width: 38, height: 38) }
                         }.padding(18)
                         Divider()
-                        drawerItem("square.grid.2x2", "Dashboard", "dashboard")
-                        drawerItem("square.grid.3x3", "Masters", "masters")
-                        drawerItem("truck.box", "Supply Chain", "supply-chain-home")
-                        drawerItem("checklist", "RMTC", "rmtc-entry")
-                        drawerItem("arrow.right.square", "Inward", "inward-entry")
-                        drawerItem("building.2", "OSP", "osp-home")
-                        drawerItem("checkmark.shield", "Quality / Inspections", "inspection-home")
-                        drawerItem("exclamationmark.bubble", "Complaints", "complaints-home")
-                        drawerItem("magnifyingglass", "Search", "global-search")
-                        drawerItem("tray.full", "Records", "records-center")
-                        drawerItem("chart.bar", "Reports", "reports-home")
-                        drawerItem("gearshape", "Admin", "email-settings")
+                        drawerSection("square.grid.2x2", "Dashboard", "dashboard", [])
+                        drawerSection("square.grid.3x3", "Masters", "masters", [("Masters Home","masters"),("Company Branch","company-branch-entry"),("Part Entry","part-entry"),("Process Entry","process-entry"),("Material Grade","grade-entry"),("Reference Entry","reference-entry"),("Employee Entry","employee-entry"),("Standards Bank","standards-entry"),("Master Import","master-import")])
+                        drawerSection("truck.box", "Supply Chain", "supply-chain-home", [("Supply Chain Home","supply-chain-home"),("Customer Orders","supply-customer-orders"),("Opening Stock & Import","supply-opening-stock"),("RM Procurement","supply-rm-procurement"),("Purchase Orders","supply-purchase-orders"),("PO Order List","supply-po-order-list"),("Edit Purchase Order","supply-po-edit"),("Purchase Order PDF","supply-po-pdf"),("Approval / Confirmation","supply-po-approval"),("RM Receipt","supply-rm-receipt"),("RM to Forging","supply-rm-dispatch"),("Forging","supply-forging"),("Machining / FG / Dispatch","supply-downstream"),("Traceability","supply-traceability"),("Monthly Schedule / MIS","supply-order-mis")])
+                        drawerSection("checklist", "RMTC", "rmtc-entry", [("RMTC Entry","rmtc-entry"),("Add Part Worksheet","rmtc-approved-worksheet"),("Part Worksheet","rmtc-part"),("Validation & Decision","rmtc-approval"),("RMTC Reports","rmtc-report")])
+                        drawerSection("arrow.right.square", "Inward", "inward-entry", [("Material Inward","inward-entry"),("MetLAB Report","metlab-entry"),("Dimensional Report","dimensional-entry"),("Inward Reports","inward-report")])
+                        drawerSection("building.2", "OSP", "osp-home", [("OSP Home","osp-home"),("Material Out","osp-material-out"),("Sample Receipt","osp-sample-receipt"),("OSP Dimensional","osp-dimensional"),("OSP MetLAB","osp-metlab"),("OSP Inward","osp-inward"),("OSP Reports","osp-balance-report")])
+                        drawerSection("checkmark.shield", "Quality / Inspections", "inspection-home", [("Inspection Home","inspection-home"),("Layout Entry","inspection-layout-entry"),("Dimensional Entry","dimensional-entry"),("MetLAB Entry","metlab-entry"),("Bend Test Entry","bend-test-entry"),("Dimensional Reports","dimensional-report"),("MetLAB Reports","metlab-report"),("Bend Test Reports","bend-test-report")])
+                        drawerSection("chart.xyaxis.line", "NPD / APQP", "npd-status", [("Process Flow Designer","npd-process-flow"),("NPD Status","npd-status"),("APQP","apqp"),("NPD Reports","npd-report"),("APQP Reports","apqp-report")])
+                        drawerSection("exclamationmark.bubble", "Complaints", "complaints-home", [("Complaint Dashboard","complaints-home"),("Customer Complaint","customer-complaint"),("Supplier Complaint","supplier-complaint"),("Customer Register","customer-complaint-register"),("Supplier Register","supplier-complaint-register"),("Analysis & CAPA","complaint-analysis"),("Email / Reminders","complaint-email-settings"),("Complaint Reports","complaints-report")])
+                        drawerSection("magnifyingglass", "Search", "global-search", [])
+                        drawerSection("tray.full", "Records", "records-center", [("Records Centre","records-center"),("RMTC","rmtc-records"),("Material Inward","inward-records"),("OSP","osp-records"),("Dimensional","dimensional-records"),("MetLAB","metlab-records"),("Bend Test","bend-test-records"),("Complaints","complaint-records"),("Heat Ledger","heat-ledger")])
+                        drawerSection("chart.bar", "Reports", "reports-home", [("Reports Home","reports-home"),("Supply Chain MIS","supply-chain-report"),("Heat Global Balance","heat-transaction-report"),("OSP Heat Balance","osp-balance-report"),("RMTC","rmtc-report"),("Material Inward","inward-report"),("Dimensional","dimensional-report"),("MetLAB","metlab-report"),("Complaints","complaints-report"),("Traceability","traceability-report")])
+                        drawerSection("arrow.down.doc", "Templates", "templates", [])
+                        drawerSection("gearshape", "Admin", "user-access", [("Users & Access","user-access"),("Email Server & Notifications","email-settings"),("Deployment Diagnostics","deployment-diagnostics")])
                     }
                 }
-                .frame(width: min(proxy.size.width * 0.84, 430)).background(Color(.systemBackground)).shadow(radius: 12)
+                .frame(width: min(proxy.size.width * 0.86, 430)).background(Color(.systemBackground)).shadow(radius: 12)
             }
         }
         .transition(.opacity)
     }
 
-    private func drawerItem(_ icon: String, _ title: String, _ path: String) -> some View {
-        Button { navigate(path) } label: {
-            HStack(spacing: 14) { Image(systemName: icon).frame(width: 26); Text(title).font(.body); Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary) }
-                .padding(.horizontal, 20).frame(height: 54).contentShape(Rectangle())
+    @ViewBuilder
+    private func drawerSection(_ icon: String, _ title: String, _ landingPath: String, _ children: [(String, String)]) -> some View {
+        if children.isEmpty {
+            Button { navigate(landingPath) } label: {
+                HStack(spacing: 14) { Image(systemName: icon).frame(width: 26); Text(title).font(.body); Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary) }
+                    .padding(.horizontal, 20).frame(height: 52).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+        } else {
+            VStack(spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        if expandedSections.contains(title) { expandedSections.remove(title) } else { expandedSections.insert(title) }
+                    }
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: icon).frame(width: 26); Text(title).font(.body); Spacer()
+                        Image(systemName: expandedSections.contains(title) ? "chevron.up" : "chevron.down").font(.caption).foregroundStyle(.secondary)
+                    }.padding(.horizontal, 20).frame(height: 52).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                if expandedSections.contains(title) {
+                    VStack(spacing: 0) {
+                        ForEach(Array(children.enumerated()), id: \.offset) { _, child in
+                            Button { navigate(child.1) } label: {
+                                HStack { Text(child.0).font(.subheadline); Spacer(); Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary) }
+                                    .padding(.leading, 58).padding(.trailing, 18).frame(height: 44).contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                        }
+                    }.background(Color(.secondarySystemBackground))
+                }
+            }
         }
-        .buttonStyle(.plain)
     }
 
     private func navigate(_ path: String) {

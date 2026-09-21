@@ -1787,6 +1787,90 @@ def _render_supplier_confirmation_stage(service: SupplyChainService, *, selected
     )
 
 
+def _pending_po_approval_rows(service: SupplyChainService, headers: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Return the approval worklist with the resolved approver for each Pending PO."""
+    rows: list[dict[str, Any]] = []
+    for po_id, header in headers.items():
+        if str(header.get("approval_status") or "").upper() != "PENDING_APPROVAL":
+            continue
+        supplier = service.repo.get("parties", str(header.get("supplier_id") or "")) or {}
+        target = service.purchase_order_approval_target(po_id)
+        items = service.purchase_order_items_for_print(po_id)
+        part_tokens: list[str] = []
+        qty_tokens: list[str] = []
+        for item in items[:5]:
+            part = str(item.get("fsi_part_number") or item.get("part_number") or item.get("supplier_part_number") or "").strip()
+            if part and part not in part_tokens:
+                part_tokens.append(part)
+            qty = item.get("quantity")
+            uom = str(item.get("uom") or "").strip()
+            if qty not in (None, ""):
+                qty_tokens.append(f"{_quantity_text(qty)} {uom}".strip())
+        rows.append({
+            "PO Number": header.get("po_number"),
+            "PO Type": str(header.get("po_type") or "").replace("_", " ").title(),
+            "Supplier": supplier.get("party_name") or supplier.get("party_code") or "-",
+            "Parts": ", ".join(part_tokens) or "-",
+            "Qty": "; ".join(qty_tokens) or "-",
+            "Order Date": header.get("order_date"),
+            "PO Delivery": header.get("delivery_date"),
+            "Requisitioner": header.get("requisitioner") or "-",
+            "Approver": target.get("employee_name") or "UNASSIGNED",
+            "Approver Email": target.get("email") or "NOT CONFIGURED",
+            "Approval Level": target.get("level_name") or "Approval",
+            "Submitted": str(header.get("submitted_at") or "")[:19],
+            "Grand Total": header.get("grand_total"),
+            "Status": "PENDING APPROVAL",
+            "_po_id": po_id,
+        })
+    return rows
+
+
+def _pending_po_approval_email_dialog(service: SupplyChainService, purchase_order_ids: Sequence[str]) -> None:
+    work_rows = _pending_po_approval_rows(service, {str(row.get("id")): row for row in service.purchase_orders() if str(row.get("id") or "") in set(purchase_order_ids)})
+    blockers: list[str] = []
+    for row in work_rows:
+        if "@" not in str(row.get("Approver Email") or ""):
+            blockers.append(f"{row.get('PO Number')}: approver email is not configured")
+
+    @st.dialog("Confirm Purchase Order Approval Emails")
+    def _dialog() -> None:
+        st.markdown("Each selected Pending Approval PO will be emailed **separately to its resolved approver** with the controlled **PENDING APPROVAL watermarked draft PO PDF** attached.")
+        if work_rows:
+            portal_table(pd.DataFrame(work_rows).drop(columns=["_po_id"], errors="ignore"), hide_index=True, width="stretch", height=min(420, 95 + len(work_rows) * 38))
+        if blockers:
+            st.error("Approval email is blocked for the affected POs until the approver email is configured.\n\n" + "\n".join(f"- {item}" for item in blockers))
+        c1, c2 = st.columns(2, gap="small")
+        if c1.button("Confirm & Email Draft POs for Approval", type="primary", width="stretch", disabled=bool(blockers) or not work_rows, key="po_pending_approval_email_confirm"):
+            notifier = NotificationService(service.repo)
+            queued: list[dict] = []
+            for row in work_rows:
+                po_id = str(row.get("_po_id") or "")
+                header = service.purchase_order(po_id) or {}
+                target = service.purchase_order_approval_target(po_id)
+                queued_row = notifier.enqueue(
+                    "PO_APPROVAL_PENDING", related_table="supply_purchase_orders", related_id=po_id,
+                    recipient_email=str(target.get("email") or "").strip(), recipient_name=str(target.get("employee_name") or "").strip() or None,
+                    include_supplier=False, include_generated_pdf=True, include_record_attachments=True,
+                    context={
+                        "po_number": header.get("po_number"), "requisitioner": header.get("requisitioner"),
+                        "supplier_name": row.get("Supplier"), "next_stage": target.get("level_name") or "Manager Approval",
+                        "approval_status": "PENDING APPROVAL",
+                    },
+                )
+                if queued_row:
+                    queued.append(queued_row)
+            result = notifier.dispatch(queued)
+            if result.get("error"):
+                st.session_state["po_pending_approval_email_result"] = f"{len(queued)} approval email(s) queued; delivery returned: {result.get('error')}"
+            else:
+                st.session_state["po_pending_approval_email_result"] = f"{len(queued)} approval email(s) queued / delivery requested with watermarked draft PO PDFs."
+            st.rerun()
+        if c2.button("Cancel", width="stretch", key="po_pending_approval_email_cancel"):
+            st.rerun()
+    _dialog()
+
+
 def render_purchase_order_approval_page() -> None:
     page_header("Purchase Order · Approval / Supplier Confirmation", "Controlled approval and downstream supplier acknowledgement. Supplier Confirmation never blocks PO editing.", "Supply Chain")
     _purchase_order_subnav()
@@ -1799,6 +1883,27 @@ def render_purchase_order_approval_page() -> None:
     if not labels:
         st.info("No Purchase Orders are available.")
         return
+
+    pending_rows = _pending_po_approval_rows(service, headers)
+    with stage_section("A", "PENDING APPROVAL WORKLIST", "One grid shows every Purchase Order awaiting approval. Select one or more POs and send each approver the controlled PENDING APPROVAL watermarked draft PDF.", key="po_pending_approval_worklist"):
+        configured = sum("@" in str(row.get("Approver Email") or "") for row in pending_rows)
+        kpi_grid([
+            {"label": "Pending Approval", "value": len(pending_rows), "foot": "Purchase Orders waiting for approval", "color": "#B45309", "background": "#FFFBEB"},
+            {"label": "Approver Email Ready", "value": configured, "foot": "Resolved approval route + email", "color": "#2563EB", "background": "#EFF6FF"},
+            {"label": "Draft PDF Status", "value": len(pending_rows), "foot": "Watermark: PENDING APPROVAL", "color": "#7C3AED", "background": "#F5F3FF"},
+        ])
+        if pending_rows:
+            portal_table(pd.DataFrame(pending_rows).drop(columns=["_po_id"], errors="ignore"), hide_index=True, width="stretch", height=min(520, 95 + len(pending_rows) * 38))
+            pending_labels = {str(row.get("_po_id")): f"{row.get('PO Number')} · {row.get('Supplier')} · Approver {row.get('Approver')}" for row in pending_rows}
+            email_selected = st.multiselect("Pending POs to Email for Approval", list(pending_labels), format_func=lambda value: pending_labels[value], key="po_pending_approval_email_select")
+            if st.button("Email Selected Draft POs to Approver", icon=":material/forward_to_inbox:", type="primary", width="stretch", disabled=not email_selected, key="po_pending_approval_email_button"):
+                _pending_po_approval_email_dialog(service, email_selected)
+            result_message = str(st.session_state.pop("po_pending_approval_email_result", "") or "")
+            if result_message:
+                st.success(result_message)
+        else:
+            st.success("No Purchase Orders are pending approval.")
+
     requested = str(st.session_state.pop("supply_po_approval_request_id", "") or "")
     if requested in labels:
         st.session_state["po_dedicated_approval_select"] = requested
@@ -1810,7 +1915,7 @@ def render_purchase_order_approval_page() -> None:
     header = service.purchase_order(selected) or {}
     _render_purchase_order_key_information(service, selected, key="po_approval_source")
     approval_status = str(header.get("approval_status") or "APPROVED").upper()
-    section_bar("PURCHASE ORDER APPROVAL", "Pending Purchase Orders remain editable until approval. Saving an edit keeps or returns the PO to Pending Approval.")
+    section_bar("SELECTED PURCHASE ORDER APPROVAL", "Pending Purchase Orders remain editable until approval. Saving an edit keeps or returns the PO to Pending Approval.")
     if approval_status == "PENDING_APPROVAL":
         st.warning("This Purchase Order is awaiting controlled approval and is not effective for receipt/procurement execution yet.")
         target = service.purchase_order_approval_target(selected)

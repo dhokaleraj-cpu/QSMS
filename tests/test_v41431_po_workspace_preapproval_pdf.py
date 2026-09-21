@@ -9,15 +9,15 @@ def text(rel: str) -> str:
 
 
 def test_v41431_release_identity_and_source_only_schema_contract():
-    assert text("VERSION").strip() in {"4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36"}
-    builds = {"41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF", "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST", "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK", "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD", "41435-PO-WATERMARK-REMINDER-MOBILE-IOS", "41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER"}
+    assert text("VERSION").strip() in {"4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37"}
+    builds = {"41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF", "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST", "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK", "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD", "41435-PO-WATERMARK-REMINDER-MOBILE-IOS", "41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER", "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL"}
     assert any(build in text("streamlit_app.py") for build in builds)
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36"}
+    assert manifest["version"] in {"4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37"}
     assert manifest["build"] in builds
-    assert manifest["previous_controlled_release"] == {"4.14.30": "4.14.29", "4.14.31": "4.14.30", "4.14.32": "4.14.31", "4.14.33": "4.14.32", "4.14.34": "4.14.33", "4.14.35": "4.14.34", "4.14.36": "4.14.35"}[manifest["version"]]
-    if manifest["version"] in {"4.14.35", "4.14.36"}:
-        assert manifest["database_schema_required"] == manifest["version"]
+    assert manifest["previous_controlled_release"] == {"4.14.30": "4.14.29", "4.14.31": "4.14.30", "4.14.32": "4.14.31", "4.14.33": "4.14.32", "4.14.34": "4.14.33", "4.14.35": "4.14.34", "4.14.36": "4.14.35", "4.14.37": "4.14.36"}[manifest["version"]]
+    if manifest["version"] in {"4.14.35", "4.14.36", "4.14.37"}:
+        assert manifest["database_schema_required"] == ("4.14.36" if manifest["version"] == "4.14.37" else manifest["version"])
         assert manifest["database_migration_required"] is True
         assert manifest["source_only_updater"] is False
     else:
@@ -79,12 +79,12 @@ def test_controlled_po_pdf_prints_customer_source_reference_table():
     assert ("CUSTOMER PO / SOURCE REFERENCE" in reporting) or ("PO SOURCE REFERENCE" in reporting)
     assert "CUSTOMER PO NO." in reporting
     assert '"POS"' in reporting
-    if text("VERSION").strip() in {"4.14.35", "4.14.36"}:
+    if text("VERSION").strip() in {"4.14.35", "4.14.36", "4.14.37"}:
         assert '"PART NUMBER"' not in reporting  # customer source PN intentionally hidden from supplier print
     else:
         assert '"PART NUMBER"' in reporting
     assert '"QTY"' in reporting
-    if text("VERSION").strip() in {"4.14.35", "4.14.36"}:
+    if text("VERSION").strip() in {"4.14.35", "4.14.36", "4.14.37"}:
         assert '"DELIVERY"' not in reporting  # customer delivery date intentionally hidden from supplier print
     else:
         assert '"DELIVERY"' in reporting
@@ -100,7 +100,7 @@ def test_records_center_routes_purchase_order_edit_to_dedicated_page():
 def test_v41431_online_verification_knows_new_po_release():
     phase = text("scripts/verify_phase1.py")
     readiness = text("scripts/check_online_readiness.py")
-    assert ("41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF" in phase) or ("41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST" in phase) or ("41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK" in phase) or (("41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD" in phase) or ("41435-PO-WATERMARK-REMINDER-MOBILE-IOS" in phase) or ("41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER" in phase))
+    assert ("41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF" in phase) or ("41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST" in phase) or ("41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK" in phase) or (("41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD" in phase) or ("41435-PO-WATERMARK-REMINDER-MOBILE-IOS" in phase) or ("41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER" in phase) or ("41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL" in phase))
     assert "v41431_po_workspace" in phase
     assert "v41431_preapproval_edit" in phase
     assert "v41431_customer_reference_pdf" in phase

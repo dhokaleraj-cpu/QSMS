@@ -1,4 +1,4 @@
-# QCMS Mobile for iPhone and iPad - v0.1.1
+# QCMS Mobile for iPhone and iPad - v0.1.2
 
 Universal iPhone/iPad WKWebView shell for the live HTTPS QCMS application.
 
@@ -17,7 +17,7 @@ Universal iPhone/iPad WKWebView shell for the live HTTPS QCMS application.
 
 A signed installable IPA cannot be created without an Apple Development/Distribution identity and provisioning profile belonging to your Apple account.
 
-## v0.1.1 mobile UI
+## v0.1.2 mobile UI
 - Compact dark native header with STAWN icon.
 - Slide-out drawer for QCMS modules.
 - Bottom Home / Search / Complaints navigation.

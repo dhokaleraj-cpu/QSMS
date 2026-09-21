@@ -18,6 +18,7 @@ _ENTITY_TYPES = {
     "supply_purchase_orders": "SUPPLY_PURCHASE_ORDER",
     "supply_po_confirmations": "PO_CONFIRMATION",
     "osp_jobs": "OSP_JOB",
+    "quality_complaints": "QUALITY_COMPLAINT",
 }
 
 
@@ -329,6 +330,15 @@ class NotificationService:
                 if not header:
                     return None
                 return f"{header.get('po_number') or 'Purchase_Order'}.pdf", purchase_order_pdf_bytes(header, items)
+            if related_table == "quality_complaints":
+                # Lazy import avoids a startup module cycle while reusing the exact
+                # controlled Complaint PDF shown in the Complaint module.
+                from app_pages.complaints import _complaint_pdf
+                complaint = self.repo.get("quality_complaints", related_id) or {}
+                if not complaint:
+                    return None
+                number = complaint.get("complaint_number") or "Complaint"
+                return f"{number}.pdf", _complaint_pdf(self.repo, complaint)
             if related_table == "inward_lots":
                 from core.inward_service import InwardService
                 from core.reporting import material_inward_record_pdf_bytes
@@ -428,6 +438,9 @@ class NotificationService:
                 cc.extend(self._party_notification_emails(supplier))
             elif str(enriched.get("supplier_email") or "").strip():
                 cc.append(str(enriched.get("supplier_email") or "").strip())
+            party_email = str(enriched.get("party_email") or "").strip()
+            if party_email and "@" in party_email:
+                cc.append(party_email)
         final_cc: list[str] = []
         for value in cc:
             value = str(value or "").strip()
@@ -507,6 +520,9 @@ class NotificationService:
                 cc.extend(self._party_notification_emails(supplier))
             elif str(enriched.get("supplier_email") or "").strip():
                 cc.append(str(enriched.get("supplier_email")).strip())
+            party_email = str(enriched.get("party_email") or "").strip()
+            if party_email and "@" in party_email:
+                cc.append(party_email)
         # Do not duplicate the primary recipient in CC.
         final_cc: list[str] = []
         for value in cc:

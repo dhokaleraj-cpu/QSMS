@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_marker_and_direct_production_flow_are_registered():
-    assert (ROOT / "VERSION").read_text().strip() in {"4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33", '4.14.34', '4.14.35', '4.14.36'}
+    assert (ROOT / "VERSION").read_text().strip() in {"4.14.15", "4.14.16", "4.14.17", "4.14.18", "4.14.19", "4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33", '4.14.34', '4.14.35', '4.14.36', '4.14.37'}
     app = (ROOT / "streamlit_app.py").read_text()
     assert "41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST" in app
     service = (ROOT / "core/supply_chain_service.py").read_text()

@@ -1,15 +1,13 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.34
-Build `41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD`.
+## Current controlled release — v4.14.37
+Build `41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL`.
 
-Batch PO print now provides separate PDFs per PO and one ZIP containing those files,
-with individual download buttons. Portrait terms, Part Description, supplier-specific
-emails and all previous controlled features are preserved. No new database schema change.
+Complaint dashboard status is now card-based; Complaint email can attach controlled PDF/documents and explicitly copy the Customer/Supplier before confirmation. Purchase Order Approval has a Pending Approval KPI/table and multi-PO approver-email action with PENDING APPROVAL watermarked draft PDFs.
 
-The Android 0.1.2 source includes a GitHub APK build workflow and an APK-only Mac helper.
-No precompiled APK was produced in this environment. Use a successful Android CI or
-local build; see mobile/android_qcms/INSTALL_APK_ON_SAMSUNG.md.
+Native Android 0.1.5 and iPhone/iPad 0.1.2 render QCMS content-only inside the WebView and use the native expandable drawer plus fixed Home/Search/Complaints bottom navigation, eliminating the long Streamlit rails/submenus from the mobile app.
+
+The v4.14.36 Complaint email/reminder database configuration and qcms-overdue-notifier v6 remain the controlled runtime baseline; v4.14.37 requires no additional schema migration.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.

@@ -232,11 +232,14 @@ required = [
     "mobile/android_qcms/app/src/main/res/drawable-nodpi/stawn_icon.png",
     "mobile/ios_qcms/QCMSMobileIOS.xcodeproj/project.pbxproj",
     "mobile/ios_qcms/BUILD_IPA_ON_MAC.command",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.37.md",
+    "RELEASE_NOTES_v4.14.37.md",
+    "tests/test_v41437_mobile_complaint_cards_po_approval_email.py",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.36 - Complaint Email / Registers / Reminders / Mobile Drawer",
+    "phase": "QCMS 4.14.37 - Mobile Full Navigation / Complaint Cards / PO Approval Draft Email",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

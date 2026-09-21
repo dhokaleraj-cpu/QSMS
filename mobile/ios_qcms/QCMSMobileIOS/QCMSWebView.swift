@@ -13,11 +13,14 @@ struct QCMSWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         webView.scrollView.contentInsetAdjustmentBehavior = .automatic
-        webView.customUserAgent = "QCMSMobileIOS/0.1.1"
+        webView.customUserAgent = "QCMSMobileIOS/0.1.2"
         context.coordinator.webView = webView
         NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.reload), name: .qcmsReload, object: nil)
         NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.navigate(_:)), name: .qcmsNavigate, object: nil)
-        if let url = URL(string: urlString) { webView.load(URLRequest(url: url)) }
+        if var parts = URLComponents(string: urlString) {
+            parts.queryItems = [URLQueryItem(name: "native_mobile", value: "1")]
+            if let url = parts.url { webView.load(URLRequest(url: url)) }
+        }
         return webView
     }
 
@@ -33,7 +36,8 @@ struct QCMSWebView: UIViewRepresentable {
             guard let path = note.object as? String, var parts = URLComponents(string: parent.urlString) else { return }
             let base = parts.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             parts.path = "/" + ([base, path].filter { !$0.isEmpty }.joined(separator: "/"))
-            parts.query = nil; parts.fragment = nil
+            parts.queryItems = [URLQueryItem(name: "native_mobile", value: "1")]
+            parts.fragment = nil
             if let url = parts.url { webView?.load(URLRequest(url: url)) }
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { installMobileController() }
@@ -46,6 +50,7 @@ struct QCMSWebView: UIViewRepresentable {
             let script = """
             (function(){
               function apply(){
+                document.querySelectorAll('header[data-testid="stHeader"],div[data-testid="stToolbar"],div[data-testid="stDecoration"],section[data-testid="stSidebar"],.st-key-fsi_shell,[class~="st-key-fsi_shell"]').forEach(function(el){el.style.setProperty('display','none','important');});
                 var shell=document.querySelector('.st-key-qcms_mobile_shell,[class~="st-key-qcms_mobile_shell"]'); if(shell){shell.style.display='none';}
                 var workspace=document.querySelector('.st-key-qcms_workspace,[class~="st-key-qcms_workspace"]');
                 var row=workspace?workspace.querySelector('[data-testid="stHorizontalBlock"]'):null;

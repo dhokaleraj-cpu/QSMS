@@ -132,6 +132,28 @@ public class MainActivity extends Activity {
         return b;
     }
 
+    private Button drawerChildButton(String label, String path) {
+        Button b = new Button(this); b.setText("      " + label); b.setAllCaps(false); b.setTextSize(13); b.setTextColor(Color.rgb(65,65,65));
+        b.setGravity(Gravity.CENTER_VERTICAL | Gravity.START); b.setPadding(dp(28), 0, dp(10), 0); b.setBackgroundColor(Color.rgb(248,249,250));
+        b.setOnClickListener(v -> { closeDrawer(); navigate(path); });
+        return b;
+    }
+
+    private View drawerSection(String icon, String label, String landingPath, String[][] children) {
+        LinearLayout wrapper = new LinearLayout(this); wrapper.setOrientation(LinearLayout.VERTICAL); wrapper.setBackgroundColor(Color.WHITE);
+        LinearLayout header = new LinearLayout(this); header.setOrientation(LinearLayout.HORIZONTAL); header.setGravity(Gravity.CENTER_VERTICAL); header.setPadding(dp(18),0,dp(12),0); header.setBackgroundColor(Color.WHITE);
+        TextView title = new TextView(this); title.setText(icon + "   " + label); title.setTextSize(15); title.setTextColor(Color.rgb(45,45,45)); title.setGravity(Gravity.CENTER_VERTICAL);
+        TextView chevron = new TextView(this); chevron.setText(children != null && children.length > 0 ? "⌄" : "›"); chevron.setTextSize(17); chevron.setTextColor(Color.rgb(95,95,95)); chevron.setGravity(Gravity.CENTER);
+        header.addView(title,new LinearLayout.LayoutParams(0,dp(52),1)); header.addView(chevron,new LinearLayout.LayoutParams(dp(36),dp(52))); wrapper.addView(header);
+        if(children == null || children.length == 0){ header.setOnClickListener(v->{ closeDrawer(); navigate(landingPath); }); return wrapper; }
+        LinearLayout childrenBox = new LinearLayout(this); childrenBox.setOrientation(LinearLayout.VERTICAL); childrenBox.setVisibility(View.GONE); childrenBox.setBackgroundColor(Color.rgb(248,249,250));
+        for(String[] child:children) childrenBox.addView(drawerChildButton(child[0],child[1]),new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46)));
+        wrapper.addView(childrenBox);
+        header.setOnClickListener(v->{ boolean opening=childrenBox.getVisibility()!=View.VISIBLE; childrenBox.setVisibility(opening?View.VISIBLE:View.GONE); chevron.setText(opening?"⌃":"⌄"); });
+        title.setOnLongClickListener(v->{ closeDrawer(); navigate(landingPath); return true; });
+        return wrapper;
+    }
+
     private void showBrowser(String url) {
         baseUrl = normalizeUrl(url);
         if (baseUrl == null) { prefs.edit().remove(PREF_URL).apply(); showSetupScreen(); return; }
@@ -149,7 +171,7 @@ public class MainActivity extends Activity {
         main.addView(top,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
 
         webView = new WebView(this);
-        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.1.4");
+        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.1.5");
         CookieManager cm=CookieManager.getInstance(); cm.setAcceptCookie(true); cm.setAcceptThirdPartyCookies(webView,true);
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageFinished(WebView view,String pageUrl){ super.onPageFinished(view,pageUrl); installMobileChromeSuppressor(); }
@@ -174,16 +196,37 @@ public class MainActivity extends Activity {
         drawerScrim=new View(this); drawerScrim.setBackgroundColor(0x66000000); drawerLayer.addView(drawerScrim,new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT)); drawerScrim.setOnClickListener(v->closeDrawer());
         ScrollView scroll=new ScrollView(this); drawerPanel=new LinearLayout(this); drawerPanel.setOrientation(LinearLayout.VERTICAL); drawerPanel.setBackgroundColor(Color.WHITE); scroll.addView(drawerPanel,new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT)); FrameLayout.LayoutParams dlp=new FrameLayout.LayoutParams((int)(getResources().getDisplayMetrics().widthPixels*0.82),ViewGroup.LayoutParams.MATCH_PARENT); dlp.gravity=Gravity.START; drawerLayer.addView(scroll,dlp);
         LinearLayout drawerHead=new LinearLayout(this); drawerHead.setOrientation(LinearLayout.HORIZONTAL); drawerHead.setGravity(Gravity.CENTER_VERTICAL); drawerHead.setPadding(dp(18),dp(18),dp(12),dp(14)); ImageView dIcon=new ImageView(this); dIcon.setImageResource(R.drawable.stawn_icon); dIcon.setScaleType(ImageView.ScaleType.CENTER_CROP); drawerHead.addView(dIcon,new LinearLayout.LayoutParams(dp(46),dp(46))); TextView dTitle=label("QCMS\nFour Star Industries",18,true); dTitle.setPadding(dp(12),0,0,0); drawerHead.addView(dTitle,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1)); drawerPanel.addView(drawerHead);
-        String[][] items={{"⌂","Dashboard","dashboard"},{"▦","Masters","masters"},{"▣","Supply Chain","supply-chain-home"},{"✓","RMTC","rmtc-entry"},{"⇥","Inward","inward-entry"},{"⌂","OSP","osp-home"},{"⚙","Quality / Inspections","inspection-home"},{"!","Complaints","complaints-home"},{"⌕","Search","global-search"},{"▤","Records","records-center"},{"▥","Reports","reports-home"},{"⚙","Admin","email-settings"}};
-        for(String[] item:items)drawerPanel.addView(drawerButton(item[0],item[1],item[2]),new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
+        drawerPanel.addView(drawerSection("⌂","Dashboard","dashboard",null));
+        drawerPanel.addView(drawerSection("▦","Masters","masters",new String[][]{
+            {"Masters Home","masters"},{"Company Branch","company-branch-entry"},{"Part Entry","part-entry"},{"Process Entry","process-entry"},{"Material Grade","grade-entry"},{"Reference Entry","reference-entry"},{"Employee Entry","employee-entry"},{"Standards Bank","standards-entry"},{"Master Import","master-import"}}));
+        drawerPanel.addView(drawerSection("▣","Supply Chain","supply-chain-home",new String[][]{
+            {"Supply Chain Home","supply-chain-home"},{"Customer Orders","supply-customer-orders"},{"Opening Stock & Import","supply-opening-stock"},{"RM Procurement","supply-rm-procurement"},{"Purchase Orders","supply-purchase-orders"},{"PO Order List","supply-po-order-list"},{"Edit Purchase Order","supply-po-edit"},{"Purchase Order PDF","supply-po-pdf"},{"Approval / Confirmation","supply-po-approval"},{"RM Receipt","supply-rm-receipt"},{"RM to Forging","supply-rm-dispatch"},{"Forging","supply-forging"},{"Machining / FG / Dispatch","supply-downstream"},{"Traceability","supply-traceability"},{"Monthly Schedule / MIS","supply-order-mis"}}));
+        drawerPanel.addView(drawerSection("✓","RMTC","rmtc-entry",new String[][]{{"RMTC Entry","rmtc-entry"},{"Add Part Worksheet","rmtc-approved-worksheet"},{"Part Worksheet","rmtc-part"},{"Validation & Decision","rmtc-approval"},{"RMTC Reports","rmtc-report"}}));
+        drawerPanel.addView(drawerSection("⇥","Inward","inward-entry",new String[][]{{"Material Inward","inward-entry"},{"MetLAB Report","metlab-entry"},{"Dimensional Report","dimensional-entry"},{"Inward Reports","inward-report"}}));
+        drawerPanel.addView(drawerSection("⌂","OSP","osp-home",new String[][]{{"OSP Home","osp-home"},{"Material Out","osp-material-out"},{"Sample Receipt","osp-sample-receipt"},{"OSP Dimensional","osp-dimensional"},{"OSP MetLAB","osp-metlab"},{"OSP Inward","osp-inward"},{"OSP Reports","osp-balance-report"}}));
+        drawerPanel.addView(drawerSection("⚙","Quality / Inspections","inspection-home",new String[][]{{"Inspection Home","inspection-home"},{"Inspection Layout","inspection-layout-entry"},{"Dimensional Entry","dimensional-entry"},{"MetLAB Entry","metlab-entry"},{"Bend Test Entry","bend-test-entry"},{"Dimensional Reports","dimensional-report"},{"MetLAB Reports","metlab-report"},{"Bend Test Reports","bend-test-report"}}));
+        drawerPanel.addView(drawerSection("↗","NPD / APQP","npd-status",new String[][]{{"Process Flow Designer","npd-process-flow"},{"NPD Status","npd-status"},{"APQP","apqp"},{"NPD Reports","npd-report"},{"APQP Reports","apqp-report"}}));
+        drawerPanel.addView(drawerSection("!","Complaints","complaints-home",new String[][]{{"Complaint Dashboard","complaints-home"},{"Customer Complaint","customer-complaint"},{"Supplier Complaint","supplier-complaint"},{"Customer Register","customer-complaint-register"},{"Supplier Register","supplier-complaint-register"},{"Analysis & CAPA","complaint-analysis"},{"Email / Reminders","complaint-email-settings"},{"Complaint Reports","complaints-report"}}));
+        drawerPanel.addView(drawerSection("⌕","Search","global-search",null));
+        drawerPanel.addView(drawerSection("▤","Records","records-center",new String[][]{{"Records Centre","records-center"},{"RMTC Records","rmtc-records"},{"Inward Records","inward-records"},{"OSP Records","osp-records"},{"Dimensional","dimensional-records"},{"MetLAB","metlab-records"},{"Bend Test","bend-test-records"},{"Complaints","complaint-records"},{"Heat Ledger","heat-ledger"}}));
+        drawerPanel.addView(drawerSection("▥","Reports","reports-home",new String[][]{{"Reports Home","reports-home"},{"Supply Chain MIS","supply-chain-report"},{"Heat Global Balance","heat-transaction-report"},{"OSP Heat Balance","osp-balance-report"},{"RMTC","rmtc-report"},{"Material Inward","inward-report"},{"Dimensional","dimensional-report"},{"MetLAB","metlab-report"},{"Complaints","complaints-report"},{"Traceability","traceability-report"}}));
+        drawerPanel.addView(drawerSection("⇩","Templates","templates",null));
+        drawerPanel.addView(drawerSection("⚙","Admin","user-access",new String[][]{{"Users & Access","user-access"},{"Email Server & Notifications","email-settings"},{"Deployment Diagnostics","deployment-diagnostics"}}));
 
         setContentView(root);
         hamburger.setOnClickListener(v->openDrawer()); refresh.setOnClickListener(v->webView.reload()); home.setOnClickListener(v->navigate("dashboard")); search.setOnClickListener(v->navigate("global-search")); complaints.setOnClickListener(v->navigate("complaints-home"));
         more.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("QCMS Mobile").setItems(new String[]{"Open QCMS in browser","Change QCMS URL","Android WebView settings"},(d,which)->{ if(which==0)startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(baseUrl))); else if(which==1){prefs.edit().remove(PREF_URL).apply();showSetupScreen();} else {try{android.content.pm.PackageInfo provider=WebView.getCurrentWebViewPackage(); if(provider!=null)startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+provider.packageName))); else startActivity(new Intent(Settings.ACTION_SETTINGS));}catch(Exception ex){startActivity(new Intent(Settings.ACTION_SETTINGS));}}}).show());
-        webView.loadUrl(baseUrl);
+        webView.loadUrl(nativeUrl(""));
     }
 
-    private void navigate(String path){ if(webView==null)return; String p=path.startsWith("/")?path:"/"+path; webView.loadUrl(baseUrl+p); }
+    private String nativeUrl(String path){
+        String p = path == null ? "" : path.trim();
+        String target = baseUrl + (p.isEmpty() ? "" : (p.startsWith("/") ? p : "/" + p));
+        Uri uri = Uri.parse(target);
+        Uri.Builder b = uri.buildUpon().clearQuery().appendQueryParameter("native_mobile","1");
+        return b.build().toString();
+    }
+    private void navigate(String path){ if(webView==null)return; webView.loadUrl(nativeUrl(path)); }
     private void openDrawer(){ if(drawerLayer!=null){drawerLayer.setVisibility(View.VISIBLE);drawerLayer.bringToFront();} }
     private void closeDrawer(){ if(drawerLayer!=null)drawerLayer.setVisibility(View.GONE); }
 

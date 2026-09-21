@@ -24,5 +24,5 @@ xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release -destina
 xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportPath "$EXPORT" -exportOptionsPlist "$ROOT/build/ExportOptions.plist" -allowProvisioningUpdates
 IPA="$(find "$EXPORT" -maxdepth 1 -name '*.ipa' -print -quit)"
 [ -n "$IPA" ] || { echo "ERROR: Xcode completed without an IPA."; exit 1; }
-cp "$IPA" "$HOME/Downloads/QCMS_Mobile_iPhone_iPad_v0.1.1.ipa"
-echo "IPA ready: $HOME/Downloads/QCMS_Mobile_iPhone_iPad_v0.1.1.ipa"
+cp "$IPA" "$HOME/Downloads/QCMS_Mobile_iPhone_iPad_v0.1.2.ipa"
+echo "IPA ready: $HOME/Downloads/QCMS_Mobile_iPhone_iPad_v0.1.2.ipa"

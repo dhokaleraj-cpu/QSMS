@@ -23,7 +23,7 @@ from core.reporting import controlled_record_pdf_bytes
 from core.repository import Repository
 from core.record_audit import annotate_transaction_rows
 from core.selection_labels import employee_label, part_label, party_label, process_label
-from core.ui import kpi_grid, page_header, record_widget_token, save_success_popup, section_bar, stage_section, workflow_progress
+from core.ui import kpi_grid, page_header, record_widget_token, safe, save_success_popup, section_bar, stage_section, workflow_progress
 
 
 STATUSES = ["OPEN", "CONTAINMENT", "ROOT_CAUSE", "CORRECTIVE_ACTION", "VERIFICATION", "CLOSED", "CANCELLED"]
@@ -96,8 +96,32 @@ def _complaint_notification_context(repo: Repository, row: Mapping[str, Any]) ->
 
 
 def _complaint_entry_styles() -> None:
-    """Legacy hook retained; global QCMS staged-section CSS now controls complaint grading."""
-    return
+    # global QCMS staged-section CSS remains authoritative; these styles add Complaint dashboard cards.
+    """Complaint status cards styled like the Supply Chain dashboard cards."""
+    st.markdown(
+        """<style>
+        .complaint-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:8px 0 14px}
+        .complaint-card{background:#fff;border:1px solid #d8dde2;border-left:6px solid #d97706;border-radius:8px;padding:13px 14px;box-shadow:0 1px 3px rgba(15,23,42,.08);min-width:0}
+        .complaint-card.overdue,.complaint-card.critical{border-left-color:#b91c1c;background:#fff8f8}
+        .complaint-card.closed{border-left-color:#15803d;background:#f7fff8}
+        .complaint-card.high{border-left-color:#c2410c}
+        .complaint-card-head{display:flex;align-items:center;gap:8px;justify-content:space-between;margin-bottom:7px}
+        .complaint-card-no{font-size:16px;font-weight:900;color:#8b0015;letter-spacing:.15px}
+        .complaint-card-status{font-size:10px;font-weight:900;text-transform:uppercase;border-radius:999px;padding:4px 8px;background:#f3f4f6;color:#374151;white-space:nowrap}
+        .complaint-card-status.overdue,.complaint-card-status.critical{background:#fee2e2;color:#991b1b}
+        .complaint-card-status.closed{background:#dcfce7;color:#166534}
+        .complaint-card-party{font-weight:800;color:#252b31;margin-bottom:3px}
+        .complaint-card-subject{color:#374151;line-height:1.35;margin-bottom:8px}
+        .complaint-card-meta{font-size:11px;color:#64748b;margin-bottom:9px}
+        .complaint-stage-mini{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+        .complaint-stage-mini span{font-size:9.5px;font-weight:800;border:1px solid #d7dce1;border-radius:5px;padding:5px 6px;background:#f8fafc;color:#64748b;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .complaint-stage-mini span.complete{background:#dcfce7;border-color:#86efac;color:#166534}
+        .complaint-stage-mini span.current{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8}
+        .complaint-stage-mini span.overdue{background:#fee2e2;border-color:#fca5a5;color:#991b1b}
+        @media(max-width:980px){.complaint-card-grid{grid-template-columns:1fr}.complaint-stage-mini{grid-template-columns:repeat(2,minmax(0,1fr))}.complaint-card{padding:11px 12px}}
+        </style>""",
+        unsafe_allow_html=True,
+    )
 
 
 def _stage_new_complaint_media(complaint_type: str, writable: bool, *, show_heading: bool = True) -> dict[str, Any]:
@@ -271,31 +295,33 @@ def _render_complaint_status_rows(rows: list[dict], actions: list[dict], parties
     actions_by_complaint: dict[str, list[dict]] = {}
     for action in actions:
         actions_by_complaint.setdefault(str(action.get("complaint_id") or ""), []).append(action)
-    for complaint in rows[:40]:
+    cards: list[str] = []
+    for complaint in rows[:60]:
         cid = str(complaint.get("id") or "")
-        progress = _analysis_progress(complaint, actions_by_complaint.get(cid, []))
-        overdue = _is_overdue(complaint) or any(_action_overdue(a) for a in actions_by_complaint.get(cid, []))
+        related_actions = actions_by_complaint.get(cid, [])
+        progress = _analysis_progress(complaint, related_actions)
+        overdue = _is_overdue(complaint) or any(_action_overdue(a) for a in related_actions)
         party = parties.get(str(complaint.get("party_id"))) or {}
-        header_class = " complaint-overdue" if overdue else ""
-        stage_html = []
+        status = str(complaint.get("status") or "OPEN").upper()
+        severity = str(complaint.get("severity") or "MEDIUM").upper()
+        tone = "closed" if status == "CLOSED" else ("overdue" if overdue else ("critical" if severity == "CRITICAL" else ("high" if severity == "HIGH" else "open")))
+        status_text = "OVERDUE" if overdue else status.replace("_", " ")
+        stage_items: list[str] = []
         for step in progress:
             state = str(step.get("state") or "pending")
-            stage_html.append(
-                f'<div class="complaint-stage-card complaint-stage-{state}">'
-                f'<div class="complaint-stage-label">{step.get("label")}</div>'
-                f'<div class="complaint-stage-detail">{step.get("detail")}</div></div>'
-            )
-        remarks = str(complaint.get("closure_remarks") or complaint.get("corrective_action") or "").strip()
-        st.markdown(
-            f'<div class="complaint-status-row{header_class}"><div class="complaint-order-card">'
-            f'<div class="complaint-order-no">{complaint.get("complaint_number")}</div>'
-            f'<div class="complaint-order-party">{party.get("party_name") or ""}</div>'
-            f'<div class="complaint-order-subject">{complaint.get("subject") or ""}</div>'
-            f'<div class="complaint-order-meta">Target {complaint.get("target_closure_date") or "-"} · {str(complaint.get("severity") or "").title()} · {"OVERDUE" if overdue else str(complaint.get("status") or "").replace("_"," ").title()}</div>'
-            f'{f"<div class=\"complaint-order-remarks\">{remarks}</div>" if remarks else ""}</div>'
-            f'<div class="complaint-stage-strip">{"".join(stage_html)}</div></div>',
-            unsafe_allow_html=True,
+            if overdue and state == "current":
+                state = "overdue"
+            stage_items.append(f'<span class="{safe(state)}">{safe(step.get("label") or "Stage")}</span>')
+        cards.append(
+            f'<div class="complaint-card complaint-stage-card {safe(tone)}">'
+            f'<div class="complaint-card-head"><div class="complaint-card-no">{safe(complaint.get("complaint_number") or "-")}</div>'
+            f'<div class="complaint-card-status {safe(tone)}">{safe(status_text)}</div></div>'
+            f'<div class="complaint-card-party">{safe(party.get("party_name") or party.get("party_code") or "-")}</div>'
+            f'<div class="complaint-card-subject">{safe(complaint.get("subject") or "-")}</div>'
+            f'<div class="complaint-card-meta">Target {safe(complaint.get("target_closure_date") or "-")} · {safe(severity.title())} · Open actions {sum(str(a.get("status") or "").upper() not in {"COMPLETED","CANCELLED"} for a in related_actions)}</div>'
+            f'<div class="complaint-stage-mini">{"".join(stage_items)}</div></div>'
         )
+    st.markdown(f'<div class="complaint-card-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
 
 
 def _closure_readiness(complaint: Mapping[str, Any], actions: list[Mapping[str, Any]]) -> tuple[bool, list[str]]:
@@ -780,6 +806,7 @@ def _complaint_excel(repo: Repository, complaint: Mapping[str, Any]) -> bytes:
 
 def render_home() -> None:
     page_header("Complaint Management", "Customer and supplier complaints, follow-ups, closure and debit-note settlement.", "Complaints")
+    _complaint_entry_styles()
     repo = Repository()
     rows = annotate_transaction_rows(repo, repo.select("quality_complaints", order_by="complaint_date", desc=True, limit=5000))
     open_rows = [row for row in rows if not _is_closed(row)]
@@ -978,6 +1005,7 @@ def _render_entry(complaint_type: str) -> None:
         "supplier_id": party_id or None,
         "supplier_name": party_preview.get("party_name") if complaint_type == "SUPPLIER" else "-",
         "customer_name": party_preview.get("party_name") if complaint_type == "CUSTOMER" else "-",
+        "party_email": external_email.strip() or party_preview.get("email") or "",
         "part_number": part_preview.get("part_number") or part_preview.get("fsi_part_number") or "-",
         "fsi_part_number": part_preview.get("fsi_part_number") or part_preview.get("part_number") or "-",
         "part_description": part_preview.get("part_name") or part_preview.get("part_description") or "-",
@@ -986,10 +1014,17 @@ def _render_entry(complaint_type: str) -> None:
         "due_date": target_closure, "status": status, "department": "Quality",
         "next_stage": "Containment / Root Cause / Corrective Action / Closure",
     }
-    with stage_section("F", "EMAIL NOTIFICATION CONFIRMATION", "Email is optional. If enabled, To / CC can be edited and must be confirmed before QCMS saves and releases the email.", key=f"{complaint_type.lower()}_complaint_email_confirmation"):
-        email_preference = notification_confirmation(
-            notifier, complaint_event, key=_entry_key("email_confirm"), context=email_context, default_send=False,
+    with stage_section("F", "EMAIL NOTIFICATION CONFIRMATION", "Email is optional. Choose whether the Customer / Supplier receives a copy, then review To / CC and confirm before QCMS sends.", key=f"{complaint_type.lower()}_complaint_email_confirmation"):
+        external_copy = st.toggle(
+            f"Send copy to {party_word}", value=False, key=_entry_key("email_external_copy"),
+            help=f"When enabled, QCMS adds the selected {party_word.lower()} Party Master / responsible email to CC before the confirmation popup.",
         )
+        if external_copy and not str(email_context.get("party_email") or "").strip():
+            st.warning(f"The selected {party_word.lower()} does not have a usable email in this complaint / Party Master.")
+        email_preference = notification_confirmation(
+            notifier, complaint_event, key=_entry_key("email_confirm"), context=email_context, include_supplier=external_copy, default_send=False,
+        )
+        st.caption("Configured Complaint PDF + controlled complaint attachments will be attached after the complaint is saved.")
 
     if st.button("Update Complaint" if existing else "Save Complaint", type="primary", width="stretch", disabled=not writable or bool(email_preference.get("send") and not email_preference.get("confirmed")), key=_entry_key("save_complaint")):
         staged_photo_gaps = [str(getattr(photo, "name", "Photograph")) for title, photo in (staged_media.get("photos") or []) if not str(title or "").strip()] if not existing else []
@@ -1044,7 +1079,7 @@ def _render_entry(complaint_type: str) -> None:
                     queued = notifier.enqueue(
                         complaint_event, related_table="quality_complaints", related_id=saved_id, context=saved_context,
                         recipient_email=overrides.get("recipient_email"), cc_emails=overrides.get("cc_emails"),
-                        include_supplier=False,
+                        include_supplier=external_copy, include_generated_pdf=True, include_record_attachments=True,
                     )
                     result = notifier.dispatch([queued] if queued else [])
                     if result.get("error"):
@@ -1063,13 +1098,14 @@ def _render_entry(complaint_type: str) -> None:
             st.switch_page(analysis_page)
         with stage_section("F", "COMPLAINT FOLLOW-UP & CLOSURE TRACKING", key=f"{complaint_type.lower()}_complaint_followup"):
             _render_followups(repo, existing, employees, employee_labels, perms, show_heading=False)
-        with stage_section("G", "EMAIL THIS COMPLAINT", "Manual complaint email uses the configured complaint route/template and always shows the recipient confirmation dialog before sending.", key=f"{complaint_type.lower()}_complaint_record_email"):
+        with stage_section("G", "EMAIL THIS COMPLAINT", "Choose Customer / Supplier copy first. QCMS attaches the controlled Complaint PDF and available complaint documents, then requires recipient confirmation before sending.", key=f"{complaint_type.lower()}_complaint_record_email"):
             latest_record = (repo.select("quality_complaints", eq={"id": selected_id}, limit=1) or [existing])[0]
+            saved_external_copy = st.toggle(f"Send copy to {party_word}", value=False, key=f"complaint_record_external_copy_{complaint_type}_{selected_id}")
             record_email_sender(
                 notifier, _complaint_event(complaint_type), related_table="quality_complaints", related_id=selected_id,
                 key=f"complaint_record_email_{complaint_type}_{selected_id}",
-                context=_complaint_notification_context(repo, latest_record), include_supplier=False,
-                title="Review recipients and send complaint email",
+                context=_complaint_notification_context(repo, latest_record), include_supplier=saved_external_copy,
+                title="Review recipients, attachments and send complaint email",
             )
         with stage_section("H", "PRINT / DELETE", key=f"{complaint_type.lower()}_complaint_print_delete"):
             pdf = _complaint_pdf(repo, existing)
@@ -1529,11 +1565,12 @@ def _render_register(complaint_type: str) -> None:
     c3.download_button("PDF", _complaint_pdf(repo, selected), file_name=f"{selected.get('complaint_number')}.pdf", mime="application/pdf", width="stretch", key=f"{complaint_type}_reg_pdf")
     c4.download_button("Excel", _complaint_excel(repo, selected), file_name=f"{selected.get('complaint_number')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch", key=f"{complaint_type}_reg_xlsx")
 
-    with stage_section("E", "CONFIRMED EMAIL SENDING", "QCMS will not send until the employee reviews To / CC and confirms the email popup.", key=f"{complaint_type.lower()}_register_email_send"):
+    with stage_section("E", "CONFIRMED EMAIL SENDING", "Select whether the Customer / Supplier receives a copy. The controlled Complaint PDF and configured complaint documents are attached before the final confirmation popup.", key=f"{complaint_type.lower()}_register_email_send"):
+        register_external_copy = st.toggle(f"Send copy to {party_word}", value=False, key=f"{complaint_type}_register_external_copy_{selected_id}")
         record_email_sender(
             notifier, _complaint_event(complaint_type), related_table="quality_complaints", related_id=selected_id,
             key=f"{complaint_type}_register_email_{selected_id}", context=_complaint_notification_context(repo, selected),
-            include_supplier=False, title="Review and send selected complaint email",
+            include_supplier=register_external_copy, title="Review recipients, attachments and send selected complaint email",
         )
 
 
