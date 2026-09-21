@@ -51,6 +51,10 @@ function localClock(now: Date, timeZone: string): { date: string; hour: number }
 function addDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + Number(days || 0)); return d.toISOString().slice(0, 10);
 }
+function daysBetween(fromIso: string, toIso: string): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromIso) || !/^\d{4}-\d{2}-\d{2}$/.test(toIso)) return 999999;
+  return Math.floor((Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / 86400000);
+}
 function eligibleDate(due: any, localDate: string, daysAhead: number, includeOpen: boolean, includeOverdue: boolean): { include: boolean; overdue: boolean } {
   const value = String(due || "").slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return { include: false, overdue: false };
@@ -176,6 +180,28 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
       const vendor = maps.parties.get(String(r.vendor_id)) || {}; const part = maps.parts.get(String(r.part_id)) || {};
       pushIf({ reference: String(r.osp_job_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(vendor.party_name || vendor.party_code || "-"), due_date: String(r.expected_return_date || "-"), status: String(r.status || "AT_VENDOR"), quantity: `${n(Number(r.quantity_dispatched || 0) - Number(r.quantity_received || 0))} pcs pending`, supplier_id: String(r.vendor_id || "") }, r.expected_return_date);
     }
+  } else if (["COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "CUSTOMER_COMPLAINT_OPEN_OVERDUE", "SUPPLIER_COMPLAINT_OPEN_OVERDUE"].includes(String(schedule.schedule_key))) {
+    const complaintType = ["COMPLAINT_CUSTOMER_OPEN_OVERDUE", "CUSTOMER_COMPLAINT_OPEN_OVERDUE"].includes(String(schedule.schedule_key)) ? "CUSTOMER" : "SUPPLIER";
+    const { data = [] } = await admin.from("quality_complaints").select("*").eq("tenant_id", tenantId).eq("complaint_type", complaintType).limit(5000);
+    for (const r of data) {
+      if (["CLOSED", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
+      const party = maps.parties.get(String(r.party_id)) || {}; const part = maps.parts.get(String(r.part_id)) || {};
+      const detail = `${String(r.severity || "").toUpperCase()} · ${String(r.subject || "Complaint")}`;
+      pushIf({ reference: String(r.complaint_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(party.party_name || party.party_code || "-"), due_date: String(r.target_closure_date || "-"), status: String(r.status || "OPEN"), quantity: detail, supplier_id: String(r.party_id || ""), responsible_employee_id: String(r.fourstar_responsible_employee_id || "") || undefined }, r.target_closure_date);
+    }
+  } else if (schedule.schedule_key === "COMPLAINT_FOLLOWUP_DUE") {
+    const [{ data: complaints = [] }, { data: followups = [] }] = await Promise.all([
+      admin.from("quality_complaints").select("*").eq("tenant_id", tenantId).limit(5000),
+      admin.from("quality_complaint_followups").select("*").eq("tenant_id", tenantId).order("followup_date", { ascending: false }).limit(10000),
+    ]);
+    const latest = new Map<string, Row>();
+    for (const f of followups) if (f.complaint_id && !latest.has(String(f.complaint_id))) latest.set(String(f.complaint_id), f);
+    for (const r of complaints) {
+      if (["CLOSED", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
+      const f = latest.get(String(r.id)); if (!f?.next_followup_date) continue;
+      const party = maps.parties.get(String(r.party_id)) || {}; const part = maps.parts.get(String(r.part_id)) || {};
+      pushIf({ reference: String(r.complaint_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(party.party_name || party.party_code || "-"), due_date: String(f.next_followup_date || "-"), status: `FOLLOW-UP · ${String(r.status || "OPEN")}`, quantity: String(r.subject || "Complaint follow-up"), supplier_id: String(r.party_id || ""), responsible_employee_id: String(f.responsible_employee_id || r.fourstar_responsible_employee_id || "") || undefined }, f.next_followup_date);
+    }
   } else if (schedule.schedule_key === "CALIBRATION_VALIDATION_DUE") {
     const [{ data: links = [] }, { data: assets = [] }, { data: processes = [] }] = await Promise.all([
       admin.from("quality_asset_part_process_links").select("*").eq("tenant_id", tenantId).eq("status", "ACTIVE").limit(10000),
@@ -234,7 +260,9 @@ Deno.serve(async (req: Request) => {
 
       for (const schedule of schedules) {
         const clock = localClock(now, String(schedule.timezone || "Asia/Kolkata"));
-        if (clock.hour !== Number(schedule.hour_local ?? 8) || String(schedule.last_run_local_date || "") === clock.date) continue;
+        const lastRunDate = String(schedule.last_run_local_date || "");
+        const cadenceDays = Math.max(1, Number(schedule.run_every_days || 1));
+        if (clock.hour !== Number(schedule.hour_local ?? 8) || (lastRunDate && daysBetween(lastRunDate, clock.date) < cadenceDays)) continue;
         processedSchedules += 1;
         const rows = await gatherRows(admin, tenantId, schedule, clock.date, maps); generatedRows += rows.length;
         const overdueCount = rows.filter((r) => r.status.startsWith("OVERDUE")).length; const openCount = rows.length - overdueCount;

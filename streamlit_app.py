@@ -114,6 +114,9 @@ PAGE_ITEMS = (
     ("supplier-complaint", st.Page(complaints.render_supplier_entry, title="Supplier Complaint", icon=":material/feedback:", url_path="supplier-complaint")),
     ("complaint-analysis", st.Page(complaints.render_analysis, title="Complaint Analysis & CAPA", icon=":material/troubleshoot:", url_path="complaint-analysis")),
     ("complaint-records", st.Page(complaints.render_records, title="Complaint Records", icon=":material/fact_check:", url_path="complaint-records")),
+    ("customer-complaint-register", st.Page(complaints.render_customer_register, title="Customer Complaint Register", icon=":material/table_view:", url_path="customer-complaint-register")),
+    ("supplier-complaint-register", st.Page(complaints.render_supplier_register, title="Supplier Complaint Register", icon=":material/table_view:", url_path="supplier-complaint-register")),
+    ("complaint-email-settings", st.Page(complaints.render_email_configuration, title="Complaint Email Configuration", icon=":material/forward_to_inbox:", url_path="complaint-email-settings")),
     ("calibration-validation", st.Page(calibration_validation.render_calibration_validation, title="Calibration & Validation", icon=":material/straighten:", url_path="calibration-validation")),
     ("standard-room-inspection", st.Page(calibration_validation.render_standard_room, title="Standard Room Inspection", icon=":material/biotech:", url_path="standard-room-inspection")),
     ("inspection-home", st.Page(inspection_home.render, title="Inspections", icon=":material/biotech:", url_path="inspection-home")),
@@ -253,7 +256,10 @@ MODULE_SUBMENUS = {
         ("complaints-home", "Complaint Dashboard", ":material/support_agent:"),
         ("customer-complaint", "Customer Complaint", ":material/record_voice_over:"),
         ("supplier-complaint", "Supplier Complaint", ":material/feedback:"),
+        ("customer-complaint-register", "Customer Register", ":material/table_view:"),
+        ("supplier-complaint-register", "Supplier Register", ":material/table_view:"),
         ("complaint-analysis", "Analysis & CAPA", ":material/troubleshoot:"),
+        ("complaint-email-settings", "Email / Reminders", ":material/forward_to_inbox:"),
         ("complaints-report", "Complaint Reports", ":material/assessment:"),
     ),
     "Calibration & Validation": (
@@ -336,7 +342,8 @@ ROUTE_MODULE = {
     "npd-process-flow": "NPD & APQP", "npd-status": "NPD & APQP", "apqp": "NPD & APQP",
     "qc-tools": "QC Calculation Tools",
     "complaints-home": "Complaints", "customer-complaint": "Complaints",
-    "supplier-complaint": "Complaints", "complaint-analysis": "Complaints",
+    "supplier-complaint": "Complaints", "customer-complaint-register": "Complaints", "supplier-complaint-register": "Complaints",
+    "complaint-analysis": "Complaints", "complaint-email-settings": "Complaints",
     "calibration-validation": "Calibration & Validation", "standard-room-inspection": "Calibration & Validation",
     "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
     "dimensional-entry": "Inspections", "metlab-entry": "Inspections", "bend-test-entry": "Inspections",
@@ -367,7 +374,7 @@ PAGE_TITLE_TO_PATH = {
     "Supply Chain": "supply-chain-home", "Supply Customer Orders": "supply-customer-orders", "Supply Opening Stock": "supply-opening-stock", "Opening Stock & Import": "supply-opening-stock", "Supply RM Procurement": "supply-rm-procurement", "Supply Purchase Orders": "supply-purchase-orders", "Purchase Order List": "supply-po-order-list", "Edit Purchase Order": "supply-po-edit", "Purchase Order PDF": "supply-po-pdf", "Purchase Order Approval": "supply-po-approval", "Supply RM Receipt": "supply-rm-receipt", "Supply RM to Forging": "supply-rm-dispatch", "Supply Forging": "supply-forging", "Supply Downstream": "supply-downstream", "Supply Traceability": "supply-traceability", "Supply Order MIS": "supply-order-mis",
     "Process Flow Designer": "npd-process-flow", "NPD Status": "npd-status", "APQP": "apqp",
     "QC Calculation Tools": "qc-tools", "QC Calculation Records": "qc-calculation-records",
-    "Complaint Management": "complaints-home", "Customer Complaint": "customer-complaint", "Supplier Complaint": "supplier-complaint", "Complaint Analysis & CAPA": "complaint-analysis", "Complaint Records": "complaint-records",
+    "Complaint Management": "complaints-home", "Customer Complaint": "customer-complaint", "Supplier Complaint": "supplier-complaint", "Customer Complaint Register": "customer-complaint-register", "Supplier Complaint Register": "supplier-complaint-register", "Complaint Email Configuration": "complaint-email-settings", "Complaint Analysis & CAPA": "complaint-analysis", "Complaint Records": "complaint-records",
     "Inspection Layout Entry": "inspection-layout-entry",
     "Inspection Layout Records": "inspection-layout-records",
     "Dimensional Report": "dimensional-entry", "Dimensional Records": "dimensional-records",
@@ -400,7 +407,7 @@ ROUTE_PERMISSION_MODULE = {
     "inspection-layout-entry":"INSPECTION_LAYOUTS","inspection-layout-records":"INSPECTION_LAYOUTS",
     "supply-chain-home":"SUPPLY_CHAIN","supply-customer-orders":"SUPPLY_CHAIN","supply-opening-stock":"SUPPLY_CHAIN","supply-rm-procurement":"SUPPLY_CHAIN","supply-purchase-orders":"SUPPLY_CHAIN","supply-po-order-list":"SUPPLY_CHAIN","supply-po-edit":"SUPPLY_CHAIN","supply-po-pdf":"SUPPLY_CHAIN","supply-po-approval":"SUPPLY_CHAIN","supply-rm-receipt":"SUPPLY_CHAIN","supply-rm-dispatch":"SUPPLY_CHAIN","supply-forging":"SUPPLY_CHAIN","supply-downstream":"SUPPLY_CHAIN","supply-traceability":"SUPPLY_CHAIN","supply-order-mis":"SUPPLY_CHAIN",
     "npd-process-flow":"NPD_APQP","npd-status":"NPD_APQP","apqp":"NPD_APQP","qc-tools":"QC_CALCULATION_TOOLS","qc-calculation-records":"QC_CALCULATION_TOOLS",
-    "complaints-home":"COMPLAINT_MANAGEMENT","customer-complaint":"COMPLAINT_MANAGEMENT","supplier-complaint":"COMPLAINT_MANAGEMENT","complaint-analysis":"COMPLAINT_MANAGEMENT","complaint-records":"COMPLAINT_MANAGEMENT",
+    "complaints-home":"COMPLAINT_MANAGEMENT","customer-complaint":"COMPLAINT_MANAGEMENT","supplier-complaint":"COMPLAINT_MANAGEMENT","customer-complaint-register":"COMPLAINT_MANAGEMENT","supplier-complaint-register":"COMPLAINT_MANAGEMENT","complaint-email-settings":"COMPLAINT_MANAGEMENT","complaint-analysis":"COMPLAINT_MANAGEMENT","complaint-records":"COMPLAINT_MANAGEMENT",
     "calibration-validation":"CALIBRATION_VALIDATION","standard-room-inspection":"CALIBRATION_VALIDATION",
     "user-access":"USER_ACCESS","email-settings":"USER_ACCESS","deployment-diagnostics":"USER_ACCESS",
 }
@@ -446,7 +453,7 @@ RAIL_NAV = (
 if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
     logout()
 
-st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41435-PO-WATERMARK-REMINDER-MOBILE-IOS")
+st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER")
 
 # v4.14.30 — persistent permission-aware Global Search launcher.  Search is
 # submitted explicitly (or by Enter) so ordinary typing never fans out into

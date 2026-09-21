@@ -1,7 +1,7 @@
 name: QCMS Android Test APK
 
 # Builds only the mobile source. Does not deploy QCMS, access Supabase, or send emails.
-# The first deployment of v4.14.35 triggers this automatically after the Git push.
+# The first deployment of v4.14.36 triggers this automatically after the Git push.
 on:
   workflow_dispatch:
   push:
@@ -61,21 +61,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p apk-artifacts
-          APK=apk-artifacts/QCMS_Mobile_v0.1.3_TEST.apk
+          APK=apk-artifacts/QCMS_Mobile_v0.1.4_TEST.apk
           cp mobile/android_qcms/app/build/outputs/apk/debug/app-debug.apk "$APK"
           BT="$QCMS_ANDROID_SDK/build-tools/35.0.0"
           "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-artifacts/SIGNATURE_VERIFICATION.txt
           "$BT/zipalign" -c -P 16 -v 4 "$APK" > apk-artifacts/ALIGNMENT_VERIFICATION.txt
           "$BT/aapt" dump badging "$APK" > apk-artifacts/APK_PACKAGE_INFO.txt
           grep -q "com.fourstar.qcms.test" apk-artifacts/APK_PACKAGE_INFO.txt
-          grep -q "versionName='0.1.3'" apk-artifacts/APK_PACKAGE_INFO.txt
-          (cd apk-artifacts && sha256sum QCMS_Mobile_v0.1.3_TEST.apk > SHA256SUMS.txt)
+          grep -q "versionName='0.1.4'" apk-artifacts/APK_PACKAGE_INFO.txt
+          (cd apk-artifacts && sha256sum QCMS_Mobile_v0.1.4_TEST.apk > SHA256SUMS.txt)
           cp mobile/android_qcms/INSTALL_APK_ON_SAMSUNG.md apk-artifacts/INSTALL_README.md
-          printf '## QCMS APK built and verified\nDownload **QCMS-Mobile-v0.1.3-TEST-APK** below, extract the ZIP and install the .apk on your Samsung. This is a test-signed online WebView app, not a Play Store release.\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '## QCMS APK built and verified\nDownload **QCMS-Mobile-v0.1.4-TEST-APK** below, extract the ZIP and install the .apk on your Samsung. This is a test-signed online WebView app, not a Play Store release.\n' >> "$GITHUB_STEP_SUMMARY"
       - name: Downloadable APK package
         uses: actions/upload-artifact@v4
         with:
-          name: QCMS-Mobile-v0.1.3-TEST-APK
+          name: QCMS-Mobile-v0.1.4-TEST-APK
           path: apk-artifacts/
           if-no-files-found: error
           retention-days: 30

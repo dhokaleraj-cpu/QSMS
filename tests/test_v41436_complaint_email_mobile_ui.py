@@ -1,0 +1,61 @@
+from pathlib import Path
+import json
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def text(rel: str) -> str:
+    return (ROOT / rel).read_text(encoding="utf-8")
+
+
+def test_v41436_release_identity_and_routes():
+    assert text("VERSION").strip() == "4.14.36"
+    manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
+    assert manifest["version"] == "4.14.36"
+    assert manifest["build"] == "41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER"
+    app = text("streamlit_app.py")
+    for route in ("customer-complaint-register", "supplier-complaint-register", "complaint-email-settings"):
+        assert route in app
+
+
+def test_v41436_complaint_register_and_confirmed_email_contract():
+    source = text("app_pages/complaints.py")
+    for token in (
+        "def render_customer_register", "def render_supplier_register", "def render_email_configuration",
+        "CUSTOMER_COMPLAINT_CREATED", "SUPPLIER_COMPLAINT_CREATED", "COMPLAINT_FOLLOWUP_REMINDER",
+        "notification_confirmation", "record_email_sender", "CONFIRMED EMAIL SENDING",
+        "COMPLAINT EMAIL DELIVERY REGISTER", "Customer / Supplier Too",
+    ):
+        assert token in source
+
+
+def test_v41436_complaint_schedule_migration_and_worker():
+    migration = text("supabase/migrations/20260921190000_qcms_v41436_complaint_email_register_mobile.sql")
+    worker = text("supabase/functions/qcms-overdue-notifier/index.ts")
+    for token in (
+        "CUSTOMER_COMPLAINT_CREATED", "SUPPLIER_COMPLAINT_CREATED", "COMPLAINT_OVERDUE_REMINDER",
+        "COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "COMPLAINT_FOLLOWUP_DUE",
+    ):
+        assert token in migration
+    for token in ("COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "COMPLAINT_FOLLOWUP_DUE", "run_every_days", "cadenceDays"):
+        assert token in worker
+
+
+def test_v41436_android_reference_video_style_navigation():
+    java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
+    gradle = text("mobile/android_qcms/app/build.gradle")
+    assert "versionName '0.1.4'" in gradle
+    for token in ("QCMSMobile/0.1.4", "openDrawer", "closeDrawer", "drawerPanel", "global-search", "complaints-home", "stawn_icon"):
+        assert token in java
+    assert (ROOT / "mobile/android_qcms/app/src/main/res/drawable-nodpi/stawn_icon.png").exists()
+
+
+def test_v41436_ios_reference_video_style_navigation():
+    content = text("mobile/ios_qcms/QCMSMobileIOS/ContentView.swift")
+    web = text("mobile/ios_qcms/QCMSMobileIOS/QCMSWebView.swift")
+    project = text("mobile/ios_qcms/QCMSMobileIOS.xcodeproj/project.pbxproj")
+    for token in ("drawerOpen", "qcmsNavigate", "global-search", "complaints-home", "AppIconPreview", "Home", "Search", "Complaints"):
+        assert token in content
+    assert "QCMSMobileIOS/0.1.1" in web
+    assert "MARKETING_VERSION = 0.1.1" in project
+    assert "TARGETED_DEVICE_FAMILY = \"1,2\"" in project

@@ -9,12 +9,12 @@ def text(rel):
 
 
 def test_v41425_release_identity_and_source_only_baseline():
-    assert text("VERSION").strip() in {"4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33", '4.14.34', '4.14.35'}
+    assert text("VERSION").strip() in {"4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33", '4.14.34', '4.14.35', '4.14.36'}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33", '4.14.34', '4.14.35'}
-    assert manifest["build"] in {"41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL", "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS", "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH", "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF", "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST", "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK", '41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD', '41435-PO-WATERMARK-REMINDER-MOBILE-IOS'}
-    assert manifest["database_schema_required"] in {"4.14.22", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33", '4.14.34', '4.14.35'}
-    assert manifest["database_migration_required"] is (manifest["version"] == "4.14.35")
+    assert manifest["version"] in {"4.14.25", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33", '4.14.34', '4.14.35', '4.14.36'}
+    assert manifest["build"] in {"41425-PO-EDIT-MASTER-STATE-TRANSACTION-EDIT-PERFORMANCE", "41426-COMPLAINT-MEDIA-CALIBRATION-STANDARD-ROOM-NPD-CARDS", "41427-FINAL-METLAB-LAYOUT-PO-EMAIL-FIELDS", "41428-OSP-BATCH-GENEALOGY-TWO-DAY-EXCEL", "41429-RMTC-BEND-CHEM-CASEDEPTH-PERMISSIONS", "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH", "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF", "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST", "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK", '41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD', '41435-PO-WATERMARK-REMINDER-MOBILE-IOS', '41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER'}
+    assert manifest["database_schema_required"] in {"4.14.22", "4.14.26", "4.14.27", "4.14.28", "4.14.29", "4.14.30", "4.14.31", "4.14.32", "4.14.33", '4.14.34', '4.14.35', '4.14.36'}
+    assert manifest["database_migration_required"] is (manifest["version"] in {"4.14.35", "4.14.36"})
 
 
 def test_po_register_exposes_controlled_edit_and_reapproval():

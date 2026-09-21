@@ -16,6 +16,9 @@ from core.ui import portal_table
 from core.access import current_permissions
 from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, AttachmentSlot, render_attachment_manager
 from core.delete_service import password_delete_panel
+from core.notification_service import NotificationService
+from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender, template_test_sender
+from core.permissions import is_admin
 from core.reporting import controlled_record_pdf_bytes
 from core.repository import Repository
 from core.record_audit import annotate_transaction_rows
@@ -39,6 +42,57 @@ COMPLAINT_ATTACHMENT_SLOTS = (
 COMPLAINT_PHOTO_TYPE = "COMPLAINT_PHOTO"
 COMPLAINT_MULTI_ATTACHMENT_TYPE = "COMPLAINT_ATTACHMENT"
 COMPLAINT_PHOTO_EXTENSIONS = ["png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp", "gif"]
+
+COMPLAINT_NOTIFICATION_EVENTS = (
+    ("CUSTOMER_COMPLAINT_CREATED", "Customer Complaint Notification", "Customer complaint created / updated"),
+    ("SUPPLIER_COMPLAINT_CREATED", "Supplier Complaint Notification", "Supplier complaint created / updated"),
+    ("COMPLAINT_FOLLOWUP_REMINDER", "Complaint Follow-up Reminder", "Complaint follow-up due / overdue"),
+    ("COMPLAINT_OVERDUE_REMINDER", "Complaint Closure Reminder", "Complaint target closure due / overdue"),
+    ("COMPLAINT_CLOSED", "Complaint Closure Notification", "Complaint closed after verification"),
+)
+COMPLAINT_EVENT_LABEL = {key: label for key, label, _help in COMPLAINT_NOTIFICATION_EVENTS}
+
+
+def _complaint_event(complaint_type: str) -> str:
+    return "CUSTOMER_COMPLAINT_CREATED" if str(complaint_type).upper() == "CUSTOMER" else "SUPPLIER_COMPLAINT_CREATED"
+
+
+def _complaint_notification_context(repo: Repository, row: Mapping[str, Any]) -> dict[str, Any]:
+    party = repo.get("parties", str(row.get("party_id") or "")) or {} if row.get("party_id") else {}
+    part = repo.get("parts", str(row.get("part_id") or "")) or {} if row.get("part_id") else {}
+    responsible = repo.get("employees", str(row.get("fourstar_responsible_employee_id") or "")) or {} if row.get("fourstar_responsible_employee_id") else {}
+    complaint_type = str(row.get("complaint_type") or "").upper()
+    party_name = str(party.get("party_name") or "")
+    context = {
+        "document_no": row.get("complaint_number") or "Complaint",
+        "document_type": f"{complaint_type.title()} Complaint",
+        "complaint_number": row.get("complaint_number") or "-",
+        "complaint_type": complaint_type.title(),
+        "complaint_date": row.get("complaint_date") or "-",
+        "party_name": party_name or "-",
+        "party_code": party.get("party_code") or "-",
+        "party_id": row.get("party_id"),
+        # NotificationService's controlled external-party copy uses supplier_id as a generic Party Master pointer.
+        "supplier_id": row.get("party_id"),
+        "supplier_name": party_name if complaint_type == "SUPPLIER" else "-",
+        "customer_name": party_name if complaint_type == "CUSTOMER" else "-",
+        "party_email": row.get("external_responsible_email") or party.get("email") or "",
+        "part_number": part.get("part_number") or part.get("fsi_part_number") or "-",
+        "fsi_part_number": part.get("fsi_part_number") or part.get("part_number") or "-",
+        "part_description": part.get("part_name") or part.get("part_description") or "-",
+        "subject": row.get("subject") or "-",
+        "severity": row.get("severity") or "-",
+        "heat_number": row.get("heat_number") or "-",
+        "batch_number": row.get("lot_batch_number") or "-",
+        "target_closure_date": row.get("target_closure_date") or "-",
+        "due_date": row.get("target_closure_date") or "-",
+        "status": row.get("status") or "OPEN",
+        "responsible_employee": employee_label(responsible),
+        "next_stage": "Containment / Root Cause / Corrective Action / Closure",
+        "department": "Quality",
+    }
+    return context
+
 
 
 def _complaint_entry_styles() -> None:
@@ -822,6 +876,9 @@ def _render_entry(complaint_type: str) -> None:
     info_message = st.session_state.pop(pending_info_key, None)
     if info_message:
         st.success(info_message)
+    email_notice = st.session_state.pop(f"{complaint_type}_email_notice", None)
+    if email_notice:
+        st.info(email_notice)
 
     records = annotate_transaction_rows(repo, repo.select("quality_complaints", eq={"complaint_type": complaint_type}, order_by="created_at", desc=True, limit=5000))
     record_labels = {"": "＋ New Complaint", **{str(row["id"]): _complaint_label(row, {str(p["id"]): p for p in parties}) for row in records}}
@@ -906,7 +963,35 @@ def _render_entry(complaint_type: str) -> None:
         if debit_required:
             st.caption(f"Debit Note Settlement Balance: {currency} {debit_balance:,.2f}")
 
-    if st.button("Update Complaint" if existing else "Save Complaint", type="primary", width="stretch", disabled=not writable, key=_entry_key("save_complaint")):
+    notifier = NotificationService(repo)
+    party_preview = next((row for row in parties if str(row.get("id")) == str(party_id)), {})
+    part_preview = next((row for row in parts if str(row.get("id")) == str(part_id)), {}) if part_id else {}
+    complaint_event = _complaint_event(complaint_type)
+    email_context = {
+        "document_no": str((existing or {}).get("complaint_number") or "Auto on Save"),
+        "document_type": f"{party_word} Complaint",
+        "complaint_number": str((existing or {}).get("complaint_number") or "Auto on Save"),
+        "complaint_type": party_word,
+        "complaint_date": complaint_date,
+        "party_name": party_preview.get("party_name") or "-",
+        "party_code": party_preview.get("party_code") or "-",
+        "supplier_id": party_id or None,
+        "supplier_name": party_preview.get("party_name") if complaint_type == "SUPPLIER" else "-",
+        "customer_name": party_preview.get("party_name") if complaint_type == "CUSTOMER" else "-",
+        "part_number": part_preview.get("part_number") or part_preview.get("fsi_part_number") or "-",
+        "fsi_part_number": part_preview.get("fsi_part_number") or part_preview.get("part_number") or "-",
+        "part_description": part_preview.get("part_name") or part_preview.get("part_description") or "-",
+        "subject": subject.strip() or "-", "severity": severity, "heat_number": heat_number.strip() or "-",
+        "batch_number": lot_batch_number.strip() or "-", "target_closure_date": target_closure,
+        "due_date": target_closure, "status": status, "department": "Quality",
+        "next_stage": "Containment / Root Cause / Corrective Action / Closure",
+    }
+    with stage_section("F", "EMAIL NOTIFICATION CONFIRMATION", "Email is optional. If enabled, To / CC can be edited and must be confirmed before QCMS saves and releases the email.", key=f"{complaint_type.lower()}_complaint_email_confirmation"):
+        email_preference = notification_confirmation(
+            notifier, complaint_event, key=_entry_key("email_confirm"), context=email_context, default_send=False,
+        )
+
+    if st.button("Update Complaint" if existing else "Save Complaint", type="primary", width="stretch", disabled=not writable or bool(email_preference.get("send") and not email_preference.get("confirmed")), key=_entry_key("save_complaint")):
         staged_photo_gaps = [str(getattr(photo, "name", "Photograph")) for title, photo in (staged_media.get("photos") or []) if not str(title or "").strip()] if not existing else []
         if not party_id or not subject.strip() or not description.strip() or not fourstar_employee_id:
             st.error(f"{party_word}, Complaint Subject, Complaint Description and Four Star Responsible Person are mandatory.")
@@ -949,6 +1034,25 @@ def _render_entry(complaint_type: str) -> None:
                     st.session_state[f"{pending_error_key}_message"] = "Complaint saved, but some evidence could not be uploaded: " + " | ".join(media_errors)
                 if added:
                     st.session_state[pending_info_key] = f"{added} photograph/attachment file(s) uploaded with the complaint."
+            if email_preference.get("send"):
+                try:
+                    saved_context = _complaint_notification_context(repo, saved)
+                    saved_context.update(email_context)
+                    saved_context["document_no"] = number
+                    saved_context["complaint_number"] = number
+                    overrides = notification_overrides(email_preference)
+                    queued = notifier.enqueue(
+                        complaint_event, related_table="quality_complaints", related_id=saved_id, context=saved_context,
+                        recipient_email=overrides.get("recipient_email"), cc_emails=overrides.get("cc_emails"),
+                        include_supplier=False,
+                    )
+                    result = notifier.dispatch([queued] if queued else [])
+                    if result.get("error"):
+                        st.session_state[f"{complaint_type}_email_notice"] = f"Complaint saved. Email queued but delivery returned: {result.get('error')}"
+                    elif queued:
+                        st.session_state[f"{complaint_type}_email_notice"] = "Complaint saved and confirmed email delivery was requested."
+                except Exception as exc:
+                    st.session_state[f"{complaint_type}_email_notice"] = f"Complaint saved. Email delivery did not complete: {exc}"
             save_success_popup(f"{party_word} complaint {number} saved successfully.", queue_for_rerun=True)
             st.rerun()
 
@@ -959,7 +1063,15 @@ def _render_entry(complaint_type: str) -> None:
             st.switch_page(analysis_page)
         with stage_section("F", "COMPLAINT FOLLOW-UP & CLOSURE TRACKING", key=f"{complaint_type.lower()}_complaint_followup"):
             _render_followups(repo, existing, employees, employee_labels, perms, show_heading=False)
-        with stage_section("G", "PRINT / DELETE", key=f"{complaint_type.lower()}_complaint_print_delete"):
+        with stage_section("G", "EMAIL THIS COMPLAINT", "Manual complaint email uses the configured complaint route/template and always shows the recipient confirmation dialog before sending.", key=f"{complaint_type.lower()}_complaint_record_email"):
+            latest_record = (repo.select("quality_complaints", eq={"id": selected_id}, limit=1) or [existing])[0]
+            record_email_sender(
+                notifier, _complaint_event(complaint_type), related_table="quality_complaints", related_id=selected_id,
+                key=f"complaint_record_email_{complaint_type}_{selected_id}",
+                context=_complaint_notification_context(repo, latest_record), include_supplier=False,
+                title="Review recipients and send complaint email",
+            )
+        with stage_section("H", "PRINT / DELETE", key=f"{complaint_type.lower()}_complaint_print_delete"):
             pdf = _complaint_pdf(repo, existing)
             excel = _complaint_excel(repo, existing)
             p1, p2, p3 = st.columns(3, gap="small")
@@ -1318,3 +1430,236 @@ def render_records() -> None:
         for row in filtered
     ])
     portal_table(frame, hide_index=True, width="stretch", height=560)
+
+
+def _latest_complaint_email_status(repo: Repository, complaint_ids: list[str]) -> dict[str, dict[str, Any]]:
+    if not complaint_ids:
+        return {}
+    rows = repo.select("qcms_notification_outbox", order_by="created_at", desc=True, limit=5000)
+    wanted = set(complaint_ids)
+    latest: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        rid = str(row.get("related_id") or "")
+        if rid in wanted and rid not in latest and str(row.get("related_table") or "") == "quality_complaints":
+            latest[rid] = row
+    return latest
+
+
+def _render_register(complaint_type: str) -> None:
+    party_word = "Customer" if complaint_type == "CUSTOMER" else "Supplier"
+    page_header(
+        f"{party_word} Complaint Register",
+        f"Searchable {party_word.lower()} complaint register with controlled actions, PDF / Excel and confirmed email sending.",
+        "Complaints",
+    )
+    repo = Repository(); perms = current_permissions("COMPLAINT_MANAGEMENT"); notifier = NotificationService(repo)
+    rows = annotate_transaction_rows(repo, repo.select("quality_complaints", eq={"complaint_type": complaint_type}, order_by="complaint_date", desc=True, limit=10000))
+    parties = {str(row["id"]): row for row in repo.select("parties", limit=5000)}
+    parts = {str(row["id"]): row for row in repo.select("parts", limit=5000)}
+    employees = {str(row["id"]): row for row in repo.select("employees", limit=5000)}
+    actions = repo.select("quality_complaint_actions", limit=10000)
+    open_action_count: dict[str, int] = {}
+    for action in actions:
+        if str(action.get("status") or "") not in {"COMPLETED", "CANCELLED"}:
+            cid = str(action.get("complaint_id") or "")
+            open_action_count[cid] = open_action_count.get(cid, 0) + 1
+    emails = _latest_complaint_email_status(repo, [str(row.get("id")) for row in rows])
+
+    f1, f2, f3, f4 = st.columns([1.7, 1, 1, 1], gap="small")
+    search = f1.text_input(f"Search {party_word} complaint", placeholder="Complaint No., party, part, heat, batch, subject")
+    status_filter = f2.selectbox("Status", ["ALL", "OVERDUE", *STATUSES], key=f"{complaint_type}_register_status")
+    severity_filter = f3.selectbox("Severity", ["ALL", *SEVERITIES], key=f"{complaint_type}_register_severity")
+    email_filter = f4.selectbox("Email", ["ALL", "SENT", "PENDING", "FAILED", "NONE"], key=f"{complaint_type}_register_email")
+    filtered: list[dict[str, Any]] = []
+    for row in rows:
+        if status_filter == "OVERDUE" and not _is_overdue(row): continue
+        if status_filter not in {"ALL", "OVERDUE"} and str(row.get("status")) != status_filter: continue
+        if severity_filter != "ALL" and str(row.get("severity")) != severity_filter: continue
+        mail = emails.get(str(row.get("id"))) or {}
+        mail_status = str(mail.get("status") or "NONE").upper()
+        if email_filter != "ALL" and mail_status != email_filter: continue
+        party = parties.get(str(row.get("party_id"))) or {}
+        part = parts.get(str(row.get("part_id"))) or {}
+        haystack = " ".join([
+            str(row.get("complaint_number") or ""), str(party.get("party_name") or ""),
+            str(part.get("part_number") or ""), str(part.get("fsi_part_number") or ""), str(part.get("part_name") or ""),
+            str(row.get("heat_number") or ""), str(row.get("lot_batch_number") or ""), str(row.get("subject") or ""),
+            str(row.get("external_reference") or ""),
+        ]).casefold()
+        if search and search.casefold() not in haystack: continue
+        filtered.append(row)
+
+    if not filtered:
+        st.info(f"No {party_word.lower()} complaints match the selected filters.")
+        return
+
+    section_bar(f"{party_word.upper()} COMPLAINT REGISTER")
+    frame = pd.DataFrame([
+        {
+            "Complaint No.": row.get("complaint_number"), "Date": row.get("complaint_date"),
+            party_word: (parties.get(str(row.get("party_id"))) or {}).get("party_name"),
+            "Part": part_label(parts.get(str(row.get("part_id"))) or {}) if row.get("part_id") else "-",
+            "Subject": row.get("subject"), "Severity": row.get("severity"),
+            "Heat": row.get("heat_number"), "Batch": row.get("lot_batch_number"),
+            "Responsible": employee_label(employees.get(str(row.get("fourstar_responsible_employee_id"))) or {}),
+            "Target Closure": row.get("target_closure_date"),
+            "RCA": "CONFIRMED" if row.get("root_cause_confirmed") else "PENDING",
+            "Open Actions": open_action_count.get(str(row.get("id")), 0),
+            "Email": str((emails.get(str(row.get("id"))) or {}).get("status") or "NONE"),
+            "Last Email": str((emails.get(str(row.get("id"))) or {}).get("sent_at") or (emails.get(str(row.get("id"))) or {}).get("created_at") or "")[:19],
+            "Status": "OVERDUE" if _is_overdue(row) else str(row.get("status") or "").replace("_", " ").title(),
+            "User": row.get("Created By User"), "Data Entry Status": row.get("Data Entry Status"),
+        } for row in filtered
+    ])
+    portal_table(frame, hide_index=True, width="stretch", height=min(620, 80 + 34 * len(frame)))
+
+    labels = {str(row["id"]): _complaint_label(row, parties) for row in filtered}
+    selected_id = st.selectbox("Selected Complaint", list(labels), format_func=lambda value: labels[value], key=f"{complaint_type}_register_selected")
+    selected = next(row for row in filtered if str(row.get("id")) == selected_id)
+    c1, c2, c3, c4 = st.columns(4, gap="small")
+    entry_path = "customer-complaint" if complaint_type == "CUSTOMER" else "supplier-complaint"
+    page = (st.session_state.get("_qsms_pages") or {}).get(entry_path)
+    if c1.button("Open / Edit", width="stretch", disabled=page is None, key=f"{complaint_type}_reg_open"):
+        st.session_state[f"selected_{complaint_type.lower()}_complaint"] = selected_id
+        st.switch_page(page)
+    analysis_page = (st.session_state.get("_qsms_pages") or {}).get("complaint-analysis")
+    if c2.button("Analysis / CAPA", width="stretch", disabled=analysis_page is None, key=f"{complaint_type}_reg_analysis"):
+        st.session_state["complaint_analysis_id"] = selected_id
+        st.switch_page(analysis_page)
+    c3.download_button("PDF", _complaint_pdf(repo, selected), file_name=f"{selected.get('complaint_number')}.pdf", mime="application/pdf", width="stretch", key=f"{complaint_type}_reg_pdf")
+    c4.download_button("Excel", _complaint_excel(repo, selected), file_name=f"{selected.get('complaint_number')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch", key=f"{complaint_type}_reg_xlsx")
+
+    with stage_section("E", "CONFIRMED EMAIL SENDING", "QCMS will not send until the employee reviews To / CC and confirms the email popup.", key=f"{complaint_type.lower()}_register_email_send"):
+        record_email_sender(
+            notifier, _complaint_event(complaint_type), related_table="quality_complaints", related_id=selected_id,
+            key=f"{complaint_type}_register_email_{selected_id}", context=_complaint_notification_context(repo, selected),
+            include_supplier=False, title="Review and send selected complaint email",
+        )
+
+
+def render_customer_register() -> None:
+    _render_register("CUSTOMER")
+
+
+def render_supplier_register() -> None:
+    _render_register("SUPPLIER")
+
+
+def _complaint_departments(repo: Repository) -> list[str]:
+    values: list[str] = []
+    for row in repo.select("employees", eq={"status": "ACTIVE"}, order_by="department", limit=5000):
+        value = str(row.get("department") or "").strip()
+        if value and value.casefold() not in {item.casefold() for item in values}:
+            values.append(value)
+    return values
+
+
+def render_email_configuration() -> None:
+    page_header(
+        "Complaint Email Configuration & Reminders",
+        "Configure Customer/Supplier complaint emails, confirmation templates, follow-up/closure reminder schedules and delivery register.",
+        "Complaints",
+    )
+    profile = st.session_state.get("profile") or {}
+    if not is_admin(profile):
+        st.error("Administrator access is required for Complaint Email Configuration.")
+        return
+    repo = Repository(); notifier = NotificationService(repo)
+    server = (repo.select("qcms_email_settings", limit=1) or [{}])[0]
+    if bool(server.get("enabled")) and server.get("smtp_host") and server.get("sender_email"):
+        st.success(f"Email server enabled · {server.get('sender_email')} · {server.get('smtp_host')}:{server.get('smtp_port')}")
+    else:
+        st.warning("QCMS email server is disabled or incomplete. Configure the server first under Admin → Email Server & Notifications.")
+
+    departments = _complaint_departments(repo)
+    employees = [row for row in repo.select("employees", eq={"status": "ACTIVE"}, order_by="first_name", limit=5000)]
+    emp_labels = {str(row.get("id")): employee_label(row) for row in employees}
+    event_keys = [key for key, _label, _help in COMPLAINT_NOTIFICATION_EVENTS]
+
+    with stage_section("A", "COMPLAINT EMAIL ROUTING", "Choose the default Quality/department recipient, employee, external party copy and next stage for each complaint event.", key="complaint_email_routes"):
+        routes = {str(row.get("event_key")): row for row in repo.select("qcms_notification_routes", limit=1000)}
+        event = st.selectbox("Complaint Email Event", event_keys, format_func=lambda key: COMPLAINT_EVENT_LABEL.get(key, key), key="complaint_route_event")
+        route = routes.get(event) or {}
+        c1, c2, c3 = st.columns(3, gap="small")
+        dept_options = [""] + departments
+        current_dept = str(route.get("department") or "Quality")
+        department = c1.selectbox("Responsible Department", dept_options, index=dept_options.index(current_dept) if current_dept in dept_options else 0, format_func=lambda v: v or "— None —", key=f"complaint_route_dept_{event}")
+        emp_options = [""] + list(emp_labels)
+        current_emp = str(route.get("employee_id") or "")
+        employee_id = c2.selectbox("Responsible Employee", emp_options, index=emp_options.index(current_emp) if current_emp in emp_options else 0, format_func=lambda v: emp_labels.get(v, "— Department routing —"), key=f"complaint_route_emp_{event}")
+        next_stage = c3.text_input("Next Stage", value=str(route.get("next_stage") or "Complaint Review / CAPA"), key=f"complaint_route_next_{event}")
+        c1, c2, c3 = st.columns(3, gap="small")
+        department_cc = c1.toggle("CC Responsible Department", value=bool(route.get("department_cc", True)), key=f"complaint_route_cc_{event}")
+        external_copy = c2.toggle("Allow Customer / Supplier Copy", value=bool(route.get("send_to_supplier", False)), key=f"complaint_route_external_{event}", help="Uses the complaint Party Master email/notification emails when this event is sent automatically.")
+        enabled = c3.toggle("Route Enabled", value=bool(route.get("enabled", True)), key=f"complaint_route_enabled_{event}")
+        if st.button("Save Complaint Email Route", type="primary", width="stretch", key=f"save_complaint_route_{event}"):
+            repo.upsert_by("qcms_notification_routes", {
+                "event_key": event, "route_label": COMPLAINT_EVENT_LABEL.get(event, event), "department": department or None,
+                "employee_id": employee_id or None, "department_cc": department_cc, "send_to_supplier": external_copy,
+                "template_key": event, "next_stage": next_stage.strip() or "Complaint Review / CAPA", "enabled": enabled,
+            }, natural_key={"tenant_id": repo.tenant_id, "event_key": event})
+            save_success_popup("Complaint email route saved.", queue_for_rerun=True); st.rerun()
+
+    with stage_section("B", "COMPLAINT EMAIL TEMPLATE", "Edit the subject/body used by complaint notifications. PDF and controlled complaint attachments can be included.", key="complaint_email_template"):
+        event = st.selectbox("Template Event", event_keys, format_func=lambda key: COMPLAINT_EVENT_LABEL.get(key, key), key="complaint_template_event")
+        template = notifier.template(event, event) or {}
+        subject_key = f"complaint_template_subject_{event}"
+        body_key = f"complaint_template_body_{event}"
+        if subject_key not in st.session_state: st.session_state[subject_key] = str(template.get("subject_template") or "QCMS · {{complaint_type}} Complaint · {{complaint_number}} · {{status}}")
+        if body_key not in st.session_state: st.session_state[body_key] = str(template.get("body_template") or "Dear Sir / Madam,\n\nComplaint {{complaint_number}} is available in QCMS.\nParty: {{party_name}}\nPart: {{part_number}} · {{part_description}}\nSubject: {{subject}}\nSeverity: {{severity}}\nHeat: {{heat_number}}\nBatch: {{batch_number}}\nTarget Closure: {{target_closure_date}}\nStatus: {{status}}\n\nPlease complete the required action.\n\nRegards,\nFour Star Industries Pvt. Ltd. · QCMS")
+        subject = st.text_input("Subject Template", key=subject_key)
+        body = st.text_area("Body Template", key=body_key, height=260)
+        st.caption("Available fields: {{complaint_number}} {{complaint_type}} {{party_name}} {{part_number}} {{part_description}} {{subject}} {{severity}} {{heat_number}} {{batch_number}} {{target_closure_date}} {{status}} {{responsible_employee}}")
+        c1, c2, c3 = st.columns(3, gap="small")
+        include_pdf = c1.toggle("Attach Complaint PDF", value=bool(template.get("include_generated_pdf", True)), key=f"complaint_template_pdf_{event}")
+        include_docs = c2.toggle("Attach Complaint Documents", value=bool(template.get("include_record_attachments", True)), key=f"complaint_template_docs_{event}")
+        template_enabled = c3.toggle("Template Enabled", value=bool(template.get("enabled", True)), key=f"complaint_template_enabled_{event}")
+        if st.button("Save Complaint Email Template", type="primary", width="stretch", key=f"save_complaint_template_{event}"):
+            repo.upsert_by("qcms_email_templates", {
+                "template_key": event, "module_key": "COMPLAINT_MANAGEMENT", "template_name": COMPLAINT_EVENT_LABEL.get(event, event),
+                "subject_template": subject.strip(), "body_template": body.strip(), "include_generated_pdf": include_pdf,
+                "include_record_attachments": include_docs, "include_supplier": False, "enabled": template_enabled,
+            }, natural_key={"tenant_id": repo.tenant_id, "template_key": event})
+            save_success_popup("Complaint email template saved.", queue_for_rerun=True); st.rerun()
+        template_test_sender(notifier, event, key=f"complaint_template_test_{event}", default_recipient=str(profile.get("email") or ""))
+
+    with stage_section("C", "COMPLAINT REMINDER EMAIL SYSTEM", "Configure daily/cadenced Customer Complaint, Supplier Complaint and follow-up reminders. The hourly QCMS notifier sends only when the local schedule is due.", key="complaint_email_schedules"):
+        schedules = [row for row in repo.select("qcms_notification_schedules", order_by="schedule_key", limit=500) if str(row.get("schedule_key") or "").startswith("COMPLAINT_")]
+        if not schedules:
+            st.warning("Complaint reminder schedules are not seeded yet. Deploy QCMS v4.14.36 database migration.")
+        else:
+            labels = {str(row.get("id")): str(row.get("schedule_label") or row.get("schedule_key")) for row in schedules}
+            sid = st.selectbox("Complaint Reminder Schedule", list(labels), format_func=lambda value: labels[value], key="complaint_schedule_select")
+            schedule = next(row for row in schedules if str(row.get("id")) == sid)
+            c1, c2, c3, c4 = st.columns(4, gap="small")
+            schedule_enabled = c1.toggle("Enabled", value=bool(schedule.get("enabled", True)), key=f"complaint_schedule_enabled_{sid}")
+            hour = c2.number_input("Local Send Hour", min_value=0, max_value=23, value=int(schedule.get("hour_local") or 8), step=1, key=f"complaint_schedule_hour_{sid}")
+            cadence = c3.number_input("Run Every Days", min_value=1, max_value=30, value=max(1, int(schedule.get("run_every_days") or 1)), step=1, key=f"complaint_schedule_cadence_{sid}")
+            days_ahead = c4.number_input("Due Within Days", min_value=0, max_value=90, value=int(schedule.get("days_ahead") or 2), step=1, key=f"complaint_schedule_days_{sid}")
+            c1, c2, c3, c4 = st.columns(4, gap="small")
+            include_open = c1.toggle("Include Open / Due Soon", value=bool(schedule.get("include_open", True)), key=f"complaint_schedule_open_{sid}")
+            include_overdue = c2.toggle("Include Overdue", value=bool(schedule.get("include_overdue", True)), key=f"complaint_schedule_overdue_{sid}")
+            include_external = c3.toggle("Email Customer / Supplier Too", value=bool(schedule.get("include_suppliers", False)), key=f"complaint_schedule_external_{sid}")
+            timezone = c4.text_input("Time Zone", value=str(schedule.get("timezone") or "Asia/Kolkata"), key=f"complaint_schedule_tz_{sid}")
+            c1, c2 = st.columns(2, gap="small")
+            current_dept = str(schedule.get("recipient_department") or "Quality")
+            dept_options = [""] + departments
+            recipient_dept = c1.selectbox("Internal Recipient Department", dept_options, index=dept_options.index(current_dept) if current_dept in dept_options else 0, format_func=lambda v: v or "— None —", key=f"complaint_schedule_dept_{sid}")
+            emp_options = [""] + list(emp_labels); current_emp = str(schedule.get("employee_id") or "")
+            employee_id = c2.selectbox("Specific Employee (Optional)", emp_options, index=emp_options.index(current_emp) if current_emp in emp_options else 0, format_func=lambda v: emp_labels.get(v, "— Department routing —"), key=f"complaint_schedule_emp_{sid}")
+            if st.button("Save Complaint Reminder Schedule", type="primary", width="stretch", key=f"save_complaint_schedule_{sid}"):
+                repo.update("qcms_notification_schedules", sid, {
+                    "enabled": schedule_enabled, "hour_local": int(hour), "run_every_days": int(cadence), "days_ahead": int(days_ahead),
+                    "include_open": include_open, "include_overdue": include_overdue, "include_suppliers": include_external,
+                    "timezone": timezone.strip() or "Asia/Kolkata", "recipient_department": recipient_dept or None, "employee_id": employee_id or None,
+                })
+                save_success_popup("Complaint reminder schedule saved.", queue_for_rerun=True); st.rerun()
+            portal_table(pd.DataFrame([{ "Schedule": row.get("schedule_label"), "Hour": row.get("hour_local"), "Every Days": row.get("run_every_days") or 1, "Due Within": row.get("days_ahead"), "Internal Department": row.get("recipient_department"), "External Copy": bool(row.get("include_suppliers")), "Open": bool(row.get("include_open")), "Overdue": bool(row.get("include_overdue")), "Enabled": bool(row.get("enabled")), "Last Run": row.get("last_run_at") } for row in schedules]), hide_index=True, width="stretch", height=min(340, 70 + 34 * len(schedules)))
+
+    with stage_section("D", "COMPLAINT EMAIL DELIVERY REGISTER", "Shows manual and automatic Complaint-module email attempts and confirms whether delivery was Sent, Pending or Failed.", key="complaint_email_outbox"):
+        complaint_events = set(event_keys)
+        outbox = [row for row in repo.select("qcms_notification_outbox", order_by="created_at", desc=True, limit=1000) if str(row.get("event_key") or "") in complaint_events]
+        if outbox:
+            portal_table(pd.DataFrame([{ "Created": row.get("created_at"), "Event": COMPLAINT_EVENT_LABEL.get(str(row.get("event_key")), row.get("event_key")), "To": row.get("recipient_email"), "CC": "; ".join(row.get("cc_emails") or []), "Subject": row.get("subject"), "Automatic": bool(row.get("is_automatic")), "Status": row.get("status"), "Sent": row.get("sent_at"), "Attempts": row.get("attempts"), "Error": row.get("last_error") } for row in outbox]), hide_index=True, width="stretch", height=460)
+        else:
+            st.info("No complaint email outbox records yet.")

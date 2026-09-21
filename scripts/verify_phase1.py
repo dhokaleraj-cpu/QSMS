@@ -138,7 +138,7 @@ for item in required:
 app_text = (ROOT / "streamlit_app.py").read_text()
 paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
-    "dashboard", "deployment-diagnostics", "masters", "company-branch-entry", "company-branch-records", "rmtc-entry", "rmtc-approved-worksheet", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-opening-stock", "supply-rm-procurement", "supply-purchase-orders", "supply-po-order-list", "supply-po-edit", "supply-po-pdf", "supply-po-approval", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "supply-order-mis", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "complaint-analysis", "complaint-records", "calibration-validation", "standard-room-inspection", "inspection-home", "records-center", "heat-ledger",
+    "dashboard", "deployment-diagnostics", "masters", "company-branch-entry", "company-branch-records", "rmtc-entry", "rmtc-approved-worksheet", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-opening-stock", "supply-rm-procurement", "supply-purchase-orders", "supply-po-order-list", "supply-po-edit", "supply-po-pdf", "supply-po-approval", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "supply-order-mis", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "customer-complaint-register", "supplier-complaint-register", "complaint-email-settings", "complaint-analysis", "complaint-records", "calibration-validation", "standard-room-inspection", "inspection-home", "records-center", "heat-ledger",
     "reports-home", "heat-transaction-report", "osp-balance-report", "supply-chain-report", "rmtc-report", "inward-report", "dimensional-report", "metlab-report", "complaints-report", "traceability-report", "npd-report", "apqp-report", "qc-report", "inspection-layout-report", "standards-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
@@ -1015,10 +1015,10 @@ if not all(token in v41429_osp for token in ("FSI Batch Number", "Vendor Batch N
     errors.append("v4.14.29 OSP transaction selectors do not expose controlled batch identity")
 current_release_version = str(v41429_manifest.get("version") or "")
 current_release_build = str(v41429_manifest.get("build") or "")
-if current_release_version != "4.14.35" or current_release_build != "41435-PO-WATERMARK-REMINDER-MOBILE-IOS":
-    errors.append("v4.14.35 deployment manifest release identity is incomplete")
-if str(v41429_manifest.get("database_schema_required")) != "4.14.35" or not bool(v41429_manifest.get("database_migration_required")):
-    errors.append("v4.14.35 reminder-guard database migration contract is incomplete")
+if current_release_version != "4.14.36" or current_release_build != "41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER":
+    errors.append("v4.14.36 deployment manifest release identity is incomplete")
+if str(v41429_manifest.get("database_schema_required")) != "4.14.36" or not bool(v41429_manifest.get("database_migration_required")):
+    errors.append("v4.14.36 database migration contract is incomplete")
 
 # v4.14.30 RMTC supplier de-duplication / dedicated Bend Test discovery / permission-aware Global Search.
 v41430_global_search = (ROOT / "app_pages" / "global_search.py").read_text(encoding="utf-8")
@@ -1100,15 +1100,39 @@ if not all(token in v41435_migration for token in ("qcms_po_reminder_allowed", "
     errors.append("v4.14.35 supplier PO reminder guard migration is incomplete")
 if not all(token in v41435_reminder for token in ("qcms_po_reminder_allowed", "qcms_claim_notification_for_send", "qcms_notification_send_is_current", 'build:"4.14.35"')):
     errors.append("v4.14.35 supplier PO reminder edge preflight is incomplete")
-if not all(token in v41435_android_main for token in ("QCMSMobile/0.1.3", "installMobileNavigationController", "navigationExpanded")):
-    errors.append("v4.14.35 Android collapsed navigation contract is incomplete")
+if not (all(token in v41435_android_main for token in ("QCMSMobile/0.1.3", "installMobileNavigationController", "navigationExpanded")) or all(token in v41435_android_main for token in ("QCMSMobile/0.1.4", "openDrawer", "closeDrawer", "global-search", "complaints-home"))):
+    errors.append("v4.14.35+ Android collapsed/native navigation contract is incomplete")
 if not (ROOT / "mobile/android_qcms/app/src/main/res/drawable-nodpi/stawn_icon.png").exists():
     errors.append("v4.14.35 Android STAWN icon missing")
 if not all((ROOT / "mobile/ios_qcms" / rel).exists() for rel in ("QCMSMobileIOS.xcodeproj/project.pbxproj", "QCMSMobileIOS/QCMSWebView.swift", "BUILD_IPA_ON_MAC.command")):
     errors.append("v4.14.35 iPhone/iPad source/signing package is incomplete")
 
+# v4.14.36: Complaint register/email/reminder controls + native-like mobile drawer UI.
+v41436_complaints = (ROOT / "app_pages/complaints.py").read_text(encoding="utf-8")
+v41436_migration = (ROOT / "supabase/migrations/20260921190000_qcms_v41436_complaint_email_register_mobile.sql").read_text(encoding="utf-8")
+v41436_overdue = (ROOT / "supabase/functions/qcms-overdue-notifier/index.ts").read_text(encoding="utf-8")
+v41436_android = (ROOT / "mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java").read_text(encoding="utf-8")
+v41436_ios = (ROOT / "mobile/ios_qcms/QCMSMobileIOS/ContentView.swift").read_text(encoding="utf-8") + (ROOT / "mobile/ios_qcms/QCMSMobileIOS/QCMSWebView.swift").read_text(encoding="utf-8")
+if not all(token in app_text for token in ("customer-complaint-register", "supplier-complaint-register", "complaint-email-settings")):
+    errors.append("v4.14.36 complaint register/email routes are incomplete")
+if not all(token in v41436_complaints for token in ("def render_customer_register", "def render_supplier_register", "def render_email_configuration", "notification_confirmation", "record_email_sender", "COMPLAINT_FOLLOWUP_REMINDER")):
+    errors.append("v4.14.36 complaint register/email confirmation UI is incomplete")
+if not all(token in v41436_migration for token in ("CUSTOMER_COMPLAINT_CREATED", "SUPPLIER_COMPLAINT_CREATED", "COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "COMPLAINT_FOLLOWUP_DUE")):
+    errors.append("v4.14.36 complaint templates/routes/schedules migration is incomplete")
+if not all(token in v41436_overdue for token in ("COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "COMPLAINT_FOLLOWUP_DUE", "run_every_days")):
+    errors.append("v4.14.36 complaint automatic reminder notifier is incomplete")
+if not all(token in v41436_android for token in ("QCMSMobile/0.1.4", "openDrawer", "closeDrawer", "global-search", "complaints-home", "stawn_icon")):
+    errors.append("v4.14.36 Android reference-video drawer/bottom-navigation UI is incomplete")
+if not all(token in v41436_ios for token in ("QCMSMobileIOS/0.1.1", "drawerOpen", "qcmsNavigate", "global-search", "complaints-home", "AppIconPreview")):
+    errors.append("v4.14.36 iPhone/iPad native drawer/bottom-navigation UI is incomplete")
+
 report = {
-    "release": "QCMS 4.14.35 PO Watermark / Reminder Guard / Mobile iOS",
+    "release": "QCMS 4.14.36 Complaint Email / Registers / Reminders / Mobile Drawer",
+    "v41436_complaint_registers": "def render_customer_register" in v41436_complaints and "def render_supplier_register" in v41436_complaints,
+    "v41436_complaint_email_confirmation": "notification_confirmation" in v41436_complaints and "record_email_sender" in v41436_complaints,
+    "v41436_complaint_reminders": "COMPLAINT_CUSTOMER_OPEN_OVERDUE" in v41436_overdue and "COMPLAINT_FOLLOWUP_DUE" in v41436_overdue,
+    "v41436_android_native_ui": "QCMSMobile/0.1.4" in v41436_android and "openDrawer" in v41436_android,
+    "v41436_ios_native_ui": "QCMSMobileIOS/0.1.1" in v41436_ios and "qcmsNavigate" in v41436_ios,
     "v41435_po_status_watermark": "_po_approval_watermark" in v41431_po_reporting and "purchase_order_excel_bytes" in v41431_po_reporting,
     "v41435_po_customer_fields_hidden": '"PART NUMBER"' not in v41431_po_reporting and '"DELIVERY"' not in v41431_po_reporting,
     "v41435_one_click_zip": "Download All Selected POs" in v41433_supply,
@@ -1127,11 +1151,11 @@ report = {
     "v41433_batch_po_pdf": "def batch_purchase_order_pdf_bytes" in v41433_po_reporting,
     "v41433_batch_po_email": "Confirm Batch Purchase Order Emails" in v41433_supply,
     "v41433_android_sdk_bootstrap": "ANDROID SDK / CLI BOOTSTRAP" in v41433_android,
-    "v41431_source_only_schema": (current_release_version == "4.14.35") or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
+    "v41431_source_only_schema": (current_release_version in ("4.14.35", "4.14.36")) or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
     "v41430_rmtc_supplier_dedup": "raw_by_supplier" in v41429_rmtc_service and "Raw Material Detail" in v41429_rmtc_ui,
     "v41430_bend_test_discovery": "render_bend_test_entry" in v41429_metlab and "bend-test-report" in app_text,
     "v41430_global_search": "search_everywhere" in v41430_global_search and "qcms_shell_global_search_form" in app_text,
-    "v41430_source_only_schema": (current_release_version == "4.14.35") or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
+    "v41430_source_only_schema": (current_release_version in ("4.14.35", "4.14.36")) or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
     "v41429_rmtc_approved_source_join": "def approved_source_options" in v41429_rmtc_service and "Approved Raw Material Source" in v41429_rmtc_ui,
     "v41429_all_module_section_rights": "Section rights are available for all" in v41429_user_access,
     "v41429_bend_test_subcategory": "BEND_TEST_DEFAULT_CHARACTERISTICS" in v41429_layout_ui and "BEND TEST REPORT" in v41429_reporting,
@@ -1140,7 +1164,7 @@ report = {
     "v41429_reusable_references": "def _reference_controls" in v41429_metlab and "REFERENCE DOCUMENTS / STATEMENTS" in v41429_reporting,
     "v41429_conclusion_remark_highlight": "conclusion_remark" in v41429_metlab and "def _quality_conclusion_table" in v41429_reporting,
     "v41429_osp_batch_identity": "FSI Batch Number" in v41429_osp and "Vendor Batch Number" in v41429_osp,
-    "v41429_source_only_schema": (current_release_version == "4.14.35") or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
+    "v41429_source_only_schema": (current_release_version in ("4.14.35", "4.14.36")) or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
     "v41419_live_employee_po_gate": "refresh_current_employee_link" in v41419_auth and "po_blockers" in v41419_supply,
     "v41419_supplier_po_confirmation": "supply_po_confirmations" in v41419_sql and "PO_CONFIRMATION_DAILY" in v41419_notifier,
     "v41419_universal_transaction_delete": "qcms_delete_transaction_row" in v41419_sql and "password_transaction_delete_panel" in v41419_delete,

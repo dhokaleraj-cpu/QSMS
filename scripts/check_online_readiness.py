@@ -224,6 +224,10 @@ required = [
     "RELEASE_NOTES_v4.14.35.md",
     "tests/test_v41435_po_watermark_mobile_ios_reminders.py",
     "supabase/migrations/20260921133000_qcms_v41435_po_confirmation_reminder_guard.sql",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.36.md",
+    "RELEASE_NOTES_v4.14.36.md",
+    "tests/test_v41436_complaint_email_mobile_ui.py",
+    "supabase/migrations/20260921190000_qcms_v41436_complaint_email_register_mobile.sql",
     "supabase/functions/qcms-po-confirmation-reminder/index.ts",
     "mobile/android_qcms/app/src/main/res/drawable-nodpi/stawn_icon.png",
     "mobile/ios_qcms/QCMSMobileIOS.xcodeproj/project.pbxproj",
@@ -232,7 +236,7 @@ required = [
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.35 - PO Watermark / Reminder Guard / Android + iPhone/iPad",
+    "phase": "QCMS 4.14.36 - Complaint Email / Registers / Reminders / Mobile Drawer",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

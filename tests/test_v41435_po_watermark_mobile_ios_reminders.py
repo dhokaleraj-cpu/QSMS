@@ -112,9 +112,9 @@ def test_reminder_guard_mobile_collapse_icon_and_ios_package_are_present():
     assert "qcms_notification_send_is_current" in edge
 
     android = (ROOT / "mobile" / "android_qcms" / "app" / "src" / "main" / "java" / "com" / "fourstar" / "qcms" / "MainActivity.java").read_text()
-    assert "__qcmsMobileNavOpen" in android
-    assert "navButton" in android
-    assert "QCMSMobile/0.1.3" in android
+    assert ("__qcmsMobileNavOpen" in android or ("openDrawer" in android and "closeDrawer" in android))
+    assert ("navButton" in android or "drawerPanel" in android)
+    assert ("QCMSMobile/0.1.3" in android or "QCMSMobile/0.1.4" in android)
     assert (ROOT / "mobile" / "android_qcms" / "app" / "src" / "main" / "res" / "drawable-nodpi" / "stawn_icon.png").exists()
 
     ios = ROOT / "mobile" / "ios_qcms"
