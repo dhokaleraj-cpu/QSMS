@@ -1,5 +1,5 @@
 # QCMS 4.14.42 — LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD
-# BUILD 41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD
+# BUILD 41443-ANDROID-STREAMLIT-SIDEBAR-NAV
 # PRESERVED PREVIOUS BUILD MARKER: 41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX
 # PRESERVED PREVIOUS BUILD MARKER: 41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX
 # QCMS 4.14.19 — PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES
@@ -85,13 +85,24 @@ profile = current_profile() or {}
 # Streamlit footer inside the WebView. This survives Streamlit page switches even
 # if the query string is later normalized by the framework.
 _native_value = str(st.query_params.get("native_mobile", "") or "").strip().casefold()
+_native_nav_value = str(st.query_params.get("native_nav", "") or "").strip().casefold()
 try:
     _native_user_agent = str(st.context.headers.get("User-Agent", "") or "")
 except Exception:
     _native_user_agent = ""
-if _native_value in {"1", "true", "yes", "native"} or "QCMSMobile/" in _native_user_agent or "QCMSMobileIOS/" in _native_user_agent:
+_native_android = "QCMSMobile/" in _native_user_agent
+_native_ios = "QCMSMobileIOS/" in _native_user_agent
+if _native_value in {"1", "true", "yes", "native"} or _native_android or _native_ios:
     st.session_state["_qcms_native_mobile"] = True
 native_mobile = bool(st.session_state.get("_qcms_native_mobile"))
+# Android v0.2.0 deliberately returns navigation ownership to Streamlit itself.
+# This eliminates the Android Java -> DOM -> hidden widget timing bridge from
+# the active Android path while leaving the iPhone/iPad native drawer unchanged.
+android_streamlit_nav = bool(
+    native_mobile
+    and _native_android
+    and (_native_nav_value in {"streamlit", "sidebar", "web"} or "QCMSMobile/0.2.0" in _native_user_agent)
+)
 
 # Keep an explicit route-to-Page registry. Streamlit may expose the default
 # page at the root URL even when a url_path was supplied, so deriving this
@@ -408,9 +419,6 @@ PAGE_TITLE_TO_PATH = {
 # top_menu_new_rmtc
 # st.columns(13
 
-nav = st.navigation(PAGES, position="hidden")
-current_path = PAGE_TITLE_TO_PATH.get(nav.title, "dashboard")
-current_module = ROUTE_MODULE.get(current_path, "Dashboard")
 ROUTE_PERMISSION_MODULE = {
     "part-entry":"PART_MASTER","part-records":"PART_MASTER","company-branch-entry":"REFERENCE_MASTERS","company-branch-records":"REFERENCE_MASTERS",
     "process-entry":"REFERENCE_MASTERS","process-records":"REFERENCE_MASTERS","grade-entry":"MATERIAL_GRADE","grade-records":"MATERIAL_GRADE",
@@ -428,6 +436,26 @@ ROUTE_PERMISSION_MODULE = {
     "calibration-validation":"CALIBRATION_VALIDATION","standard-room-inspection":"CALIBRATION_VALIDATION",
     "user-access":"USER_ACCESS","email-settings":"USER_ACCESS","deployment-diagnostics":"USER_ACCESS",
 }
+# Android stable-navigation mode uses Streamlit's own page router and sidebar.
+# The sidebar is collapsed by default on phones and page changes remain inside
+# the same authenticated Streamlit session. No JavaScript click bridge is used.
+if android_streamlit_nav:
+    _mobile_group_order = (
+        "Dashboard", "Masters", "Supply Chain", "RMTC", "Inward", "OSP",
+        "Inspections", "NPD & APQP", "QC Calculation Tools", "Complaints",
+        "Calibration & Validation", "Records", "Reports", "Search", "Templates", "Admin",
+    )
+    _mobile_page_groups = {}
+    for _group in _mobile_group_order:
+        _group_pages = [_page for _route, _page in PAGE_ITEMS if ROUTE_MODULE.get(_route, "Dashboard") == _group]
+        if _group_pages:
+            _mobile_page_groups[_group] = _group_pages
+    nav = st.navigation(_mobile_page_groups, position="sidebar", expanded=False)
+else:
+    nav = st.navigation(PAGES, position="hidden")
+current_path = PAGE_TITLE_TO_PATH.get(nav.title, "dashboard")
+current_module = ROUTE_MODULE.get(current_path, "Dashboard")
+
 current_permission_module = ROUTE_PERMISSION_MODULE.get(current_path)
 current_route_permission = module_permissions(profile, current_permission_module) if current_permission_module else {"can_view": True}
 log_route_view(current_path, current_permission_module, nav.title)
@@ -471,7 +499,7 @@ if not native_mobile:
     if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
         logout()
 
-    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD")
+    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41443-ANDROID-STREAMLIT-SIDEBAR-NAV")
 
     # Persistent permission-aware Global Search launcher for desktop/web.
     with st.form("qcms_shell_global_search_form", border=False):
@@ -503,9 +531,35 @@ if not native_mobile:
                     module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=8)
                     nav.run()
                 app_footer()
+elif android_streamlit_nav:
+    # Android stable mode: Streamlit owns the hamburger/sidebar and route changes.
+    # The Android wrapper is a clean full-screen WebView; selecting a sidebar page
+    # uses Streamlit's official router and returns directly to the requested page.
+    st.markdown(
+        """<style>
+        .st-key-fsi_shell,[class~="st-key-fsi_shell"],
+        .st-key-fsi_left_rail,[class~="st-key-fsi_left_rail"],[class*="st-key-fsi_module_subnav_"]{display:none!important}
+        header[data-testid="stHeader"]{display:flex!important}
+        section[data-testid="stSidebar"]{display:block!important}
+        div[data-testid="stMainBlockContainer"],.block-container{padding:.55rem .55rem .9rem!important;max-width:100%!important}
+        .st-key-qcms_content,[class~="st-key-qcms_content"]{width:100%!important;max-width:100%!important;margin:0!important}
+        .fsi-page-head{margin-top:0!important}
+        @media(max-width:900px){
+          .qcms-enterprise-table-wrap{max-height:70vh!important}
+          .fsi-kpi-grid,.fsi-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+          section[data-testid="stSidebar"]{max-width:min(88vw,360px)!important}
+        }
+        </style>""",
+        unsafe_allow_html=True,
+    )
+    with st.container(border=False, key="qcms_workspace"):
+        with st.container(border=False, key="qcms_content"):
+            if not bool(current_route_permission.get("can_view", True)):
+                st.error("You do not have View permission for this module. Ask the QCMS administrator to enable the module or department default in Admin → Users & Access.")
+            else:
+                nav.run()
 else:
-    # Native-mobile content mode: the Android/iOS application provides the top
-    # bar and slide-out navigation, so QCMS renders content only.
+    # Native-mobile content mode for iPhone/iPad keeps the existing native drawer bridge.
     st.markdown(
         """<style>
         header[data-testid="stHeader"],div[data-testid="stToolbar"],div[data-testid="stDecoration"],

@@ -35,9 +35,12 @@ import android.widget.Toast;
 import org.json.JSONObject;
 
 public class MainActivity extends Activity {
+    // Legacy QCMSMobile/0.1.9 drawer/DOM bridge remains dormant for source compatibility.
+    // Android v0.2.0 uses Streamlit-owned sidebar navigation in the active path.
     private static final int FILE_CHOOSER_REQUEST = 701;
     private static final String PREFS = "qcms_mobile";
     private static final String PREF_URL = "qcms_url";
+    private static final boolean USE_STREAMLIT_WEB_NAV = true;
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
     private SharedPreferences prefs;
@@ -158,7 +161,78 @@ public class MainActivity extends Activity {
         return wrapper;
     }
 
+    private void showStableStreamlitBrowser(String url) {
+        baseUrl = normalizeUrl(url);
+        if (baseUrl == null) { prefs.edit().remove(PREF_URL).apply(); showSetupScreen(); return; }
+
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.WHITE);
+        applySafeInsets(root);
+
+        webView = new WebView(this);
+        WebSettings ws = webView.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setDatabaseEnabled(true);
+        ws.setSupportZoom(false);
+        ws.setBuiltInZoomControls(false);
+        ws.setLoadWithOverviewMode(true);
+        ws.setUseWideViewPort(true);
+        ws.setMediaPlaybackRequiresUserGesture(false);
+        ws.setAllowFileAccess(false);
+        ws.setAllowContentAccess(true);
+        ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.2.0");
+
+        CookieManager cm = CookieManager.getInstance();
+        cm.setAcceptCookie(true);
+        cm.setAcceptThirdPartyCookies(webView, true);
+
+        webView.setWebViewClient(new WebViewClient(){
+            @Override public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request){
+                Uri target = request.getUrl();
+                if(target != null && ("http".equalsIgnoreCase(target.getScheme()) || "https".equalsIgnoreCase(target.getScheme()))) return false;
+                try { startActivity(new Intent(Intent.ACTION_VIEW, target)); } catch(Exception ignored) {}
+                return true;
+            }
+        });
+        webView.setWebChromeClient(new WebChromeClient(){
+            @Override public boolean onShowFileChooser(WebView w, ValueCallback<Uri[]> cb, FileChooserParams params){
+                if(fileCallback != null) fileCallback.onReceiveValue(null);
+                fileCallback = cb;
+                Intent intent = params.createIntent();
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                try { startActivityForResult(intent, FILE_CHOOSER_REQUEST); }
+                catch(Exception ex){ fileCallback.onReceiveValue(null); fileCallback = null; Toast.makeText(MainActivity.this, "No file picker is available.", Toast.LENGTH_LONG).show(); return false; }
+                return true;
+            }
+        });
+        webView.setDownloadListener((downloadUrl,userAgent,contentDisposition,mimeType,contentLength)->{
+            try {
+                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(downloadUrl));
+                request.setMimeType(mimeType);
+                request.addRequestHeader("User-Agent", userAgent);
+                String cookies = CookieManager.getInstance().getCookie(downloadUrl);
+                if(cookies != null) request.addRequestHeader("Cookie", cookies);
+                String fileName = URLUtil.guessFileName(downloadUrl, contentDisposition, mimeType);
+                request.setTitle(fileName);
+                request.setDescription("QCMS download");
+                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
+                ((DownloadManager)getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(request);
+                Toast.makeText(MainActivity.this, "Downloading " + fileName, Toast.LENGTH_SHORT).show();
+            } catch(Exception ex){
+                new AlertDialog.Builder(MainActivity.this).setTitle("Open download in browser").setMessage("Open QCMS in the phone browser and download again using the same login.").setPositiveButton("Open QCMS",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(baseUrl)))).setNegativeButton("Cancel",null).show();
+            }
+        });
+
+        root.addView(webView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(root);
+        webView.loadUrl(nativeUrl(""));
+    }
+
     private void showBrowser(String url) {
+        if (USE_STREAMLIT_WEB_NAV) { showStableStreamlitBrowser(url); return; }
         baseUrl = normalizeUrl(url);
         if (baseUrl == null) { prefs.edit().remove(PREF_URL).apply(); showSetupScreen(); return; }
 
@@ -174,7 +248,7 @@ public class MainActivity extends Activity {
         main.addView(top,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
 
         webView = new WebView(this);
-        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.1.9");
+        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.2.0");
         CookieManager cm=CookieManager.getInstance(); cm.setAcceptCookie(true); cm.setAcceptThirdPartyCookies(webView,true);
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageFinished(WebView view,String pageUrl){ super.onPageFinished(view,pageUrl); installMobileChromeSuppressor(); }
@@ -220,7 +294,9 @@ public class MainActivity extends Activity {
         String p = path == null ? "" : path.trim();
         String target = baseUrl + (p.isEmpty() ? "" : (p.startsWith("/") ? p : "/" + p));
         Uri uri = Uri.parse(target);
-        Uri.Builder b = uri.buildUpon().clearQuery().appendQueryParameter("native_mobile","1");
+        Uri.Builder b = uri.buildUpon().clearQuery()
+                .appendQueryParameter("native_mobile","1")
+                .appendQueryParameter("native_nav","streamlit");
         return b.build().toString();
     }
     private void navigate(String path){

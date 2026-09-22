@@ -1,6 +1,6 @@
 {
-  "version": "4.14.42",
-  "build": "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD",
+  "version": "4.14.43",
+  "build": "41443-ANDROID-STREAMLIT-SIDEBAR-NAV",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -301,10 +301,10 @@
   "live_overdue_notifier_status": "ACTIVE",
   "source_only_updater": false,
   "release_notes": [
-    "Fixed :app:compileDebugJavaWithJavac failure: local variables referenced from a lambda expression must be final or effectively final.",
-    "Changed navigate() to normalize into normalizedRoute and capture final String route in postDelayed and retry callbacks.",
-    "Added a regression test that compiles a Java lambda-capture model with javac and statically verifies MainActivity uses a final captured route.",
-    "Advanced Android source to v0.1.9/versionCode 10 while preserving the footer removal, queued Streamlit navigation, and permanent APK signature/CI verification."
+    "Android v0.2.0 removes the native Java drawer and DOM-click navigation bridge from the active UI path.",
+    "Android now uses Streamlit st.navigation with the sidebar collapsed by default, so menu selections stay inside the authenticated Streamlit session and the menu closes after navigation/rerun.",
+    "The old fixed Home/Search/Complaints footer remains removed and Android uses the full screen for QCMS content.",
+    "No Supabase schema migration is required; existing QCMS business workflows and data are preserved."
   ],
   "final_metlab_part_master_only": true,
   "raw_material_inward_metlab_layout_master_only": true,
@@ -314,14 +314,14 @@
   "live_supply_digest_notifier_status": "ACTIVE",
   "live_supply_digest_cron": "qcms-supply-digest-notifier-hourly",
   "schema_change_for_v41429": false,
-  "previous_controlled_release": "4.14.41",
+  "previous_controlled_release": "4.14.42",
   "schema_change_for_v41430": false,
   "schema_change_for_v41431": false,
   "schema_change_for_v41432": false,
   "schema_change_for_v41433": false,
   "schema_change_for_v41434": false,
   "android_apk_compiled_in_preparation": false,
-  "android_build_status": "Android source remains v0.1.9/versionCode 10 with final-route lambda capture fix, queued session-safe navigation, and future-safe APK verification. QCMS v4.14.42 removes the accidental local JDK dependency from the Python deployment suite; the GitHub Android workflow still performs the authoritative Java/Gradle compile using Temurin 17.",
+  "android_build_status": "Android v0.2.0/versionCode 11 uses a full-screen WebView and Streamlit-owned collapsed sidebar navigation. The native Java drawer/DOM-click bridge is dormant in the active Android path. Page selections use st.navigation inside the authenticated Streamlit session; the sidebar starts collapsed after each rerun. Dynamic APK naming and explicit v2 signature verification remain preserved.",
   "verification_scope": "Complete Python tests/readiness/phase verification. The Java lambda regression compiles with javac when a functional JDK is available; on Macs where /usr/bin/javac is only the Apple no-JDK launcher, that single compile test is skipped. Full Android Java/Gradle compilation remains mandatory in GitHub Actions with Temurin 17.",
   "schema_change_for_v41435": true,
   "online_readiness_required_files": 245,
@@ -335,5 +335,6 @@
     "build": "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX"
   },
   "schema_change_for_v41441": false,
-  "schema_change_for_v41442": false
+  "schema_change_for_v41442": false,
+  "schema_change_for_v41443": false
 }

@@ -1,4 +1,4 @@
-# QCMS Mobile v0.1.9 — Samsung internal test
+# QCMS Mobile v0.2.0 — Samsung internal test
 
 ## APK status
 The source release includes a build workflow. The APK exists only after an Android build
@@ -9,7 +9,7 @@ finishes successfully. Do not rename a ZIP/source archive to .apk.
 2. Open your existing QCMS repository on GitHub. Go to Actions > QCMS Android Test APK.
 3. Open the run for the deployed commit; wait for a green successful result.
 4. Under Artifacts, download **QCMS-Mobile-TEST-APK**. Extract that ZIP.
-5. Transfer QCMS_Mobile_v0.1.9_TEST.apk to your Samsung or download/extract it there.
+5. Transfer QCMS_Mobile_v0.2.0_TEST.apk to your Samsung or download/extract it there.
 6. Open the APK from My Files. Allow installation from that source only for this test.
 7. Launch QCMS Mobile Test, enter the live QCMS HTTPS URL, then use your normal login.
 
@@ -38,7 +38,7 @@ release signing must use a company-controlled durable key instead of the test ke
 
 ## Optional Mac build
 Run mobile/android_qcms/BUILD_APK_ONLY.command. It reuses the SDK bootstrap helper and
-writes the built, signature-verified APK to ~/Downloads/QCMS_Mobile_v0.1.9_TEST.apk.
+writes the built, signature-verified APK to ~/Downloads/QCMS_Mobile_v0.2.0_TEST.apk.
 Requires an installed JDK 17+ and network access; a phone need not be connected.
 
 ## Documentation

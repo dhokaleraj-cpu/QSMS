@@ -250,11 +250,14 @@ required = [
     "QCMS_NEW_CHAT_HANDOVER_v4.14.42.md",
     "RELEASE_NOTES_v4.14.42.md",
     "tests/test_v41442_local_javac_optional_ci_guard.py",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.43.md",
+    "RELEASE_NOTES_v4.14.43.md",
+    "tests/test_v41443_android_streamlit_sidebar_nav.py",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.42 - Local Javac Optional / CI Compile Guard",
+    "phase": "QCMS 4.14.43 - Android Streamlit Sidebar Navigation",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

@@ -9,15 +9,16 @@ def text(rel: str) -> str:
 
 
 def test_v41438_release_identity_and_schema_baseline():
-    assert text("VERSION").strip() in {"4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42"}
+    assert text("VERSION").strip() in {"4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42"}
+    assert manifest["version"] in {"4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43"}
     expected_builds = {
         "4.14.38": "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE",
         "4.14.39": "41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX",
         "4.14.40": "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE",
         "4.14.41": "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX",
         "4.14.42": "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD",
+        "4.14.43": "41443-ANDROID-STREAMLIT-SIDEBAR-NAV",
     }
     assert manifest["build"] == expected_builds[manifest["version"]]
     assert manifest["database_schema_required"] == "4.14.36"
@@ -48,7 +49,7 @@ def test_android_drawer_navigation_preserves_webview_session():
         "drawerChildButton",
     ):
         assert token in java
-    assert any(v in java for v in ("QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9"))
+    assert any(v in java for v in ("QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9", "QCMSMobile/0.2.0"))
     # Initial app load is valid. Drawer/menu navigation must not hard-load a new URL,
     # because that would discard Streamlit's in-memory authenticated session.
     assert 'webView.loadUrl(nativeUrl(""))' in java
@@ -69,7 +70,7 @@ def test_android_v016_build_helpers_are_consistent():
     gradle = text("mobile/android_qcms/app/build.gradle")
     helper = text("mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command")
     readme = text("mobile/android_qcms/README_ANDROID.md")
-    assert any(v in gradle for v in ("versionCode 7", "versionCode 8", "versionCode 9", "versionCode 10"))
-    assert any(v in gradle for v in ("versionName '0.1.6'", "versionName '0.1.7'", "versionName '0.1.8'", "versionName '0.1.9'"))
+    assert any(v in gradle for v in ("versionCode 7", "versionCode 8", "versionCode 9", "versionCode 10", "versionCode 11"))
+    assert any(v in gradle for v in ("versionName '0.1.6'", "versionName '0.1.7'", "versionName '0.1.8'", "versionName '0.1.9'", "versionName '0.2.0'"))
     assert "QCMS_Mobile_v${MOBILE_VERSION}_TEST.apk" in helper or "QCMS_Mobile_v0.1.6_TEST.apk" in helper
-    assert any(v in readme for v in ("0.1.6", "0.1.7", "0.1.8", "0.1.9"))
+    assert any(v in readme for v in ("0.1.6", "0.1.7", "0.1.8", "0.1.9", "0.2.0"))

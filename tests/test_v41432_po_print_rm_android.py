@@ -15,7 +15,7 @@ def text(rel: str) -> str:
 
 def test_v41432_release_identity_and_source_only_schema():
     version = text("VERSION").strip()
-    assert version in {"4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42"}
+    assert version in {"4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert manifest["version"] == version
     if version == "4.14.32":
@@ -48,11 +48,14 @@ def test_v41432_release_identity_and_source_only_schema():
     elif version == "4.14.41":
         assert manifest["build"] == "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX"
         assert manifest["previous_controlled_release"] == "4.14.40"
-    else:
+    elif manifest["version"] == "4.14.42":
         assert manifest["build"] == "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD"
         assert manifest["previous_controlled_release"] == "4.14.41"
-    if version in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42"}:
-        assert manifest["database_schema_required"] == ("4.14.36" if version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42"} else version)
+    else:
+        assert manifest["build"] == "41443-ANDROID-STREAMLIT-SIDEBAR-NAV"
+        assert manifest["previous_controlled_release"] == "4.14.42"
+    if version in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43"}:
+        assert manifest["database_schema_required"] == ("4.14.36" if version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43"} else version)
         assert manifest["database_migration_required"] is True
     else:
         assert manifest["database_schema_required"] == "4.14.28"

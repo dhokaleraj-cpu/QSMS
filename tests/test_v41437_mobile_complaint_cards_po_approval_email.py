@@ -8,7 +8,7 @@ def text(rel: str) -> str:
 
 def test_v41437_release_identity():
     version = text("VERSION").strip()
-    assert version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42"}
+    assert version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert manifest["version"] == version
     expected = {
@@ -18,6 +18,7 @@ def test_v41437_release_identity():
         "4.14.40": "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE",
         "4.14.41": "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX",
         "4.14.42": "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD",
+        "4.14.43": "41443-ANDROID-STREAMLIT-SIDEBAR-NAV",
     }
     assert manifest["build"] == expected[version]
 
@@ -61,9 +62,16 @@ def test_android_full_expandable_navigation_and_fixed_bottom_bar():
         for token in ("QCMSMobile/0.1.8", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "__qcmsNativeNavigate", "QCMS_NAV_PENDING"):
             assert token in java
         assert "LinearLayout bottom=new LinearLayout" not in java
-    else:
+    elif version in {"4.14.41", "4.14.42"}:
         assert "versionName '0.1.9'" in gradle
-        for token in ("QCMSMobile/0.1.9", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "__qcmsNativeNavigate", "QCMS_NAV_PENDING"):
+        for token in ("QCMSMobile/0.1.9",
+                      "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "__qcmsNativeNavigate", "QCMS_NAV_PENDING"):
+            assert token in java
+        assert "LinearLayout bottom=new LinearLayout" not in java
+    else:
+        assert version == "4.14.43"
+        assert "versionName '0.2.0'" in gradle
+        for token in ("QCMSMobile/0.2.0", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "__qcmsNativeNavigate", "QCMS_NAV_PENDING"):
             assert token in java
         assert "LinearLayout bottom=new LinearLayout" not in java
 

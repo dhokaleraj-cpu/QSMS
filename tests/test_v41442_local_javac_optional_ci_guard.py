@@ -7,11 +7,11 @@ def text(rel):
     return (ROOT / rel).read_text(encoding="utf-8")
 
 def test_v41442_identity_and_no_schema_change():
-    assert text("VERSION").strip() == "4.14.42"
+    assert text("VERSION").strip() in {"4.14.42", "4.14.43"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] == "4.14.42"
-    assert manifest["build"] == "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD"
-    assert manifest["previous_controlled_release"] == "4.14.41"
+    assert manifest["version"] in {"4.14.42", "4.14.43"}
+    assert manifest["build"] in {"41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV"}
+    assert manifest["previous_controlled_release"] == ("4.14.41" if manifest["version"] == "4.14.42" else "4.14.42")
     assert manifest["schema_change_for_v41442"] is False
 
 def test_local_javac_regression_is_capability_gated():

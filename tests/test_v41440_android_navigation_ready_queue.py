@@ -8,11 +8,11 @@ def text(rel: str) -> str:
 
 
 def test_v41440_release_identity_and_schema_baseline():
-    assert text("VERSION").strip() in {"4.14.40", "4.14.41", "4.14.42"}
+    assert text("VERSION").strip() in {"4.14.40", "4.14.41", "4.14.42", "4.14.43"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.40", "4.14.41", "4.14.42"}
-    assert manifest["build"] in {"41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE", "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD"}
-    assert manifest["previous_controlled_release"] in {"4.14.39", "4.14.40", "4.14.41"}
+    assert manifest["version"] in {"4.14.40", "4.14.41", "4.14.42", "4.14.43"}
+    assert manifest["build"] in {"41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE", "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV"}
+    assert manifest["previous_controlled_release"] in {"4.14.39", "4.14.40", "4.14.41", "4.14.42"}
     assert manifest["database_schema_required"] == "4.14.36"
     assert manifest["schema_change_for_v41440"] is False
 
@@ -33,7 +33,7 @@ def test_native_streamlit_bridge_is_button_and_switch_page_based():
 def test_android_queues_pending_navigation_until_streamlit_dom_ready():
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
     for token in (
-        'QCMSMobile/0.1.9',
+        'QCMSMobile/0.2.0',
         '__qcmsNativePendingRoute',
         'QCMS_NAV_PENDING',
         'MutationObserver',
@@ -52,8 +52,8 @@ def test_android_queues_pending_navigation_until_streamlit_dom_ready():
 def test_android_v018_identity_and_footer_remains_removed():
     gradle = text("mobile/android_qcms/app/build.gradle")
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
-    assert any(v in gradle for v in ("versionCode 9", "versionCode 10"))
-    assert any(v in gradle for v in ("versionName '0.1.8'", "versionName '0.1.9'"))
+    assert any(v in gradle for v in ("versionCode 9", "versionCode 10", "versionCode 11"))
+    assert any(v in gradle for v in ("versionName '0.1.8'", "versionName '0.1.9'", "versionName '0.2.0'"))
     assert 'LinearLayout bottom=new LinearLayout' not in java
     assert 'bottomButton("⌂","Home")' not in java
     assert 'bottomButton("⌕","Search")' not in java
