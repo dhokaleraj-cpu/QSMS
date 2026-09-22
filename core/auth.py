@@ -94,32 +94,72 @@ def _persistent_auth_component() -> Any | None:
             css='#qcms-auth-store{display:none!important;width:0!important;height:0!important;overflow:hidden!important}',
             js=r'''
 export default function(component) {
-  const { data, parentElement, setStateValue, setTriggerValue } = component;
-  try { parentElement.style.display = "none"; } catch (e) {}
+  const { data, parentElement, setStateValue } = component;
   const key = (data && data.key) || "qcms.auth.session.v2";
   const action = (data && data.action) || "read";
+  const accessCookie = (data && data.access_cookie) || "qcms_auth_at_v1";
+  const refreshCookie = (data && data.refresh_cookie) || "qcms_auth_rt_v1";
+  const maxAge = Number((data && data.max_age) || 2592000);
+
+  try {
+    const host = parentElement && parentElement.host ? parentElement.host : parentElement;
+    if (host && host.style) {
+      host.style.display = "none";
+      host.style.height = "0";
+      host.style.minHeight = "0";
+      host.style.margin = "0";
+      host.style.padding = "0";
+      host.style.overflow = "hidden";
+    }
+  } catch (e) {}
+
+  function cookieAttrs() {
+    let attrs = '; Path=/; SameSite=Strict';
+    try { if (window.location.protocol === 'https:') attrs += '; Secure'; } catch (e) {}
+    return attrs;
+  }
+  function clearCookie(name) {
+    try { document.cookie = name + '=; Path=/; Max-Age=0; SameSite=Strict' + ((window.location.protocol === 'https:') ? '; Secure' : ''); } catch (e) {}
+  }
+  function setCookie(name, value) {
+    try { document.cookie = name + '=' + encodeURIComponent(value) + '; Max-Age=' + maxAge + cookieAttrs(); } catch (e) {}
+  }
+
   try {
     if (action === "clear") {
       window.localStorage.removeItem(key);
-      setStateValue("payload", "__QCMS_STORAGE_EMPTY__");
-      setTriggerValue("done", "clear");
+      clearCookie(accessCookie);
+      clearCookie(refreshCookie);
       return;
     }
     if (action === "write") {
       const payload = (data && typeof data.payload === "string") ? data.payload : "";
-      if (payload) window.localStorage.setItem(key, payload);
-      else window.localStorage.removeItem(key);
-      setStateValue("payload", payload || "__QCMS_STORAGE_EMPTY__");
-      setTriggerValue("done", "write");
+      if (payload) {
+        window.localStorage.setItem(key, payload);
+        try {
+          const parsed = JSON.parse(payload);
+          if (parsed.access_token && parsed.refresh_token) {
+            setCookie(accessCookie, String(parsed.access_token));
+            setCookie(refreshCookie, String(parsed.refresh_token));
+          }
+        } catch (e) {}
+      } else {
+        window.localStorage.removeItem(key);
+      }
       return;
     }
     const payload = window.localStorage.getItem(key) || "__QCMS_STORAGE_EMPTY__";
-    setStateValue("payload", payload);
+    const previous = parentElement && parentElement.getAttribute ? parentElement.getAttribute('data-qcms-last-read') : null;
+    if (previous !== payload) {
+      try { if (parentElement && parentElement.setAttribute) parentElement.setAttribute('data-qcms-last-read', payload); } catch (e) {}
+      setStateValue("payload", payload);
+    }
   } catch (err) {
     setStateValue("payload", "__QCMS_STORAGE_ERROR__");
   }
 }
-''',
+'''
+,
         )
     except Exception:
         _PERSIST_AUTH_COMPONENT = None
@@ -131,15 +171,23 @@ def _mount_auth_storage(*, action: str, payload: str = "", key: str) -> Any | No
     if component is None:
         return None
     try:
-        return component(
-            data={"action": action, "key": _PERSIST_STORAGE_KEY, "payload": payload},
-            default={"payload": _PERSIST_STORAGE_PENDING},
-            on_payload_change=lambda: None,
-            on_done_change=lambda: None,
-            key=key,
-            width=1,
-            height=1,
-        )
+        kwargs = {
+            "data": {
+                "action": action,
+                "key": _PERSIST_STORAGE_KEY,
+                "payload": payload,
+                "access_cookie": _PERSIST_ACCESS_COOKIE,
+                "refresh_cookie": _PERSIST_REFRESH_COOKIE,
+                "max_age": _PERSIST_COOKIE_MAX_AGE,
+            },
+            "key": key,
+            "width": 1,
+            "height": 0,
+        }
+        if action == "read":
+            kwargs["default"] = {"payload": _PERSIST_STORAGE_PENDING}
+            kwargs["on_payload_change"] = lambda: None
+        return component(**kwargs)
     except Exception:
         # Never make login unavailable just because browser storage is blocked.
         return None
@@ -192,11 +240,12 @@ def _render_auth_cookie_script(*, access_token: str = "", refresh_token: str = "
 
 
 def _session_payload(access_token: str, refresh_token: str) -> str:
+    # Stable across normal widget reruns. Only a real token refresh changes the
+    # persisted payload, preventing the auth bridge from remounting on each click.
     return json.dumps(
         {
             "access_token": str(access_token or ""),
             "refresh_token": str(refresh_token or ""),
-            "saved_at": int(time.time()),
         },
         separators=(",", ":"),
     )
@@ -234,8 +283,9 @@ def service_persistent_auth_bridge() -> bool:
     streamlit_app.py will not attempt a restore from stale browser state.
     """
     if st.session_state.pop("_qcms_clear_auth_browser", False):
-        _mount_auth_storage(action="clear", key="qcms_auth_clear")
-        _render_auth_cookie_script(clear=True)
+        mounted = _mount_auth_storage(action="clear", key="qcms_auth_clear")
+        if mounted is None:
+            _render_auth_cookie_script(clear=True)
         for name in (
             "_qcms_cookie_synced_access",
             "_qcms_cookie_synced_refresh",
@@ -251,7 +301,8 @@ def service_persistent_auth_bridge() -> bool:
         access = str(tokens.get("access_token") or "")
         refresh = str(tokens.get("refresh_token") or "")
         if access and refresh:
-            _render_auth_cookie_script(access_token=access, refresh_token=refresh)
+            if _persistent_auth_component() is None:
+                _render_auth_cookie_script(access_token=access, refresh_token=refresh)
             st.session_state["_qcms_cookie_synced_access"] = access
             st.session_state["_qcms_cookie_synced_refresh"] = refresh
     return False
@@ -297,19 +348,22 @@ def restore_persistent_login() -> bool:
     if st.session_state.get("_qcms_auth_restore_failed"):
         return False
 
+    # Fast refresh path: try the same-origin cookie before mounting any browser
+    # component. The v2 bridge writes both localStorage and these cookies.
+    access = _context_cookie(_PERSIST_ACCESS_COOKIE)
+    refresh = _context_cookie(_PERSIST_REFRESH_COOKIE)
+    if access and refresh:
+        try:
+            return _restore_with_tokens(access, refresh)
+        except Exception:
+            pass
+
     result = _mount_auth_storage(action="read", key="qcms_auth_read")
     payload = getattr(result, "payload", None) if result is not None else None
 
     # On a first mount Components v2 returns the Python default; JavaScript then
     # supplies localStorage and causes one automatic rerun.
     if payload in (None, _PERSIST_STORAGE_PENDING):
-        access = _context_cookie(_PERSIST_ACCESS_COOKIE)
-        refresh = _context_cookie(_PERSIST_REFRESH_COOKIE)
-        if access and refresh:
-            try:
-                return _restore_with_tokens(access, refresh)
-            except Exception:
-                pass
         if result is not None:
             st.session_state["_qcms_auth_restore_pending"] = True
             return False

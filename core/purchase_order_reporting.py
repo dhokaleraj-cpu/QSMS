@@ -101,8 +101,8 @@ def _draw_approver_stamp(c: canvas.Canvas, header: Mapping[str, Any], *, page_wi
     code = _s(header.get("approver_employee_code"))
     approved_at = _approval_datetime(header.get("approved_at"))
     if not approver:
-        approver = code or "Authorised Approver"
-    identity = approver + (f" · {code}" if code and code.casefold() not in approver.casefold() else "")
+        approver = code or "Approver record unavailable"
+    identity = "Approver: " + approver + (f" · {code}" if code and code.casefold() not in approver.casefold() else "")
 
     x = page_width - 185
     y = 55
@@ -119,7 +119,7 @@ def _draw_approver_stamp(c: canvas.Canvas, header: Mapping[str, Any], *, page_wi
     c.setFont("Helvetica-Bold", 6.4)
     _draw_text(c, x + 8, y + 30, identity, size=6.4, bold=True, color=HexColor("#1F2937"), max_width=box_w - 16)
     if approved_at:
-        _draw_text(c, x + 8, y + 17, approved_at, size=5.7, color=HexColor("#374151"), max_width=box_w - 16)
+        _draw_text(c, x + 8, y + 17, f"Date / Time: {approved_at}", size=5.7, color=HexColor("#374151"), max_width=box_w - 16)
     _draw_text(c, x + 8, y + 7, "QCMS DIGITAL APPROVAL", size=5.2, bold=True, color=HexColor("#6B7280"), max_width=box_w - 16)
     c.restoreState()
 
@@ -814,7 +814,13 @@ def _po_approval_watermark(header: Mapping[str, Any]) -> str:
 
 
 def _watermark_pdf_bytes(pdf_data: bytes, label: str) -> bytes:
-    """Apply a controlled 20% opacity diagonal approval watermark to every PDF page."""
+    """Apply a low-visibility approval watermark *behind* PO content on every page.
+
+    v4.14.48 intentionally avoids an overlaid watermark because even a nominally
+    transparent overlay can become visually heavy after PDF flattening/printing.
+    The watermark is therefore rendered at 5% alpha with very-light ink and merged
+    underneath the existing page content so table text always stays on top.
+    """
     if PdfReader is None or PdfWriter is None:
         raise RuntimeError("pypdf is required for Purchase Order watermarks.")
     reader = PdfReader(BytesIO(pdf_data))
@@ -826,19 +832,23 @@ def _watermark_pdf_bytes(pdf_data: bytes, label: str) -> bytes:
         wc = canvas.Canvas(overlay_buf, pagesize=(width, height))
         wc.saveState()
         try:
-            wc.setFillAlpha(0.20)
+            wc.setFillAlpha(0.05)
         except Exception:
             pass
-        wc.setFillColor(HexColor("#E8EBF0"))
-        wc.setFont("Helvetica-Bold", 46 if label == "APPROVED" else 34)
+        # Very-light fallback ink remains unobtrusive even in viewers/printers that
+        # flatten or ignore PDF transparency groups.
+        wc.setFillColor(HexColor("#F2F4F7"))
+        font_size = 36 if label == "APPROVED" else 27
+        wc.setFont("Helvetica-Bold", font_size)
         wc.translate(width / 2.0, height / 2.0)
-        wc.rotate(38)
-        text_width = stringWidth(label, "Helvetica-Bold", 46 if label == "APPROVED" else 34)
-        wc.drawString(-text_width / 2.0, -10, label)
+        wc.rotate(36)
+        text_width = stringWidth(label, "Helvetica-Bold", font_size)
+        wc.drawString(-text_width / 2.0, -8, label)
         wc.restoreState()
         wc.save(); overlay_buf.seek(0)
-        overlay_page = PdfReader(overlay_buf).pages[0]
-        page.merge_page(overlay_page)
+        watermark_page = PdfReader(overlay_buf).pages[0]
+        # Merge underneath, never over the PO text. This is the critical readability guard.
+        page.merge_page(watermark_page, over=False)
         writer.add_page(page)
     out = BytesIO(); writer.write(out); return out.getvalue()
 

@@ -1019,6 +1019,7 @@ _expected_current_builds = {
     "4.14.45": "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL",
     "4.14.46": "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH",
     "4.14.47": "41447-PO-WATERMARK-20-APPROVER-STAMP",
+    "4.14.48": "41448-PO-WATERMARK05-APPROVER-SESSION-STABILITY-ANDROID-EVERY-RELEASE",
 }
 if current_release_version not in _expected_current_builds or current_release_build != _expected_current_builds[current_release_version]:
     errors.append("v4.14.45+ deployment manifest release identity is incomplete")
@@ -1026,7 +1027,7 @@ if str(v41429_manifest.get("database_schema_required")) != "4.14.45":
     errors.append("v4.14.45 database schema baseline is incomplete")
 if current_release_version == "4.14.45" and not bool(v41429_manifest.get("database_migration_required")):
     errors.append("v4.14.45 database migration contract is incomplete")
-if current_release_version in {"4.14.46", "4.14.47"} and bool(v41429_manifest.get("database_migration_required")):
+if current_release_version in {"4.14.46", "4.14.47", "4.14.48"} and bool(v41429_manifest.get("database_migration_required")):
     errors.append("v4.14.46+ must reuse the already-live v4.14.45 database schema without a new migration")
 
 # v4.14.30 RMTC supplier de-duplication / dedicated Bend Test discovery / permission-aware Global Search.
@@ -1199,7 +1200,7 @@ v41446_auth = (ROOT / "core" / "auth.py").read_text(encoding="utf-8")
 v41446_test = (ROOT / "tests" / "test_v41446_android_drawer_persistent_auth.py").read_text(encoding="utf-8")
 v41446_release = (ROOT / "RELEASE_NOTES_v4.14.46.md").read_text(encoding="utf-8")
 if not all(token in v41436_android for token in (
-    "QCMSMobile/0.2.2", "USE_STREAMLIT_WEB_NAV = false", "drawerSection", "drawerChildButton",
+    "QCMSMobile/0.2.3", "USE_STREAMLIT_WEB_NAV = false", "drawerSection", "drawerChildButton",
     'appendQueryParameter("native_nav","native")', "closeDrawer(); navigate(path)", "webView.loadUrl(nativeUrl(route))",
 )):
     errors.append("v4.14.46 Android v1.2-style native drawer/autohide routing is incomplete")
@@ -1248,19 +1249,43 @@ if not all(token in v41445_test for token in ("test_same_numeric_price_is_allowe
 v41447_po_reporting = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
 v41447_supply = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
 v41447_test = (ROOT / "tests" / "test_v41447_po_watermark_approver_stamp.py").read_text(encoding="utf-8")
-if not all(token in v41447_po_reporting for token in ('setFillAlpha(0.20)', 'HexColor("#E8EBF0")', 'def _draw_approver_stamp', 'QCMS DIGITAL APPROVAL')):
-    errors.append("v4.14.47 PO watermark/approver stamp implementation is incomplete")
+if not all(token in v41447_po_reporting for token in ('setFillAlpha(0.05)', 'HexColor("#F2F4F7")', 'merge_page(watermark_page, over=False)', 'def _draw_approver_stamp', 'QCMS DIGITAL APPROVAL')):
+    errors.append("v4.14.47+ PO watermark/approver stamp implementation is incomplete")
 if not all(token in v41447_supply for token in ('approver_employee_name', 'approver_employee_code', 'approver_department')):
     errors.append("v4.14.47 PO approver Employee Master enrichment is incomplete")
-if not all(token in v41447_test for token in ('test_watermark_is_20_percent_and_light', 'test_approved_stamp_contains_identity_and_timestamp')):
-    errors.append("v4.14.47 focused PO print regression tests are incomplete")
+if not all(token in v41447_test for token in ('test_watermark_is_low_visibility_and_behind_content', 'test_approved_stamp_contains_identity_and_timestamp')):
+    errors.append("v4.14.47+ focused PO print regression tests are incomplete")
+
+v41448_test = (ROOT / "tests" / "test_v41448_po_watermark_approver_android_every_release.py").read_text(encoding="utf-8")
+v41448_workflow = (ROOT / ".github" / "workflows" / "qcms-android-test-apk.yml").read_text(encoding="utf-8")
+v41448_gradle = (ROOT / "mobile" / "android_qcms" / "app" / "build.gradle").read_text(encoding="utf-8")
+v41448_auth = (ROOT / "core" / "auth.py").read_text(encoding="utf-8")
+v41448_ui = (ROOT / "core" / "ui.py").read_text(encoding="utf-8")
+if not all(token in v41447_po_reporting for token in ('setFillAlpha(0.05)', 'HexColor("#F2F4F7")', 'page.merge_page(watermark_page, over=False)')):
+    errors.append("v4.14.48 low-opacity background PO watermark is incomplete")
+if not all(token in v41447_supply for token in ('def _enrich_purchase_order_approver', 'approver_designation', 'return self._enrich_purchase_order_approver(self.repo.get("supply_purchase_orders", purchase_order_id))')):
+    errors.append("v4.14.48 real Employee Master approver print enrichment is incomplete")
+if not all(token in v41448_workflow for token in ('workflow_dispatch:', 'branches:', '- main', 'QCMS_SERVER_RELEASE')):
+    errors.append("v4.14.48 Android every-release GitHub build trigger is incomplete")
+if not all(token in v41448_gradle for token in ('versionCode 14', "versionName '0.2.3'")):
+    errors.append("v4.14.48 Android v0.2.3 identity is incomplete")
+if not all(token in v41448_auth for token in ('height": 0', 'if (action === "write")', 'return;', 'Fast refresh path:', 'Stable across normal widget reruns')):
+    errors.append("v4.14.48 persistent-auth duplicate-page/rerun guard is incomplete")
+if not all(token in v41448_ui for token in ('st-key-qcms_auth_read', 'max-height:0!important', 'visibility:hidden!important')):
+    errors.append("v4.14.48 auth bridge zero-height CSS guard is incomplete")
+if not all(token in v41448_test for token in ('test_watermark_is_exactly_five_percent_background_and_unobtrusive', 'test_single_purchase_order_lookup_enriches_real_approver_employee_name', 'test_android_workflow_builds_every_main_release_and_is_manually_runnable')):
+    errors.append("v4.14.48 focused regression tests are incomplete")
 
 report = {
-    "release": "QCMS 4.14.47 PO Watermark Readability + Approver Stamp",
-    "v41447_watermark_20_percent": 'setFillAlpha(0.20)' in v41447_po_reporting and 'HexColor("#E8EBF0")' in v41447_po_reporting,
+    "release": "QCMS 4.14.48 5% PO Watermark + Approver + Stable Session + Android Every Release",
+    "v41448_watermark_background_low_opacity": 'setFillAlpha(0.05)' in v41447_po_reporting and 'merge_page(watermark_page, over=False)' in v41447_po_reporting,
+    "v41448_real_approver_employee_name": 'def _enrich_purchase_order_approver' in v41447_supply and 'approver_designation' in v41447_supply,
+    "v41448_android_every_release_build": 'branches:' in v41448_workflow and 'workflow_dispatch:' in v41448_workflow and 'QCMS_SERVER_RELEASE' in v41448_workflow,
+    "v41448_auth_bridge_stable_rerun": "saved_at" not in v41448_auth and 'setTriggerValue("done"' not in v41448_auth and 'height": 0' in v41448_auth,
+    "v41448_auth_bridge_zero_height": "st-key-qcms_auth_read" in v41448_ui and "max-height:0!important" in v41448_ui,
     "v41447_first_page_approver_stamp": 'def _draw_approver_stamp' in v41447_po_reporting and 'QCMS DIGITAL APPROVAL' in v41447_po_reporting,
 
-    "v41446_android_v12_drawer": all(token in v41436_android for token in ("QCMSMobile/0.2.2", "USE_STREAMLIT_WEB_NAV = false", "drawerSection", "drawerChildButton", 'appendQueryParameter("native_nav","native")', "webView.loadUrl(nativeUrl(route))")),
+    "v41446_android_v12_drawer": all(token in v41436_android for token in ("QCMSMobile/0.2.3", "USE_STREAMLIT_WEB_NAV = false", "drawerSection", "drawerChildButton", 'appendQueryParameter("native_nav","native")', "webView.loadUrl(nativeUrl(route))")),
     "v41446_drawer_autohide": "closeDrawer(); navigate(path)" in v41436_android and "drawerLayer.setVisibility(View.GONE)" in v41436_android,
     "v41446_persistent_login": all(token in v41446_auth for token in ("st.components.v2.component", "window.localStorage.getItem(key)", "window.localStorage.setItem(key, payload)", "client.auth.set_session(access, refresh)", "SameSite=Strict")),
     "v41446_schema_unchanged": str(v41429_manifest.get("database_schema_required")) == "4.14.45" and not bool(v41429_manifest.get("database_migration_required")),

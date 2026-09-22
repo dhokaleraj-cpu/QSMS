@@ -372,6 +372,12 @@ def apply_global_style() -> None:
     div[data-testid="stHorizontalBlock"]{gap:10px!important;align-items:flex-start!important;}
     div[data-testid="column"]{min-width:0!important;overflow:visible!important;}
     div[data-testid="stVerticalBlock"]{gap:10px!important;}
+    /* v4.14.48: auth-storage bridge must never reserve visual page height. */
+    div.st-key-qcms_auth_read,div.st-key-qcms_auth_write,div.st-key-qcms_auth_clear,
+    [class~="st-key-qcms_auth_read"],[class~="st-key-qcms_auth_write"],[class~="st-key-qcms_auth_clear"]{
+      display:none!important;height:0!important;min-height:0!important;max-height:0!important;
+      margin:0!important;padding:0!important;overflow:hidden!important;visibility:hidden!important;
+    }
     [data-testid="stMarkdownContainer"]{overflow:visible!important;}
     [data-testid="stMarkdownContainer"] p{overflow-wrap:anywhere!important;}
 

@@ -266,11 +266,14 @@ required = [
     "QCMS_NEW_CHAT_HANDOVER_v4.14.47.md",
     "RELEASE_NOTES_v4.14.47.md",
     "tests/test_v41447_po_watermark_approver_stamp.py",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.48.md",
+    "RELEASE_NOTES_v4.14.48.md",
+    "tests/test_v41448_po_watermark_approver_android_every_release.py",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.47 - PO Watermark Readability + Approver Stamp",
+    "phase": "QCMS 4.14.48 - 5% PO Watermark + Approver + Stable Session + Android Every Release",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

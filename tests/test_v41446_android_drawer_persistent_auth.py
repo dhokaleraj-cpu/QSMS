@@ -11,9 +11,9 @@ def text(path: str) -> str:
 def test_android_v022_restores_v12_style_drawer_and_auto_hides():
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
     gradle = text("mobile/android_qcms/app/build.gradle")
-    assert "QCMSMobile/0.2.2" in java
-    assert "versionName '0.2.2'" in gradle
-    assert "versionCode 13" in gradle
+    assert "QCMSMobile/0.2.3" in java
+    assert "versionName '0.2.3'" in gradle
+    assert "versionCode 14" in gradle
     assert "USE_STREAMLIT_WEB_NAV = false" in java
     assert "drawerSection" in java and "drawerChildButton" in java
     assert "drawerLayer.setVisibility(View.GONE)" in java
@@ -67,7 +67,7 @@ def test_native_drawer_streamlit_mode_is_content_only_and_no_footer():
 
 def test_v41446_release_keeps_database_schema_at_v41445():
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.46", "4.14.47"}
-    assert manifest["build"] in {"41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH", "41447-PO-WATERMARK-20-APPROVER-STAMP"}
+    assert manifest["version"] in {"4.14.46", "4.14.47", "4.14.48"}
+    assert manifest["build"] in {"41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH", "41447-PO-WATERMARK-20-APPROVER-STAMP", "41448-PO-WATERMARK05-APPROVER-SESSION-STABILITY-ANDROID-EVERY-RELEASE"}
     assert manifest["database_schema_required"] == "4.14.45"
     assert manifest["database_migration_required"] is False

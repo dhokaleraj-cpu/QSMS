@@ -1,15 +1,19 @@
 name: QCMS Android Test APK
 
-# QCMS v4.14.42: authoritative Android compilation remains in CI; local Python deployment no longer requires a JDK.
+# QCMS v4.14.48: authoritative Android compilation runs for EVERY main-branch QCMS release push and remains manually runnable.
 
 # Builds only the mobile source. Does not deploy QCMS, access Supabase, or send emails.
 # Artifact/version values are read from app/build.gradle so future Android version bumps cannot leave stale CI checks behind.
 on:
   workflow_dispatch:
+    inputs:
+      build_reason:
+        description: 'Optional reason / release reference'
+        required: false
+        default: 'manual QCMS Android build'
   push:
-    paths:
-      - 'mobile/android_qcms/**'
-      - '.github/workflows/qcms-android-test-apk.yml'
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -66,8 +70,10 @@ jobs:
           [ -n "$VERSION_CODE" ] || { echo 'Unable to read versionCode from app/build.gradle'; exit 1; }
           printf 'QCMS_MOBILE_VERSION=%s\n' "$VERSION_NAME" >> "$GITHUB_ENV"
           printf 'QCMS_MOBILE_VERSION_CODE=%s\n' "$VERSION_CODE" >> "$GITHUB_ENV"
+          QCMS_RELEASE="$(tr -d '\r\n' < VERSION)"
           printf 'QCMS_APK_NAME=QCMS_Mobile_v%s_TEST.apk\n' "$VERSION_NAME" >> "$GITHUB_ENV"
-          echo "Android versionName=$VERSION_NAME versionCode=$VERSION_CODE"
+          printf 'QCMS_SERVER_RELEASE=%s\n' "$QCMS_RELEASE" >> "$GITHUB_ENV"
+          echo "QCMS release=$QCMS_RELEASE Android versionName=$VERSION_NAME versionCode=$VERSION_CODE"
       - name: Compile APK and run Android lint
         working-directory: mobile/android_qcms
         run: gradle --no-daemon :app:assembleDebug :app:lintDebug
@@ -106,7 +112,7 @@ jobs:
           (cd apk-artifacts && sha256sum "$QCMS_APK_NAME" > SHA256SUMS.txt)
           cp mobile/android_qcms/INSTALL_APK_ON_SAMSUNG.md apk-artifacts/INSTALL_README.md
           printf 'Signature status: PASS. APK Signature Scheme v2 verified true. Optional v1/v3/v3.1/v4/SourceStamp values may be false for this internal debug APK and are not CI failures.\n' > apk-artifacts/VERIFICATION_SUMMARY.txt
-          printf '## QCMS APK built and verified\nVersion **%s** passed compile, lint, apksigner v2 verification, zipalign and package/version checks. Download **QCMS-Mobile-TEST-APK** below and install `%s`.\n' "$QCMS_MOBILE_VERSION" "$QCMS_APK_NAME" >> "$GITHUB_STEP_SUMMARY"
+          printf '## QCMS APK built and verified\nQCMS release **%s** / Android **%s** passed compile, lint, apksigner v2 verification, zipalign and package/version checks. Download **QCMS-Mobile-TEST-APK** below and install `%s`.\n' "$QCMS_SERVER_RELEASE" "$QCMS_MOBILE_VERSION" "$QCMS_APK_NAME" >> "$GITHUB_STEP_SUMMARY"
       - name: Downloadable APK package
         uses: actions/upload-artifact@v4
         with:

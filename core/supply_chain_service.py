@@ -357,25 +357,7 @@ class SupplyChainService:
         def load():
             rows = annotate_transaction_rows(self.repo, self.repo.select("supply_purchase_orders", order_by="created_at", desc=True, limit=10000))
             employee_cache: dict[str, dict] = {}
-            enriched: list[dict] = []
-            for row in rows:
-                item = dict(row)
-                employee_id = str(item.get("approver_employee_id") or "").strip()
-                if employee_id:
-                    if employee_id not in employee_cache:
-                        employee_cache[employee_id] = self.repo.get("employees", employee_id) or {}
-                    employee = employee_cache.get(employee_id) or {}
-                    name = " ".join(
-                        value for value in (
-                            str(employee.get("first_name") or "").strip(),
-                            str(employee.get("last_name") or "").strip(),
-                        ) if value
-                    )
-                    item["approver_employee_name"] = name or str(employee.get("employee_code") or "").strip()
-                    item["approver_employee_code"] = str(employee.get("employee_code") or "").strip()
-                    item["approver_department"] = str(employee.get("department") or "").strip()
-                enriched.append(item)
-            return enriched
+            return [self._enrich_purchase_order_approver(row, employee_cache) or dict(row) for row in rows]
         return self._memo(("purchase_orders",), load)
 
     def purchase_order_items(self, purchase_order_id: str | None = None) -> list[dict]:
@@ -883,8 +865,56 @@ class SupplyChainService:
         }
 
     # ------------------------------------------------ controlled Purchase Orders
+    def _enrich_purchase_order_approver(self, row: Mapping[str, Any] | None, employee_cache: dict[str, dict] | None = None) -> dict | None:
+        """Attach the real Employee Master identity used for PO print/email approval stamps.
+
+        Approved POs store approver_employee_id.  All printable PO retrieval paths pass
+        through this helper so PDFs never fall back to a generic role label when the
+        Employee Master record is available.
+        """
+        if not row:
+            return None
+        item = dict(row)
+        employee_id = str(item.get("approver_employee_id") or "").strip()
+        cache = employee_cache if employee_cache is not None else {}
+        employee: dict[str, Any] = {}
+        if employee_id:
+            if employee_id not in cache:
+                cache[employee_id] = self.repo.get("employees", employee_id) or {}
+            employee = cache.get(employee_id) or {}
+        elif str(item.get("approval_status") or "").upper() == "APPROVED":
+            # Legacy approved POs may pre-date approver_employee_id. The approval RPC
+            # also stores auth.uid() in updated_by, so recover the linked active
+            # Employee Master through profile_id when available.
+            profile_id = str(item.get("updated_by") or "").strip()
+            if profile_id:
+                legacy_key = f"PROFILE:{profile_id}"
+                if legacy_key not in cache:
+                    try:
+                        rows = self.repo.select("employees", eq={"profile_id": profile_id, "status": "ACTIVE"}, limit=2)
+                    except Exception:
+                        rows = []
+                    cache[legacy_key] = dict(rows[0]) if rows else {}
+                employee = cache.get(legacy_key) or {}
+                employee_id = str(employee.get("id") or "").strip()
+                if employee_id:
+                    item["approver_employee_id"] = employee_id
+        if not employee:
+            return item
+        name = " ".join(
+            value for value in (
+                str(employee.get("first_name") or "").strip(),
+                str(employee.get("last_name") or "").strip(),
+            ) if value
+        ).strip()
+        item["approver_employee_name"] = name
+        item["approver_employee_code"] = str(employee.get("employee_code") or "").strip()
+        item["approver_department"] = str(employee.get("department") or "").strip()
+        item["approver_designation"] = str(employee.get("designation") or "").strip()
+        return item
+
     def purchase_order(self, purchase_order_id: str) -> dict | None:
-        return self.repo.get("supply_purchase_orders", purchase_order_id)
+        return self._enrich_purchase_order_approver(self.repo.get("supply_purchase_orders", purchase_order_id))
 
     def purchase_order_item(self, purchase_order_id: str) -> dict | None:
         rows = self.purchase_order_items(purchase_order_id)
@@ -1343,7 +1373,7 @@ class SupplyChainService:
 
     def approve_purchase_order(self, purchase_order_id: str, remarks: str | None = None) -> dict:
         result = self.repo.rpc("qcms_approve_purchase_order", {"p_purchase_order_id": purchase_order_id, "p_remarks": remarks})
-        return dict(result or {})
+        return self._enrich_purchase_order_approver(dict(result or {})) or {}
 
     def ensure_purchase_order_confirmation(self, purchase_order_id: str) -> dict:
         result = self.repo.rpc("qcms_ensure_po_confirmation", {"p_purchase_order_id": purchase_order_id})

@@ -6,10 +6,11 @@ from pypdf import PdfReader
 from core import purchase_order_reporting as por
 
 
-def test_watermark_is_20_percent_and_light():
+def test_watermark_is_low_visibility_and_behind_content():
     text = Path(por.__file__).read_text()
-    assert 'setFillAlpha(0.20)' in text
-    assert 'HexColor("#E8EBF0")' in text
+    assert 'setFillAlpha(0.05)' in text
+    assert 'HexColor("#F2F4F7")' in text
+    assert 'merge_page(watermark_page, over=False)' in text
 
 
 def test_approved_stamp_contains_identity_and_timestamp():

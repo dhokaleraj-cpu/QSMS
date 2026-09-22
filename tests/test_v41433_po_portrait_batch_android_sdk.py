@@ -46,6 +46,7 @@ def test_release_identity_source_only():
         "4.14.45": ("41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL", "4.14.44"),
         "4.14.46": ("41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH", "4.14.45"),
         "4.14.47": ("41447-PO-WATERMARK-20-APPROVER-STAMP", "4.14.46"),
+        "4.14.48": ("41448-PO-WATERMARK05-APPROVER-SESSION-STABILITY-ANDROID-EVERY-RELEASE", "4.14.47"),
     }
     assert version in builds
     build, previous = builds[version]
@@ -54,10 +55,10 @@ def test_release_identity_source_only():
     assert manifest["version"] == version
     assert manifest["build"] == build
     assert manifest["previous_controlled_release"] == previous
-    if version in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46", "4.14.47"}:
-        expected_schema = "4.14.45" if version in {"4.14.45", "4.14.46", "4.14.47"} else ("4.14.36" if version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"} else version)
+    if version in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46", "4.14.47", "4.14.48"}:
+        expected_schema = "4.14.45" if version in {"4.14.45", "4.14.46", "4.14.47", "4.14.48"} else ("4.14.36" if version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"} else version)
         assert manifest["database_schema_required"] == expected_schema
-        assert manifest["database_migration_required"] is (version not in {"4.14.46", "4.14.47"})
+        assert manifest["database_migration_required"] is (version not in {"4.14.46", "4.14.47", "4.14.48"})
     else:
         assert manifest["database_schema_required"] == "4.14.28"
         assert manifest["database_migration_required"] is False

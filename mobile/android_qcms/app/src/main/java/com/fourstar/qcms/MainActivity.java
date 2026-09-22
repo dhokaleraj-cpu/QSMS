@@ -35,7 +35,7 @@ import android.widget.Toast;
 import org.json.JSONObject;
 
 public class MainActivity extends Activity {
-    // QCMS Android v0.2.2 restores the compact v1.2-style native drawer in the active path.
+    // QCMS Android v0.2.3 restores the compact v1.2-style native drawer in the active path.
     // The drawer is hidden by default and auto-closes immediately after a route selection.
     private static final int FILE_CHOOSER_REQUEST = 701;
     private static final String PREFS = "qcms_mobile";
@@ -220,7 +220,7 @@ public class MainActivity extends Activity {
         ws.setAllowFileAccess(false);
         ws.setAllowContentAccess(true);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.2.2");
+        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.2.3");
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -341,7 +341,7 @@ public class MainActivity extends Activity {
         main.addView(top,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
 
         webView = new WebView(this);
-        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.2.2");
+        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.2.3");
         CookieManager cm=CookieManager.getInstance(); cm.setAcceptCookie(true); cm.setAcceptThirdPartyCookies(webView,true);
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageFinished(WebView view,String pageUrl){
@@ -402,7 +402,7 @@ public class MainActivity extends Activity {
         final String route = normalizedRoute.isEmpty() ? "dashboard" : normalizedRoute;
         pendingRoute = route;
         closeDrawer();
-        // v0.2.2 deliberately uses the canonical Streamlit route URL again.
+        // v0.2.3 deliberately uses the canonical Streamlit route URL again.
         // QCMS v4.14.46 restores the Supabase user session from secure same-site
         // browser/WebView cookies, so a new Streamlit WebSocket/page load no longer
         // forces the user back to Login. This removes the fragile DOM click bridge.

@@ -1,16 +1,18 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.44
-Build `41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE`.
+## Current controlled release — v4.14.48
+Build `41448-PO-WATERMARK05-APPROVER-SESSION-STABILITY-ANDROID-EVERY-RELEASE`.
 
-Android **v0.2.1 / versionCode 12** restores a permanent native QCMS top bar with a Menu button. The button opens and closes Streamlit's official grouped sidebar inside the existing authenticated WebView, so page selection remains Streamlit-owned and does not use hard WebView route reloads.
+QCMS v4.14.48 changes the Purchase Order PDF watermark to exactly **5% opacity** and merges it underneath the page content. Approved PO page 1 resolves and prints the actual Employee Master approver identity plus the saved approval date/time; legacy approved POs can recover the approver through the stored approving profile linkage.
 
-The Android-only CSS override restores the Streamlit sidebar and its collapsed control after the desktop global style hides them. Sidebar module groups are expanded for immediate access, and the active module's QCMS sub-menu is restored in a phone-friendly two-column layout. The obsolete Home/Search/Complaints bottom footer remains removed.
+The website/Android refresh login bridge is stabilized so normal field clicks do not remount a changing authentication component or create duplicate/stacked Streamlit page regions. Browser-storage write/clear operations are fire-and-forget, the bridge is zero-height, and refresh uses the same-origin persistence cookie first.
 
-The dynamic Android APK version/signature verification introduced in v4.14.39 remains preserved. QCMS v4.14.44 requires no new Supabase schema migration; the controlled database baseline remains v4.14.36 and all existing production data, permissions, attachments, approvals and audit history are preserved.
+Android **v0.2.3 / versionCode 14** preserves the compact v1.2-style native hamburger drawer with expandable submenus and auto-hide after route selection. The GitHub **QCMS Android Test APK** workflow now runs on **every push to `main`** and remains manually runnable, so every QCMS version can produce a verified Android test APK artifact.
+
+The controlled database schema remains **v4.14.45**; v4.14.48 requires no new Supabase migration or manual SQL.
 
 ## Deployment
-Use the self-contained `QSMS_LIVE_DEPLOY_UPDATE_v4.14.44.command`. It backs up the current project, protects local secrets/data, validates the embedded source, runs compile/readiness/phase/full pytest, commits and pushes Git, and verifies the remote SHA. Then build/install Android v0.2.1 using `mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command`.
+Use the self-contained `QSMS_LIVE_DEPLOY_UPDATE_v4.14.48.command`. It backs up the current project, protects local secrets/data, validates the embedded source, verifies the v4.14.45 public schema contract, runs compile/readiness/phase/full pytest, commits and pushes Git, and verifies the remote SHA. The push automatically triggers the GitHub Android APK workflow. For local Samsung installation, use `mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command`.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.
