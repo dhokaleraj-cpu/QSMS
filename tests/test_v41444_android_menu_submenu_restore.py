@@ -9,12 +9,19 @@ def text(rel: str) -> str:
 
 
 def test_v41444_release_identity_and_database_baseline():
-    assert text("VERSION").strip() == "4.14.44"
+    version = text("VERSION").strip()
+    assert version in {"4.14.44", "4.14.45"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] == "4.14.44"
-    assert manifest["build"] == "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE"
-    assert manifest["previous_controlled_release"] == "4.14.43"
-    assert manifest["database_schema_required"] == "4.14.36"
+    assert manifest["version"] == version
+    if version == "4.14.44":
+        assert manifest["build"] == "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE"
+        assert manifest["previous_controlled_release"] == "4.14.43"
+        assert manifest["database_schema_required"] == "4.14.36"
+    else:
+        assert manifest["build"] == "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL"
+        assert manifest["previous_controlled_release"] == "4.14.44"
+        assert manifest["database_schema_required"] == "4.14.45"
+        assert manifest["database_migration_required"] is True
     assert manifest["schema_change_for_v41444"] is False
 
 

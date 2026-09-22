@@ -36,6 +36,12 @@ def _number(value: Any) -> float | None:
         return None
 
 
+
+
+def _layout_token(value: Any, fallback: str, max_length: int = 36) -> str:
+    text = re.sub(r"[^A-Za-z0-9]+", "-", _text(value).upper()).strip("-")
+    return (text or fallback)[:max_length].strip("-") or fallback
+
 def _attribute_pass(value: Any) -> bool:
     text = _text(value).upper()
     if not text:
@@ -213,6 +219,41 @@ class InspectionService:
 
         return sorted(plans, key=score, reverse=True)
 
+    @staticmethod
+    def auto_plan_number(part: Mapping[str, Any], process: Mapping[str, Any], stage: Mapping[str, Any], layout_name: str) -> str:
+        """Controlled layout identity: Stage + Process + Part Number + Layout Name."""
+        return "-".join((
+            _layout_token(stage.get("stage_code") or stage.get("stage_name"), "STAGE", 20),
+            _layout_token(process.get("process_code") or process.get("process_name"), "NOPROCESS", 24),
+            _layout_token(part.get("part_number") or part.get("fsi_part_number"), "PART", 30),
+            _layout_token(layout_name, "LAYOUT", 36),
+        ))
+
+    def scope_plan(self, payload: Mapping[str, Any], *, exclude_id: str | None = None) -> dict | None:
+        """Return another current layout in the same controlled Part/Stage/Process scope."""
+        part_id = str(payload.get("part_id") or "")
+        if not part_id:
+            return None
+        rows = self.repo.select("inspection_plans", eq={"part_id": part_id}, order_by="updated_at", desc=True, limit=3000)
+        wanted = (
+            str(payload.get("process_id") or ""), str(payload.get("inspection_stage_id") or ""),
+            str(payload.get("layout_type") or "DIMENSIONAL").upper(), str(payload.get("inward_type") or "MATERIAL_INWARD").upper(),
+            str(payload.get("requirement_scope") or "GENERAL").upper(),
+        )
+        for row in rows:
+            if exclude_id and str(row.get("id")) == str(exclude_id):
+                continue
+            if str(row.get("status") or "DRAFT").upper() not in {"DRAFT", "APPROVAL_PENDING", "APPROVED"}:
+                continue
+            scope = (
+                str(row.get("process_id") or ""), str(row.get("inspection_stage_id") or ""),
+                str(row.get("layout_type") or "DIMENSIONAL").upper(), str(row.get("inward_type") or "MATERIAL_INWARD").upper(),
+                str(row.get("requirement_scope") or "GENERAL").upper(),
+            )
+            if scope == wanted:
+                return row
+        return None
+
     def get_plan(self, plan_id: str | None) -> dict | None:
         return self.repo.get("inspection_plans", plan_id)
 
@@ -295,7 +336,19 @@ class InspectionService:
         return group, characteristics
 
     def save_plan(self, payload: Mapping[str, Any], rows: Sequence[Mapping[str, Any]], plan_id: str | None = None) -> dict:
-        plan = self.repo.update("inspection_plans", plan_id, payload) if plan_id else self.repo.insert("inspection_plans", payload)
+        controlled = dict(payload)
+        part = self.repo.get("parts", str(controlled.get("part_id") or "")) or {}
+        process = (self.repo.get("processes", str(controlled.get("process_id") or "")) or {}) if controlled.get("process_id") else {}
+        stage = (self.repo.get("inspection_stages", str(controlled.get("inspection_stage_id") or "")) or {}) if controlled.get("inspection_stage_id") else {}
+        controlled["plan_number"] = self.auto_plan_number(part, process, stage, str(controlled.get("layout_name") or ""))
+        if str(controlled.get("requirement_scope") or "GENERAL").upper() != "FINAL_METALLURGICAL" and str(controlled.get("status") or "DRAFT").upper() in {"DRAFT", "APPROVAL_PENDING", "APPROVED"}:
+            duplicate = self.scope_plan(controlled, exclude_id=plan_id)
+            if duplicate:
+                raise ValueError(
+                    "Only one current inspection layout is allowed for the same Part + Inspection Stage + Process + Layout Type. "
+                    f"Edit or supersede existing layout {duplicate.get('plan_number') or duplicate.get('layout_name') or duplicate.get('id')} instead of creating another one."
+                )
+        plan = self.repo.update("inspection_plans", plan_id, controlled) if plan_id else self.repo.insert("inspection_plans", controlled)
         pid = str(plan["id"])
         existing = {
             int(row.get("sequence_no") or 0): row

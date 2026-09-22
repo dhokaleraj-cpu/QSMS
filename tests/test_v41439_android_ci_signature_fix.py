@@ -9,14 +9,14 @@ def text(rel: str) -> str:
 
 
 def test_v41439_release_identity_and_no_schema_change():
-    assert text("VERSION").strip() in {"4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}
+    assert text("VERSION").strip() in {"4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}
-    assert manifest["build"] in {"41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX", "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE", "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV", "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE"}
-    assert manifest["previous_controlled_release"] in {"4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43"}
-    assert manifest["database_schema_required"] == "4.14.36"
+    assert manifest["version"] in {"4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
+    assert manifest["build"] in {"41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX", "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE", "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV", "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE", "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL"}
+    assert manifest["previous_controlled_release"] in {"4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}
+    assert manifest["database_schema_required"] == ("4.14.45" if manifest["version"] == "4.14.45" else "4.14.36")
     assert manifest["schema_change_for_v41439"] is False
-    if manifest["version"] in {"4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}:
+    if manifest["version"] in {"4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}:
         assert manifest["schema_change_for_v41440"] is False
     if manifest["version"] == "4.14.41":
         assert manifest["schema_change_for_v41441"] is False

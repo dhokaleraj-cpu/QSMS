@@ -891,13 +891,17 @@ def render_entry() -> None:
 
         section_bar('RAW MATERIAL DETAILS / FORGING PARAMETERS')
         raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=200)
-        if password_delete_panel(repo=repo, table="part_raw_material_details", rows=raw, labeler=lambda r: f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · {r.get('section_size') or '-'} · {r.get('forging_route') or '-'}", key=f"delete_raw_{part_id}", can_delete=perms["can_archive"], title="Delete Raw Material row"):
+        source_parts = repo.select("parts", eq={"status": "ACTIVE"}, order_by="part_number", limit=5000)
+        source_part_map = {str(row["id"]): part_label(row) for row in source_parts if str(row.get("id")) != part_id}
+        source_part_by_label = {label: source_id for source_id, label in source_part_map.items()}
+        if password_delete_panel(repo=repo, table="part_raw_material_details", rows=raw, labeler=lambda r: f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · {r.get('section_size') or '-'} · {r.get('forging_route') or '-'} · Source {source_part_map.get(str(r.get('source_part_id')), 'Own Part')}", key=f"delete_raw_{part_id}", can_delete=perms["can_archive"], title="Delete Raw Material row"):
             st.rerun()
         # Compatibility marker for the pre-v4.14.3 raw-material natural key regression:
         # ("supplier_id", "material_section_name", "section_size", "forging_route")
         grade_by_name = {label: gid for gid, label in grade_map.items()}
         raw_df = pd.DataFrame([{
             "Raw Material Type": r.get("material_section_name") or "Round Black Bar",
+            "Source Raw Forging / Casting Part": source_part_map.get(str(r.get("source_part_id") or ""), ""),
             "Material Grade": grade_map.get(str(r.get("material_grade_id")), grade_map.get(str(existing.get("material_grade_id")), "")),
             "Supplier Name / Location": supplier_map.get(str(r.get("supplier_id")), ""),
             "Supplier RM Item Code": r.get("supplier_rm_item_code") or "",
@@ -909,7 +913,7 @@ def render_entry() -> None:
             "Input Weight kg/part": r.get("input_weight_kg") or r.get("gross_weight_kg") or r.get("forging_weight_kg"),
             "Section Size": r.get("section_size"), "Forging Route": r.get("forging_route"),
             "Status": r.get("status") or "ACTIVE"
-        } for r in raw], columns=["Raw Material Type", "Material Grade", "Supplier Name / Location", "Supplier RM Item Code", "Supplier Forging Part No.", "HSN / SAC Code", "Lead Time (Days)", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
+        } for r in raw], columns=["Raw Material Type", "Source Raw Forging / Casting Part", "Material Grade", "Supplier Name / Location", "Supplier RM Item Code", "Supplier Forging Part No.", "HSN / SAC Code", "Lead Time (Days)", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
         # v4.14.32: Raw Material Type is a controlled business list. Keep any legacy
         # value already stored on a Part visible for safe editing, but do not learn/add
         # arbitrary new material types from the reusable catalog.
@@ -917,7 +921,7 @@ def render_entry() -> None:
         rm_type_options = list(dict.fromkeys([*RAW_MATERIAL_TYPE_DEFAULTS, *legacy_rm_types]))
         section_options = _catalog_options(catalog, "part.rm_section", [r.get("section_size") for r in raw])
         route_options = _catalog_options(catalog, "part.forging_route", [r.get("forging_route") for r in raw])
-        st.caption("Raw Material Type is controlled to: Forging, Round Black Bar, Casting, Bright Bar and Ground Bar.")
+        st.caption("Raw Material Type is controlled to: Forging, Round Black Bar, Casting, Bright Bar and Ground Bar. For Forging/Casting, you may link another Part Master as the common raw forging/casting source used to produce this finished Part.")
         with st.expander("Manage reusable Section Size and Forging Route lists", expanded=False):
             _catalog_add_control(catalog, "part.rm_section", "Section Size", section_options, f"section_{part_id}", duplicate_word_check=True)
             _catalog_add_control(catalog, "part.forging_route", "Forging Route", route_options, f"route_{part_id}", duplicate_word_check=True)
@@ -926,6 +930,7 @@ def render_entry() -> None:
                 raw_df, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"raw_{part_id}", disabled=not writable,
                 column_config={
                     "Raw Material Type": st.column_config.SelectboxColumn(options=rm_type_options or list(RAW_MATERIAL_TYPE_DEFAULTS), required=True, help="Controlled Raw Material Type: Forging, Round Black Bar, Casting, Bright Bar or Ground Bar."),
+                    "Source Raw Forging / Casting Part": st.column_config.SelectboxColumn(options=[""] + list(source_part_by_label), required=False, help="For Forging or Casting only: select another Part Master when its common raw forging/casting is used to manufacture this finished Part. Leave blank when this Part uses its own raw source."),
                     "Material Grade": st.column_config.SelectboxColumn(options=list(grade_by_name), required=True),
                     "Supplier Name / Location": st.column_config.SelectboxColumn(options=list(supplier_by_name), required=True),
                     "Supplier RM Item Code": st.column_config.TextColumn(help="Optional common supplier-facing RM item code. Use the SAME code on different finished Parts when they buy the exact same RM. QCMS can consolidate those sources into one RM PO line while retaining each finished-Part allocation."),
@@ -953,7 +958,15 @@ def render_entry() -> None:
                     if input_weight is None or float(input_weight) <= 0:
                         raise ValueError(f"Input Weight kg/part is required for {name}.")
                     material_section = str(row.get("Raw Material Type") or "").strip() or "Round Black Bar"
-                    return {"supplier_id": sid, "material_grade_id": row_grade_id, "supplier_rm_item_code": str(row.get("Supplier RM Item Code") or "").strip() or None, "supplier_forging_part_number": str(row.get("Supplier Forging Part No.") or "").strip() or None, "hsn_sac_code": str(row.get("HSN / SAC Code") or "").strip() or None, "lead_time_days": int(row.get("Lead Time (Days)") or 0), "material_section_name": material_section, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section Size") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
+                    source_label = str(row.get("Source Raw Forging / Casting Part") or "").strip()
+                    source_part_id = source_part_by_label.get(source_label) if source_label else None
+                    if source_label and not source_part_id:
+                        raise ValueError(f"Select a valid Source Raw Forging / Casting Part for {name}.")
+                    if source_part_id and str(source_part_id) == part_id:
+                        raise ValueError("Source Raw Forging / Casting Part must be another Part Master record, not the same finished Part.")
+                    if source_part_id and material_section.casefold() not in {"forging", "casting"}:
+                        raise ValueError("Source Raw Forging / Casting Part can be selected only when Raw Material Type is Forging or Casting.")
+                    return {"supplier_id": sid, "material_grade_id": row_grade_id, "source_part_id": source_part_id, "supplier_rm_item_code": str(row.get("Supplier RM Item Code") or "").strip() or None, "supplier_forging_part_number": str(row.get("Supplier Forging Part No.") or "").strip() or None, "hsn_sac_code": str(row.get("HSN / SAC Code") or "").strip() or None, "lead_time_days": int(row.get("Lead Time (Days)") or 0), "material_section_name": material_section, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section Size") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
                 _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id", "material_grade_id", "material_section_name", "section_size", "forging_route"), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
                 st.error(str(exc))
@@ -963,10 +976,10 @@ def render_entry() -> None:
         # are controlled from Part Master and pulled automatically into the PO.
         current_raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=500)
         raw_labels = {
-            str(r["id"]): f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · HSN {r.get('hsn_sac_code') or existing.get('hsn_sac_code') or '-'} · {grade_map.get(str(r.get('material_grade_id')), 'Grade -')} · {r.get('material_section_name') or 'Raw Material Type -'} · {r.get('section_size') or '-'} · LT {int(r.get('lead_time_days') or 0)}d"
+            str(r["id"]): f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · HSN {r.get('hsn_sac_code') or existing.get('hsn_sac_code') or '-'} · {grade_map.get(str(r.get('material_grade_id')), 'Grade -')} · {r.get('material_section_name') or 'Raw Material Type -'} · {r.get('section_size') or '-'} · Source {source_part_map.get(str(r.get('source_part_id') or ''), 'Own Part')} · LT {int(r.get('lead_time_days') or 0)}d"
             for r in current_raw
         }
-        section_bar("SUPPLIER TECHNICAL DATA & PRICE HISTORY", "Select the supplier-specific Raw Material record. Heading/value technical rows are copied automatically to the Purchase Order; price history is matched by the selected Supplier + Raw Material Detail + FSI Part Number.")
+        section_bar("SUPPLIER TECHNICAL DATA & PRICE HISTORY", "Select the supplier-specific Raw Material record. Heading/value technical rows are copied automatically to the Purchase Order; price history is matched by the selected Supplier + Raw Material Detail + FSI Part Number. The same commercial rate is intentionally allowed on different Part Master records.")
         selected_raw_id = st.selectbox("Raw Material / Supplier Record", list(raw_labels), format_func=lambda v: raw_labels[v], key=f"rm_supplier_detail_select_{part_id}") if raw_labels else None
         if not selected_raw_id:
             st.info("Save at least one Raw Material Detail row before adding supplier technical data or price history.")

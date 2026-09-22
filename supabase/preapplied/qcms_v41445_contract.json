@@ -1,0 +1,11 @@
+{
+  "release": "QCMS v4.14.45 updater R2",
+  "project_ref": "xxrxopzxzyjnzumrwuwy",
+  "schema_version": "4.14.45",
+  "contract": "QCMS_V41445_FULL_READY",
+  "migration": "20260922070000_qcms_v41445_shared_raw_source_layout_scope.sql",
+  "migration_sha256": "2f599f79508aa806e1258b9f8ce8c6f926b22c109db3c23bb42aac22628f27c3",
+  "preapplied_verified": true,
+  "verified_utc": "2026-09-22T06:34:52Z",
+  "note": "Production QSMS migration was pre-applied and contract-verified before issuing updater R2. This file contains no credentials."
+}

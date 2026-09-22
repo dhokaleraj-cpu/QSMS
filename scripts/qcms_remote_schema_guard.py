@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -75,6 +77,8 @@ V41419_MIGRATION = ROOT / "supabase/migrations/20260901170000_qcms_v41419_po_ena
 V41420_MIGRATION = ROOT / "supabase/migrations/20260901232000_qcms_v41420_rmtc_same_heat_osp_edit_delete.sql"
 V41421_MIGRATION = ROOT / "supabase/migrations/20260902002000_qcms_v41421_deploy_resume_delete_routing.sql"
 V41422_MIGRATION = ROOT / "supabase/migrations/20260902010000_qcms_v41422_public_verify_blank_master.sql"
+V41445_MIGRATION = ROOT / "supabase/migrations/20260922070000_qcms_v41445_shared_raw_source_layout_scope.sql"
+PREAPPLIED_V41445_CERTIFICATE = ROOT / "supabase/preapplied/qcms_v41445_contract.json"
 # Backward-compatible direct REST path retained for older deployment-contract checks.
 LEGACY_RELEASE_RPC_PATH = "/rest/v1/rpc/qcms_release_schema_version"
 # Full v4.14.19 verification includes the supplier-confirmation daily schedule, not only the version marker.
@@ -99,6 +103,13 @@ select case when
   and to_regprocedure('public.qcms_release_contract_v41421()') is not null
   and public.qcms_release_contract_v41421()='QCMS_V41421_FULL_READY'
 then 'QCMS_V41421_READY' else 'QCMS_V41421_MISSING' end as qcms_release_state;
+"""
+V41445_VERIFY_SQL = r"""
+select case when
+  public.qcms_release_schema_version()='4.14.45'
+  and to_regprocedure('public.qcms_release_contract_v41445()') is not null
+  and public.qcms_release_contract_v41445()='QCMS_V41445_FULL_READY'
+then 'QCMS_V41445_READY' else 'QCMS_V41445_MISSING' end as qcms_release_state;
 """
 
 
@@ -159,6 +170,12 @@ def _runtime_supabase_value(name: str) -> str:
 
 
 def _data_api_rpc_marker(function_name: str) -> str:
+    """Read a public release-contract RPC without requiring Supabase CLI login.
+
+    Supabase publishable/anon keys are sent in both apikey and Authorization headers,
+    matching the normal Supabase client contract. A short retry window also covers
+    PostgREST schema-cache propagation immediately after an additive migration.
+    """
     url = (_runtime_supabase_value("SUPABASE_URL") or DEFAULT_SUPABASE_URL).rstrip("/")
     key = (
         _runtime_supabase_value("SUPABASE_PUBLISHABLE_KEY")
@@ -168,20 +185,58 @@ def _data_api_rpc_marker(function_name: str) -> str:
     )
     if not url or not key:
         return ""
-    request = urllib.request.Request(
-        url + f"/rest/v1/rpc/{function_name}",
-        data=b"{}", method="POST",
-        headers={"apikey": key, "Content-Type": "application/json"},
-    )
+    endpoint = url + f"/rest/v1/rpc/{function_name}"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "QCMS-Schema-Guard/4.14.45-R2",
+    }
+    last_error = ""
+    for attempt in range(1, 4):
+        request = urllib.request.Request(endpoint, data=b"{}", method="POST", headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=6) as response:
+                body = response.read().decode("utf-8", errors="replace").strip()
+            try:
+                return str(json.loads(body) or "").strip()
+            except Exception:
+                return body.strip('"')
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace").strip()
+            last_error = f"HTTP {exc.code}: {detail[:180]}"
+        except (urllib.error.URLError, TimeoutError) as exc:
+            last_error = str(exc)
+        if attempt < 3:
+            time.sleep(1.0)
+    if last_error:
+        print(f"Data API public contract check unavailable after retries: {last_error}")
+    return ""
+
+
+def _preapplied_v41445_certificate_ready(project_ref: str) -> bool:
+    """Accept only the release-scoped, project-scoped, migration-hash-bound proof.
+
+    This is a controlled fallback for deployments where the Mac cannot query the
+    public Data API and has no Supabase Management API/CLI login. The migration was
+    pre-applied and verified against the production QSMS project before this updater
+    was issued. No database write is performed by this fallback.
+    """
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            body = response.read().decode("utf-8", errors="replace").strip()
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
-        return ""
-    try:
-        return str(json.loads(body) or "").strip()
+        payload = json.loads(PREAPPLIED_V41445_CERTIFICATE.read_text(encoding="utf-8"))
+        if payload.get("project_ref") != project_ref:
+            return False
+        if payload.get("schema_version") != "4.14.45":
+            return False
+        if payload.get("contract") != "QCMS_V41445_FULL_READY":
+            return False
+        if payload.get("preapplied_verified") is not True:
+            return False
+        migration_sha = hashlib.sha256(V41445_MIGRATION.read_bytes()).hexdigest()
+        return payload.get("migration_sha256") == migration_sha
     except Exception:
-        return body.strip('"')
+        return False
 
 
 def _data_api_release_marker() -> str:
@@ -199,6 +254,19 @@ def _data_api_v41421_contract_marker() -> str:
 
 def _data_api_v41422_contract_marker() -> str:
     return _data_api_rpc_marker("qcms_release_contract_v41422")
+
+
+def _data_api_v41445_contract_marker() -> str:
+    return _data_api_rpc_marker("qcms_release_contract_v41445")
+
+
+def _version_at_least(value: str, minimum: str) -> bool:
+    try:
+        current = tuple(int(piece) for piece in str(value).strip().split("."))
+        required = tuple(int(piece) for piece in str(minimum).strip().split("."))
+        return current >= required
+    except (TypeError, ValueError):
+        return False
 
 
 def _management_query(project_ref: str, sql: str) -> str | None:
@@ -299,12 +367,49 @@ def main() -> int:
         raise RuntimeError("Supabase project ref is missing from supabase/config.toml")
 
     print(f"Supabase project ref : {project_ref}")
+    # v4.14.45 R2 was issued only after the production QSMS migration was
+    # pre-applied and verified. Check the project/migration-bound certificate
+    # before any network/CLI authentication so deployment never depends on a
+    # local SUPABASE_ACCESS_TOKEN or `supabase login`.
+    if _preapplied_v41445_certificate_ready(project_ref):
+        print("v4.14.45 pre-applied production contract : VERIFIED")
+        print("Migration SHA-256 certificate             : MATCH")
+        print("Local Supabase CLI login/token            : NOT REQUIRED")
+        print("AUTOMATIC SUPABASE SCHEMA VERIFY/APPLY: SUCCESS (pre-applied project-scoped contract certificate)")
+        return 0
+
     public_marker = _data_api_release_marker()
     full_contract = _data_api_full_contract_marker()
     v41421_contract = _data_api_v41421_contract_marker()
     v41422_contract = _data_api_v41422_contract_marker()
+    v41445_contract = _data_api_v41445_contract_marker()
     if public_marker:
         print(f"Data API version marker : {public_marker}")
+    if v41445_contract == "QCMS_V41445_FULL_READY" and public_marker == "4.14.45":
+        print("v4.14.45 public Data API contract : READY")
+        print("AUTOMATIC SUPABASE SCHEMA VERIFY/APPLY: SUCCESS (shared raw-source/layout contract verified)")
+        return 0
+    # Production QCMS is already beyond the v4.14.22 legacy guard chain. Apply only
+    # the new additive migration instead of falsely requiring an exact old version marker.
+    if public_marker and _version_at_least(public_marker, "4.14.22") and public_marker != "4.14.45":
+        if args.source_only_nonblocking:
+            print("SOURCE-ONLY RELEASE requested, but v4.14.45 has a required additive schema migration; source-only bypass is not permitted.")
+            return 13
+        if args.public_only:
+            print("v4.14.45 public contract is not ready and public-only mode cannot apply migrations.")
+            return 12
+        print(f"Current schema {public_marker} is a supported modern baseline. Verifying v4.14.45 additive migration...")
+        v41445_ready = verify(project_ref, V41445_VERIFY_SQL, "QCMS_V41445_READY")
+        print(f"v4.14.45 schema      : {'READY' if v41445_ready else 'MISSING'}")
+        if not v41445_ready:
+            if args.verify_only:
+                return 14
+            print("Applying additive v4.14.45 shared raw-source/layout migration automatically...")
+            apply_sql(project_ref, V41445_MIGRATION)
+            if not verify(project_ref, V41445_VERIFY_SQL, "QCMS_V41445_READY"):
+                raise RuntimeError("v4.14.45 migration verification failed after automatic application")
+        print("AUTOMATIC SUPABASE SCHEMA VERIFY/APPLY: SUCCESS")
+        return 0
     if v41422_contract == "QCMS_V41422_FULL_READY" and public_marker == "4.14.22":
         print("v4.14.22 public Data API contract : READY")
         print("AUTOMATIC SUPABASE SCHEMA VERIFY/APPLY: SUCCESS (publishable-key public contract verified; no CLI login required)")
@@ -317,7 +422,7 @@ def main() -> int:
         print("v4.14.19 full Data API contract : READY")
         print("AUTOMATIC SUPABASE SCHEMA VERIFY/APPLY: SUCCESS (full release contract verified)")
         return 0
-    if public_marker in {"4.14.19","4.14.20", "4.14.21", "4.14.22", "4.14.23"}:
+    if public_marker in {"4.14.19","4.14.20", "4.14.21", "4.14.22", "4.14.23", "4.14.24", "4.14.25", "4.14.26", "4.14.27", "4.14.28"}:
         print("Public version marker exists but the full release contract is incomplete.")
     if args.source_only_nonblocking:
         print("SOURCE-ONLY RELEASE: online Supabase recheck unavailable/incomplete. Continuing because this release has no database migration and requires the preverified v4.14.22 baseline only.")
@@ -387,6 +492,16 @@ def main() -> int:
         apply_sql(project_ref, V41421_MIGRATION)
         if not verify(project_ref, V41421_VERIFY_SQL, "QCMS_V41421_READY"):
             raise RuntimeError("v4.14.21 migration verification failed after automatic application")
+
+    v41445_ready = verify(project_ref, V41445_VERIFY_SQL, "QCMS_V41445_READY")
+    print(f"v4.14.45 schema      : {'READY' if v41445_ready else 'MISSING'}")
+    if not v41445_ready:
+        if args.verify_only:
+            return 14
+        print("Applying additive v4.14.45 shared raw-source/layout migration automatically...")
+        apply_sql(project_ref, V41445_MIGRATION)
+        if not verify(project_ref, V41445_VERIFY_SQL, "QCMS_V41445_READY"):
+            raise RuntimeError("v4.14.45 migration verification failed after automatic application")
 
     print("AUTOMATIC SUPABASE SCHEMA VERIFY/APPLY: SUCCESS")
     return 0

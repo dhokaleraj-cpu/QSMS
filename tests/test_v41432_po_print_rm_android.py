@@ -15,7 +15,7 @@ def text(rel: str) -> str:
 
 def test_v41432_release_identity_and_source_only_schema():
     version = text("VERSION").strip()
-    assert version in {"4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}
+    assert version in {"4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert manifest["version"] == version
     if version == "4.14.32":
@@ -54,12 +54,16 @@ def test_v41432_release_identity_and_source_only_schema():
     elif version == "4.14.43":
         assert manifest["build"] == "41443-ANDROID-STREAMLIT-SIDEBAR-NAV"
         assert manifest["previous_controlled_release"] == "4.14.42"
-    else:
-        assert version == "4.14.44"
+    elif version == "4.14.44":
         assert manifest["build"] == "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE"
         assert manifest["previous_controlled_release"] == "4.14.43"
-    if version in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}:
-        assert manifest["database_schema_required"] == ("4.14.36" if version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"} else version)
+    else:
+        assert version == "4.14.45"
+        assert manifest["build"] == "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL"
+        assert manifest["previous_controlled_release"] == "4.14.44"
+    if version in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}:
+        expected_schema = "4.14.45" if version == "4.14.45" else ("4.14.36" if version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"} else version)
+        assert manifest["database_schema_required"] == expected_schema
         assert manifest["database_migration_required"] is True
     else:
         assert manifest["database_schema_required"] == "4.14.28"

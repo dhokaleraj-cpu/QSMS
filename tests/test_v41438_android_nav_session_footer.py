@@ -9,9 +9,9 @@ def text(rel: str) -> str:
 
 
 def test_v41438_release_identity_and_schema_baseline():
-    assert text("VERSION").strip() in {"4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}
+    assert text("VERSION").strip() in {"4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}
+    assert manifest["version"] in {"4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
     expected_builds = {
         "4.14.38": "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE",
         "4.14.39": "41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX",
@@ -20,9 +20,10 @@ def test_v41438_release_identity_and_schema_baseline():
         "4.14.42": "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD",
         "4.14.43": "41443-ANDROID-STREAMLIT-SIDEBAR-NAV",
         "4.14.44": "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE",
+        "4.14.45": "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL",
     }
     assert manifest["build"] == expected_builds[manifest["version"]]
-    assert manifest["database_schema_required"] == "4.14.36"
+    assert manifest["database_schema_required"] == ("4.14.45" if manifest["version"] == "4.14.45" else "4.14.36")
     assert manifest["schema_change_for_v41438"] is False
 
 

@@ -376,6 +376,42 @@ class SupplyChainService:
             if preferred: return preferred
         return rows[0] if rows else None
 
+    def raw_source_context(self, part: Mapping[str, Any], raw: Mapping[str, Any], supplier_id: str | None = None) -> tuple[dict, dict]:
+        """Resolve an optional Part Master raw-forging/casting source into its commercial RM row."""
+        source_part_id = str(raw.get("source_part_id") or "").strip()
+        if not source_part_id:
+            return dict(part or {}), dict(raw or {})
+        source_part = self.repo.get("parts", source_part_id) or {}
+        if not source_part:
+            return dict(part or {}), dict(raw or {})
+        candidates = self.raw_material_options(source_part_id)
+        if supplier_id:
+            candidates = [r for r in candidates if str(r.get("supplier_id") or "") == str(supplier_id)]
+        wanted_type = normalize_match(raw.get("material_section_name"))
+        typed = [r for r in candidates if normalize_match(r.get("material_section_name")) == wanted_type] if wanted_type else []
+        if typed:
+            candidates = typed
+        wanted_grade = str(raw.get("material_grade_id") or "")
+        graded = [r for r in candidates if str(r.get("material_grade_id") or "") == wanted_grade] if wanted_grade else []
+        if graded:
+            candidates = graded
+        source_raw = candidates[0] if candidates else {}
+        return dict(source_part), dict(source_raw or raw or {})
+
+    def effective_current_price(self, part: Mapping[str, Any], raw: Mapping[str, Any], supplier_id: str, *, on_date: date | str | None, uom: str) -> float:
+        price = self.current_price(str(part.get("id") or ""), supplier_id, on_date=on_date, uom=uom, raw_material_detail_id=str(raw.get("id") or "") or None)
+        if price > 0 or not raw.get("source_part_id"):
+            return price
+        source_part, source_raw = self.raw_source_context(part, raw, supplier_id)
+        return self.current_price(str(source_part.get("id") or ""), supplier_id, on_date=on_date, uom=uom, raw_material_detail_id=str(source_raw.get("id") or "") or None)
+
+    def effective_price_history(self, part: Mapping[str, Any], raw: Mapping[str, Any], supplier_id: str, *, po_date: date | str | None, uom: str) -> list[dict]:
+        history = self.price_history_for_po(str(part.get("id") or ""), supplier_id, po_date=po_date, uom=uom, raw_material_detail_id=str(raw.get("id") or "") or None)
+        if history or not raw.get("source_part_id"):
+            return history
+        source_part, source_raw = self.raw_source_context(part, raw, supplier_id)
+        return self.price_history_for_po(str(source_part.get("id") or ""), supplier_id, po_date=po_date, uom=uom, raw_material_detail_id=str(source_raw.get("id") or "") or None)
+
     def raw_material_po_group_key(self, part: Mapping[str, Any], raw: Mapping[str, Any]) -> str:
         """Group identical supplier RM across finished Parts without losing source genealogy."""
         common = normalize_match(raw.get("supplier_rm_item_code"))
@@ -387,7 +423,10 @@ class SupplyChainService:
         return f"PART_RM|{part.get('id')}|{raw.get('id')}"
 
     def forging_po_group_key(self, part: Mapping[str, Any], raw: Mapping[str, Any]) -> str:
-        """Group a genuinely common forging item used by more than one finished Part."""
+        """Group a common forging/casting by explicit source Part or supplier forging identity."""
+        source_part_id = str(raw.get("source_part_id") or "").strip()
+        if source_part_id:
+            return "|".join(["SOURCE_PART_FORGING", source_part_id, normalize_match(raw.get("material_section_name")), normalize_match(raw.get("material_grade_id") or part.get("material_grade_id"))])
         common = normalize_match(raw.get("supplier_forging_part_number"))
         if common:
             return "|".join([
@@ -409,7 +448,10 @@ class SupplyChainService:
         return self.repo.select("part_raw_material_technical_data", eq={"raw_material_detail_id": raw_material_detail_id, "status": "ACTIVE"}, order_by="sequence_no", limit=500)
 
     def technical_data_snapshot(self, raw: Mapping[str, Any], part: Mapping[str, Any]) -> list[dict[str, str]]:
+        source_part, source_raw = self.raw_source_context(part, raw, str(raw.get("supplier_id") or ""))
         custom = self.raw_material_technical_data(str(raw.get("id") or ""))
+        if not custom and raw.get("source_part_id") and source_raw.get("id"):
+            custom = self.raw_material_technical_data(str(source_raw.get("id") or ""))
         custom_map: dict[str, dict[str, str]] = {}
         for r in custom:
             if not bool(r.get("include_on_po", True)):
@@ -425,7 +467,8 @@ class SupplyChainService:
         standard = [
             ("Raw Material Type", raw.get("material_section_name")),
             ("Supplier RM Item Code", raw.get("supplier_rm_item_code")),
-            ("Supplier Forging Part No.", raw.get("supplier_forging_part_number")),
+            ("Supplier Forging Part No.", raw.get("supplier_forging_part_number") or source_raw.get("supplier_forging_part_number")),
+            ("Source Raw Forging / Casting Part", (source_part.get("fsi_part_number") or source_part.get("part_number")) if raw.get("source_part_id") else None),
             ("Material Grade", grade.get("grade_code")),
             ("Supplier Lead Time", f"{int(raw.get('lead_time_days') or 0)} Days" if int(raw.get("lead_time_days") or 0) > 0 else ""),
             ("Forge wt", f"{number(raw.get('forging_weight_kg') or part.get('forging_weight_kg')):g} Kgs" if (raw.get("forging_weight_kg") is not None or part.get("forging_weight_kg") is not None) else ""),
@@ -1116,15 +1159,20 @@ class SupplyChainService:
         line_data=[]; subtotal=0.0
         for key, group in groups.items():
             part,raw=group["part"],group["raw"]; members=group["members"]
-            common_code=str(raw.get("supplier_forging_part_number") or "").strip()
+            source_part,source_raw=self.raw_source_context(part,raw,supplier_id)
+            shared_source_id=str(raw.get("source_part_id") or "").strip()
+            common_code=str(source_raw.get("supplier_forging_part_number") or raw.get("supplier_forging_part_number") or source_part.get("fsi_part_number") or source_part.get("part_number") or "").strip() if shared_source_id else str(raw.get("supplier_forging_part_number") or "").strip()
             if len(members)>1 and not common_code:
-                raise ValueError("Multiple finished Parts can share one Forging PO item only when the same Supplier Forging Part No. is maintained in Part Master for every source.")
-            codes={str(m["raw"].get("supplier_forging_part_number") or "").strip().casefold() for m in members}
-            if len(codes)>1: raise ValueError("Selected sources do not use the same Supplier Forging Part No.; split them into separate PO items.")
-            hsns={str(m["raw"].get("hsn_sac_code") or m["part"].get("hsn_sac_code") or "").strip() for m in members}
+                raise ValueError("Multiple finished Parts can share one Forging PO item only when they reference the same Source Raw Forging / Casting Part or the same Supplier Forging Part No. in Part Master.")
+            source_ids={str(m["raw"].get("source_part_id") or "").strip() for m in members}
+            if shared_source_id and source_ids != {shared_source_id}: raise ValueError("Selected sources do not reference the same Source Raw Forging / Casting Part; split them into separate PO items.")
+            if not shared_source_id:
+                codes={str(m["raw"].get("supplier_forging_part_number") or "").strip().casefold() for m in members}
+                if len(codes)>1: raise ValueError("Selected sources do not use the same Supplier Forging Part No.; split them into separate PO items.")
+            hsns={str((self.raw_source_context(m["part"],m["raw"],supplier_id)[1]).get("hsn_sac_code") or m["raw"].get("hsn_sac_code") or m["part"].get("hsn_sac_code") or "").strip() for m in members}
             if not all(hsns): raise ValueError("HSN / SAC is missing in Part Master Raw Material Details for one or more selected Forging sources.")
             if len(hsns)>1: raise ValueError(f"Shared Forging item {common_code or '-'} has different HSN/SAC values; split the PO or align master data.")
-            prices=[self.current_price(str(m["part"].get("id")),supplier_id,on_date=order_date_value,uom="NOS",raw_material_detail_id=str(m["raw"].get("id") or "") or None) for m in members]
+            prices=[self.effective_current_price(m["part"],m["raw"],supplier_id,on_date=order_date_value,uom="NOS") for m in members]
             positive={round(number(v),6) for v in prices if number(v)>0}
             if not positive: raise ValueError(f"{common_code or part.get('fsi_part_number') or part.get('part_number')}: current supplier price is missing in Part Master Price History.")
             if len(positive)>1: raise ValueError(f"Shared Forging item {common_code or '-'} has different current prices across linked Parts. Align Price History or split the PO.")
@@ -1139,7 +1187,8 @@ class SupplyChainService:
         items=[]; stages=[]
         for line in line_data:
             part,raw=line["part"],line["raw"]; members=line["members"]; first=members[0]["order"]; linked_parts=sorted({str(m["part"].get("fsi_part_number") or m["part"].get("part_number") or "") for m in members})
-            item=self.repo.insert("supply_purchase_order_items", {"purchase_order_id":header.get("id"),"customer_order_id":first.get("id"),"part_id":part.get("id"),"material_grade_id":raw.get("material_grade_id") or part.get("material_grade_id"),"raw_material_detail_id":raw.get("id"),"item_no":line["item_no"],"fsi_part_number_snapshot":line["item_no"],"supplier_item_code_snapshot":line.get("common_code"),"linked_finished_parts_snapshot":linked_parts,"original_part_number_snapshot":part.get("part_number"),"hsn_sac_code":line["hsn"],"item_description":str(raw.get("supplier_forging_part_number") or part.get("part_name") or "Forging"),"rm_section":raw.get("section_size") or part.get("section_size"),"quantity":line["quantity"],"uom":"NOS","unit_price":line["unit_price"],"gst_percent":gst_percent,"gst_amount":line["gst_amount"],"line_total":line["line_total"],"forging_weight_kg":raw.get("forging_weight_kg") or part.get("forging_weight_kg"),"gross_weight_kg":raw.get("gross_weight_kg") or part.get("gross_weight_kg"),"technical_data_snapshot":self.technical_data_snapshot(raw,part),"price_history_snapshot":self.price_history_for_po(str(part.get("id")),supplier_id,po_date=order_date_value,uom="NOS",raw_material_detail_id=str(raw.get("id") or "") or None)[:250],"remarks":p.get("item_remarks")})
+            source_part,source_raw=self.raw_source_context(part,raw,supplier_id)
+            item=self.repo.insert("supply_purchase_order_items", {"purchase_order_id":header.get("id"),"customer_order_id":first.get("id"),"part_id":part.get("id"),"material_grade_id":raw.get("material_grade_id") or part.get("material_grade_id"),"raw_material_detail_id":raw.get("id"),"item_no":line["item_no"],"fsi_part_number_snapshot":line["item_no"],"supplier_item_code_snapshot":line.get("common_code"),"linked_finished_parts_snapshot":linked_parts,"original_part_number_snapshot":part.get("part_number"),"hsn_sac_code":line["hsn"],"item_description":str(source_raw.get("supplier_forging_part_number") or raw.get("supplier_forging_part_number") or source_part.get("part_name") or part.get("part_name") or "Forging"),"rm_section":source_raw.get("section_size") or raw.get("section_size") or part.get("section_size"),"quantity":line["quantity"],"uom":"NOS","unit_price":line["unit_price"],"gst_percent":gst_percent,"gst_amount":line["gst_amount"],"line_total":line["line_total"],"forging_weight_kg":source_raw.get("forging_weight_kg") or raw.get("forging_weight_kg") or part.get("forging_weight_kg"),"gross_weight_kg":source_raw.get("gross_weight_kg") or raw.get("gross_weight_kg") or part.get("gross_weight_kg"),"technical_data_snapshot":self.technical_data_snapshot(raw,part),"price_history_snapshot":self.effective_price_history(part,raw,supplier_id,po_date=order_date_value,uom="NOS")[:250],"remarks":p.get("item_remarks")})
             items.append(item)
             for m in members:
                 order=m["order"]; qty=number(m["quantity"]); dispatch=m["rm_dispatch"]

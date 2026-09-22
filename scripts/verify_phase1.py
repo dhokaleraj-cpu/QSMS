@@ -1015,10 +1015,10 @@ if not all(token in v41429_osp for token in ("FSI Batch Number", "Vendor Batch N
     errors.append("v4.14.29 OSP transaction selectors do not expose controlled batch identity")
 current_release_version = str(v41429_manifest.get("version") or "")
 current_release_build = str(v41429_manifest.get("build") or "")
-if current_release_version != "4.14.44" or current_release_build != "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE":
-    errors.append("v4.14.44 deployment manifest release identity is incomplete")
-if str(v41429_manifest.get("database_schema_required")) != "4.14.36" or not bool(v41429_manifest.get("database_migration_required")):
-    errors.append("v4.14.36 database migration contract is incomplete")
+if current_release_version != "4.14.45" or current_release_build != "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL":
+    errors.append("v4.14.45 deployment manifest release identity is incomplete")
+if str(v41429_manifest.get("database_schema_required")) != "4.14.45" or not bool(v41429_manifest.get("database_migration_required")):
+    errors.append("v4.14.45 database migration contract is incomplete")
 
 # v4.14.30 RMTC supplier de-duplication / dedicated Bend Test discovery / permission-aware Global Search.
 v41430_global_search = (ROOT / "app_pages" / "global_search.py").read_text(encoding="utf-8")
@@ -1185,8 +1185,36 @@ if not all(token in v41437_streamlit for token in ("android_streamlit_nav", 'st.
 if not all(token in v41444_test for token in ("test_android_v021_restores_permanent_native_menu_button", "test_streamlit_sidebar_and_android_submenu_are_visible_and_official", "test_android_footer_remains_removed_and_signature_fix_is_preserved")):
     errors.append("v4.14.44 focused Android navigation regression tests are incomplete")
 
+# v4.14.45 shared raw forging/casting source + layout identity control.
+v41445_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
+v41445_supply = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v41445_layout_service = (ROOT / "core" / "inspection_service.py").read_text(encoding="utf-8")
+v41445_layout_ui = (ROOT / "app_pages" / "inspection_layouts.py").read_text(encoding="utf-8")
+v41445_migration = (ROOT / "supabase" / "migrations" / "20260922070000_qcms_v41445_shared_raw_source_layout_scope.sql").read_text(encoding="utf-8")
+v41445_guard = (ROOT / "scripts" / "qcms_remote_schema_guard.py").read_text(encoding="utf-8")
+v41445_test = (ROOT / "tests" / "test_v41445_shared_raw_layout_control.py").read_text(encoding="utf-8")
+if not all(token in v41445_part for token in ("Source Raw Forging / Casting Part", "source_part_id", "same commercial rate is intentionally allowed on different Part Master records")):
+    errors.append("v4.14.45 Part Master shared raw-source / cross-Part price-history controls are incomplete")
+if not all(token in v41445_supply for token in ("def raw_source_context", "def effective_current_price", "def effective_price_history", "SOURCE_PART_FORGING")):
+    errors.append("v4.14.45 Supply Chain source-Part commercial/genealogy logic is incomplete")
+if not all(token in v41445_layout_service for token in ("def auto_plan_number", "def scope_plan", "Only one current inspection layout is allowed")):
+    errors.append("v4.14.45 inspection layout service controls are incomplete")
+if not all(token in v41445_layout_ui for token in ("Plan Number (Auto)", "Inspection Stage is required", "Only one current layout is permitted")):
+    errors.append("v4.14.45 inspection layout UI controls are incomplete")
+if not all(token in v41445_migration for token in ("source_part_id", "qcms_guard_raw_source_part", "uq_qcms_inspection_plan_current_scope", "qcms_release_contract_v41445", "4.14.45")):
+    errors.append("v4.14.45 additive database migration/contract is incomplete")
+if not all(token in v41445_guard for token in ("V41445_MIGRATION", "QCMS_V41445_READY", "qcms_release_contract_v41445", "apply_sql(project_ref, V41445_MIGRATION)")):
+    errors.append("v4.14.45 automatic Supabase migration guard is incomplete")
+if not all(token in v41445_test for token in ("test_same_numeric_price_is_allowed_across_different_part_masters", "test_raw_forging_casting_can_link_another_part_master", "test_layout_plan_number_is_stage_process_part_name", "test_one_current_layout_per_controlled_part_stage_process_scope")):
+    errors.append("v4.14.45 focused regression tests are incomplete")
+
 report = {
-    "release": "QCMS 4.14.44 Android Native Menu + Submenu Restore",
+    "release": "QCMS 4.14.45 Shared Raw Source + Controlled Layout Identity",
+    "v41445_cross_part_same_price_allowed": "same commercial rate is intentionally allowed on different Part Master records" in v41445_part,
+    "v41445_source_raw_part": "source_part_id" in v41445_part and "def raw_source_context" in v41445_supply,
+    "v41445_auto_layout_number": "def auto_plan_number" in v41445_layout_service and "Plan Number (Auto)" in v41445_layout_ui,
+    "v41445_one_current_layout_scope": "uq_qcms_inspection_plan_current_scope" in v41445_migration and "def scope_plan" in v41445_layout_service,
+    "v41445_auto_schema_guard": "apply_sql(project_ref, V41445_MIGRATION)" in v41445_guard,
     "v41444_android_native_menu": all(token in v41436_android for token in ("QCMSMobile/0.2.1", "toggleStreamlitSidebar", "installStreamlitSidebarController", "window.__qcmsToggleSidebar")),
     "v41444_streamlit_sidebar_submenu": all(token in v41437_streamlit for token in ('st.navigation(_mobile_page_groups, position="sidebar", expanded=True)', 'module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=2)', '[data-testid="collapsedControl"]{display:flex!important')),
     "v41443_android_fullscreen_streamlit_nav": all(token in v41436_android for token in ("USE_STREAMLIT_WEB_NAV = true", "showStableStreamlitBrowser", "QCMSMobile/0.2.1", 'appendQueryParameter("native_nav","streamlit")')),

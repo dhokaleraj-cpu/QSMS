@@ -62,6 +62,8 @@ def render_entry() -> None:
     service = InspectionService(); perms = current_permissions("INSPECTION_LAYOUTS")
     parts, part_map, process_map, stage_map = _maps(service)
     process_rows = {str(row["id"]): row for row in service.processes()}
+    part_rows = {str(row["id"]): row for row in parts}
+    stage_rows = {str(row["id"]): row for row in service.stages()}
     if not parts:
         st.warning("Create an active Part Master first.")
         return
@@ -112,10 +114,12 @@ def render_entry() -> None:
         st.warning("An OSP Process layout requires the outsourced Process selected in the Part Master specification.")
 
     c1, c2, c3, c4 = st.columns(4, gap="small")
-    plan_no = c1.text_input("Plan Number", value=str((existing or {}).get("plan_number") or ""), key=f"layout_plan_no_{editor_token}")
-    revision = c2.text_input("Revision", value=str((existing or {}).get("revision") or "00"), key=f"layout_revision_{editor_token}")
-    layout_name = c3.text_input("Layout Name", value=str((existing or {}).get("layout_name") or ""), key=f"layout_name_{editor_token}")
+    layout_name = c1.text_input("Layout Name", value=str((existing or {}).get("layout_name") or ""), key=f"layout_name_{editor_token}")
+    auto_plan_no = service.auto_plan_number(part_rows.get(part_id) or {}, process_rows.get(process_id) or {}, stage_rows.get(stage_id) or {}, layout_name)
+    plan_no = c2.text_input("Plan Number (Auto)", value=auto_plan_no, key=f"layout_plan_no_{editor_token}", disabled=True, help="Auto-controlled from Inspection Stage + Process + Part Number + Layout Name.")
+    revision = c3.text_input("Revision", value=str((existing or {}).get("revision") or "00"), key=f"layout_revision_{editor_token}")
     default_sample = c4.number_input("Default Sample Size", min_value=1, max_value=20, value=int((existing or {}).get("default_sample_size") or (6 if layout_type == "DIMENSIONAL" else 1)), step=1, key=f"layout_sample_{editor_token}")
+    st.caption(f"Auto Plan Number: {auto_plan_no}. Only one current layout is permitted for each Part + Inspection Stage + Process + Layout Type scope; a duplicate current layout is blocked, while older history may remain SUPERSEDED.")
 
     c1, c2, c3, c4 = st.columns(4, gap="small")
     report_title = c1.text_input("Report Title", value=str((existing or {}).get("report_title") or ("DIMENSIONAL INSPECTION REPORT" if layout_type == "DIMENSIONAL" else "METLAB REPORT")), key=f"layout_report_title_{editor_token}")
@@ -238,18 +242,14 @@ def render_entry() -> None:
     writable = perms["can_edit"] if existing else perms["can_create"]
     if st.button("Save Inspection Layout", type="primary", disabled=not writable, width="stretch"):
         try:
-            if not plan_no.strip() or not layout_name.strip():
-                raise ValueError("Plan Number and Layout Name are required.")
+            if not layout_name.strip():
+                raise ValueError("Layout Name is required. Plan Number is generated automatically.")
+            if not stage_id:
+                raise ValueError("Inspection Stage is required so QCMS can enforce one layout per Part / Stage / Process scope.")
             if inward_type == "OSP_PROCESS" and not process_id:
                 raise ValueError("Select the outsourced Process for an OSP Process layout.")
             if inward_type == "OSP_PROCESS" and str((process_rows.get(process_id) or {}).get("process_type")) != "OUTSOURCED":
                 raise ValueError("OSP Process layouts can use only an OUTSOURCED Process Master.")
-            if not existing:
-                duplicate_plan = service.repo.find_one("inspection_plans", eq={
-                    "part_id": part_id, "plan_number": plan_no.strip(), "revision": revision.strip() or "00", "layout_type": layout_type,
-                })
-                if duplicate_plan:
-                    raise ValueError("Duplicate inspection layout was skipped. The same Part + Plan Number + Revision + Layout Type already exists in QCMS.")
             payload = {
                 "part_id": part_id, "process_id": process_id or None, "inspection_stage_id": stage_id or None, "inward_type": inward_type,
                 "plan_number": plan_no.strip(), "revision": revision.strip() or "00", "effective_date": effective.isoformat(),

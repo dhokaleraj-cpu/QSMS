@@ -9,15 +9,16 @@ def text(rel: str) -> str:
 
 
 def test_v41431_release_identity_and_source_only_schema_contract():
-    assert text("VERSION").strip() in {"4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}
-    builds = {"41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF", "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST", "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK", "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD", "41435-PO-WATERMARK-REMINDER-MOBILE-IOS", "41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER", "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL", "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE", "41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX", "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE", "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV", "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE"}
+    assert text("VERSION").strip() in {"4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
+    builds = {"41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF", "41432-PO-PRINT-COMPACT-RM-TYPES-ANDROID-TEST", "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK", "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD", "41435-PO-WATERMARK-REMINDER-MOBILE-IOS", "41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER", "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL", "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE", "41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX", "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE", "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV", "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE", "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL"}
     assert any(build in text("streamlit_app.py") for build in builds)
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}
+    assert manifest["version"] in {"4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
     assert manifest["build"] in builds
-    assert manifest["previous_controlled_release"] == {"4.14.30": "4.14.29", "4.14.31": "4.14.30", "4.14.32": "4.14.31", "4.14.33": "4.14.32", "4.14.34": "4.14.33", "4.14.35": "4.14.34", "4.14.36": "4.14.35", "4.14.37": "4.14.36", "4.14.38": "4.14.37", "4.14.39": "4.14.38", "4.14.40": "4.14.39", "4.14.41": "4.14.40", "4.14.42": "4.14.41", "4.14.43": "4.14.42", "4.14.44": "4.14.43"}[manifest["version"]]
-    if manifest["version"] in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}:
-        assert manifest["database_schema_required"] == ("4.14.36" if manifest["version"] in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"} else manifest["version"])
+    assert manifest["previous_controlled_release"] == {"4.14.30": "4.14.29", "4.14.31": "4.14.30", "4.14.32": "4.14.31", "4.14.33": "4.14.32", "4.14.34": "4.14.33", "4.14.35": "4.14.34", "4.14.36": "4.14.35", "4.14.37": "4.14.36", "4.14.38": "4.14.37", "4.14.39": "4.14.38", "4.14.40": "4.14.39", "4.14.41": "4.14.40", "4.14.42": "4.14.41", "4.14.43": "4.14.42", "4.14.44": "4.14.43", "4.14.45": "4.14.44"}[manifest["version"]]
+    if manifest["version"] in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}:
+        expected_schema = "4.14.45" if manifest["version"] == "4.14.45" else ("4.14.36" if manifest["version"] in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"} else manifest["version"])
+        assert manifest["database_schema_required"] == expected_schema
         assert manifest["database_migration_required"] is True
         assert manifest["source_only_updater"] is False
     else:
@@ -79,12 +80,12 @@ def test_controlled_po_pdf_prints_customer_source_reference_table():
     assert ("CUSTOMER PO / SOURCE REFERENCE" in reporting) or ("PO SOURCE REFERENCE" in reporting)
     assert "CUSTOMER PO NO." in reporting
     assert '"POS"' in reporting
-    if text("VERSION").strip() in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}:
+    if text("VERSION").strip() in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}:
         assert '"PART NUMBER"' not in reporting  # customer source PN intentionally hidden from supplier print
     else:
         assert '"PART NUMBER"' in reporting
     assert '"QTY"' in reporting
-    if text("VERSION").strip() in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}:
+    if text("VERSION").strip() in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}:
         assert '"DELIVERY"' not in reporting  # customer delivery date intentionally hidden from supplier print
     else:
         assert '"DELIVERY"' in reporting
