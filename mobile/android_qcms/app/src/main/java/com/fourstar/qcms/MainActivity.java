@@ -45,6 +45,8 @@ public class MainActivity extends Activity {
     private LinearLayout drawerPanel;
     private View drawerScrim;
     private String baseUrl = "";
+    private int navigationToken = 0;
+    private String pendingRoute = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -172,7 +174,7 @@ public class MainActivity extends Activity {
         main.addView(top,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
 
         webView = new WebView(this);
-        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.1.7");
+        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.1.8");
         CookieManager cm=CookieManager.getInstance(); cm.setAcceptCookie(true); cm.setAcceptThirdPartyCookies(webView,true);
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageFinished(WebView view,String pageUrl){ super.onPageFinished(view,pageUrl); installMobileChromeSuppressor(); }
@@ -225,31 +227,53 @@ public class MainActivity extends Activity {
         if(webView==null)return;
         String route = path == null ? "dashboard" : path.trim();
         if(route.isEmpty()) route = "dashboard";
-        tryNavigate(route, 0);
+        pendingRoute = route;
+        final int token = ++navigationToken;
+        // Re-install the bridge immediately. Streamlit's React tree can finish
+        // rendering after WebView.onPageFinished, especially after login/reruns.
+        installMobileChromeSuppressor();
+        webView.postDelayed(() -> tryNavigate(route, token, 0), 60);
     }
 
-    private void tryNavigate(String route, int attempt){
-        if(webView==null)return;
+    private void tryNavigate(String route, int token, int attempt){
+        if(webView==null || token != navigationToken)return;
         String script = "(function(){try{return window.__qcmsNativeNavigate?window.__qcmsNativeNavigate(" + JSONObject.quote(route) + "): 'QCMS_NAV_BRIDGE_MISSING';}catch(e){return 'QCMS_NAV_ERROR';}})();";
         webView.evaluateJavascript(script, result -> {
+            if(token != navigationToken)return;
             String value = result == null ? "" : result;
-            if(value.contains("QCMS_NAV_OK")) return;
-            if(attempt < 9){
-                webView.postDelayed(() -> tryNavigate(route, attempt + 1), 180);
+            if(value.contains("QCMS_NAV_OK")) { pendingRoute = ""; return; }
+            // PENDING is a successful handoff: the JavaScript bridge keeps the
+            // requested route queued and its MutationObserver/timer clicks the
+            // Streamlit navigation button as soon as it is rendered.
+            if(value.contains("QCMS_NAV_PENDING")) return;
+            if(attempt < 60){
+                if(attempt == 0 || attempt % 8 == 0) installMobileChromeSuppressor();
+                webView.postDelayed(() -> tryNavigate(route, token, attempt + 1), 250);
                 return;
             }
-            Toast.makeText(MainActivity.this, "QCMS navigation is still loading. Please try the menu again.", Toast.LENGTH_SHORT).show();
+            // Do not show the old false "navigation is still loading" toast.
+            // Leave the route queued and refresh only the JS bridge; this keeps
+            // the authenticated WebView/session intact and lets the DOM observer
+            // complete navigation when Streamlit finishes its current rerun.
+            installMobileChromeSuppressor();
         });
     }
-    private void openDrawer(){ if(drawerLayer!=null){drawerLayer.setVisibility(View.VISIBLE);drawerLayer.bringToFront();} }
+    private void openDrawer(){ if(drawerLayer!=null){drawerLayer.setVisibility(View.VISIBLE);drawerLayer.bringToFront(); installMobileChromeSuppressor();} }
     private void closeDrawer(){ if(drawerLayer!=null)drawerLayer.setVisibility(View.GONE); }
 
     private void installMobileChromeSuppressor(){
         if(webView==null)return;
-        String script="(function(){function apply(){"+
+        String script="(function(){"+
+            "function apply(){"+
             "var style=document.getElementById('qcms-mobile-native-style');if(!style){style=document.createElement('style');style.id='qcms-mobile-native-style';style.textContent='div.st-key-fsi_shell,[class~=\\\"st-key-fsi_shell\\\"],.st-key-fsi_left_rail,[class~=\\\"st-key-fsi_left_rail\\\"],[class*=\\\"st-key-fsi_module_subnav_\\\"]{display:none!important}.st-key-qcms_native_nav_bridge,[class~=\\\"st-key-qcms_native_nav_bridge\\\"]{position:fixed!important;left:-200vw!important;top:0!important;width:1px!important;height:1px!important;overflow:hidden!important;opacity:.001!important;z-index:-1!important}div.st-key-qcms_workspace [data-testid=\\\"stHorizontalBlock\\\"]{display:block!important}.st-key-qcms_content,[class~=\\\"st-key-qcms_content\\\"]{width:100%!important;max-width:100%!important}div[data-testid=\\\"stMainBlockContainer\\\"],.block-container{padding:.55rem .55rem 1rem!important}.fsi-page-head{margin-top:0!important}.qcms-enterprise-table-wrap{max-height:78vh!important}';document.head.appendChild(style);} "+
-            "window.__qcmsNativeNavigate=function(route){var p=(route||'').toString().replace(/^\\/+|\\/+$/g,'');var marker='QCMS_NAV::'+p;var root=document.querySelector('.st-key-qcms_native_nav_bridge,[class~=\\\"st-key-qcms_native_nav_bridge\\\"]')||document;var nodes=root.querySelectorAll('[data-testid=\\\"stPageLink\\\"],a[href]');for(var i=0;i<nodes.length;i++){var n=nodes[i];var text=(n.textContent||'').trim();if(text.indexOf(marker)>=0){var target=(n.tagName==='A'?n:(n.querySelector('a')||n.querySelector('button')||n));target.click();return 'QCMS_NAV_OK';}}var anchors=root.querySelectorAll('a[href]');for(var j=0;j<anchors.length;j++){try{var a=anchors[j],u=new URL(a.href,window.location.href),clean=u.pathname.replace(/\\/+$/,'');if(clean.endsWith('/'+p)||clean===('/'+p)){a.click();return 'QCMS_NAV_OK';}}catch(e){}}return 'QCMS_NAV_MISSING';};"+
-            "var rail=document.querySelector('.st-key-fsi_left_rail,[class~=\\\"st-key-fsi_left_rail\\\"]');var rc=rail?rail.closest('[data-testid=\\\"column\\\"]'):null;if(rc)rc.style.display='none';var content=document.querySelector('.st-key-qcms_content,[class~=\\\"st-key-qcms_content\\\"]');var cc=content?content.closest('[data-testid=\\\"column\\\"]'):null;if(cc){cc.style.display='block';cc.style.width='100%';cc.style.flex='1 1 100%';}}window.__qcmsMobileApply=apply;if(window.__qcmsMobileObserver){try{window.__qcmsMobileObserver.disconnect()}catch(e){}}window.__qcmsMobileObserver=new MutationObserver(function(){requestAnimationFrame(apply)});window.__qcmsMobileObserver.observe(document.documentElement,{childList:true,subtree:true});apply();})();";
+            "var rail=document.querySelector('.st-key-fsi_left_rail,[class~=\\\"st-key-fsi_left_rail\\\"]');var rc=rail?rail.closest('[data-testid=\\\"column\\\"]'):null;if(rc)rc.style.display='none';var content=document.querySelector('.st-key-qcms_content,[class~=\\\"st-key-qcms_content\\\"]');var cc=content?content.closest('[data-testid=\\\"column\\\"]'):null;if(cc){cc.style.display='block';cc.style.width='100%';cc.style.flex='1 1 100%';}}"+
+            "function findAndClick(route){var p=(route||'').toString().replace(/^\\/+|\\/+$/g,'');if(!p)return false;var marker='QCMS_NAV::'+p;var root=document.querySelector('.st-key-qcms_native_nav_bridge,[class~=\\\"st-key-qcms_native_nav_bridge\\\"]')||document;var nodes=root.querySelectorAll('button,[role=\\\"button\\\"],[data-testid=\\\"stPageLink\\\"],a[href]');for(var i=0;i<nodes.length;i++){var n=nodes[i];var text=(n.innerText||n.textContent||'').replace(/\\s+/g,' ').trim();if(text.indexOf(marker)>=0){var target=(n.matches&&n.matches('button,a'))?n:(n.querySelector('button,a')||n);if(target&&typeof target.click==='function'){target.click();return true;}}}var anchors=root.querySelectorAll('a[href]');for(var j=0;j<anchors.length;j++){try{var a=anchors[j],u=new URL(a.href,window.location.href),clean=u.pathname.replace(/\\/+$/,'');if(clean.endsWith('/'+p)||clean===('/'+p)){a.click();return true;}}catch(e){}}return false;}"+
+            "function drain(){var p=window.__qcmsNativePendingRoute||'';if(p&&findAndClick(p)){window.__qcmsNativePendingRoute='';window.__qcmsNativeLastStatus='QCMS_NAV_OK';return true;}return false;}"+
+            "window.__qcmsNativeNavigate=function(route){var p=(route||'').toString().replace(/^\\/+|\\/+$/g,'')||'dashboard';window.__qcmsNativePendingRoute=p;if(findAndClick(p)){window.__qcmsNativePendingRoute='';window.__qcmsNativeLastStatus='QCMS_NAV_OK';return 'QCMS_NAV_OK';}window.__qcmsNativeLastStatus='QCMS_NAV_PENDING';return 'QCMS_NAV_PENDING';};"+
+            "window.__qcmsNativeBridgeReady=true;window.__qcmsMobileApply=apply;"+
+            "if(window.__qcmsMobileObserver){try{window.__qcmsMobileObserver.disconnect()}catch(e){}}window.__qcmsMobileObserver=new MutationObserver(function(){requestAnimationFrame(function(){apply();drain();})});window.__qcmsMobileObserver.observe(document.documentElement,{childList:true,subtree:true});"+
+            "if(window.__qcmsNativeNavTimer){try{clearInterval(window.__qcmsNativeNavTimer)}catch(e){}}window.__qcmsNativeNavTimer=setInterval(function(){drain();},250);"+
+            "apply();drain();return 'QCMS_BRIDGE_READY';})();";
         webView.evaluateJavascript(script,null);
     }
 

@@ -38,6 +38,7 @@ def test_release_identity_source_only():
         "4.14.37": ("41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL", "4.14.36"),
         "4.14.38": ("41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE", "4.14.37"),
         "4.14.39": ("41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX", "4.14.38"),
+        "4.14.40": ("41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE", "4.14.39"),
     }
     assert version in builds
     build, previous = builds[version]
@@ -46,8 +47,8 @@ def test_release_identity_source_only():
     assert manifest["version"] == version
     assert manifest["build"] == build
     assert manifest["previous_controlled_release"] == previous
-    if version in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39"}:
-        assert manifest["database_schema_required"] == ("4.14.36" if version in {"4.14.37", "4.14.38", "4.14.39"} else version)
+    if version in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40"}:
+        assert manifest["database_schema_required"] == ("4.14.36" if version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40"} else version)
         assert manifest["database_migration_required"] is True
     else:
         assert manifest["database_schema_required"] == "4.14.28"

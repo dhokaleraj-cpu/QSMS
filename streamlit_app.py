@@ -1,5 +1,6 @@
-# QCMS 4.14.39 — ANDROID-CI-SIGNATURE-PERMANENT-FIX
-# BUILD 41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX
+# QCMS 4.14.40 — ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE
+# BUILD 41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE
+# PRESERVED PREVIOUS BUILD MARKER: 41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX
 # QCMS 4.14.19 — PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES
 # BUILD 41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD
 # QCMS 4.14.15 — DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
@@ -469,7 +470,7 @@ if not native_mobile:
     if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
         logout()
 
-    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX")
+    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE")
 
     # Persistent permission-aware Global Search launcher for desktop/web.
     with st.form("qcms_shell_global_search_form", border=False):
@@ -517,13 +518,19 @@ else:
         </style>""",
         unsafe_allow_html=True,
     )
-    # Native wrappers must navigate through Streamlit's own page-link mechanism.
-    # A WebView.loadUrl("/route") starts a new Streamlit browser session and drops
-    # the in-memory QCMS login. These hidden page links are clicked by the native
-    # Android bridge so page changes stay inside the existing authenticated session.
+    # Native wrappers must navigate inside the current Streamlit session. A hard
+    # WebView.loadUrl("/route") starts a new browser session and can lose the
+    # in-memory QCMS login. The native app therefore clicks one of these hidden
+    # Streamlit buttons; the button callback performs st.switch_page server-side.
+    # This is intentionally a widget bridge (not a DOM-only page-link bridge) so
+    # slow React rendering can be queued safely by Android without showing a false
+    # "navigation is still loading" error.
     with st.container(border=False, key="qcms_native_nav_bridge"):
+        st.markdown('<span id="qcms-native-nav-ready" data-qcms-native-nav-ready="1"></span>', unsafe_allow_html=True)
         for _native_route, _native_page in PAGE_ITEMS:
-            st.page_link(_native_page, label=f"QCMS_NAV::{_native_route}")
+            if st.button(f"QCMS_NAV::{_native_route}", key=f"qcms_native_nav_{_native_route}"):
+                st.session_state["_qcms_native_last_route"] = _native_route
+                st.switch_page(_native_page)
 
     with st.container(border=False, key="qcms_workspace"):
         with st.container(border=False, key="qcms_content"):

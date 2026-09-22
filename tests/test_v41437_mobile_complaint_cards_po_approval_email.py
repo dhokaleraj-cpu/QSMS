@@ -8,13 +8,14 @@ def text(rel: str) -> str:
 
 def test_v41437_release_identity():
     version = text("VERSION").strip()
-    assert version in {"4.14.37", "4.14.38", "4.14.39"}
+    assert version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert manifest["version"] == version
     expected = {
         "4.14.37": "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL",
         "4.14.38": "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE",
         "4.14.39": "41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX",
+        "4.14.40": "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE",
     }
     assert manifest["build"] == expected[version]
 
@@ -48,9 +49,14 @@ def test_android_full_expandable_navigation_and_fixed_bottom_bar():
             assert token in java
     elif version == "4.14.38":
         assert "versionName '0.1.6'" in gradle
-    else:
+    elif version == "4.14.39":
         assert "versionName '0.1.7'" in gradle
-        for token in (("QCMSMobile/0.1.6" if version == "4.14.38" else "QCMSMobile/0.1.7"), "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "__qcmsNativeNavigate"):
+        for token in ("QCMSMobile/0.1.7", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "__qcmsNativeNavigate"):
+            assert token in java
+        assert "LinearLayout bottom=new LinearLayout" not in java
+    else:
+        assert "versionName '0.1.8'" in gradle
+        for token in ("QCMSMobile/0.1.8", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "__qcmsNativeNavigate", "QCMS_NAV_PENDING"):
             assert token in java
         assert "LinearLayout bottom=new LinearLayout" not in java
 
