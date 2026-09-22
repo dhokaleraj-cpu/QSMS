@@ -1,7 +1,7 @@
 name: QCMS Android Test APK
 
 # Builds only the mobile source. Does not deploy QCMS, access Supabase, or send emails.
-# The first deployment of v4.14.36 triggers this automatically after the Git push.
+# Artifact/version values are read from app/build.gradle so future Android version bumps cannot leave stale CI checks behind.
 on:
   workflow_dispatch:
   push:
@@ -53,6 +53,19 @@ jobs:
           "$MANAGER" --sdk_root="$SDK" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
           printf 'sdk.dir=%s\n' "$SDK" > mobile/android_qcms/local.properties
           printf 'QCMS_ANDROID_SDK=%s\n' "$SDK" >> "$GITHUB_ENV"
+      - name: Read Android build identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          GRADLE_FILE=mobile/android_qcms/app/build.gradle
+          VERSION_NAME="$(sed -n "s/^[[:space:]]*versionName[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" "$GRADLE_FILE" | head -1)"
+          VERSION_CODE="$(sed -n "s/^[[:space:]]*versionCode[[:space:]]*\([0-9][0-9]*\).*/\1/p" "$GRADLE_FILE" | head -1)"
+          [ -n "$VERSION_NAME" ] || { echo 'Unable to read versionName from app/build.gradle'; exit 1; }
+          [ -n "$VERSION_CODE" ] || { echo 'Unable to read versionCode from app/build.gradle'; exit 1; }
+          printf 'QCMS_MOBILE_VERSION=%s\n' "$VERSION_NAME" >> "$GITHUB_ENV"
+          printf 'QCMS_MOBILE_VERSION_CODE=%s\n' "$VERSION_CODE" >> "$GITHUB_ENV"
+          printf 'QCMS_APK_NAME=QCMS_Mobile_v%s_TEST.apk\n' "$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "Android versionName=$VERSION_NAME versionCode=$VERSION_CODE"
       - name: Compile APK and run Android lint
         working-directory: mobile/android_qcms
         run: gradle --no-daemon :app:assembleDebug :app:lintDebug
@@ -61,21 +74,41 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p apk-artifacts
-          APK=apk-artifacts/QCMS_Mobile_v0.1.4_TEST.apk
+          APK="apk-artifacts/$QCMS_APK_NAME"
           cp mobile/android_qcms/app/build/outputs/apk/debug/app-debug.apk "$APK"
           BT="$QCMS_ANDROID_SDK/build-tools/35.0.0"
+
+          # apksigner success is the authoritative signature result. With QCMS minSdk 26,
+          # Signature Scheme v2 is valid. Optional v1/v3/v3.1/v4/SourceStamp 'false'
+          # lines are informational and must never fail the workflow by themselves.
+          set +e
           "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-artifacts/SIGNATURE_VERIFICATION.txt
+          APKSIGN_RC=${PIPESTATUS[0]}
+          set -e
+          [ "$APKSIGN_RC" -eq 0 ] || { echo "apksigner verification failed with exit code $APKSIGN_RC"; exit "$APKSIGN_RC"; }
+          grep -Fq "Verified using v2 scheme (APK Signature Scheme v2): true" apk-artifacts/SIGNATURE_VERIFICATION.txt || {
+            echo 'Required APK Signature Scheme v2 verification was not true.'
+            exit 1
+          }
+
           "$BT/zipalign" -c -P 16 -v 4 "$APK" > apk-artifacts/ALIGNMENT_VERIFICATION.txt
-          "$BT/aapt" dump badging "$APK" > apk-artifacts/APK_PACKAGE_INFO.txt
-          grep -q "com.fourstar.qcms.test" apk-artifacts/APK_PACKAGE_INFO.txt
-          grep -q "versionName='0.1.4'" apk-artifacts/APK_PACKAGE_INFO.txt
-          (cd apk-artifacts && sha256sum QCMS_Mobile_v0.1.4_TEST.apk > SHA256SUMS.txt)
+          "$BT/aapt" dump badging "$APK" | tee apk-artifacts/APK_PACKAGE_INFO.txt
+
+          ACTUAL_PACKAGE="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" apk-artifacts/APK_PACKAGE_INFO.txt | head -1)"
+          ACTUAL_VERSION="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" apk-artifacts/APK_PACKAGE_INFO.txt | head -1)"
+          ACTUAL_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" apk-artifacts/APK_PACKAGE_INFO.txt | head -1)"
+          [ "$ACTUAL_PACKAGE" = "com.fourstar.qcms.test" ] || { echo "Unexpected package: $ACTUAL_PACKAGE"; exit 1; }
+          [ "$ACTUAL_VERSION" = "$QCMS_MOBILE_VERSION" ] || { echo "VersionName mismatch: APK=$ACTUAL_VERSION Gradle=$QCMS_MOBILE_VERSION"; exit 1; }
+          [ "$ACTUAL_CODE" = "$QCMS_MOBILE_VERSION_CODE" ] || { echo "VersionCode mismatch: APK=$ACTUAL_CODE Gradle=$QCMS_MOBILE_VERSION_CODE"; exit 1; }
+
+          (cd apk-artifacts && sha256sum "$QCMS_APK_NAME" > SHA256SUMS.txt)
           cp mobile/android_qcms/INSTALL_APK_ON_SAMSUNG.md apk-artifacts/INSTALL_README.md
-          printf '## QCMS APK built and verified\nDownload **QCMS-Mobile-v0.1.4-TEST-APK** below, extract the ZIP and install the .apk on your Samsung. This is a test-signed online WebView app, not a Play Store release.\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Signature status: PASS. APK Signature Scheme v2 verified true. Optional v1/v3/v3.1/v4/SourceStamp values may be false for this internal debug APK and are not CI failures.\n' > apk-artifacts/VERIFICATION_SUMMARY.txt
+          printf '## QCMS APK built and verified\nVersion **%s** passed compile, lint, apksigner v2 verification, zipalign and package/version checks. Download **QCMS-Mobile-TEST-APK** below and install `%s`.\n' "$QCMS_MOBILE_VERSION" "$QCMS_APK_NAME" >> "$GITHUB_STEP_SUMMARY"
       - name: Downloadable APK package
         uses: actions/upload-artifact@v4
         with:
-          name: QCMS-Mobile-v0.1.4-TEST-APK
+          name: QCMS-Mobile-TEST-APK
           path: apk-artifacts/
           if-no-files-found: error
           retention-days: 30

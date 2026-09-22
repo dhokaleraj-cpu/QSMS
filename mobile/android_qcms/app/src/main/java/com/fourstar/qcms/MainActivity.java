@@ -172,7 +172,7 @@ public class MainActivity extends Activity {
         main.addView(top,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
 
         webView = new WebView(this);
-        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.1.6");
+        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.1.7");
         CookieManager cm=CookieManager.getInstance(); cm.setAcceptCookie(true); cm.setAcceptThirdPartyCookies(webView,true);
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageFinished(WebView view,String pageUrl){ super.onPageFinished(view,pageUrl); installMobileChromeSuppressor(); }

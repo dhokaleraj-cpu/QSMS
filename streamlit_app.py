@@ -1,5 +1,5 @@
-# QCMS 4.14.38 — ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE
-# BUILD 41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE
+# QCMS 4.14.39 — ANDROID-CI-SIGNATURE-PERMANENT-FIX
+# BUILD 41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX
 # QCMS 4.14.19 — PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES
 # BUILD 41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD
 # QCMS 4.14.15 — DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
@@ -469,7 +469,7 @@ if not native_mobile:
     if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
         logout()
 
-    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE")
+    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX")
 
     # Persistent permission-aware Global Search launcher for desktop/web.
     with st.form("qcms_shell_global_search_form", border=False):

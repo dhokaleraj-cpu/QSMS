@@ -11,7 +11,9 @@ say(){ printf '\n=== %s ===\n' "$1"; }
 fail(){ printf '\nERROR: %s\n' "$1" >&2; exit 1; }
 
 echo "============================================================"
-echo " QCMS Mobile v0.1.6 - Samsung Android build & install"
+MOBILE_VERSION="$(sed -n "s/^[[:space:]]*versionName[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" "$HERE/app/build.gradle" | head -1)"
+[ -n "$MOBILE_VERSION" ] || fail "Unable to read Android versionName from app/build.gradle."
+echo " QCMS Mobile v${MOBILE_VERSION} - Samsung Android build & install"
 echo "============================================================"
 echo "Project : $HERE"
 echo "SDK     : $SDK"
@@ -101,10 +103,18 @@ APK="$HERE/app/build/outputs/apk/debug/app-debug.apk"
 [ -f "$APK" ] || fail "APK not produced: $APK"
 # Keep the user-facing APK in Downloads even when no phone/ADB device is attached.
 mkdir -p "$HOME/Downloads"
-OUTPUT_APK="$HOME/Downloads/QCMS_Mobile_v0.1.6_TEST.apk"
+OUTPUT_APK="$HOME/Downloads/QCMS_Mobile_v${MOBILE_VERSION}_TEST.apk"
 cp -p "$APK" "$OUTPUT_APK"
-"$SDK/build-tools/35.0.0/apksigner" verify --verbose "$OUTPUT_APK" || fail "APK signature verification failed."
-printf '\nAPK READY: %s\n' "$OUTPUT_APK"
+SIG_REPORT="$OUTPUT_APK.signature.txt"
+set +e
+"$SDK/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUTPUT_APK" | tee "$SIG_REPORT"
+APKSIGN_RC=${PIPESTATUS[0]}
+set -e
+[ "$APKSIGN_RC" -eq 0 ] || fail "APK signature verification failed (apksigner exit $APKSIGN_RC). See: $SIG_REPORT"
+grep -Fq "Verified using v2 scheme (APK Signature Scheme v2): true" "$SIG_REPORT" || fail "APK is not verified with Signature Scheme v2. See: $SIG_REPORT"
+"$SDK/build-tools/35.0.0/zipalign" -c -P 16 -v 4 "$OUTPUT_APK" >/dev/null || fail "APK zip alignment verification failed."
+printf '\nAPK SIGNATURE: PASS (v2 verified). v1/v3/v3.1/v4/SourceStamp may show false for this internal debug build and are not treated as failures.\n'
+printf 'APK READY: %s\n' "$OUTPUT_APK"
 shasum -a 256 "$OUTPUT_APK" > "$OUTPUT_APK.sha256"
 if [ "${QCMS_BUILD_ONLY:-0}" = "1" ]; then exit 0; fi
 

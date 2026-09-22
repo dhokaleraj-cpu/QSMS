@@ -1,13 +1,13 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.38
-Build `41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE`.
+## Current controlled release — v4.14.39
+Build `41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX`.
 
 Android 0.1.6 fixes the mobile menu login-loop by routing drawer selections through hidden Streamlit `st.page_link` elements instead of hard `WebView.loadUrl()` page loads. This keeps the existing authenticated Streamlit session alive while changing QCMS pages.
 
 The Android fixed Home/Search/Complaints footer has been removed and mobile content now uses the reclaimed screen height. The top-bar hard-refresh control is also removed so an accidental full browser reload cannot drop the in-memory QCMS login.
 
-Complaint dashboard cards, Complaint PDF/document email with optional Customer/Supplier copy, Purchase Order Pending Approval worklist/draft approver email, all permissions/audit controls and the v4.14.36 live database/notification baseline remain preserved. v4.14.38 requires no new Supabase schema migration.
+Complaint dashboard cards, Complaint PDF/document email with optional Customer/Supplier copy, Purchase Order Pending Approval worklist/draft approver email, all permissions/audit controls and the v4.14.36 live database/notification baseline remain preserved. v4.14.39 requires no new Supabase schema migration. The Android CI/APK verification flow now derives version identity from Gradle and validates apksigner v2 without treating optional signature schemes as failures.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.

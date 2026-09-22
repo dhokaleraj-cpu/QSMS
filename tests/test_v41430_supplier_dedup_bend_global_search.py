@@ -10,16 +10,16 @@ def text(rel: str) -> str:
 
 def test_v41430_release_identity_source_only_contract():
     version = text("VERSION").strip()
-    assert version in {"4.14.30", "4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38"}
+    assert version in {"4.14.30", "4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39"}
     app = text("streamlit_app.py")
     assert any(marker in app for marker in (
         "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH",
         "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF",
         "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK",
-        "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD", "41435-PO-WATERMARK-REMINDER-MOBILE-IOS", "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL", "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE",
+        "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD", "41435-PO-WATERMARK-REMINDER-MOBILE-IOS", "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL", "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE", "41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX",
     ))
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.30", "4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38"}
+    assert manifest["version"] in {"4.14.30", "4.14.31", "4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39"}
     assert manifest["build"] in {
         "41430-RMTC-SUPPLIER-DEDUP-BEND-GLOBAL-SEARCH",
         "41431-PO-WORKSPACE-PREAPPROVAL-EDIT-CUSTOMER-REF-PDF",
@@ -27,17 +27,17 @@ def test_v41430_release_identity_source_only_contract():
         "41433-PO-PORTRAIT-TERMS-BATCH-PRINT-EMAIL-ANDROID-SDK",
         "41434-INDIVIDUAL-PO-PDF-ZIP-ANDROID-APK-BUILD", "41435-PO-WATERMARK-REMINDER-MOBILE-IOS",
         "41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER",
-        "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL", "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE",
+        "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL", "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE", "41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX",
     }
-    if manifest["version"] in {"4.14.35", "4.14.36", "4.14.37", "4.14.38"}:
-        assert manifest["database_schema_required"] == ("4.14.36" if manifest["version"] in {"4.14.37", "4.14.38"} else manifest["version"])
+    if manifest["version"] in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39"}:
+        assert manifest["database_schema_required"] == ("4.14.36" if manifest["version"] in {"4.14.37", "4.14.38", "4.14.39"} else manifest["version"])
         assert manifest["database_migration_required"] is True
         assert manifest["source_only_updater"] is False
     else:
         assert manifest["database_schema_required"] == "4.14.28"
         assert manifest["database_migration_required"] is False
         assert manifest["source_only_updater"] is True
-    assert manifest["previous_controlled_release"] == {"4.14.30": "4.14.29", "4.14.31": "4.14.30", "4.14.32": "4.14.31", "4.14.33": "4.14.32", "4.14.34": "4.14.33", "4.14.35": "4.14.34", "4.14.36": "4.14.35", "4.14.37": "4.14.36", "4.14.38": "4.14.37"}[manifest["version"]]
+    assert manifest["previous_controlled_release"] == {"4.14.30": "4.14.29", "4.14.31": "4.14.30", "4.14.32": "4.14.31", "4.14.33": "4.14.32", "4.14.34": "4.14.33", "4.14.35": "4.14.34", "4.14.36": "4.14.35", "4.14.37": "4.14.36", "4.14.38": "4.14.37", "4.14.39": "4.14.38"}[manifest["version"]]
 
 
 def test_rmtc_approved_source_returns_one_option_per_supplier():
