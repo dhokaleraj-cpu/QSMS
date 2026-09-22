@@ -8,7 +8,7 @@ def text(rel: str) -> str:
 
 def test_v41437_release_identity():
     version = text("VERSION").strip()
-    assert version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43"}
+    assert version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert manifest["version"] == version
     expected = {
@@ -19,6 +19,7 @@ def test_v41437_release_identity():
         "4.14.41": "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX",
         "4.14.42": "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD",
         "4.14.43": "41443-ANDROID-STREAMLIT-SIDEBAR-NAV",
+        "4.14.44": "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE",
     }
     assert manifest["build"] == expected[version]
 
@@ -68,10 +69,14 @@ def test_android_full_expandable_navigation_and_fixed_bottom_bar():
                       "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "__qcmsNativeNavigate", "QCMS_NAV_PENDING"):
             assert token in java
         assert "LinearLayout bottom=new LinearLayout" not in java
-    else:
-        assert version == "4.14.43"
+    elif version == "4.14.43":
         assert "versionName '0.2.0'" in gradle
         for token in ("QCMSMobile/0.2.0", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "__qcmsNativeNavigate", "QCMS_NAV_PENDING"):
+            assert token in java
+    else:
+        assert version == "4.14.44"
+        assert "versionName '0.2.1'" in gradle
+        for token in ("QCMSMobile/0.2.1", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "toggleStreamlitSidebar"):
             assert token in java
         assert "LinearLayout bottom=new LinearLayout" not in java
 

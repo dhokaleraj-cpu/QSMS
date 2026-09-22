@@ -15,7 +15,7 @@ def text(rel: str) -> str:
 
 def test_v41432_release_identity_and_source_only_schema():
     version = text("VERSION").strip()
-    assert version in {"4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43"}
+    assert version in {"4.14.32", "4.14.33", "4.14.34", "4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert manifest["version"] == version
     if version == "4.14.32":
@@ -51,11 +51,15 @@ def test_v41432_release_identity_and_source_only_schema():
     elif manifest["version"] == "4.14.42":
         assert manifest["build"] == "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD"
         assert manifest["previous_controlled_release"] == "4.14.41"
-    else:
+    elif version == "4.14.43":
         assert manifest["build"] == "41443-ANDROID-STREAMLIT-SIDEBAR-NAV"
         assert manifest["previous_controlled_release"] == "4.14.42"
-    if version in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43"}:
-        assert manifest["database_schema_required"] == ("4.14.36" if version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43"} else version)
+    else:
+        assert version == "4.14.44"
+        assert manifest["build"] == "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE"
+        assert manifest["previous_controlled_release"] == "4.14.43"
+    if version in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"}:
+        assert manifest["database_schema_required"] == ("4.14.36" if version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"} else version)
         assert manifest["database_migration_required"] is True
     else:
         assert manifest["database_schema_required"] == "4.14.28"
@@ -141,7 +145,7 @@ def test_android_test_shell_and_samsung_install_helper_are_packaged():
     installer = (mobile / "BUILD_AND_INSTALL_SAMSUNG.command").read_text(encoding="utf-8")
     assert "android.permission.INTERNET" in manifest
     assert 'android:usesCleartextTraffic="false"' in manifest
-    assert "https://" in activity and ("QCMSMobile/0.1.0" in activity or "QCMSMobile/0.1.1" in activity or "QCMSMobile/0.1.2" in activity or "QCMSMobile/0.1.3" in activity or "QCMSMobile/0.1.4" in activity or "QCMSMobile/0.1.5" in activity or "QCMSMobile/0.1.6" in activity or "QCMSMobile/0.1.7" in activity or "QCMSMobile/0.1.8" in activity or "QCMSMobile/0.1.9" in activity)
+    assert "https://" in activity and ("QCMSMobile/0.1.0" in activity or "QCMSMobile/0.1.1" in activity or "QCMSMobile/0.1.2" in activity or "QCMSMobile/0.1.3" in activity or "QCMSMobile/0.1.4" in activity or "QCMSMobile/0.1.5" in activity or "QCMSMobile/0.1.6" in activity or "QCMSMobile/0.1.7" in activity or "QCMSMobile/0.1.8" in activity or "QCMSMobile/0.1.9" in activity or "QCMSMobile/0.2.0" in activity or "QCMSMobile/0.2.1" in activity)
     assert "service-role" not in activity.lower()
     assert "targetSdk 35" in build and "minSdk 26" in build
     assert "adb" in installer and "install -r" in installer and "assembleDebug" in installer

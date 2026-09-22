@@ -1,5 +1,6 @@
-# QCMS 4.14.42 — LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD
-# BUILD 41443-ANDROID-STREAMLIT-SIDEBAR-NAV
+# QCMS 4.14.44 — ANDROID-NATIVE-MENU-SUBMENU-RESTORE
+# BUILD 41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE
+# PRESERVED PREVIOUS BUILD MARKER: 41443-ANDROID-STREAMLIT-SIDEBAR-NAV
 # PRESERVED PREVIOUS BUILD MARKER: 41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX
 # PRESERVED PREVIOUS BUILD MARKER: 41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX
 # QCMS 4.14.19 — PO-LIVE-EMPLOYEE-DELETE-USER-STATUS-SAME-HEAT-CONFIRMATION-IMAGES
@@ -95,13 +96,12 @@ _native_ios = "QCMSMobileIOS/" in _native_user_agent
 if _native_value in {"1", "true", "yes", "native"} or _native_android or _native_ios:
     st.session_state["_qcms_native_mobile"] = True
 native_mobile = bool(st.session_state.get("_qcms_native_mobile"))
-# Android v0.2.0 deliberately returns navigation ownership to Streamlit itself.
-# This eliminates the Android Java -> DOM -> hidden widget timing bridge from
-# the active Android path while leaving the iPhone/iPad native drawer unchanged.
+# Android v0.2.1 uses a compact native top bar only to open Streamlit's official sidebar; page navigation itself remains owned by Streamlit.
+# This removes route-click timing bridges from the active Android path while preserving the authenticated WebView session and the iPhone/iPad native drawer.
 android_streamlit_nav = bool(
     native_mobile
     and _native_android
-    and (_native_nav_value in {"streamlit", "sidebar", "web"} or "QCMSMobile/0.2.0" in _native_user_agent)
+    and (_native_nav_value in {"streamlit", "sidebar", "web"} or "QCMSMobile/0.2.0" in _native_user_agent or "QCMSMobile/0.2.1" in _native_user_agent)
 )
 
 # Keep an explicit route-to-Page registry. Streamlit may expose the default
@@ -450,7 +450,7 @@ if android_streamlit_nav:
         _group_pages = [_page for _route, _page in PAGE_ITEMS if ROUTE_MODULE.get(_route, "Dashboard") == _group]
         if _group_pages:
             _mobile_page_groups[_group] = _group_pages
-    nav = st.navigation(_mobile_page_groups, position="sidebar", expanded=False)
+    nav = st.navigation(_mobile_page_groups, position="sidebar", expanded=True)
 else:
     nav = st.navigation(PAGES, position="hidden")
 current_path = PAGE_TITLE_TO_PATH.get(nav.title, "dashboard")
@@ -499,7 +499,7 @@ if not native_mobile:
     if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
         logout()
 
-    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41443-ANDROID-STREAMLIT-SIDEBAR-NAV")
+    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE")
 
     # Persistent permission-aware Global Search launcher for desktop/web.
     with st.form("qcms_shell_global_search_form", border=False):
@@ -532,22 +532,28 @@ if not native_mobile:
                     nav.run()
                 app_footer()
 elif android_streamlit_nav:
-    # Android stable mode: Streamlit owns the hamburger/sidebar and route changes.
-    # The Android wrapper is a clean full-screen WebView; selecting a sidebar page
-    # uses Streamlit's official router and returns directly to the requested page.
+    # Android v0.2.1: the native bar supplies a permanent Menu button, while
+    # Streamlit owns every page link in the official grouped sidebar. The hidden
+    # collapsed-control stays mounted off-screen so the native Menu button can
+    # open/close it without hard URL loads or a route-click timing bridge.
     st.markdown(
         """<style>
         .st-key-fsi_shell,[class~="st-key-fsi_shell"],
-        .st-key-fsi_left_rail,[class~="st-key-fsi_left_rail"],[class*="st-key-fsi_module_subnav_"]{display:none!important}
-        header[data-testid="stHeader"]{display:flex!important}
-        section[data-testid="stSidebar"]{display:block!important}
-        div[data-testid="stMainBlockContainer"],.block-container{padding:.55rem .55rem .9rem!important;max-width:100%!important}
+        .st-key-fsi_left_rail,[class~="st-key-fsi_left_rail"]{display:none!important}
+        header[data-testid="stHeader"]{display:block!important;height:0!important;min-height:0!important;overflow:visible!important;background:transparent!important}
+        div[data-testid="stToolbar"],div[data-testid="stDecoration"],#MainMenu{display:none!important}
+        section[data-testid="stSidebar"]{display:block!important;visibility:visible!important}
+        [data-testid="collapsedControl"]{display:flex!important;visibility:visible!important;position:fixed!important;left:-10000px!important;top:0!important;width:2px!important;height:2px!important;opacity:.01!important;overflow:hidden!important;pointer-events:auto!important;z-index:2147483647!important}
+        [class*="st-key-fsi_module_subnav_"]{display:block!important;margin:0 0 .45rem!important;padding:.18rem!important;background:#fff!important;border:1px solid #d7dadd!important;border-radius:8px!important}
+        [class*="st-key-fsi_module_subnav_"] [data-testid="stHorizontalBlock"]{gap:6px!important}
+        [class*="st-key-fsi_module_subnav_"] [data-testid="stPageLink"] a{min-height:38px!important;font-size:12px!important;padding:.35rem .45rem!important}
+        div[data-testid="stMainBlockContainer"],.block-container{padding:.45rem .5rem .9rem!important;max-width:100%!important}
         .st-key-qcms_content,[class~="st-key-qcms_content"]{width:100%!important;max-width:100%!important;margin:0!important}
         .fsi-page-head{margin-top:0!important}
         @media(max-width:900px){
           .qcms-enterprise-table-wrap{max-height:70vh!important}
           .fsi-kpi-grid,.fsi-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
-          section[data-testid="stSidebar"]{max-width:min(88vw,360px)!important}
+          section[data-testid="stSidebar"]{max-width:min(90vw,380px)!important}
         }
         </style>""",
         unsafe_allow_html=True,
@@ -557,6 +563,9 @@ elif android_streamlit_nav:
             if not bool(current_route_permission.get("can_view", True)):
                 st.error("You do not have View permission for this module. Ask the QCMS administrator to enable the module or department default in Admin → Users & Access.")
             else:
+                # Always show the current module's second-level menu on Android.
+                # Two columns keeps touch targets readable on narrow phone screens.
+                module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=2)
                 nav.run()
 else:
     # Native-mobile content mode for iPhone/iPad keeps the existing native drawer bridge.

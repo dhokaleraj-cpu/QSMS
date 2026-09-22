@@ -1,13 +1,16 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS)
 
-## Current controlled release — v4.14.42
-Build `41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD`.
+## Current controlled release — v4.14.44
+Build `41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE`.
 
-Android 0.1.6 fixes the mobile menu login-loop by routing drawer selections through hidden Streamlit `st.page_link` elements instead of hard `WebView.loadUrl()` page loads. This keeps the existing authenticated Streamlit session alive while changing QCMS pages.
+Android **v0.2.1 / versionCode 12** restores a permanent native QCMS top bar with a Menu button. The button opens and closes Streamlit's official grouped sidebar inside the existing authenticated WebView, so page selection remains Streamlit-owned and does not use hard WebView route reloads.
 
-The Android fixed Home/Search/Complaints footer has been removed and mobile content now uses the reclaimed screen height. The top-bar hard-refresh control is also removed so an accidental full browser reload cannot drop the in-memory QCMS login.
+The Android-only CSS override restores the Streamlit sidebar and its collapsed control after the desktop global style hides them. Sidebar module groups are expanded for immediate access, and the active module's QCMS sub-menu is restored in a phone-friendly two-column layout. The obsolete Home/Search/Complaints bottom footer remains removed.
 
-Complaint dashboard cards, Complaint PDF/document email with optional Customer/Supplier copy, Purchase Order Pending Approval worklist/draft approver email, all permissions/audit controls and the v4.14.36 live database/notification baseline remain preserved. v4.14.41 requires no new Supabase schema migration. Android v0.1.9 fixes the Java lambda capture compile regression by normalizing the route first and capturing a final route value. The v4.14.40 queued hidden-button `st.switch_page` navigation bridge, footer removal, and v4.14.39 dynamic Android CI/APK signature verification remain preserved. QCMS v4.14.42 also removes the accidental requirement for a local JDK during the Python deployment pytest suite: the javac regression runs only when a functional JDK exists, while GitHub Actions with Temurin 17 remains the authoritative Android compilation gate.
+The dynamic Android APK version/signature verification introduced in v4.14.39 remains preserved. QCMS v4.14.44 requires no new Supabase schema migration; the controlled database baseline remains v4.14.36 and all existing production data, permissions, attachments, approvals and audit history are preserved.
+
+## Deployment
+Use the self-contained `QSMS_LIVE_DEPLOY_UPDATE_v4.14.44.command`. It backs up the current project, protects local secrets/data, validates the embedded source, runs compile/readiness/phase/full pytest, commits and pushes Git, and verifies the remote SHA. Then build/install Android v0.2.1 using `mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command`.
 
 ## v4.14.25 controlled edit and exact-record reload
 - Purchase Order register now provides **Edit Selected Purchase Order** for users with Supply Chain Edit permission.

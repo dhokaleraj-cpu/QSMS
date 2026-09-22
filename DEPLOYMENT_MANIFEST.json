@@ -1,6 +1,6 @@
 {
-  "version": "4.14.43",
-  "build": "41443-ANDROID-STREAMLIT-SIDEBAR-NAV",
+  "version": "4.14.44",
+  "build": "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -268,10 +268,17 @@
     "android_java_lambda_effectively_final_route",
     "android_ci_compile_regression_guard",
     "local_javac_capability_guard",
-    "android_compile_ci_java17_authoritative"
+    "android_compile_ci_java17_authoritative",
+    "android_native_top_menu_button",
+    "android_streamlit_sidebar_collapsed_control_restore",
+    "android_streamlit_sidebar_expanded_groups",
+    "android_mobile_module_submenu_visible",
+    "android_sidebar_auto_close_after_page_selection",
+    "android_sidebar_mutation_observer_recovery",
+    "android_no_hard_route_reload"
   ],
   "source": "controlled_release",
-  "release_name": "QCMS v4.14.42 Local Javac Optional / CI Compile Guard",
+  "release_name": "QCMS 4.14.44 Android Native Menu + Streamlit Submenu Restore",
   "database_schema_required": "4.14.36",
   "database_migration_required": true,
   "supabase_release_contract": "QCMS v4.14.36 complaint email/register/reminder configuration migration plus qcms-overdue-notifier complaint schedule support; existing v4.14.35 PO reminder guard remains preserved.",
@@ -295,17 +302,12 @@
   "standard_room_inspection_module": true,
   "npd_email_stage_cards": true,
   "registered_pages": 90,
-  "full_pytest_passed": 564,
+  "full_pytest_passed": 574,
   "live_supabase_schema_applied": true,
   "live_overdue_notifier_version": 6,
   "live_overdue_notifier_status": "ACTIVE",
   "source_only_updater": false,
-  "release_notes": [
-    "Android v0.2.0 removes the native Java drawer and DOM-click navigation bridge from the active UI path.",
-    "Android now uses Streamlit st.navigation with the sidebar collapsed by default, so menu selections stay inside the authenticated Streamlit session and the menu closes after navigation/rerun.",
-    "The old fixed Home/Search/Complaints footer remains removed and Android uses the full screen for QCMS content.",
-    "No Supabase schema migration is required; existing QCMS business workflows and data are preserved."
-  ],
+  "release_notes": "RELEASE_NOTES_v4.14.44.md",
   "final_metlab_part_master_only": true,
   "raw_material_inward_metlab_layout_master_only": true,
   "forging_po_release_email_template": true,
@@ -314,7 +316,7 @@
   "live_supply_digest_notifier_status": "ACTIVE",
   "live_supply_digest_cron": "qcms-supply-digest-notifier-hourly",
   "schema_change_for_v41429": false,
-  "previous_controlled_release": "4.14.42",
+  "previous_controlled_release": "4.14.43",
   "schema_change_for_v41430": false,
   "schema_change_for_v41431": false,
   "schema_change_for_v41432": false,
@@ -324,17 +326,15 @@
   "android_build_status": "Android v0.2.0/versionCode 11 uses a full-screen WebView and Streamlit-owned collapsed sidebar navigation. The native Java drawer/DOM-click bridge is dormant in the active Android path. Page selections use st.navigation inside the authenticated Streamlit session; the sidebar starts collapsed after each rerun. Dynamic APK naming and explicit v2 signature verification remain preserved.",
   "verification_scope": "Complete Python tests/readiness/phase verification. The Java lambda regression compiles with javac when a functional JDK is available; on Macs where /usr/bin/javac is only the Apple no-JDK launcher, that single compile test is skipped. Full Android Java/Gradle compilation remains mandatory in GitHub Actions with Temurin 17.",
   "schema_change_for_v41435": true,
-  "online_readiness_required_files": 245,
+  "online_readiness_required_files": 251,
   "schema_change_for_v41436": true,
   "schema_change_for_v41437": false,
   "schema_change_for_v41438": false,
   "schema_change_for_v41439": false,
   "schema_change_for_v41440": false,
-  "previous_release_identity": {
-    "version": "4.14.41",
-    "build": "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX"
-  },
+  "previous_release_identity": "QCMS v4.14.43 / Android v0.2.0",
   "schema_change_for_v41441": false,
   "schema_change_for_v41442": false,
-  "schema_change_for_v41443": false
+  "schema_change_for_v41443": false,
+  "schema_change_for_v41444": false
 }

@@ -35,8 +35,8 @@ import android.widget.Toast;
 import org.json.JSONObject;
 
 public class MainActivity extends Activity {
-    // Legacy QCMSMobile/0.1.9 drawer/DOM bridge remains dormant for source compatibility.
-    // Android v0.2.0 uses Streamlit-owned sidebar navigation in the active path.
+    // Legacy native-drawer route bridge remains dormant for source compatibility.
+    // Android v0.2.1 uses a native top Menu button + Streamlit-owned sidebar/page links in the active path.
     private static final int FILE_CHOOSER_REQUEST = 701;
     private static final String PREFS = "qcms_mobile";
     private static final String PREF_URL = "qcms_url";
@@ -169,6 +169,39 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.WHITE);
         applySafeInsets(root);
 
+        LinearLayout main = new LinearLayout(this);
+        main.setOrientation(LinearLayout.VERTICAL);
+        main.setBackgroundColor(Color.rgb(248,248,248));
+        root.addView(main, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        // Permanent native navigation bar. It does not own routes; it only opens
+        // Streamlit's official grouped sidebar so all page changes stay inside the
+        // authenticated Streamlit session.
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setPadding(dp(4),0,dp(4),0);
+        top.setBackgroundColor(Color.rgb(137,7,48));
+        Button hamburger = iconButton("☰", 22);
+        hamburger.setContentDescription("Open QCMS navigation menu");
+        top.addView(hamburger, new LinearLayout.LayoutParams(dp(54), dp(54)));
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.stawn_icon);
+        logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        LinearLayout.LayoutParams lpLogo = new LinearLayout.LayoutParams(dp(34), dp(34));
+        lpLogo.setMargins(0,0,dp(8),0);
+        top.addView(logo, lpLogo);
+        TextView title = new TextView(this);
+        title.setText("QCMS");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(18);
+        title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        top.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));
+        Button more = iconButton("⋮", 22);
+        more.setContentDescription("QCMS mobile options");
+        top.addView(more, new LinearLayout.LayoutParams(dp(48), dp(54)));
+        main.addView(top, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
+
         webView = new WebView(this);
         WebSettings ws = webView.getSettings();
         ws.setJavaScriptEnabled(true);
@@ -182,13 +215,17 @@ public class MainActivity extends Activity {
         ws.setAllowFileAccess(false);
         ws.setAllowContentAccess(true);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.2.0");
+        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.2.1");
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(webView, true);
 
         webView.setWebViewClient(new WebViewClient(){
+            @Override public void onPageFinished(WebView view, String pageUrl){
+                super.onPageFinished(view, pageUrl);
+                installStreamlitSidebarController();
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request){
                 Uri target = request.getUrl();
                 if(target != null && ("http".equalsIgnoreCase(target.getScheme()) || "https".equalsIgnoreCase(target.getScheme()))) return false;
@@ -226,9 +263,60 @@ public class MainActivity extends Activity {
             }
         });
 
-        root.addView(webView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        main.addView(webView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(root);
+
+        hamburger.setOnClickListener(v -> toggleStreamlitSidebar());
+        more.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("QCMS Mobile")
+                .setItems(new String[]{"Open QCMS in browser", "Change QCMS URL", "Android WebView settings"}, (d,which) -> {
+                    if(which == 0) startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(baseUrl)));
+                    else if(which == 1){ prefs.edit().remove(PREF_URL).apply(); showSetupScreen(); }
+                    else {
+                        try {
+                            android.content.pm.PackageInfo provider = WebView.getCurrentWebViewPackage();
+                            if(provider != null) startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + provider.packageName)));
+                            else startActivity(new Intent(Settings.ACTION_SETTINGS));
+                        } catch(Exception ex){ startActivity(new Intent(Settings.ACTION_SETTINGS)); }
+                    }
+                }).show());
+
         webView.loadUrl(nativeUrl(""));
+    }
+
+    private void toggleStreamlitSidebar(){
+        if(webView == null) return;
+        installStreamlitSidebarController();
+        webView.postDelayed(() -> webView.evaluateJavascript(
+                "(function(){try{return window.__qcmsToggleSidebar?window.__qcmsToggleSidebar():'QCMS_MENU_CONTROLLER_PENDING';}catch(e){return 'QCMS_MENU_CONTROLLER_PENDING';}})();",
+                result -> {
+                    String value = result == null ? "" : result;
+                    if(value.contains("QCMS_MENU_CONTROLLER_PENDING")){
+                        installStreamlitSidebarController();
+                        webView.postDelayed(() -> webView.evaluateJavascript(
+                                "(function(){try{return window.__qcmsToggleSidebar?window.__qcmsToggleSidebar():'QCMS_MENU_PENDING';}catch(e){return 'QCMS_MENU_PENDING';}})();", null), 220);
+                    }
+                }), 30);
+    }
+
+    private void installStreamlitSidebarController(){
+        if(webView == null) return;
+        String script = "(function(){"+
+            "function visible(el){if(!el)return false;var s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>12&&r.right>0;}"+
+            "function sidebar(){return document.querySelector('section[data-testid=\\\"stSidebar\\\"]');}"+
+            "function isOpen(){return visible(sidebar());}"+
+            "function first(sel,root){var a=(root||document).querySelectorAll(sel);for(var i=0;i<a.length;i++){if(a[i])return a[i];}return null;}"+
+            "function openControl(){return first('[data-testid=\\\"collapsedControl\\\"] button,[data-testid=\\\"collapsedControl\\\"],button[aria-label*=\\\"Open sidebar\\\" i],button[aria-label*=\\\"sidebar\\\" i]');}"+
+            "function closeControl(){var sb=sidebar();if(!sb)return null;return first('button[aria-label*=\\\"Close sidebar\\\" i],button[aria-label*=\\\"Collapse sidebar\\\" i],button[aria-label*=\\\"sidebar\\\" i]',sb);}"+
+            "function openNow(){if(isOpen())return true;var c=openControl();if(c&&typeof c.click==='function'){c.click();return true;}return false;}"+
+            "function closeNow(){if(!isOpen())return true;var c=closeControl();if(c&&typeof c.click==='function'){c.click();return true;}return false;}"+
+            "window.__qcmsToggleSidebar=function(){if(isOpen()){window.__qcmsMenuWanted='';return closeNow()?'QCMS_MENU_CLOSE':'QCMS_MENU_PENDING';}window.__qcmsMenuWanted='open';if(openNow()){window.__qcmsMenuWanted='';return 'QCMS_MENU_OPEN';}return 'QCMS_MENU_PENDING';};"+
+            "if(!window.__qcmsSidebarClickBound){document.addEventListener('click',function(ev){try{var a=ev.target&&ev.target.closest?ev.target.closest('section[data-testid=\\\"stSidebar\\\"] a[href]'):null;if(a){setTimeout(function(){closeNow();},420);}}catch(e){}},true);window.__qcmsSidebarClickBound=true;}"+
+            "if(window.__qcmsSidebarObserver){try{window.__qcmsSidebarObserver.disconnect();}catch(e){}}"+
+            "window.__qcmsSidebarObserver=new MutationObserver(function(){if(window.__qcmsMenuWanted==='open'&&!isOpen()&&openNow())window.__qcmsMenuWanted='';});"+
+            "window.__qcmsSidebarObserver.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});"+
+            "if(window.__qcmsMenuWanted==='open')openNow();return 'QCMS_MENU_CONTROLLER_READY';})();";
+        webView.evaluateJavascript(script, null);
     }
 
     private void showBrowser(String url) {
@@ -248,7 +336,7 @@ public class MainActivity extends Activity {
         main.addView(top,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
 
         webView = new WebView(this);
-        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.2.0");
+        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.2.1");
         CookieManager cm=CookieManager.getInstance(); cm.setAcceptCookie(true); cm.setAcceptThirdPartyCookies(webView,true);
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageFinished(WebView view,String pageUrl){ super.onPageFinished(view,pageUrl); installMobileChromeSuppressor(); }

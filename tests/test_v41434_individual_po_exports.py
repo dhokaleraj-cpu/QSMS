@@ -30,8 +30,13 @@ def pdf_text(blob):
 
 def test_v41434_controlled_release_identity():
     manifest = json.loads((ROOT / 'DEPLOYMENT_MANIFEST.json').read_text())
-    assert (ROOT / 'VERSION').read_text().strip() == manifest['version'] in {'4.14.34','4.14.35', '4.14.36', '4.14.37', '4.14.38', '4.14.39', '4.14.40', '4.14.41', '4.14.42', '4.14.43'}
-    if manifest['version'] == '4.14.43':
+    assert (ROOT / 'VERSION').read_text().strip() == manifest['version'] in {'4.14.34','4.14.35', '4.14.36', '4.14.37', '4.14.38', '4.14.39', '4.14.40', '4.14.41', '4.14.42', '4.14.43', '4.14.44'}
+    if manifest['version'] == '4.14.44':
+        assert manifest['build'] == '41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE'
+        assert manifest['previous_controlled_release'] == '4.14.43'
+        assert manifest['database_schema_required'] == '4.14.36'
+        assert manifest['database_migration_required'] is True
+    elif manifest['version'] == '4.14.43':
         assert manifest['build'] == '41443-ANDROID-STREAMLIT-SIDEBAR-NAV'
         assert manifest['previous_controlled_release'] == '4.14.42'
         assert manifest['database_schema_required'] == '4.14.36'
@@ -199,7 +204,7 @@ def test_android_ci_is_read_only_and_uploads_only_verified_apk():
     helper = (ROOT / 'mobile/android_qcms/BUILD_AND_INSTALL_SAMSUNG.command').read_text()
     assert 'QCMS_BUILD_ONLY' in helper
     version = (ROOT / 'VERSION').read_text().strip()
-    if version in {'4.14.39', '4.14.40', '4.14.41', '4.14.42', '4.14.43'}:
+    if version in {'4.14.39', '4.14.40', '4.14.41', '4.14.42', '4.14.43', '4.14.44'}:
         # Permanent fix: neither CI nor local helper hard-codes a historical Android APK version.
         assert 'QCMS_MOBILE_VERSION' in workflow
         assert 'QCMS_MOBILE_VERSION_CODE' in workflow
@@ -211,7 +216,7 @@ def test_android_ci_is_read_only_and_uploads_only_verified_apk():
         assert 'QCMS_Mobile_v0.1.6_TEST.apk' not in workflow
         assert 'QCMS_Mobile_v${MOBILE_VERSION}_TEST.apk' in helper
         assert 'APKSIGN_RC=${PIPESTATUS[0]}' in helper
-        assert any(v in (ROOT / 'mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java').read_text() for v in ('QCMSMobile/0.1.7', 'QCMSMobile/0.1.8', 'QCMSMobile/0.1.9'))
+        assert any(v in (ROOT / 'mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java').read_text() for v in ('QCMSMobile/0.1.7', 'QCMSMobile/0.1.8', 'QCMSMobile/0.1.9', 'QCMSMobile/0.2.0', 'QCMSMobile/0.2.1'))
     else:
         expected_apk = ('$HOME/Downloads/QCMS_Mobile_v0.1.6_TEST.apk' if version == '4.14.38' else ('$HOME/Downloads/QCMS_Mobile_v0.1.5_TEST.apk' if version == '4.14.37' else ('$HOME/Downloads/QCMS_Mobile_v0.1.4_TEST.apk' if version == '4.14.36' else ('$HOME/Downloads/QCMS_Mobile_v0.1.3_TEST.apk' if version == '4.14.35' else '$HOME/Downloads/QCMS_Mobile_v0.1.2_TEST.apk'))))
         assert expected_apk in helper
