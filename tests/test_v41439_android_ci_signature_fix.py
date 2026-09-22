@@ -9,15 +9,17 @@ def text(rel: str) -> str:
 
 
 def test_v41439_release_identity_and_no_schema_change():
-    assert text("VERSION").strip() in {"4.14.39", "4.14.40"}
+    assert text("VERSION").strip() in {"4.14.39", "4.14.40", "4.14.41", "4.14.42"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.39", "4.14.40"}
-    assert manifest["build"] in {"41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX", "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE"}
-    assert manifest["previous_controlled_release"] in {"4.14.38", "4.14.39"}
+    assert manifest["version"] in {"4.14.39", "4.14.40", "4.14.41", "4.14.42"}
+    assert manifest["build"] in {"41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX", "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE", "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD"}
+    assert manifest["previous_controlled_release"] in {"4.14.38", "4.14.39", "4.14.40", "4.14.41"}
     assert manifest["database_schema_required"] == "4.14.36"
     assert manifest["schema_change_for_v41439"] is False
-    if manifest["version"] == "4.14.40":
+    if manifest["version"] in {"4.14.40", "4.14.41", "4.14.42"}:
         assert manifest["schema_change_for_v41440"] is False
+    if manifest["version"] == "4.14.41":
+        assert manifest["schema_change_for_v41441"] is False
 
 
 def test_android_ci_derives_version_and_does_not_hardcode_old_apk_names():
@@ -67,9 +69,9 @@ def test_local_android_builder_has_same_permanent_signature_guard():
 def test_android_v017_plus_preserves_session_safe_navigation_and_removed_footer():
     gradle = text("mobile/android_qcms/app/build.gradle")
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
-    assert any(v in gradle for v in ("versionCode 8", "versionCode 9"))
-    assert any(v in gradle for v in ("versionName '0.1.7'", "versionName '0.1.8'"))
-    assert any(v in java for v in ("QCMSMobile/0.1.7", "QCMSMobile/0.1.8"))
+    assert any(v in gradle for v in ("versionCode 8", "versionCode 9", "versionCode 10"))
+    assert any(v in gradle for v in ("versionName '0.1.7'", "versionName '0.1.8'", "versionName '0.1.9'"))
+    assert any(v in java for v in ("QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9"))
     assert "__qcmsNativeNavigate" in java
     assert "webView.loadUrl(nativeUrl(path))" not in java
     assert "LinearLayout bottom=new LinearLayout" not in java

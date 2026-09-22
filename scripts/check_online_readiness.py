@@ -244,11 +244,17 @@ required = [
     "QCMS_NEW_CHAT_HANDOVER_v4.14.40.md",
     "RELEASE_NOTES_v4.14.40.md",
     "tests/test_v41440_android_navigation_ready_queue.py",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.41.md",
+    "RELEASE_NOTES_v4.14.41.md",
+    "tests/test_v41441_android_lambda_compile_fix.py",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.42.md",
+    "RELEASE_NOTES_v4.14.42.md",
+    "tests/test_v41442_local_javac_optional_ci_guard.py",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.40 - Android Navigation Ready Queue Fix",
+    "phase": "QCMS 4.14.42 - Local Javac Optional / CI Compile Guard",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

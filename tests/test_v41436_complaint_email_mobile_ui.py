@@ -9,10 +9,10 @@ def text(rel: str) -> str:
 
 
 def test_v41436_release_identity_and_routes():
-    assert text("VERSION").strip() in {"4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40"}
+    assert text("VERSION").strip() in {"4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40"}
-    assert manifest["build"] in {"41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER", "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL", "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE", "41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX", "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE"}
+    assert manifest["version"] in {"4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42"}
+    assert manifest["build"] in {"41436-COMPLAINT-EMAIL-REGISTERS-REMINDERS-MOBILE-DRAWER", "41437-MOBILE-FULL-NAV-COMPLAINT-CARDS-PO-APPROVAL-DRAFT-EMAIL", "41438-ANDROID-NAV-SESSION-BRIDGE-FOOTER-REMOVE", "41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX", "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE", "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD"}
     app = text("streamlit_app.py")
     for route in ("customer-complaint-register", "supplier-complaint-register", "complaint-email-settings"):
         assert route in app
@@ -44,7 +44,7 @@ def test_v41436_complaint_schedule_migration_and_worker():
 def test_v41436_android_reference_video_style_navigation():
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
     gradle = text("mobile/android_qcms/app/build.gradle")
-    assert any(v in gradle for v in ("versionName '0.1.4'", "versionName '0.1.5'", "versionName '0.1.6'", "versionName '0.1.7'", "versionName '0.1.8'"))
+    assert any(v in gradle for v in ("versionName '0.1.4'", "versionName '0.1.5'", "versionName '0.1.6'", "versionName '0.1.7'", "versionName '0.1.8'", "versionName '0.1.9'"))
     for token in ("openDrawer", "closeDrawer", "drawerPanel", "global-search", "complaints-home", "stawn_icon"):
         assert token in java
     assert (ROOT / "mobile/android_qcms/app/src/main/res/drawable-nodpi/stawn_icon.png").exists()

@@ -174,7 +174,7 @@ public class MainActivity extends Activity {
         main.addView(top,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
 
         webView = new WebView(this);
-        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.1.8");
+        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.1.9");
         CookieManager cm=CookieManager.getInstance(); cm.setAcceptCookie(true); cm.setAcceptThirdPartyCookies(webView,true);
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageFinished(WebView view,String pageUrl){ super.onPageFinished(view,pageUrl); installMobileChromeSuppressor(); }
@@ -225,8 +225,12 @@ public class MainActivity extends Activity {
     }
     private void navigate(String path){
         if(webView==null)return;
-        String route = path == null ? "dashboard" : path.trim();
-        if(route.isEmpty()) route = "dashboard";
+        // Normalize first, then freeze the value captured by Android callbacks.
+        // Java lambdas may capture only final/effectively-final local variables.
+        // Keeping the captured route final prevents CI/Javac regressions when
+        // route normalization changes in future releases.
+        String normalizedRoute = path == null ? "dashboard" : path.trim();
+        final String route = normalizedRoute.isEmpty() ? "dashboard" : normalizedRoute;
         pendingRoute = route;
         final int token = ++navigationToken;
         // Re-install the bridge immediately. Streamlit's React tree can finish

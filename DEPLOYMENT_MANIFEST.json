@@ -1,6 +1,6 @@
 {
-  "version": "4.14.40",
-  "build": "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE",
+  "version": "4.14.42",
+  "build": "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD",
   "features": [
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
@@ -264,19 +264,22 @@
     "android_mobile_navigation_pending_queue",
     "android_mobile_navigation_dom_observer",
     "android_mobile_navigation_ready_marker",
-    "android_mobile_loading_toast_removed"
+    "android_mobile_loading_toast_removed",
+    "android_java_lambda_effectively_final_route",
+    "android_ci_compile_regression_guard",
+    "local_javac_capability_guard",
+    "android_compile_ci_java17_authoritative"
   ],
   "source": "controlled_release",
-  "release_name": "QCMS v4.14.40 Android Navigation Ready Queue Fix",
+  "release_name": "QCMS v4.14.42 Local Javac Optional / CI Compile Guard",
   "database_schema_required": "4.14.36",
   "database_migration_required": true,
   "supabase_release_contract": "QCMS v4.14.36 complaint email/register/reminder configuration migration plus qcms-overdue-notifier complaint schedule support; existing v4.14.35 PO reminder guard remains preserved.",
   "deployment_notes": [
-    "v4.14.40 uses the already-applied v4.14.36 Complaint notification database baseline; no new SQL or schema migration is required.",
-    "Android native drawer navigation now queues a requested route until Streamlit has rendered the hidden native navigation controls instead of timing out after roughly 1.6 seconds.",
-    "The native bridge now uses hidden Streamlit buttons whose callbacks call st.switch_page, keeping navigation inside the authenticated Streamlit session.",
-    "A MutationObserver plus 250 ms pending-route drain timer completes navigation after login/reruns even when React renders after WebView.onPageFinished.",
-    "The old QCMS navigation is still loading toast is removed. Android source advances to v0.1.8; the v4.14.39 dynamic APK/signature verification remains preserved."
+    "v4.14.41 uses the already-applied v4.14.36 Complaint notification database baseline; no new SQL or schema migration is required.",
+    "Fixed Android Javac compilation failure in MainActivity.navigate caused by a lambda capturing route after route had been reassigned during normalization.",
+    "Route normalization now writes to normalizedRoute and the lambda captures a final String route, satisfying Java effectively-final capture rules permanently.",
+    "Android source advances to v0.1.9/versionCode 10; the v4.14.40 queued session-safe navigation bridge and v4.14.39 dynamic APK/signature verification are preserved."
   ],
   "item_wise_po_technical_data": true,
   "po_supplier_technical_grid": true,
@@ -292,17 +295,16 @@
   "standard_room_inspection_module": true,
   "npd_email_stage_cards": true,
   "registered_pages": 90,
-  "full_pytest_passed": 560,
+  "full_pytest_passed": 564,
   "live_supabase_schema_applied": true,
   "live_overdue_notifier_version": 6,
   "live_overdue_notifier_status": "ACTIVE",
   "source_only_updater": false,
   "release_notes": [
-    "Fixed the Android drawer error QCMS navigation is still loading. Please try the menu again.",
-    "Replaced the timing-sensitive page-link bridge with a queued Streamlit-button navigation bridge using st.switch_page.",
-    "Added a persistent pending-route queue drained by DOM mutations and a short interval, so slow Streamlit rerenders no longer drop menu selections.",
-    "Re-injects the bridge when the drawer opens and before navigation without hard reloading the WebView or losing login state.",
-    "Advanced Android source to v0.1.8 while preserving footer removal and the permanent APK signature/CI fix from v4.14.39."
+    "Fixed :app:compileDebugJavaWithJavac failure: local variables referenced from a lambda expression must be final or effectively final.",
+    "Changed navigate() to normalize into normalizedRoute and capture final String route in postDelayed and retry callbacks.",
+    "Added a regression test that compiles a Java lambda-capture model with javac and statically verifies MainActivity uses a final captured route.",
+    "Advanced Android source to v0.1.9/versionCode 10 while preserving the footer removal, queued Streamlit navigation, and permanent APK signature/CI verification."
   ],
   "final_metlab_part_master_only": true,
   "raw_material_inward_metlab_layout_master_only": true,
@@ -312,24 +314,26 @@
   "live_supply_digest_notifier_status": "ACTIVE",
   "live_supply_digest_cron": "qcms-supply-digest-notifier-hourly",
   "schema_change_for_v41429": false,
-  "previous_controlled_release": "4.14.39",
+  "previous_controlled_release": "4.14.41",
   "schema_change_for_v41430": false,
   "schema_change_for_v41431": false,
   "schema_change_for_v41432": false,
   "schema_change_for_v41433": false,
   "schema_change_for_v41434": false,
   "android_apk_compiled_in_preparation": false,
-  "android_build_status": "Android source v0.1.8 with queued session-safe native navigation and future-safe local/CI APK verification supplied. APK binary is included only when actually compiled and apksigner-verified by an Android build environment.",
-  "verification_scope": "Complete Python tests/readiness/phase verification plus static validation of the Android queued button bridge, pending-route DOM observer/timer, no hard route reload, and preserved dynamic APK signature CI.",
+  "android_build_status": "Android source remains v0.1.9/versionCode 10 with final-route lambda capture fix, queued session-safe navigation, and future-safe APK verification. QCMS v4.14.42 removes the accidental local JDK dependency from the Python deployment suite; the GitHub Android workflow still performs the authoritative Java/Gradle compile using Temurin 17.",
+  "verification_scope": "Complete Python tests/readiness/phase verification. The Java lambda regression compiles with javac when a functional JDK is available; on Macs where /usr/bin/javac is only the Apple no-JDK launcher, that single compile test is skipped. Full Android Java/Gradle compilation remains mandatory in GitHub Actions with Temurin 17.",
   "schema_change_for_v41435": true,
-  "online_readiness_required_files": 239,
+  "online_readiness_required_files": 245,
   "schema_change_for_v41436": true,
   "schema_change_for_v41437": false,
   "schema_change_for_v41438": false,
   "schema_change_for_v41439": false,
   "schema_change_for_v41440": false,
   "previous_release_identity": {
-    "version": "4.14.39",
-    "build": "41439-ANDROID-CI-SIGNATURE-PERMANENT-FIX"
-  }
+    "version": "4.14.41",
+    "build": "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX"
+  },
+  "schema_change_for_v41441": false,
+  "schema_change_for_v41442": false
 }

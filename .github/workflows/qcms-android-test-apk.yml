@@ -1,5 +1,7 @@
 name: QCMS Android Test APK
 
+# QCMS v4.14.42: authoritative Android compilation remains in CI; local Python deployment no longer requires a JDK.
+
 # Builds only the mobile source. Does not deploy QCMS, access Supabase, or send emails.
 # Artifact/version values are read from app/build.gradle so future Android version bumps cannot leave stale CI checks behind.
 on:

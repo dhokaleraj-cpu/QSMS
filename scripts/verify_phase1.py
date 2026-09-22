@@ -1015,8 +1015,8 @@ if not all(token in v41429_osp for token in ("FSI Batch Number", "Vendor Batch N
     errors.append("v4.14.29 OSP transaction selectors do not expose controlled batch identity")
 current_release_version = str(v41429_manifest.get("version") or "")
 current_release_build = str(v41429_manifest.get("build") or "")
-if current_release_version != "4.14.40" or current_release_build != "41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE":
-    errors.append("v4.14.40 deployment manifest release identity is incomplete")
+if current_release_version != "4.14.42" or current_release_build != "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD":
+    errors.append("v4.14.42 deployment manifest release identity is incomplete")
 if str(v41429_manifest.get("database_schema_required")) != "4.14.36" or not bool(v41429_manifest.get("database_migration_required")):
     errors.append("v4.14.36 database migration contract is incomplete")
 
@@ -1121,7 +1121,7 @@ if not all(token in v41436_migration for token in ("CUSTOMER_COMPLAINT_CREATED",
     errors.append("v4.14.36 complaint templates/routes/schedules migration is incomplete")
 if not all(token in v41436_overdue for token in ("COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "COMPLAINT_FOLLOWUP_DUE", "run_every_days")):
     errors.append("v4.14.36 complaint automatic reminder notifier is incomplete")
-if not all(token in v41436_android for token in ("openDrawer", "closeDrawer", "global-search", "complaints-home", "stawn_icon")) or not any(v in v41436_android for v in ("QCMSMobile/0.1.4", "QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8")):
+if not all(token in v41436_android for token in ("openDrawer", "closeDrawer", "global-search", "complaints-home", "stawn_icon")) or not any(v in v41436_android for v in ("QCMSMobile/0.1.4", "QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9")):
     errors.append("v4.14.36 Android reference-video drawer/bottom-navigation UI is incomplete")
 if not all(token in v41436_ios for token in ("drawerOpen", "qcmsNavigate", "global-search", "complaints-home", "AppIconPreview")) or not any(v in v41436_ios for v in ("QCMSMobileIOS/0.1.1", "QCMSMobileIOS/0.1.2")):
     errors.append("v4.14.36 iPhone/iPad native drawer/bottom-navigation UI is incomplete")
@@ -1137,7 +1137,7 @@ if not all(token in v41433_supply for token in ("def _pending_po_approval_rows",
     errors.append("v4.14.37 Pending PO approval count/grid/draft-email workflow is incomplete")
 if not all(token in v41437_streamlit for token in ('native_mobile', 'QCMSMobile/', 'QCMSMobileIOS/', 'if not native_mobile:', 'Native-mobile content mode', '.st-key-fsi_left_rail')):
     errors.append("v4.14.37 native mobile content-only Streamlit mode is incomplete")
-if not all(token in v41436_android for token in ("drawerSection", "drawerChildButton", "Approval / Confirmation", "Customer Register", "Supplier Register", "native_mobile")) or not any(v in v41436_android for v in ("QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8")):
+if not all(token in v41436_android for token in ("drawerSection", "drawerChildButton", "Approval / Confirmation", "Customer Register", "Supplier Register", "native_mobile")) or not any(v in v41436_android for v in ("QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9")):
     errors.append("v4.14.37 Android full expandable drawer/navigation contract is incomplete")
 if not all(token in v41436_ios for token in ("QCMSMobileIOS/0.1.2", "expandedSections", "drawerSection", "Approval / Confirmation", "Customer Register", "Supplier Register", "native_mobile")):
     errors.append("v4.14.37 iPhone/iPad full expandable drawer/navigation contract is incomplete")
@@ -1155,12 +1155,19 @@ if not all(token in v41439_android_helper for token in ("MOBILE_VERSION=", "QCMS
 # v4.14.38+ / v4.14.40: Android session-preserving navigation bridge.
 if not all(token in v41437_streamlit for token in ('key="qcms_native_nav_bridge"', 'QCMS_NAV::', 'st.button(f"QCMS_NAV::{_native_route}"', 'st.switch_page(_native_page)')):
     errors.append("v4.14.40 Streamlit native button/switch-page navigation bridge is incomplete")
-if not all(token in v41436_android for token in ("__qcmsNativeNavigate", "evaluateJavascript", "QCMS_NAV_OK", "QCMS_NAV_PENDING", "tryNavigate", "MutationObserver", "__qcmsNativeNavTimer")) or "QCMSMobile/0.1.8" not in v41436_android:
+if not all(token in v41436_android for token in ("__qcmsNativeNavigate", "evaluateJavascript", "QCMS_NAV_OK", "QCMS_NAV_PENDING", "tryNavigate", "MutationObserver", "__qcmsNativeNavTimer")) or "QCMSMobile/0.1.9" not in v41436_android:
     errors.append("v4.14.40 Android queued session-safe native navigation bridge is incomplete")
 if not all(token in v41437_streamlit for token in ('id="qcms-native-nav-ready"', '_qcms_native_last_route')):
     errors.append("v4.14.40 Streamlit native navigation readiness marker is incomplete")
 if "QCMS navigation is still loading. Please try the menu again." in v41436_android:
     errors.append("v4.14.40 obsolete navigation-loading timeout toast is still present")
+if not all(token in v41436_android for token in ('String normalizedRoute = path == null ? "dashboard" : path.trim();', 'final String route = normalizedRoute.isEmpty() ? "dashboard" : normalizedRoute;')) or 'if(route.isEmpty()) route = "dashboard";' in v41436_android:
+    errors.append("v4.14.41 Android navigate() lambda capture is not compile-safe/final")
+v41442_javac_test = (ROOT / "tests" / "test_v41441_android_lambda_compile_fix.py").read_text(encoding="utf-8")
+if not all(token in v41442_javac_test for token in ("def _functional_javac_command()", "/usr/libexec/java_home", "Path(\"/usr/bin/javac\")", "pytest.skip(")):
+    errors.append("v4.14.42 local javac capability guard is incomplete")
+if not all(token in v41439_workflow for token in ("actions/setup-java@v4", "java-version: '17'", ":app:assembleDebug :app:lintDebug")):
+    errors.append("v4.14.42 authoritative Android CI Java/Gradle compile guard is incomplete")
 if "webView.loadUrl(nativeUrl(path))" in v41436_android:
     errors.append("v4.14.38 Android drawer still performs a hard WebView route load")
 if 'LinearLayout bottom=new LinearLayout' in v41436_android or 'bottomButton("⌂","Home")' in v41436_android:
@@ -1169,25 +1176,27 @@ if "refresh.setOnClickListener" in v41436_android:
     errors.append("v4.14.38 Android top-bar hard refresh remains enabled")
 
 report = {
-    "release": "QCMS 4.14.40 Android Navigation Ready Queue Fix",
+    "release": "QCMS 4.14.42 Local Javac Optional / CI Compile Guard",
+    "v41442_local_javac_capability_guard": all(token in v41442_javac_test for token in ("def _functional_javac_command()", "/usr/libexec/java_home", "Path(\"/usr/bin/javac\")", "pytest.skip(")),
+    "v41442_android_ci_java17_compile": all(token in v41439_workflow for token in ("actions/setup-java@v4", "java-version: '17'", ":app:assembleDebug :app:lintDebug")),
     "v41439_android_ci_dynamic_identity": all(token in v41439_workflow for token in ("QCMS_MOBILE_VERSION", "QCMS_MOBILE_VERSION_CODE", "QCMS_APK_NAME=QCMS_Mobile_v%s_TEST.apk")),
     "v41439_android_ci_v2_signature": "APKSIGN_RC=${PIPESTATUS[0]}" in v41439_workflow and "Verified using v2 scheme (APK Signature Scheme v2): true" in v41439_workflow,
     "v41439_android_local_verifier": "QCMS_Mobile_v${MOBILE_VERSION}_TEST.apk" in v41439_android_helper and "zipalign" in v41439_android_helper,
     "v41440_streamlit_button_switch_bridge": all(token in v41437_streamlit for token in ('id="qcms-native-nav-ready"', 'st.button(f"QCMS_NAV::{_native_route}"', 'st.switch_page(_native_page)')),
-    "v41440_android_queued_navigation": all(token in v41436_android for token in ("QCMSMobile/0.1.8", "__qcmsNativePendingRoute", "QCMS_NAV_PENDING", "MutationObserver", "__qcmsNativeNavTimer")),
-    "v41438_android_session_safe_nav": "QCMSMobile/0.1.8" in v41436_android and "__qcmsNativeNavigate" in v41436_android and "webView.loadUrl(nativeUrl(path))" not in v41436_android,
+    "v41440_android_queued_navigation": all(token in v41436_android for token in ("QCMSMobile/0.1.9", "__qcmsNativePendingRoute", "QCMS_NAV_PENDING", "MutationObserver", "__qcmsNativeNavTimer")),
+    "v41438_android_session_safe_nav": "QCMSMobile/0.1.9" in v41436_android and "__qcmsNativeNavigate" in v41436_android and "webView.loadUrl(nativeUrl(path))" not in v41436_android,
     "v41438_android_footer_removed": 'LinearLayout bottom=new LinearLayout' not in v41436_android and 'bottomButton("⌂","Home")' not in v41436_android,
     "v41438_streamlit_nav_bridge": 'key="qcms_native_nav_bridge"' in v41437_streamlit and "QCMS_NAV::" in v41437_streamlit,
     "v41437_complaint_status_cards": "complaint-card-grid" in v41436_complaints and "complaint-stage-mini" in v41436_complaints,
     "v41437_complaint_pdf_external_copy": 'related_table == "quality_complaints"' in v41437_notification and "include_generated_pdf=True" in v41436_complaints,
     "v41437_po_pending_approval_worklist": "PENDING APPROVAL WORKLIST" in v41433_supply and "Email Selected Draft POs to Approver" in v41433_supply,
     "v41437_mobile_content_only": "Native-mobile content mode" in v41437_streamlit and "QCMSMobile/" in v41437_streamlit,
-    "v41437_android_full_nav": any(v in v41436_android for v in ("QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8")) and "drawerSection" in v41436_android,
+    "v41437_android_full_nav": any(v in v41436_android for v in ("QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9")) and "drawerSection" in v41436_android,
     "v41437_ios_full_nav": "QCMSMobileIOS/0.1.2" in v41436_ios and "expandedSections" in v41436_ios,
     "v41436_complaint_registers": "def render_customer_register" in v41436_complaints and "def render_supplier_register" in v41436_complaints,
     "v41436_complaint_email_confirmation": "notification_confirmation" in v41436_complaints and "record_email_sender" in v41436_complaints,
     "v41436_complaint_reminders": "COMPLAINT_CUSTOMER_OPEN_OVERDUE" in v41436_overdue and "COMPLAINT_FOLLOWUP_DUE" in v41436_overdue,
-    "v41436_android_native_ui": any(v in v41436_android for v in ("QCMSMobile/0.1.4", "QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8")) and "openDrawer" in v41436_android,
+    "v41436_android_native_ui": any(v in v41436_android for v in ("QCMSMobile/0.1.4", "QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9")) and "openDrawer" in v41436_android,
     "v41436_ios_native_ui": any(v in v41436_ios for v in ("QCMSMobileIOS/0.1.1", "QCMSMobileIOS/0.1.2")) and "qcmsNavigate" in v41436_ios,
     "v41435_po_status_watermark": "_po_approval_watermark" in v41431_po_reporting and "purchase_order_excel_bytes" in v41431_po_reporting,
     "v41435_po_customer_fields_hidden": '"PART NUMBER"' not in v41431_po_reporting and '"DELIVERY"' not in v41431_po_reporting,
@@ -1207,11 +1216,11 @@ report = {
     "v41433_batch_po_pdf": "def batch_purchase_order_pdf_bytes" in v41433_po_reporting,
     "v41433_batch_po_email": "Confirm Batch Purchase Order Emails" in v41433_supply,
     "v41433_android_sdk_bootstrap": "ANDROID SDK / CLI BOOTSTRAP" in v41433_android,
-    "v41431_source_only_schema": (current_release_version in ("4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40")) or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
+    "v41431_source_only_schema": (current_release_version in ("4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42")) or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
     "v41430_rmtc_supplier_dedup": "raw_by_supplier" in v41429_rmtc_service and "Raw Material Detail" in v41429_rmtc_ui,
     "v41430_bend_test_discovery": "render_bend_test_entry" in v41429_metlab and "bend-test-report" in app_text,
     "v41430_global_search": "search_everywhere" in v41430_global_search and "qcms_shell_global_search_form" in app_text,
-    "v41430_source_only_schema": (current_release_version in ("4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40")) or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
+    "v41430_source_only_schema": (current_release_version in ("4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42")) or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
     "v41429_rmtc_approved_source_join": "def approved_source_options" in v41429_rmtc_service and "Approved Raw Material Source" in v41429_rmtc_ui,
     "v41429_all_module_section_rights": "Section rights are available for all" in v41429_user_access,
     "v41429_bend_test_subcategory": "BEND_TEST_DEFAULT_CHARACTERISTICS" in v41429_layout_ui and "BEND TEST REPORT" in v41429_reporting,
@@ -1220,7 +1229,7 @@ report = {
     "v41429_reusable_references": "def _reference_controls" in v41429_metlab and "REFERENCE DOCUMENTS / STATEMENTS" in v41429_reporting,
     "v41429_conclusion_remark_highlight": "conclusion_remark" in v41429_metlab and "def _quality_conclusion_table" in v41429_reporting,
     "v41429_osp_batch_identity": "FSI Batch Number" in v41429_osp and "Vendor Batch Number" in v41429_osp,
-    "v41429_source_only_schema": (current_release_version in ("4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40")) or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
+    "v41429_source_only_schema": (current_release_version in ("4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42")) or (str(v41429_manifest.get("database_schema_required")) == "4.14.28" and not bool(v41429_manifest.get("database_migration_required"))),
     "v41419_live_employee_po_gate": "refresh_current_employee_link" in v41419_auth and "po_blockers" in v41419_supply,
     "v41419_supplier_po_confirmation": "supply_po_confirmations" in v41419_sql and "PO_CONFIRMATION_DAILY" in v41419_notifier,
     "v41419_universal_transaction_delete": "qcms_delete_transaction_row" in v41419_sql and "password_transaction_delete_panel" in v41419_delete,
