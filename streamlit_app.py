@@ -1,5 +1,6 @@
-# QCMS 4.14.45 — SHARED-RAW-SOURCE-LAYOUT-CONTROL
-# BUILD 41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL
+# QCMS 4.14.46 — ANDROID V1.2 DRAWER + PERSISTENT LOGIN
+# BUILD 41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH
+# PRESERVED PREVIOUS BUILD MARKER: 41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL
 # PRESERVED PREVIOUS BUILD MARKER: 41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE
 # PRESERVED PREVIOUS BUILD MARKER: 41443-ANDROID-STREAMLIT-SIDEBAR-NAV
 # PRESERVED PREVIOUS BUILD MARKER: 41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX
@@ -65,7 +66,15 @@ from app_pages import (
     user_access,
     template_center,
 )
-from core.auth import current_profile, is_logged_in, logout, render_login
+from core.auth import (
+    current_profile,
+    is_logged_in,
+    logout,
+    render_login,
+    restore_persistent_login,
+    service_persistent_auth_bridge,
+    sync_persistent_login_browser,
+)
 from core.access import module_permissions
 from core.activity import log_route_view
 from core.config import get_settings
@@ -78,9 +87,26 @@ st.set_page_config(
 )
 apply_global_style()
 
+# QCMS v4.14.46 persistent-login contract. A browser refresh or Android direct
+# route creates a fresh Streamlit WebSocket/Python session. Restore from the
+# origin-scoped Components-v2 localStorage bridge before showing Login; secure
+# same-origin cookies remain as a fast fallback for WebView/browser refreshes.
+_auth_clearing = service_persistent_auth_bridge()
+if not is_logged_in() and not _auth_clearing:
+    restore_persistent_login()
+if not is_logged_in() and st.session_state.pop("_qcms_auth_restore_pending", False):
+    # First Components-v2 mount returns asynchronously and triggers an immediate
+    # rerun. Do not flash the Login screen while persistent auth is being read.
+    st.caption("Restoring QCMS session…")
+    st.stop()
 if not is_logged_in():
+    # A failed restore queues localStorage + cookie deletion to prevent invalid
+    # token loops, then falls back to normal interactive login.
+    service_persistent_auth_bridge()
     render_login(); st.stop()
 profile = current_profile() or {}
+sync_persistent_login_browser()
+service_persistent_auth_bridge()
 
 # Native Android / iPhone / iPad wrappers own the navigation chrome. Once the
 # wrapper marks the session, never render the long desktop rail/module submenu or
@@ -99,9 +125,15 @@ if _native_value in {"1", "true", "yes", "native"} or _native_android or _native
 native_mobile = bool(st.session_state.get("_qcms_native_mobile"))
 # Android v0.2.1 uses a compact native top bar only to open Streamlit's official sidebar; page navigation itself remains owned by Streamlit.
 # This removes route-click timing bridges from the active Android path while preserving the authenticated WebView session and the iPhone/iPad native drawer.
+android_native_drawer = bool(
+    native_mobile
+    and _native_android
+    and (_native_nav_value in {"native", "drawer", "v12"} or "QCMSMobile/0.2.2" in _native_user_agent)
+)
 android_streamlit_nav = bool(
     native_mobile
     and _native_android
+    and not android_native_drawer
     and (_native_nav_value in {"streamlit", "sidebar", "web"} or "QCMSMobile/0.2.0" in _native_user_agent or "QCMSMobile/0.2.1" in _native_user_agent)
 )
 
@@ -500,7 +532,7 @@ if not native_mobile:
     if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
         logout()
 
-    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE")
+    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH")
 
     # Persistent permission-aware Global Search launcher for desktop/web.
     with st.form("qcms_shell_global_search_form", border=False):
@@ -532,8 +564,31 @@ if not native_mobile:
                     module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=8)
                     nav.run()
                 app_footer()
+elif android_native_drawer:
+    # Android v0.2.2 restores the proven v1.2-style native hamburger drawer.
+    # The drawer owns module + submenu presentation and auto-hides after a page
+    # selection. Direct route loads are now safe because authentication is
+    # reconstructed from the persistent Supabase browser/WebView localStorage bridge.
+    st.markdown(
+        """<style>
+        header[data-testid="stHeader"],div[data-testid="stToolbar"],div[data-testid="stDecoration"],
+        section[data-testid="stSidebar"],.st-key-fsi_shell,[class~="st-key-fsi_shell"],
+        .st-key-fsi_left_rail,[class~="st-key-fsi_left_rail"],[class*="st-key-fsi_module_subnav_"]{display:none!important}
+        div[data-testid="stMainBlockContainer"],.block-container{padding:.45rem .55rem .8rem!important;max-width:100%!important}
+        .st-key-qcms_content,[class~="st-key-qcms_content"]{width:100%!important;max-width:100%!important;margin:0!important}
+        .fsi-page-head{margin-top:0!important}
+        @media(max-width:900px){.qcms-enterprise-table-wrap{max-height:72vh!important}.fsi-kpi-grid,.fsi-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+        </style>""",
+        unsafe_allow_html=True,
+    )
+    with st.container(border=False, key="qcms_workspace"):
+        with st.container(border=False, key="qcms_content"):
+            if not bool(current_route_permission.get("can_view", True)):
+                st.error("You do not have View permission for this module. Ask the QCMS administrator to enable the module or department default in Admin → Users & Access.")
+            else:
+                nav.run()
 elif android_streamlit_nav:
-    # Android v0.2.1: the native bar supplies a permanent Menu button, while
+    # Android v0.2.0/v0.2.1 compatibility: the native bar opens Streamlit's sidebar.
     # Streamlit owns every page link in the official grouped sidebar. The hidden
     # collapsed-control stays mounted off-screen so the native Menu button can
     # open/close it without hard URL loads or a route-click timing bridge.

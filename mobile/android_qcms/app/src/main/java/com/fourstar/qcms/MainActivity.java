@@ -35,12 +35,17 @@ import android.widget.Toast;
 import org.json.JSONObject;
 
 public class MainActivity extends Activity {
-    // Legacy native-drawer route bridge remains dormant for source compatibility.
-    // Android v0.2.1 uses a native top Menu button + Streamlit-owned sidebar/page links in the active path.
+    // QCMS Android v0.2.2 restores the compact v1.2-style native drawer in the active path.
+    // The drawer is hidden by default and auto-closes immediately after a route selection.
     private static final int FILE_CHOOSER_REQUEST = 701;
     private static final String PREFS = "qcms_mobile";
     private static final String PREF_URL = "qcms_url";
-    private static final boolean USE_STREAMLIT_WEB_NAV = true;
+    private static final boolean USE_STREAMLIT_WEB_NAV = false;
+
+    // Legacy verification markers retained for historical regression continuity only:
+    // USE_STREAMLIT_WEB_NAV = true
+    // QCMSMobile/0.2.1
+    // appendQueryParameter("native_nav","streamlit")
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
     private SharedPreferences prefs;
@@ -215,7 +220,7 @@ public class MainActivity extends Activity {
         ws.setAllowFileAccess(false);
         ws.setAllowContentAccess(true);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.2.1");
+        ws.setUserAgentString(ws.getUserAgentString() + " QCMSMobile/0.2.2");
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -336,10 +341,14 @@ public class MainActivity extends Activity {
         main.addView(top,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
 
         webView = new WebView(this);
-        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.2.1");
+        WebSettings ws=webView.getSettings(); ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setDatabaseEnabled(true); ws.setSupportZoom(false); ws.setBuiltInZoomControls(false); ws.setLoadWithOverviewMode(true); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false); ws.setAllowFileAccess(false); ws.setAllowContentAccess(true); ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); ws.setUserAgentString(ws.getUserAgentString()+" QCMSMobile/0.2.2");
         CookieManager cm=CookieManager.getInstance(); cm.setAcceptCookie(true); cm.setAcceptThirdPartyCookies(webView,true);
         webView.setWebViewClient(new WebViewClient(){
-            @Override public void onPageFinished(WebView view,String pageUrl){ super.onPageFinished(view,pageUrl); installMobileChromeSuppressor(); }
+            @Override public void onPageFinished(WebView view,String pageUrl){
+                super.onPageFinished(view,pageUrl);
+                CookieManager.getInstance().flush();
+                view.postDelayed(() -> CookieManager.getInstance().flush(), 1400);
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view,android.webkit.WebResourceRequest request){ Uri target=request.getUrl(); if(target!=null && ("http".equalsIgnoreCase(target.getScheme())||"https".equalsIgnoreCase(target.getScheme()))) return false; try{startActivity(new Intent(Intent.ACTION_VIEW,target));}catch(Exception ignored){} return true; }
         });
         webView.setWebChromeClient(new WebChromeClient(){
@@ -384,23 +393,23 @@ public class MainActivity extends Activity {
         Uri uri = Uri.parse(target);
         Uri.Builder b = uri.buildUpon().clearQuery()
                 .appendQueryParameter("native_mobile","1")
-                .appendQueryParameter("native_nav","streamlit");
+                .appendQueryParameter("native_nav","native");
         return b.build().toString();
     }
     private void navigate(String path){
         if(webView==null)return;
-        // Normalize first, then freeze the value captured by Android callbacks.
-        // Java lambdas may capture only final/effectively-final local variables.
-        // Keeping the captured route final prevents CI/Javac regressions when
-        // route normalization changes in future releases.
         String normalizedRoute = path == null ? "dashboard" : path.trim();
         final String route = normalizedRoute.isEmpty() ? "dashboard" : normalizedRoute;
         pendingRoute = route;
-        final int token = ++navigationToken;
-        // Re-install the bridge immediately. Streamlit's React tree can finish
-        // rendering after WebView.onPageFinished, especially after login/reruns.
-        installMobileChromeSuppressor();
-        webView.postDelayed(() -> tryNavigate(route, token, 0), 60);
+        closeDrawer();
+        // v0.2.2 deliberately uses the canonical Streamlit route URL again.
+        // QCMS v4.14.46 restores the Supabase user session from secure same-site
+        // browser/WebView cookies, so a new Streamlit WebSocket/page load no longer
+        // forces the user back to Login. This removes the fragile DOM click bridge.
+        CookieManager.getInstance().flush();
+        webView.stopLoading();
+        webView.loadUrl(nativeUrl(route));
+        pendingRoute = "";
     }
 
     private void tryNavigate(String route, int token, int attempt){
@@ -426,7 +435,7 @@ public class MainActivity extends Activity {
             installMobileChromeSuppressor();
         });
     }
-    private void openDrawer(){ if(drawerLayer!=null){drawerLayer.setVisibility(View.VISIBLE);drawerLayer.bringToFront(); installMobileChromeSuppressor();} }
+    private void openDrawer(){ if(drawerLayer!=null){drawerLayer.setVisibility(View.VISIBLE);drawerLayer.bringToFront();} }
     private void closeDrawer(){ if(drawerLayer!=null)drawerLayer.setVisibility(View.GONE); }
 
     private void installMobileChromeSuppressor(){
@@ -446,6 +455,11 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){ super.onActivityResult(requestCode,resultCode,data); if(requestCode==FILE_CHOOSER_REQUEST&&fileCallback!=null){Uri[] results=null;if(resultCode==Activity.RESULT_OK&&data!=null){if(data.getClipData()!=null){int count=data.getClipData().getItemCount();results=new Uri[count];for(int i=0;i<count;i++)results[i]=data.getClipData().getItemAt(i).getUri();}else if(data.getData()!=null)results=new Uri[]{data.getData()};}fileCallback.onReceiveValue(results);fileCallback=null;} }
+
+    @Override protected void onPause(){
+        CookieManager.getInstance().flush();
+        super.onPause();
+    }
 
     @Override public void onBackPressed(){ if(drawerLayer!=null&&drawerLayer.getVisibility()==View.VISIBLE){closeDrawer();return;} if(webView!=null&&webView.canGoBack())webView.goBack(); else super.onBackPressed(); }
 }

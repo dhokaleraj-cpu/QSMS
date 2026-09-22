@@ -14,11 +14,11 @@ def text(rel: str) -> str:
 
 
 def test_v41441_release_identity_and_no_schema_change():
-    assert text("VERSION").strip() in {"4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
+    assert text("VERSION").strip() in {"4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
-    assert manifest["build"] in {"41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV", "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE", "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL"}
-    assert manifest["previous_controlled_release"] in {"4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
+    assert manifest["version"] in {"4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46"}
+    assert manifest["build"] in {"41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV", "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE", "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL", "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH"}
+    assert manifest["previous_controlled_release"] in {"4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46"}
     assert manifest["schema_change_for_v41441"] is False
 
 
@@ -28,8 +28,12 @@ def test_android_route_captured_as_final_after_normalization():
     assert 'final String route = normalizedRoute.isEmpty() ? "dashboard" : normalizedRoute;' in java
     assert 'String route = path == null ? "dashboard" : path.trim();' not in java
     assert 'if(route.isEmpty()) route = "dashboard";' not in java
-    assert 'postDelayed(() -> tryNavigate(route, token, 0), 60)' in java
-    assert any(v in java for v in ('QCMSMobile/0.1.9', 'QCMSMobile/0.2.0', 'QCMSMobile/0.2.1'))
+    if text("VERSION").strip() == "4.14.46":
+        assert 'webView.loadUrl(nativeUrl(route))' in java
+        assert 'QCMSMobile/0.2.2' in java
+    else:
+        assert 'postDelayed(() -> tryNavigate(route, token, 0), 60)' in java
+        assert any(v in java for v in ('QCMSMobile/0.1.9', 'QCMSMobile/0.2.0', 'QCMSMobile/0.2.1'))
 
 
 def _functional_javac_command():
@@ -86,8 +90,8 @@ def test_lambda_capture_pattern_compiles_with_javac(tmp_path):
 def test_android_v019_identity_and_prior_navigation_fixes_preserved():
     gradle = text("mobile/android_qcms/app/build.gradle")
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
-    assert any(v in gradle for v in ("versionCode 10", "versionCode 11", "versionCode 12"))
-    assert any(v in gradle for v in ("versionName '0.1.9'", "versionName '0.2.0'", "versionName '0.2.1'"))
+    assert any(v in gradle for v in ("versionCode 10", "versionCode 11", "versionCode 12", "versionCode 13"))
+    assert any(v in gradle for v in ("versionName '0.1.9'", "versionName '0.2.0'", "versionName '0.2.1'", "versionName '0.2.2'"))
     for token in ('__qcmsNativePendingRoute', 'QCMS_NAV_PENDING', 'MutationObserver', '__qcmsNativeNavTimer'):
         assert token in java
     assert 'QCMS navigation is still loading. Please try the menu again.' not in java

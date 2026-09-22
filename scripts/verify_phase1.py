@@ -1015,10 +1015,18 @@ if not all(token in v41429_osp for token in ("FSI Batch Number", "Vendor Batch N
     errors.append("v4.14.29 OSP transaction selectors do not expose controlled batch identity")
 current_release_version = str(v41429_manifest.get("version") or "")
 current_release_build = str(v41429_manifest.get("build") or "")
-if current_release_version != "4.14.45" or current_release_build != "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL":
-    errors.append("v4.14.45 deployment manifest release identity is incomplete")
-if str(v41429_manifest.get("database_schema_required")) != "4.14.45" or not bool(v41429_manifest.get("database_migration_required")):
+_expected_current_builds = {
+    "4.14.45": "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL",
+    "4.14.46": "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH",
+}
+if current_release_version not in _expected_current_builds or current_release_build != _expected_current_builds[current_release_version]:
+    errors.append("v4.14.45+ deployment manifest release identity is incomplete")
+if str(v41429_manifest.get("database_schema_required")) != "4.14.45":
+    errors.append("v4.14.45 database schema baseline is incomplete")
+if current_release_version == "4.14.45" and not bool(v41429_manifest.get("database_migration_required")):
     errors.append("v4.14.45 database migration contract is incomplete")
+if current_release_version == "4.14.46" and bool(v41429_manifest.get("database_migration_required")):
+    errors.append("v4.14.46 must reuse the already-live v4.14.45 database schema without a new migration")
 
 # v4.14.30 RMTC supplier de-duplication / dedicated Bend Test discovery / permission-aware Global Search.
 v41430_global_search = (ROOT / "app_pages" / "global_search.py").read_text(encoding="utf-8")
@@ -1185,6 +1193,34 @@ if not all(token in v41437_streamlit for token in ("android_streamlit_nav", 'st.
 if not all(token in v41444_test for token in ("test_android_v021_restores_permanent_native_menu_button", "test_streamlit_sidebar_and_android_submenu_are_visible_and_official", "test_android_footer_remains_removed_and_signature_fix_is_preserved")):
     errors.append("v4.14.44 focused Android navigation regression tests are incomplete")
 
+# v4.14.46 Android v1.2-style drawer + persistent browser/WebView login recovery.
+v41446_auth = (ROOT / "core" / "auth.py").read_text(encoding="utf-8")
+v41446_test = (ROOT / "tests" / "test_v41446_android_drawer_persistent_auth.py").read_text(encoding="utf-8")
+v41446_release = (ROOT / "RELEASE_NOTES_v4.14.46.md").read_text(encoding="utf-8")
+if not all(token in v41436_android for token in (
+    "QCMSMobile/0.2.2", "USE_STREAMLIT_WEB_NAV = false", "drawerSection", "drawerChildButton",
+    'appendQueryParameter("native_nav","native")', "closeDrawer(); navigate(path)", "webView.loadUrl(nativeUrl(route))",
+)):
+    errors.append("v4.14.46 Android v1.2-style native drawer/autohide routing is incomplete")
+if not all(token in v41437_streamlit for token in (
+    "restore_persistent_login", "service_persistent_auth_bridge", "sync_persistent_login_browser",
+    "elif android_native_drawer:",
+)):
+    errors.append("v4.14.46 Streamlit persistent-login/native-drawer contract is incomplete")
+if not all(token in v41446_auth for token in (
+    "st.components.v2.component", "window.localStorage.getItem(key)", "window.localStorage.setItem(key, payload)",
+    "client.auth.set_session(access, refresh)", "_qcms_clear_auth_browser", "SameSite=Strict",
+)):
+    errors.append("v4.14.46 refresh/login persistence implementation is incomplete")
+if not all(token in v41446_test for token in (
+    "test_android_v022_restores_v12_style_drawer_and_auto_hides",
+    "test_streamlit_restores_persistent_login_before_login_gate",
+    "test_android_navigation_uses_canonical_route_and_persists_webview_storage",
+)):
+    errors.append("v4.14.46 focused Android/auth regression tests are incomplete")
+if "Android v1.2 Drawer + Persistent Login" not in v41446_release:
+    errors.append("v4.14.46 release notes are incomplete")
+
 # v4.14.45 shared raw forging/casting source + layout identity control.
 v41445_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
 v41445_supply = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
@@ -1209,7 +1245,11 @@ if not all(token in v41445_test for token in ("test_same_numeric_price_is_allowe
     errors.append("v4.14.45 focused regression tests are incomplete")
 
 report = {
-    "release": "QCMS 4.14.45 Shared Raw Source + Controlled Layout Identity",
+    "release": "QCMS 4.14.46 Android V1.2 Drawer + Persistent Login",
+    "v41446_android_v12_drawer": all(token in v41436_android for token in ("QCMSMobile/0.2.2", "USE_STREAMLIT_WEB_NAV = false", "drawerSection", "drawerChildButton", 'appendQueryParameter("native_nav","native")', "webView.loadUrl(nativeUrl(route))")),
+    "v41446_drawer_autohide": "closeDrawer(); navigate(path)" in v41436_android and "drawerLayer.setVisibility(View.GONE)" in v41436_android,
+    "v41446_persistent_login": all(token in v41446_auth for token in ("st.components.v2.component", "window.localStorage.getItem(key)", "window.localStorage.setItem(key, payload)", "client.auth.set_session(access, refresh)", "SameSite=Strict")),
+    "v41446_schema_unchanged": str(v41429_manifest.get("database_schema_required")) == "4.14.45" and not bool(v41429_manifest.get("database_migration_required")),
     "v41445_cross_part_same_price_allowed": "same commercial rate is intentionally allowed on different Part Master records" in v41445_part,
     "v41445_source_raw_part": "source_part_id" in v41445_part and "def raw_source_context" in v41445_supply,
     "v41445_auto_layout_number": "def auto_plan_number" in v41445_layout_service and "Plan Number (Auto)" in v41445_layout_ui,

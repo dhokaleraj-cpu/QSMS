@@ -41,17 +41,330 @@ from __future__ import annotations
 # Legacy build marker retained for regression compatibility: BUILD 4111-ZOHO-VISIBLE-SHELL
 # Legacy Export Shipment shell build marker retained for regression compatibility: BUILD 4112-EXPORT-SHELL
 
+import json
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from core.config import get_settings, is_preview_session
 from core.database import get_session_client, new_client
 from core.ui import app_footer, logo_data_uri, render_public_brand, safe
 # Legacy import regression token: from core.ui import logo_data_uri, render_public_brand, safe
 
+
+
+
+# QCMS v4.14.46 — browser/WebView persistent Supabase session bridge.
+#
+# A normal browser refresh and an Android direct-route load create a new
+# Streamlit WebSocket/Python session. Session State therefore cannot be the only
+# authentication store. v4.14.46 uses a Streamlit Components v2 bridge as the
+# primary persistence layer. Components v2 executes with normal page DOM
+# privileges, so it can read/write origin-scoped localStorage and return the
+# stored Supabase session to Python on a fresh Streamlit run. The older
+# same-origin cookie bridge is retained only as a backward-compatible fallback.
+# No token is put in a URL, log message, QCMS table, or Android preference.
+_PERSIST_STORAGE_KEY = "qcms.auth.session.v2"
+_PERSIST_STORAGE_PENDING = "__QCMS_STORAGE_PENDING__"
+_PERSIST_STORAGE_EMPTY = "__QCMS_STORAGE_EMPTY__"
+_PERSIST_STORAGE_ERROR = "__QCMS_STORAGE_ERROR__"
+_PERSIST_ACCESS_COOKIE = "qcms_auth_at_v1"
+_PERSIST_REFRESH_COOKIE = "qcms_auth_rt_v1"
+_PERSIST_COOKIE_MAX_AGE = 30 * 24 * 60 * 60
+_PERSIST_AUTH_COMPONENT: Any | None = None
+
+
+def _persistent_auth_component() -> Any | None:
+    """Return the zero-height Components-v2 browser storage bridge.
+
+    Streamlit >=1.60 is the controlled QCMS runtime. The defensive try/except
+    keeps older local developer environments usable and falls back to cookies.
+    """
+    global _PERSIST_AUTH_COMPONENT
+    if _PERSIST_AUTH_COMPONENT is not None:
+        return _PERSIST_AUTH_COMPONENT
+    try:
+        _PERSIST_AUTH_COMPONENT = st.components.v2.component(
+            name="qcms_persistent_auth_v2",
+            html='<span id="qcms-auth-store" aria-hidden="true"></span>',
+            css='#qcms-auth-store{display:none!important;width:0!important;height:0!important;overflow:hidden!important}',
+            js=r'''
+export default function(component) {
+  const { data, parentElement, setStateValue, setTriggerValue } = component;
+  try { parentElement.style.display = "none"; } catch (e) {}
+  const key = (data && data.key) || "qcms.auth.session.v2";
+  const action = (data && data.action) || "read";
+  try {
+    if (action === "clear") {
+      window.localStorage.removeItem(key);
+      setStateValue("payload", "__QCMS_STORAGE_EMPTY__");
+      setTriggerValue("done", "clear");
+      return;
+    }
+    if (action === "write") {
+      const payload = (data && typeof data.payload === "string") ? data.payload : "";
+      if (payload) window.localStorage.setItem(key, payload);
+      else window.localStorage.removeItem(key);
+      setStateValue("payload", payload || "__QCMS_STORAGE_EMPTY__");
+      setTriggerValue("done", "write");
+      return;
+    }
+    const payload = window.localStorage.getItem(key) || "__QCMS_STORAGE_EMPTY__";
+    setStateValue("payload", payload);
+  } catch (err) {
+    setStateValue("payload", "__QCMS_STORAGE_ERROR__");
+  }
+}
+''',
+        )
+    except Exception:
+        _PERSIST_AUTH_COMPONENT = None
+    return _PERSIST_AUTH_COMPONENT
+
+
+def _mount_auth_storage(*, action: str, payload: str = "", key: str) -> Any | None:
+    component = _persistent_auth_component()
+    if component is None:
+        return None
+    try:
+        return component(
+            data={"action": action, "key": _PERSIST_STORAGE_KEY, "payload": payload},
+            default={"payload": _PERSIST_STORAGE_PENDING},
+            on_payload_change=lambda: None,
+            on_done_change=lambda: None,
+            key=key,
+            width=1,
+            height=1,
+        )
+    except Exception:
+        # Never make login unavailable just because browser storage is blocked.
+        return None
+
+
+def _context_cookie(name: str) -> str:
+    try:
+        value = st.context.cookies.get(name, "")
+    except Exception:
+        value = ""
+    try:
+        return unquote(str(value or ""))
+    except Exception:
+        return str(value or "")
+
+
+def _render_auth_cookie_script(*, access_token: str = "", refresh_token: str = "", clear: bool = False) -> None:
+    """Backward-compatible cookie writer used only as a secondary restore path."""
+    access_json = json.dumps(str(access_token or ""))
+    refresh_json = json.dumps(str(refresh_token or ""))
+    clear_js = "true" if clear else "false"
+    components.html(
+        f"""<script>
+        (function(){{
+          const clear = {clear_js};
+          const at = {access_json};
+          const rt = {refresh_json};
+          const maxAge = {_PERSIST_COOKIE_MAX_AGE};
+          const docs = [document];
+          try {{ if (window.parent && window.parent.document) docs.push(window.parent.document); }} catch (e) {{}}
+          function attrs() {{
+            let out = '; Path=/; SameSite=Strict';
+            try {{ if ((window.parent || window).location.protocol === 'https:') out += '; Secure'; }} catch (e) {{ if (location.protocol === 'https:') out += '; Secure'; }}
+            return out;
+          }}
+          function setCookie(doc, name, value) {{
+            if (clear) doc.cookie = name + '=; Path=/; Max-Age=0; SameSite=Strict' + ((location.protocol === 'https:') ? '; Secure' : '');
+            else doc.cookie = name + '=' + encodeURIComponent(value) + '; Max-Age=' + maxAge + attrs();
+          }}
+          for (const doc of docs) {{
+            try {{ setCookie(doc, '{_PERSIST_ACCESS_COOKIE}', at); }} catch (e) {{}}
+            try {{ setCookie(doc, '{_PERSIST_REFRESH_COOKIE}', rt); }} catch (e) {{}}
+          }}
+        }})();
+        </script>""",
+        height=0,
+        width=0,
+        scrolling=False,
+    )
+
+
+def _session_payload(access_token: str, refresh_token: str) -> str:
+    return json.dumps(
+        {
+            "access_token": str(access_token or ""),
+            "refresh_token": str(refresh_token or ""),
+            "saved_at": int(time.time()),
+        },
+        separators=(",", ":"),
+    )
+
+
+def _payload_tokens(payload: str) -> tuple[str, str]:
+    try:
+        raw = json.loads(str(payload or ""))
+    except Exception:
+        return "", ""
+    if not isinstance(raw, dict):
+        return "", ""
+    return str(raw.get("access_token") or ""), str(raw.get("refresh_token") or "")
+
+
+def _queue_session_cookie(session: Any) -> None:
+    if not session:
+        return
+    access = str(getattr(session, "access_token", "") or "")
+    refresh = str(getattr(session, "refresh_token", "") or "")
+    if not access or not refresh:
+        return
+    if (
+        st.session_state.get("_qcms_cookie_synced_access") == access
+        and st.session_state.get("_qcms_cookie_synced_refresh") == refresh
+    ):
+        return
+    st.session_state["_qcms_cookie_write_tokens"] = {"access_token": access, "refresh_token": refresh}
+
+
+def service_persistent_auth_bridge() -> bool:
+    """Service queued browser-storage/cookie clear/write operations.
+
+    Returns True on the rerun that is intentionally clearing persisted auth so
+    streamlit_app.py will not attempt a restore from stale browser state.
+    """
+    if st.session_state.pop("_qcms_clear_auth_browser", False):
+        _mount_auth_storage(action="clear", key="qcms_auth_clear")
+        _render_auth_cookie_script(clear=True)
+        for name in (
+            "_qcms_cookie_synced_access",
+            "_qcms_cookie_synced_refresh",
+            "_qcms_storage_synced_payload",
+            "qcms_auth_read",
+            "qcms_auth_write",
+        ):
+            st.session_state.pop(name, None)
+        return True
+
+    tokens = st.session_state.pop("_qcms_cookie_write_tokens", None)
+    if isinstance(tokens, dict):
+        access = str(tokens.get("access_token") or "")
+        refresh = str(tokens.get("refresh_token") or "")
+        if access and refresh:
+            _render_auth_cookie_script(access_token=access, refresh_token=refresh)
+            st.session_state["_qcms_cookie_synced_access"] = access
+            st.session_state["_qcms_cookie_synced_refresh"] = refresh
+    return False
+
+
+def service_persistent_auth_cookie() -> bool:
+    """Compatibility alias retained for older tests/imports."""
+    return service_persistent_auth_bridge()
+
+
+def _restore_with_tokens(access: str, refresh: str) -> bool:
+    if not access or not refresh:
+        return False
+    client = new_client()
+    response = client.auth.set_session(access, refresh)
+    user = getattr(response, "user", None)
+    session = getattr(response, "session", None)
+    if not user or not session:
+        raise RuntimeError("Stored QCMS session is no longer valid.")
+    profile = _fetch_profile(client, str(user.id))
+    if str(profile.get("status") or "ACTIVE").upper() != "ACTIVE":
+        raise PermissionError("This QCMS account is not active.")
+    st.session_state["supabase_client"] = client
+    st.session_state["profile"] = profile
+    st.session_state.pop("_qsms_preview", None)
+    st.session_state.pop("_qcms_auth_restore_failed", None)
+    _queue_session_cookie(session)
+    return True
+
+
+def restore_persistent_login() -> bool:
+    """Restore Supabase authentication after website/WebView refresh.
+
+    Primary path: origin-scoped localStorage through Streamlit Components v2.
+    Fallback path: legacy same-origin cookies for users upgrading from v4.14.45.
+    When browser storage has mounted but has not returned its value yet, the
+    caller is told to wait for the component-triggered rerun rather than briefly
+    rendering the login page.
+    """
+    st.session_state["_qcms_auth_restore_pending"] = False
+    if is_preview_session() or st.session_state.get("profile") is not None:
+        return bool(st.session_state.get("profile"))
+    if st.session_state.get("_qcms_auth_restore_failed"):
+        return False
+
+    result = _mount_auth_storage(action="read", key="qcms_auth_read")
+    payload = getattr(result, "payload", None) if result is not None else None
+
+    # On a first mount Components v2 returns the Python default; JavaScript then
+    # supplies localStorage and causes one automatic rerun.
+    if payload in (None, _PERSIST_STORAGE_PENDING):
+        access = _context_cookie(_PERSIST_ACCESS_COOKIE)
+        refresh = _context_cookie(_PERSIST_REFRESH_COOKIE)
+        if access and refresh:
+            try:
+                return _restore_with_tokens(access, refresh)
+            except Exception:
+                pass
+        if result is not None:
+            st.session_state["_qcms_auth_restore_pending"] = True
+            return False
+        # Components v2 unavailable: cookie fallback is the only persistence path.
+        return False
+
+    access = refresh = ""
+    if payload not in (_PERSIST_STORAGE_EMPTY, _PERSIST_STORAGE_ERROR):
+        access, refresh = _payload_tokens(str(payload))
+    if not access or not refresh:
+        # Backward compatibility for a browser that still has v4.14.45 cookies.
+        access = _context_cookie(_PERSIST_ACCESS_COOKIE)
+        refresh = _context_cookie(_PERSIST_REFRESH_COOKIE)
+    if not access or not refresh:
+        return False
+
+    try:
+        return _restore_with_tokens(access, refresh)
+    except Exception:
+        # Invalid/expired/revoked storage must not create a restore loop.
+        st.session_state["_qcms_auth_restore_failed"] = True
+        st.session_state["_qcms_clear_auth_browser"] = True
+        st.session_state.pop("supabase_client", None)
+        st.session_state.pop("profile", None)
+        return False
+
+
+def sync_persistent_login_browser() -> None:
+    """Persist the current Supabase session for refresh/direct-route recovery."""
+    if is_preview_session():
+        return
+    client = st.session_state.get("supabase_client")
+    if client is None:
+        return
+    try:
+        session = client.auth.get_session()
+    except Exception:
+        session = None
+    if not session:
+        return
+    access = str(getattr(session, "access_token", "") or "")
+    refresh = str(getattr(session, "refresh_token", "") or "")
+    if not access or not refresh:
+        return
+
+    payload = _session_payload(access, refresh)
+    if st.session_state.get("_qcms_storage_synced_payload") != payload:
+        _mount_auth_storage(action="write", payload=payload, key="qcms_auth_write")
+        st.session_state["_qcms_storage_synced_payload"] = payload
+    _queue_session_cookie(session)
+
+
+def sync_persistent_login_cookie() -> None:
+    """Compatibility alias retained for older tests/imports."""
+    sync_persistent_login_browser()
 
 PREVIEW_PROFILE = {
     "id": "phase1-preview-user",
@@ -187,6 +500,8 @@ def login(email: str, password: str) -> dict[str, Any]:
     st.session_state["supabase_client"] = client
     st.session_state["profile"] = profile
     st.session_state.pop("_qsms_preview", None)
+    st.session_state.pop("_qcms_auth_restore_failed", None)
+    _queue_session_cookie(getattr(response, "session", None))
     return profile
 
 
@@ -226,6 +541,7 @@ def register_first_administrator(full_name: str, email: str, password: str, setu
     if getattr(response, "session", None):
         st.session_state["supabase_client"] = client
         st.session_state["profile"] = _fetch_profile(client, str(response.user.id))
+        _queue_session_cookie(getattr(response, "session", None))
         return claim_first_administrator(setup_code, full_name)
     return {
         "confirmation_required": True,
@@ -246,6 +562,10 @@ def claim_first_administrator(setup_code: str, full_name: str = "") -> dict[str,
         raise RuntimeError("The signed-in user could not be resolved.")
     profile = _fetch_profile(client, str(auth_response.user.id))
     st.session_state["profile"] = profile
+    try:
+        _queue_session_cookie(client.auth.get_session())
+    except Exception:
+        pass
     return profile
 
 
@@ -314,6 +634,18 @@ def logout() -> None:
         except Exception:
             pass
     for key in ("profile", "supabase_client", "_qsms_preview", "selected_master_record"):
+        st.session_state.pop(key, None)
+    st.session_state["_qcms_clear_auth_browser"] = True
+    st.session_state["_qcms_auth_restore_failed"] = True
+    for key in (
+        "_qcms_cookie_write_tokens",
+        "_qcms_cookie_synced_access",
+        "_qcms_cookie_synced_refresh",
+        "_qcms_storage_synced_payload",
+        "qcms_auth_read",
+        "qcms_auth_write",
+        "qcms_auth_clear",
+    ):
         st.session_state.pop(key, None)
     st.rerun()
 

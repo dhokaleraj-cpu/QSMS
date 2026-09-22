@@ -14,10 +14,10 @@ def test_v41429_release_identity_source_only_schema_contract():
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert tuple(map(int, manifest["version"].split("."))) >= (4, 14, 29)
     assert "metlab_bend_test_subcategory" in manifest["features"]
-    if manifest["version"] in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}:
-        expected_schema = "4.14.45" if manifest["version"] == "4.14.45" else ("4.14.36" if manifest["version"] in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"} else manifest["version"])
+    if manifest["version"] in {"4.14.35", "4.14.36", "4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46"}:
+        expected_schema = "4.14.45" if manifest["version"] in {"4.14.45", "4.14.46"} else ("4.14.36" if manifest["version"] in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44"} else manifest["version"])
         assert manifest["database_schema_required"] == expected_schema
-        assert manifest["database_migration_required"] is True
+        assert manifest["database_migration_required"] is (manifest["version"] != "4.14.46")
         assert manifest["source_only_updater"] is False
     else:
         assert manifest["database_schema_required"] == "4.14.28"

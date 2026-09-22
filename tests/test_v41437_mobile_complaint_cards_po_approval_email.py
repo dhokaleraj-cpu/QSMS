@@ -8,7 +8,7 @@ def text(rel: str) -> str:
 
 def test_v41437_release_identity():
     version = text("VERSION").strip()
-    assert version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
+    assert version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert manifest["version"] == version
     expected = {
@@ -21,6 +21,7 @@ def test_v41437_release_identity():
         "4.14.43": "41443-ANDROID-STREAMLIT-SIDEBAR-NAV",
         "4.14.44": "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE",
         "4.14.45": "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL",
+        "4.14.46": "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH",
     }
     assert manifest["build"] == expected[version]
 
@@ -74,10 +75,15 @@ def test_android_full_expandable_navigation_and_fixed_bottom_bar():
         assert "versionName '0.2.0'" in gradle
         for token in ("QCMSMobile/0.2.0", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "__qcmsNativeNavigate", "QCMS_NAV_PENDING"):
             assert token in java
-    else:
-        assert version in {"4.14.44", "4.14.45"}
+    elif version in {"4.14.44", "4.14.45"}:
         assert "versionName '0.2.1'" in gradle
         for token in ("QCMSMobile/0.2.1", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "toggleStreamlitSidebar"):
+            assert token in java
+        assert "LinearLayout bottom=new LinearLayout" not in java
+    else:
+        assert version == "4.14.46"
+        assert "versionName '0.2.2'" in gradle
+        for token in ("QCMSMobile/0.2.2", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", 'appendQueryParameter("native_nav","native")', "closeDrawer(); navigate(path)"):
             assert token in java
         assert "LinearLayout bottom=new LinearLayout" not in java
 
