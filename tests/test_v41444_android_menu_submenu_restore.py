@@ -10,7 +10,7 @@ def text(rel: str) -> str:
 
 def test_v41444_release_identity_and_database_baseline():
     version = text("VERSION").strip()
-    assert version in {"4.14.44", "4.14.45", "4.14.46"}
+    assert version in {"4.14.44", "4.14.45", "4.14.46", "4.14.47"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert manifest["version"] == version
     if version == "4.14.44":
@@ -22,9 +22,14 @@ def test_v41444_release_identity_and_database_baseline():
         assert manifest["previous_controlled_release"] == "4.14.44"
         assert manifest["database_schema_required"] == "4.14.45"
         assert manifest["database_migration_required"] is True
-    else:
+    elif version == "4.14.46":
         assert manifest["build"] == "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH"
         assert manifest["previous_controlled_release"] == "4.14.45"
+        assert manifest["database_schema_required"] == "4.14.45"
+    else:
+        assert manifest["build"] == "41447-PO-WATERMARK-20-APPROVER-STAMP"
+        assert manifest["previous_controlled_release"] == "4.14.46"
+        assert manifest["database_schema_required"] == "4.14.45"
         assert manifest["database_schema_required"] == "4.14.45"
         assert manifest["database_migration_required"] is False
     assert manifest["schema_change_for_v41444"] is False

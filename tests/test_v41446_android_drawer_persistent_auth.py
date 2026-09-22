@@ -67,7 +67,7 @@ def test_native_drawer_streamlit_mode_is_content_only_and_no_footer():
 
 def test_v41446_release_keeps_database_schema_at_v41445():
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] == "4.14.46"
-    assert manifest["build"] == "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH"
+    assert manifest["version"] in {"4.14.46", "4.14.47"}
+    assert manifest["build"] in {"41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH", "41447-PO-WATERMARK-20-APPROVER-STAMP"}
     assert manifest["database_schema_required"] == "4.14.45"
     assert manifest["database_migration_required"] is False

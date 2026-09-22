@@ -1018,6 +1018,7 @@ current_release_build = str(v41429_manifest.get("build") or "")
 _expected_current_builds = {
     "4.14.45": "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL",
     "4.14.46": "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH",
+    "4.14.47": "41447-PO-WATERMARK-20-APPROVER-STAMP",
 }
 if current_release_version not in _expected_current_builds or current_release_build != _expected_current_builds[current_release_version]:
     errors.append("v4.14.45+ deployment manifest release identity is incomplete")
@@ -1025,8 +1026,8 @@ if str(v41429_manifest.get("database_schema_required")) != "4.14.45":
     errors.append("v4.14.45 database schema baseline is incomplete")
 if current_release_version == "4.14.45" and not bool(v41429_manifest.get("database_migration_required")):
     errors.append("v4.14.45 database migration contract is incomplete")
-if current_release_version == "4.14.46" and bool(v41429_manifest.get("database_migration_required")):
-    errors.append("v4.14.46 must reuse the already-live v4.14.45 database schema without a new migration")
+if current_release_version in {"4.14.46", "4.14.47"} and bool(v41429_manifest.get("database_migration_required")):
+    errors.append("v4.14.46+ must reuse the already-live v4.14.45 database schema without a new migration")
 
 # v4.14.30 RMTC supplier de-duplication / dedicated Bend Test discovery / permission-aware Global Search.
 v41430_global_search = (ROOT / "app_pages" / "global_search.py").read_text(encoding="utf-8")
@@ -1244,8 +1245,21 @@ if not all(token in v41445_guard for token in ("V41445_MIGRATION", "QCMS_V41445_
 if not all(token in v41445_test for token in ("test_same_numeric_price_is_allowed_across_different_part_masters", "test_raw_forging_casting_can_link_another_part_master", "test_layout_plan_number_is_stage_process_part_name", "test_one_current_layout_per_controlled_part_stage_process_scope")):
     errors.append("v4.14.45 focused regression tests are incomplete")
 
+v41447_po_reporting = (ROOT / "core" / "purchase_order_reporting.py").read_text(encoding="utf-8")
+v41447_supply = (ROOT / "core" / "supply_chain_service.py").read_text(encoding="utf-8")
+v41447_test = (ROOT / "tests" / "test_v41447_po_watermark_approver_stamp.py").read_text(encoding="utf-8")
+if not all(token in v41447_po_reporting for token in ('setFillAlpha(0.20)', 'HexColor("#E8EBF0")', 'def _draw_approver_stamp', 'QCMS DIGITAL APPROVAL')):
+    errors.append("v4.14.47 PO watermark/approver stamp implementation is incomplete")
+if not all(token in v41447_supply for token in ('approver_employee_name', 'approver_employee_code', 'approver_department')):
+    errors.append("v4.14.47 PO approver Employee Master enrichment is incomplete")
+if not all(token in v41447_test for token in ('test_watermark_is_20_percent_and_light', 'test_approved_stamp_contains_identity_and_timestamp')):
+    errors.append("v4.14.47 focused PO print regression tests are incomplete")
+
 report = {
-    "release": "QCMS 4.14.46 Android V1.2 Drawer + Persistent Login",
+    "release": "QCMS 4.14.47 PO Watermark Readability + Approver Stamp",
+    "v41447_watermark_20_percent": 'setFillAlpha(0.20)' in v41447_po_reporting and 'HexColor("#E8EBF0")' in v41447_po_reporting,
+    "v41447_first_page_approver_stamp": 'def _draw_approver_stamp' in v41447_po_reporting and 'QCMS DIGITAL APPROVAL' in v41447_po_reporting,
+
     "v41446_android_v12_drawer": all(token in v41436_android for token in ("QCMSMobile/0.2.2", "USE_STREAMLIT_WEB_NAV = false", "drawerSection", "drawerChildButton", 'appendQueryParameter("native_nav","native")', "webView.loadUrl(nativeUrl(route))")),
     "v41446_drawer_autohide": "closeDrawer(); navigate(path)" in v41436_android and "drawerLayer.setVisibility(View.GONE)" in v41436_android,
     "v41446_persistent_login": all(token in v41446_auth for token in ("st.components.v2.component", "window.localStorage.getItem(key)", "window.localStorage.setItem(key, payload)", "client.auth.set_session(access, refresh)", "SameSite=Strict")),

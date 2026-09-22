@@ -1,7 +1,10 @@
 {
-  "version": "4.14.46",
-  "build": "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH",
+  "version": "4.14.47",
+  "build": "41447-PO-WATERMARK-20-APPROVER-STAMP",
   "features": [
+    "po_watermark_20_percent_opacity",
+    "po_first_page_approver_stamp",
+    "po_approver_name_code_datetime",
     "metlab_stopiteration_safe",
     "direct_metlab_edit_always_visible",
     "direct_dimensional_edit_always_visible",
@@ -335,7 +338,7 @@
   "live_supply_digest_notifier_status": "ACTIVE",
   "live_supply_digest_cron": "qcms-supply-digest-notifier-hourly",
   "schema_change_for_v41429": false,
-  "previous_controlled_release": "4.14.45",
+  "previous_controlled_release": "4.14.46",
   "schema_change_for_v41430": false,
   "schema_change_for_v41431": false,
   "schema_change_for_v41432": false,
@@ -357,5 +360,6 @@
   "schema_change_for_v41443": false,
   "schema_change_for_v41444": false,
   "schema_change_for_v41445": true,
-  "schema_change_for_v41446": false
+  "schema_change_for_v41446": false,
+  "schema_change_for_v41447": false
 }

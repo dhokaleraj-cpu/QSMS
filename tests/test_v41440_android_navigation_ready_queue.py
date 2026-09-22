@@ -8,12 +8,12 @@ def text(rel: str) -> str:
 
 
 def test_v41440_release_identity_and_schema_baseline():
-    assert text("VERSION").strip() in {"4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46"}
+    assert text("VERSION").strip() in {"4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46", "4.14.47"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46"}
-    assert manifest["build"] in {"41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE", "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV", "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE", "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL", "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH"}
-    assert manifest["previous_controlled_release"] in {"4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45"}
-    assert manifest["database_schema_required"] == ("4.14.45" if manifest["version"] in {"4.14.45", "4.14.46"} else "4.14.36")
+    assert manifest["version"] in {"4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46", "4.14.47"}
+    assert manifest["build"] in {"41440-ANDROID-NAV-READY-QUEUE-BUTTON-BRIDGE", "41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV", "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE", "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL", "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH", "41447-PO-WATERMARK-20-APPROVER-STAMP"}
+    assert manifest["previous_controlled_release"] in {"4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46"}
+    assert manifest["database_schema_required"] == ("4.14.45" if manifest["version"] in {"4.14.45", "4.14.46", "4.14.47"} else "4.14.36")
     assert manifest["schema_change_for_v41440"] is False
 
 
@@ -32,7 +32,7 @@ def test_native_streamlit_bridge_is_button_and_switch_page_based():
 
 def test_android_queues_pending_navigation_until_streamlit_dom_ready():
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
-    if text("VERSION").strip() == "4.14.46":
+    if text("VERSION").strip() in {"4.14.46", "4.14.47"}:
         for token in (
             'QCMSMobile/0.2.2', 'drawerSection', 'drawerChildButton',
             'appendQueryParameter("native_nav","native")', 'closeDrawer(); navigate(path)',

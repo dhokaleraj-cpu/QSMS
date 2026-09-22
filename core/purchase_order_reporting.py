@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from io import BytesIO
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import re
 import unicodedata
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -74,6 +76,52 @@ def _date(value: Any) -> str:
 
 def _money(value: Any) -> str:
     return f"{_n(value):,.2f}"
+
+
+def _approval_datetime(value: Any) -> str:
+    """Format stored PO approval time for the controlled first-page approval stamp."""
+    text = _s(value)
+    if not text:
+        return ""
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.astimezone(ZoneInfo("Asia/Kolkata"))
+        return dt.strftime("%d-%m-%Y %I:%M %p IST")
+    except Exception:
+        return text[:25]
+
+
+def _draw_approver_stamp(c: canvas.Canvas, header: Mapping[str, Any], *, page_width: float) -> None:
+    """Draw the controlled digital approver stamp on page 1 only after approval."""
+    if _s(header.get("approval_status")).upper() != "APPROVED":
+        return
+    approver = _s(header.get("approver_employee_name") or header.get("approver_name") or header.get("approved_by_name"))
+    code = _s(header.get("approver_employee_code"))
+    approved_at = _approval_datetime(header.get("approved_at"))
+    if not approver:
+        approver = code or "Authorised Approver"
+    identity = approver + (f" · {code}" if code and code.casefold() not in approver.casefold() else "")
+
+    x = page_width - 185
+    y = 55
+    box_w = 155
+    box_h = 62
+    c.saveState()
+    c.setStrokeColor(HexColor("#2E7D32"))
+    c.setLineWidth(1.15)
+    c.roundRect(x, y, box_w, box_h, 6, stroke=1, fill=0)
+    c.setFillColor(HexColor("#2E7D32"))
+    c.setFont("Helvetica-Bold", 10.5)
+    c.drawCentredString(x + box_w / 2, y + 45, "APPROVED")
+    c.setFillColor(HexColor("#1F2937"))
+    c.setFont("Helvetica-Bold", 6.4)
+    _draw_text(c, x + 8, y + 30, identity, size=6.4, bold=True, color=HexColor("#1F2937"), max_width=box_w - 16)
+    if approved_at:
+        _draw_text(c, x + 8, y + 17, approved_at, size=5.7, color=HexColor("#374151"), max_width=box_w - 16)
+    _draw_text(c, x + 8, y + 7, "QCMS DIGITAL APPROVAL", size=5.2, bold=True, color=HexColor("#6B7280"), max_width=box_w - 16)
+    c.restoreState()
 
 
 def _draw_text(c: canvas.Canvas, x: float, y: float, text: Any, *, size: float = 8.0, bold: bool = False, color=TEXT, max_width: float | None = None) -> None:
@@ -467,7 +515,10 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     for label,val in [("SUBTOTAL",header.get("subtotal")),("CGST 9%",header.get("cgst_amount")),("SGST 9%",header.get("sgst_amount")),("IGST",header.get("igst_amount")),("OTHER",header.get("other_amount"))]:
         _draw_text(c,total_x,ytot,label,size=6.9); c.rect(total_x+55,ytot-5,95,13,stroke=1,fill=0); _draw_text(c,total_x+61,ytot-1,_money(val),size=6.8); ytot -= 16
     c.setFont("Helvetica-Bold",8.0); c.drawString(total_x,ytot,"TOTAL"); c.drawString(total_x+61,ytot,f"INR {_money(header.get('grand_total'))}")
-    _draw_text(c,w-143,81,"Authorised Signatory",size=7.0,bold=True); _draw_text(c,w-174,67,plant.get("name") or plant.get("branch_name") or PLANT["name"],size=6.2)
+    if _s(header.get("approval_status")).upper() == "APPROVED":
+        _draw_approver_stamp(c, header, page_width=w)
+    else:
+        _draw_text(c,w-143,81,"Authorised Signatory",size=7.0,bold=True); _draw_text(c,w-174,67,plant.get("name") or plant.get("branch_name") or PLANT["name"],size=6.2)
     c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",6.0)
     c.drawCentredString(w/2,47,"If you have any questions about this purchase order, please contact")
     c.drawCentredString(w/2,36,"FSI · connect@fourstarindustries.com")
@@ -763,7 +814,7 @@ def _po_approval_watermark(header: Mapping[str, Any]) -> str:
 
 
 def _watermark_pdf_bytes(pdf_data: bytes, label: str) -> bytes:
-    """Apply a light diagonal approval watermark to every PDF page."""
+    """Apply a controlled 20% opacity diagonal approval watermark to every PDF page."""
     if PdfReader is None or PdfWriter is None:
         raise RuntimeError("pypdf is required for Purchase Order watermarks.")
     reader = PdfReader(BytesIO(pdf_data))
@@ -775,10 +826,10 @@ def _watermark_pdf_bytes(pdf_data: bytes, label: str) -> bytes:
         wc = canvas.Canvas(overlay_buf, pagesize=(width, height))
         wc.saveState()
         try:
-            wc.setFillAlpha(0.055)
+            wc.setFillAlpha(0.20)
         except Exception:
             pass
-        wc.setFillColor(HexColor("#98A2B3"))
+        wc.setFillColor(HexColor("#E8EBF0"))
         wc.setFont("Helvetica-Bold", 46 if label == "APPROVED" else 34)
         wc.translate(width / 2.0, height / 2.0)
         wc.rotate(38)

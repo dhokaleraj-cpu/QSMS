@@ -14,11 +14,11 @@ def text(rel: str) -> str:
 
 
 def test_v41441_release_identity_and_no_schema_change():
-    assert text("VERSION").strip() in {"4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46"}
+    assert text("VERSION").strip() in {"4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46", "4.14.47"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46"}
-    assert manifest["build"] in {"41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV", "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE", "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL", "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH"}
-    assert manifest["previous_controlled_release"] in {"4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46"}
+    assert manifest["version"] in {"4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46", "4.14.47"}
+    assert manifest["build"] in {"41441-ANDROID-LAMBDA-COMPILE-PERMANENT-FIX", "41442-LOCAL-JAVAC-OPTIONAL-CI-COMPILE-GUARD", "41443-ANDROID-STREAMLIT-SIDEBAR-NAV", "41444-ANDROID-NATIVE-MENU-SUBMENU-RESTORE", "41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL", "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH", "41447-PO-WATERMARK-20-APPROVER-STAMP"}
+    assert manifest["previous_controlled_release"] in {"4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46", "4.14.47"}
     assert manifest["schema_change_for_v41441"] is False
 
 
@@ -28,7 +28,7 @@ def test_android_route_captured_as_final_after_normalization():
     assert 'final String route = normalizedRoute.isEmpty() ? "dashboard" : normalizedRoute;' in java
     assert 'String route = path == null ? "dashboard" : path.trim();' not in java
     assert 'if(route.isEmpty()) route = "dashboard";' not in java
-    if text("VERSION").strip() == "4.14.46":
+    if text("VERSION").strip() in {"4.14.46", "4.14.47"}:
         assert 'webView.loadUrl(nativeUrl(route))' in java
         assert 'QCMSMobile/0.2.2' in java
     else:

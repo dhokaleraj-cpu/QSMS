@@ -354,7 +354,29 @@ class SupplyChainService:
         return self._memo(("customer_orders",), load)
 
     def purchase_orders(self) -> list[dict]:
-        return self._memo(("purchase_orders",), lambda: annotate_transaction_rows(self.repo, self.repo.select("supply_purchase_orders", order_by="created_at", desc=True, limit=10000)))
+        def load():
+            rows = annotate_transaction_rows(self.repo, self.repo.select("supply_purchase_orders", order_by="created_at", desc=True, limit=10000))
+            employee_cache: dict[str, dict] = {}
+            enriched: list[dict] = []
+            for row in rows:
+                item = dict(row)
+                employee_id = str(item.get("approver_employee_id") or "").strip()
+                if employee_id:
+                    if employee_id not in employee_cache:
+                        employee_cache[employee_id] = self.repo.get("employees", employee_id) or {}
+                    employee = employee_cache.get(employee_id) or {}
+                    name = " ".join(
+                        value for value in (
+                            str(employee.get("first_name") or "").strip(),
+                            str(employee.get("last_name") or "").strip(),
+                        ) if value
+                    )
+                    item["approver_employee_name"] = name or str(employee.get("employee_code") or "").strip()
+                    item["approver_employee_code"] = str(employee.get("employee_code") or "").strip()
+                    item["approver_department"] = str(employee.get("department") or "").strip()
+                enriched.append(item)
+            return enriched
+        return self._memo(("purchase_orders",), load)
 
     def purchase_order_items(self, purchase_order_id: str | None = None) -> list[dict]:
         if purchase_order_id:
