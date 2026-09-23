@@ -43,6 +43,19 @@ from core.ui import (
     workflow_progress,
 )
 
+def _quantity_text(value: Any) -> str:
+    """Compact human-readable quantity text used by PO approval worklists."""
+    if value in (None, ""):
+        return ""
+    try:
+        number_value = float(value)
+        if number_value.is_integer():
+            return f"{int(number_value):,}"
+        return f"{number_value:,.3f}".rstrip("0").rstrip(".")
+    except Exception:
+        return str(value).strip()
+
+
 STATUS_ROW_STYLE = {
     "COMPLETED": "background-color:#ECFDF3;color:#14532D;",
     "CLOSED": "background-color:#ECFDF3;color:#14532D;",
@@ -1791,11 +1804,25 @@ def _render_supplier_confirmation_stage(service: SupplyChainService, *, selected
 def _pending_po_approval_rows(service: SupplyChainService, headers: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]]:
     """Return the approval worklist with the resolved approver for each Pending PO."""
     rows: list[dict[str, Any]] = []
+    routes = service.repo.select("qcms_module_approval_routes", eq={"module_key": "SUPPLY_CHAIN", "status": "ACTIVE"}, limit=500)
     for po_id, header in headers.items():
         if str(header.get("approval_status") or "").upper() != "PENDING_APPROVAL":
             continue
         supplier = service.repo.get("parties", str(header.get("supplier_id") or "")) or {}
         target = service.purchase_order_approval_target(po_id)
+        target_employee = service.repo.get("employees", str(target.get("employee_id") or "")) or {}
+        submitter = service.repo.get("employees", str(header.get("submitted_by_employee_id") or "")) or {}
+        department = str(submitter.get("department") or "").strip().casefold()
+        level2_routes = [r for r in routes if int(r.get("level_no") or 1) == 2 and r.get("required", True) and (not str(r.get("department") or "").strip() or str(r.get("department")).strip().casefold() == department)]
+        level2_routes.sort(key=lambda r: 0 if r.get("department") else 1)
+        level2_route = level2_routes[0] if level2_routes else {}
+        level2_employee = service.repo.get("employees", str(level2_route.get("employee_id") or "")) or {}
+        submitted_raw = str(header.get("submitted_at") or header.get("order_date") or "")
+        try:
+            submitted_dt = datetime.fromisoformat(submitted_raw.replace("Z", "+00:00")) if "T" in submitted_raw else datetime.combine(date.fromisoformat(submitted_raw[:10]), datetime.min.time(), tzinfo=timezone.utc)
+            pending_days = max(0, (datetime.now(timezone.utc) - submitted_dt.astimezone(timezone.utc)).days)
+        except Exception:
+            pending_days = 0
         items = service.purchase_order_items_for_print(po_id)
         part_tokens: list[str] = []
         qty_tokens: list[str] = []
@@ -1818,7 +1845,12 @@ def _pending_po_approval_rows(service: SupplyChainService, headers: Mapping[str,
             "Requisitioner": header.get("requisitioner") or "-",
             "Approver": target.get("employee_name") or "UNASSIGNED",
             "Approver Email": target.get("email") or "NOT CONFIGURED",
-            "Approval Level": target.get("level_name") or "Approval",
+            "Approval Level": target.get("level_name") or "Level 1 Approval",
+            "Pending Days": pending_days,
+            "Escalation": "LEVEL 2" if pending_days >= 2 else ("LEVEL 1 OVERDUE" if pending_days >= 1 else "LEVEL 1"),
+            "Level 2 Employee": " ".join(v for v in (str(level2_employee.get("first_name") or "").strip(), str(level2_employee.get("last_name") or "").strip()) if v) or "-",
+            "Level 2 Email": level2_employee.get("email") or "-",
+            "Level 2 Overdue Hours": level2_route.get("overdue_after_hours") or 48,
             "Submitted": str(header.get("submitted_at") or "")[:19],
             "Grand Total": header.get("grand_total"),
             "Status": "PENDING APPROVAL",

@@ -79,118 +79,17 @@ _PERSIST_AUTH_COMPONENT: Any | None = None
 
 
 def _persistent_auth_component() -> Any | None:
-    """Return the zero-height Components-v2 browser storage bridge.
+    """R3 stability hotfix: disable Components-v2 auth storage.
 
-    Streamlit >=1.60 is the controlled QCMS runtime. The defensive try/except
-    keeps older local developer environments usable and falls back to cookies.
+    Some Streamlit/WebView combinations rendered the component as a second/blank
+    login surface after widget reruns. QCMS now relies on its same-origin secure
+    cookie bridge for refresh persistence and does not mount the v2 component.
     """
-    global _PERSIST_AUTH_COMPONENT
-    if _PERSIST_AUTH_COMPONENT is not None:
-        return _PERSIST_AUTH_COMPONENT
-    try:
-        _PERSIST_AUTH_COMPONENT = st.components.v2.component(
-            name="qcms_persistent_auth_v2",
-            html='<span id="qcms-auth-store" aria-hidden="true"></span>',
-            css='#qcms-auth-store{display:none!important;width:0!important;height:0!important;overflow:hidden!important}',
-            js=r'''
-export default function(component) {
-  const { data, parentElement, setStateValue } = component;
-  const key = (data && data.key) || "qcms.auth.session.v2";
-  const action = (data && data.action) || "read";
-  const accessCookie = (data && data.access_cookie) || "qcms_auth_at_v1";
-  const refreshCookie = (data && data.refresh_cookie) || "qcms_auth_rt_v1";
-  const maxAge = Number((data && data.max_age) || 2592000);
-
-  try {
-    const host = parentElement && parentElement.host ? parentElement.host : parentElement;
-    if (host && host.style) {
-      host.style.display = "none";
-      host.style.height = "0";
-      host.style.minHeight = "0";
-      host.style.margin = "0";
-      host.style.padding = "0";
-      host.style.overflow = "hidden";
-    }
-  } catch (e) {}
-
-  function cookieAttrs() {
-    let attrs = '; Path=/; SameSite=Strict';
-    try { if (window.location.protocol === 'https:') attrs += '; Secure'; } catch (e) {}
-    return attrs;
-  }
-  function clearCookie(name) {
-    try { document.cookie = name + '=; Path=/; Max-Age=0; SameSite=Strict' + ((window.location.protocol === 'https:') ? '; Secure' : ''); } catch (e) {}
-  }
-  function setCookie(name, value) {
-    try { document.cookie = name + '=' + encodeURIComponent(value) + '; Max-Age=' + maxAge + cookieAttrs(); } catch (e) {}
-  }
-
-  try {
-    if (action === "clear") {
-      window.localStorage.removeItem(key);
-      clearCookie(accessCookie);
-      clearCookie(refreshCookie);
-      return;
-    }
-    if (action === "write") {
-      const payload = (data && typeof data.payload === "string") ? data.payload : "";
-      if (payload) {
-        window.localStorage.setItem(key, payload);
-        try {
-          const parsed = JSON.parse(payload);
-          if (parsed.access_token && parsed.refresh_token) {
-            setCookie(accessCookie, String(parsed.access_token));
-            setCookie(refreshCookie, String(parsed.refresh_token));
-          }
-        } catch (e) {}
-      } else {
-        window.localStorage.removeItem(key);
-      }
-      return;
-    }
-    const payload = window.localStorage.getItem(key) || "__QCMS_STORAGE_EMPTY__";
-    const previous = parentElement && parentElement.getAttribute ? parentElement.getAttribute('data-qcms-last-read') : null;
-    if (previous !== payload) {
-      try { if (parentElement && parentElement.setAttribute) parentElement.setAttribute('data-qcms-last-read', payload); } catch (e) {}
-      setStateValue("payload", payload);
-    }
-  } catch (err) {
-    setStateValue("payload", "__QCMS_STORAGE_ERROR__");
-  }
-}
-'''
-,
-        )
-    except Exception:
-        _PERSIST_AUTH_COMPONENT = None
-    return _PERSIST_AUTH_COMPONENT
+    return None
 
 
 def _mount_auth_storage(*, action: str, payload: str = "", key: str) -> Any | None:
-    component = _persistent_auth_component()
-    if component is None:
-        return None
-    try:
-        kwargs = {
-            "data": {
-                "action": action,
-                "key": _PERSIST_STORAGE_KEY,
-                "payload": payload,
-                "access_cookie": _PERSIST_ACCESS_COOKIE,
-                "refresh_cookie": _PERSIST_REFRESH_COOKIE,
-                "max_age": _PERSIST_COOKIE_MAX_AGE,
-            },
-            "key": key,
-            "width": 1,
-            "height": 0,
-        }
-        if action == "read":
-            kwargs["default"] = {"payload": _PERSIST_STORAGE_PENDING}
-            kwargs["on_payload_change"] = lambda: None
-        return component(**kwargs)
-    except Exception:
-        # Never make login unavailable just because browser storage is blocked.
-        return None
+    return None
 
 
 def _context_cookie(name: str) -> str:
@@ -336,8 +235,7 @@ def _restore_with_tokens(access: str, refresh: str) -> bool:
 def restore_persistent_login() -> bool:
     """Restore Supabase authentication after website/WebView refresh.
 
-    Primary path: origin-scoped localStorage through Streamlit Components v2.
-    Fallback path: legacy same-origin cookies for users upgrading from v4.14.45.
+    Refresh persistence uses same-origin Secure/SameSite cookies only. No Components-v2/localStorage renderer is mounted.
     When browser storage has mounted but has not returned its value yet, the
     caller is told to wait for the component-triggered rerun rather than briefly
     rendering the login page.

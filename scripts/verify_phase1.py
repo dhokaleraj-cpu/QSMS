@@ -1188,11 +1188,16 @@ if not all(token in v41437_streamlit for token in (
     "elif android_native_drawer:",
 )):
     errors.append("v4.14.46 Streamlit persistent-login/native-drawer contract is incomplete")
-if not all(token in v41446_auth for token in (
-    "st.components.v2.component", "window.localStorage.getItem(key)", "window.localStorage.setItem(key, payload)",
-    "client.auth.set_session(access, refresh)", "_qcms_clear_auth_browser", "SameSite=Strict",
-)):
-    errors.append("v4.14.46 refresh/login persistence implementation is incomplete")
+_r3_cookie_only_auth = "R3 stability hotfix: disable Components-v2 auth storage" in v41446_auth
+if _r3_cookie_only_auth:
+    if not all(token in v41446_auth for token in ("client.auth.set_session(access, refresh)", "_qcms_clear_auth_browser", "SameSite=Strict", "components.html(", "height=0", "width=0")):
+        errors.append("R3 cookie-only refresh/login persistence implementation is incomplete")
+else:
+    if not all(token in v41446_auth for token in (
+        "st.components.v2.component", "window.localStorage.getItem(key)", "window.localStorage.setItem(key, payload)",
+        "client.auth.set_session(access, refresh)", "_qcms_clear_auth_browser", "SameSite=Strict",
+    )):
+        errors.append("v4.14.46 refresh/login persistence implementation is incomplete")
 
 # Current source MUST be the single native v0.2.4 drawer. This is deliberately outside
 # the WebView so Streamlit CSS/DOM changes cannot make the Android MENU disappear.
@@ -1284,8 +1289,12 @@ if not all(token in v41448_workflow for token in ('workflow_dispatch:', 'branche
     errors.append("v4.14.48 Android every-release GitHub build trigger is incomplete")
 if not any(all(token in v41448_gradle for token in pair) for pair in (('versionCode 14', "versionName '0.2.3'"), ('versionCode 15', "versionName '0.2.4'"))):
     errors.append("v4.14.48+ Android identity lineage is incomplete")
-if not all(token in v41448_auth for token in ('height": 0', 'if (action === "write")', 'return;', 'Fast refresh path:', 'Stable across normal widget reruns')):
-    errors.append("v4.14.48 persistent-auth duplicate-page/rerun guard is incomplete")
+if "R3 stability hotfix: disable Components-v2 auth storage" in v41448_auth:
+    if not all(token in v41448_auth for token in ('components.html(', 'height=0', 'width=0', 'Fast refresh path:', 'client.auth.set_session(access, refresh)')):
+        errors.append("R3 cookie-only persistent-auth guard is incomplete")
+else:
+    if not all(token in v41448_auth for token in ('height": 0', 'if (action === "write")', 'return;', 'Fast refresh path:', 'Stable across normal widget reruns')):
+        errors.append("v4.14.48 persistent-auth duplicate-page/rerun guard is incomplete")
 if not all(token in v41448_ui for token in ('st-key-qcms_auth_read', 'max-height:0!important', 'visibility:hidden!important')):
     errors.append("v4.14.48 auth bridge zero-height CSS guard is incomplete")
 if not all(token in v41448_test for token in ('test_watermark_is_exactly_five_percent_background_and_unobtrusive', 'test_single_purchase_order_lookup_enriches_real_approver_employee_name', 'test_android_workflow_builds_every_main_release_and_is_manually_runnable')):
@@ -1301,13 +1310,13 @@ report = {
     "v41448_watermark_background_low_opacity": 'setFillAlpha(0.05)' in v41447_po_reporting and 'merge_page(watermark_page, over=False)' in v41447_po_reporting,
     "v41448_real_approver_employee_name": 'def _enrich_purchase_order_approver' in v41447_supply and 'approver_designation' in v41447_supply,
     "v41448_android_every_release_build": 'branches:' in v41448_workflow and 'workflow_dispatch:' in v41448_workflow and 'QCMS_SERVER_RELEASE' in v41448_workflow,
-    "v41448_auth_bridge_stable_rerun": "saved_at" not in v41448_auth and 'setTriggerValue("done"' not in v41448_auth and 'height": 0' in v41448_auth,
+    "v41448_auth_bridge_stable_rerun": ("R3 stability hotfix: disable Components-v2 auth storage" in v41448_auth) or ("saved_at" not in v41448_auth and 'setTriggerValue("done"' not in v41448_auth and 'height": 0' in v41448_auth),
     "v41448_auth_bridge_zero_height": "st-key-qcms_auth_read" in v41448_ui and "max-height:0!important" in v41448_ui,
     "v41447_first_page_approver_stamp": 'def _draw_approver_stamp' in v41447_po_reporting and 'QCMS DIGITAL APPROVAL' in v41447_po_reporting,
 
     "v41446_android_v12_drawer": "drawerSection" in v41436_android and "drawerChildButton" in v41436_android and 'appendQueryParameter("native_nav", "native")' in v41436_android,
     "v41446_drawer_autohide": "closeDrawer();" in v41436_android and "navigate(path);" in v41436_android and "drawerLayer.setVisibility(View.GONE)" in v41436_android,
-    "v41446_persistent_login": all(token in v41446_auth for token in ("st.components.v2.component", "window.localStorage.getItem(key)", "window.localStorage.setItem(key, payload)", "client.auth.set_session(access, refresh)", "SameSite=Strict")),
+    "v41446_persistent_login": (("R3 stability hotfix: disable Components-v2 auth storage" in v41446_auth) and all(token in v41446_auth for token in ("client.auth.set_session(access, refresh)", "SameSite=Strict", "components.html("))) or all(token in v41446_auth for token in ("st.components.v2.component", "window.localStorage.getItem(key)", "window.localStorage.setItem(key, payload)", "client.auth.set_session(access, refresh)", "SameSite=Strict")),
     "v41446_schema_unchanged": str(v41429_manifest.get("database_schema_required")) == "4.14.45" and not bool(v41429_manifest.get("database_migration_required")),
     "v41445_cross_part_same_price_allowed": "same commercial rate is intentionally allowed on different Part Master records" in v41445_part,
     "v41445_source_raw_part": "source_part_id" in v41445_part and "def raw_source_context" in v41445_supply,

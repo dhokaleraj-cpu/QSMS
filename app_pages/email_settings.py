@@ -259,9 +259,21 @@ def render() -> None:
             template_key = c[1].selectbox("Template", [k for k,_l,_m in EVENTS], index=[k for k,_l,_m in EVENTS].index(str(schedule.get("template_key") or schedule.get("event_key"))) if str(schedule.get("template_key") or schedule.get("event_key")) in [k for k,_l,_m in EVENTS] else 0, format_func=lambda k: EVENT_LABEL.get(k,k), key=f"schedule_template_{sid}")
             include_overdue = c[2].toggle("Include overdue", value=bool(schedule.get("include_overdue", True)), key=f"schedule_overdue_{sid}")
             include_open = st.toggle("Include open / due-soon", value=bool(schedule.get("include_open", True)), key=f"schedule_open_{sid}")
+            escalation_values = {}
+            if schedule.get("schedule_key") == "PO_PENDING_APPROVAL":
+                st.caption("Approver reminders follow Module Approval Routes. Add responsible employees for overdue escalation below. Thresholds are evaluated in whole calendar days.")
+                for level, default_hours in ((1, 24), (2, 48)):
+                    ec = st.columns(2)
+                    field = f"overdue_level{level}_employee_id"
+                    current = str(schedule.get(field) or "")
+                    selected = ec[0].selectbox(f"Overdue Level {level} Responsible Employee", emp_ids, index=emp_ids.index(current) if current in emp_ids else 0, format_func=lambda v: employee_options.get(v, "— Not assigned —"), key=f"{sid}_{field}")
+                    hours_field = f"overdue_level{level}_after_hours"
+                    hours = ec[1].number_input(f"Overdue Level {level} after hours", min_value=24, max_value=8760, value=max(24, int(schedule.get(hours_field) or default_hours)), step=24, key=f"{sid}_{hours_field}")
+                    escalation_values[field] = selected or None
+                    escalation_values[hours_field] = int(hours)
             if st.button("Save Automatic Email Schedule", type="primary", width="stretch"):
                 try:
-                    repo.update("qcms_notification_schedules", sid, {"enabled": schedule_enabled, "hour_local": int(hour), "run_every_days": int(run_every_days), "days_ahead": int(days_ahead), "include_suppliers": include_suppliers, "timezone": tz.strip() or "Asia/Kolkata", "recipient_department": recipient_department or None, "recipient_departments": recipient_departments, "employee_id": responsible_employee or None, "template_key": template_key, "export_format": export_format, "include_overdue": include_overdue, "include_open": include_open})
+                    repo.update("qcms_notification_schedules", sid, {"enabled": schedule_enabled, "hour_local": int(hour), "run_every_days": int(run_every_days), "days_ahead": int(days_ahead), "include_suppliers": include_suppliers, "timezone": tz.strip() or "Asia/Kolkata", "recipient_department": recipient_department or None, "recipient_departments": recipient_departments, "employee_id": responsible_employee or None, "template_key": template_key, "export_format": export_format, "include_overdue": include_overdue, "include_open": include_open, **escalation_values})
                     save_success_popup("Automatic email schedule saved.", queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(str(exc))
             portal_table(pd.DataFrame([{ "Schedule": r.get("schedule_label"), "Module": r.get("module_key"), "Hour": r.get("hour_local"), "Every Days": r.get("run_every_days") or 1, "Time Zone": r.get("timezone"), "Days Ahead": r.get("days_ahead"), "Departments": ", ".join(r.get("recipient_departments") or []) or r.get("recipient_department"), "Export": r.get("export_format") or "PDF", "Supplier Copy": bool(r.get("include_suppliers")), "Enabled": bool(r.get("enabled")), "Last Run": r.get("last_run_at") } for r in schedules]), hide_index=True, width="stretch", height=300)

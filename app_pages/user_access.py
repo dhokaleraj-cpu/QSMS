@@ -470,6 +470,9 @@ def render() -> None:
             route_name = c[1].text_input("Level Name", value="Manager Approval" if route_level == 1 else f"Approval Level {route_level}")
             route_status = c[2].selectbox("Route Status", ["ACTIVE", "INACTIVE"])
             required_route = st.checkbox("Required approval route", value=True)
+            notify_overdue = st.checkbox("Send automatic overdue approval reminder", value=True)
+            overdue_after_hours = st.number_input("Overdue after hours", min_value=1, max_value=8760, value=24 if route_level == 1 else 48 if route_level == 2 else 72, step=1, key=f"route_overdue_hours_{route_module}_{route_level}")
+            st.caption("Set a responsible employee for each level. The server checks hourly and sends at most one reminder per PO, level and email each day.")
             if st.button("Save Approval Route", type="primary", width="stretch", disabled=not bool(route_employee)):
                 try:
                     department_value = None if route_department == "ALL DEPARTMENTS" else route_department
@@ -477,6 +480,7 @@ def render() -> None:
                         "module_key": route_module, "department": department_value, "level_no": int(route_level),
                         "level_name": route_name.strip() or f"Approval Level {route_level}", "employee_id": route_employee,
                         "required": bool(required_route), "status": route_status,
+                        "notify_overdue": bool(notify_overdue), "overdue_after_hours": int(overdue_after_hours),
                     }, natural_key={"module_key": route_module, "department": department_value, "level_no": int(route_level)})
                     save_success_popup("Approval route saved successfully.", queue_for_rerun=True); st.rerun()
                 except Exception as exc:
@@ -486,7 +490,7 @@ def render() -> None:
                 "Module": module_labels.get(str(r.get("module_key")), r.get("module_key")),
                 "Department": r.get("department") or "ALL DEPARTMENTS", "Level": r.get("level_no"),
                 "Level Name": r.get("level_name"), "Approver": emp.get(str(r.get("employee_id")), str(r.get("employee_id") or "-")),
-                "Required": bool(r.get("required")), "Status": r.get("status"), "_id": r.get("id"),
+                "Required": bool(r.get("required")), "Overdue Hours": r.get("overdue_after_hours"), "Overdue Reminder": bool(r.get("notify_overdue", True)), "Status": r.get("status"), "_id": r.get("id"),
             } for r in routes]
             if route_rows:
                 portal_table(pd.DataFrame(route_rows).drop(columns=["_id"], errors="ignore"), hide_index=True, width="stretch", height=min(300, 80 + len(route_rows) * 36))

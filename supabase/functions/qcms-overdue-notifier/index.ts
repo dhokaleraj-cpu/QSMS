@@ -17,6 +17,7 @@ type DigestRow = {
   status: string;
   quantity: string;
   responsible_employee_id?: string;
+  escalation_employee_ids?: string[];
   supplier_id?: string;
   order_id?: string;
 };
@@ -121,7 +122,7 @@ async function digestPdf(title: string, localDate: string, rows: DigestRow[]): P
   return await pdf.save();
 }
 
-async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate: string, maps: { parties: Map<string, Row>; parts: Map<string, Row>; employees: Map<string, Row> }): Promise<DigestRow[]> {
+async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate: string, maps: { parties: Map<string, Row>; parts: Map<string, Row>; employees: Map<string, Row>; approvalRoutes?: Row[] }): Promise<DigestRow[]> {
   const daysAhead = Number(schedule.days_ahead || 0); const includeOpen = Boolean(schedule.include_open); const includeOverdue = Boolean(schedule.include_overdue);
   const result: DigestRow[] = [];
   const pushIf = (row: DigestRow, rawDue: any) => {
@@ -138,10 +139,21 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
     }
   } else if (schedule.schedule_key === "PO_PENDING_APPROVAL") {
     const { data = [] } = await admin.from("supply_purchase_orders").select("*").eq("tenant_id", tenantId).eq("approval_status", "PENDING_APPROVAL").limit(5000);
+    const routes = maps.approvalRoutes || [];
     for (const r of data) {
       if (String(r.status || "").toUpperCase() === "CANCELLED") continue;
       const supplier = maps.parties.get(String(r.supplier_id)) || {}; const submitter = maps.employees.get(String(r.submitted_by_employee_id || "")) || {};
-      result.push({ reference: String(r.po_number || "-"), part: String(r.po_type || "PURCHASE ORDER").replaceAll("_", " "), party: String(supplier.party_name || supplier.party_code || "-"), due_date: String(r.delivery_date || r.order_date || localDate), status: "PENDING APPROVAL", quantity: "Approval pending", supplier_id: String(r.supplier_id || ""), responsible_employee_id: String(submitter.reports_to_employee_id || "") || undefined });
+      const submittedDate = String(r.submitted_at || r.updated_at || r.created_at || r.order_date || localDate).slice(0,10);
+      const pendingDays = Math.max(0, daysBetween(submittedDate, localDate));
+      const overdueLevel = pendingDays >= 3 ? 3 : pendingDays >= 2 ? 2 : 1;
+      const department = String(submitter.department || "").trim().toLowerCase();
+      const routeFor = (level: number) => routes.filter((x: Row) => Number(x.level_no || 1) === level && Boolean(x.required ?? true) && (!String(x.department || "").trim() || String(x.department || "").trim().toLowerCase() === department)).sort((a: Row,b: Row) => (String(a.department || "").trim() ? 0 : 1) - (String(b.department || "").trim() ? 0 : 1))[0];
+      const level1 = routeFor(1); const escalations: string[] = [];
+      if (pendingDays >= 2) { const r2 = routeFor(2); if (r2?.employee_id) escalations.push(String(r2.employee_id)); }
+      if (pendingDays >= 3) { const r3 = routeFor(3); if (r3?.employee_id) escalations.push(String(r3.employee_id)); }
+      const primary = String(level1?.employee_id || submitter.reports_to_employee_id || "") || undefined;
+      const status = pendingDays >= 1 ? `OVERDUE · LEVEL ${overdueLevel} · ${pendingDays} DAY(S)` : "PENDING APPROVAL";
+      result.push({ reference: String(r.po_number || "-"), part: String(r.po_type || "PURCHASE ORDER").replaceAll("_", " "), party: String(supplier.party_name || supplier.party_code || "-"), due_date: submittedDate, status, quantity: `Approval pending · ${pendingDays} day(s)`, supplier_id: String(r.supplier_id || ""), responsible_employee_id: primary, escalation_employee_ids: escalations });
     }
   } else if (schedule.schedule_key === "RM_PROCUREMENT_PENDING_DUE") {
     const { data: orders = [] } = await admin.from("supply_customer_orders").select("*").eq("tenant_id", tenantId).eq("rm_procurement_required", true).limit(5000);
@@ -180,28 +192,6 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
       const vendor = maps.parties.get(String(r.vendor_id)) || {}; const part = maps.parts.get(String(r.part_id)) || {};
       pushIf({ reference: String(r.osp_job_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(vendor.party_name || vendor.party_code || "-"), due_date: String(r.expected_return_date || "-"), status: String(r.status || "AT_VENDOR"), quantity: `${n(Number(r.quantity_dispatched || 0) - Number(r.quantity_received || 0))} pcs pending`, supplier_id: String(r.vendor_id || "") }, r.expected_return_date);
     }
-  } else if (["COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "CUSTOMER_COMPLAINT_OPEN_OVERDUE", "SUPPLIER_COMPLAINT_OPEN_OVERDUE"].includes(String(schedule.schedule_key))) {
-    const complaintType = ["COMPLAINT_CUSTOMER_OPEN_OVERDUE", "CUSTOMER_COMPLAINT_OPEN_OVERDUE"].includes(String(schedule.schedule_key)) ? "CUSTOMER" : "SUPPLIER";
-    const { data = [] } = await admin.from("quality_complaints").select("*").eq("tenant_id", tenantId).eq("complaint_type", complaintType).limit(5000);
-    for (const r of data) {
-      if (["CLOSED", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
-      const party = maps.parties.get(String(r.party_id)) || {}; const part = maps.parts.get(String(r.part_id)) || {};
-      const detail = `${String(r.severity || "").toUpperCase()} · ${String(r.subject || "Complaint")}`;
-      pushIf({ reference: String(r.complaint_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(party.party_name || party.party_code || "-"), due_date: String(r.target_closure_date || "-"), status: String(r.status || "OPEN"), quantity: detail, supplier_id: String(r.party_id || ""), responsible_employee_id: String(r.fourstar_responsible_employee_id || "") || undefined }, r.target_closure_date);
-    }
-  } else if (schedule.schedule_key === "COMPLAINT_FOLLOWUP_DUE") {
-    const [{ data: complaints = [] }, { data: followups = [] }] = await Promise.all([
-      admin.from("quality_complaints").select("*").eq("tenant_id", tenantId).limit(5000),
-      admin.from("quality_complaint_followups").select("*").eq("tenant_id", tenantId).order("followup_date", { ascending: false }).limit(10000),
-    ]);
-    const latest = new Map<string, Row>();
-    for (const f of followups) if (f.complaint_id && !latest.has(String(f.complaint_id))) latest.set(String(f.complaint_id), f);
-    for (const r of complaints) {
-      if (["CLOSED", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
-      const f = latest.get(String(r.id)); if (!f?.next_followup_date) continue;
-      const party = maps.parties.get(String(r.party_id)) || {}; const part = maps.parts.get(String(r.part_id)) || {};
-      pushIf({ reference: String(r.complaint_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(party.party_name || party.party_code || "-"), due_date: String(f.next_followup_date || "-"), status: `FOLLOW-UP · ${String(r.status || "OPEN")}`, quantity: String(r.subject || "Complaint follow-up"), supplier_id: String(r.party_id || ""), responsible_employee_id: String(f.responsible_employee_id || r.fourstar_responsible_employee_id || "") || undefined }, f.next_followup_date);
-    }
   } else if (schedule.schedule_key === "CALIBRATION_VALIDATION_DUE") {
     const [{ data: links = [] }, { data: assets = [] }, { data: processes = [] }] = await Promise.all([
       admin.from("quality_asset_part_process_links").select("*").eq("tenant_id", tenantId).eq("status", "ACTIVE").limit(10000),
@@ -212,6 +202,27 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
     for (const r of links) {
       const asset = assetMap.get(String(r.asset_id)) || {}; const part = maps.parts.get(String(r.part_id)) || {}; const process = processMap.get(String(r.process_id)) || {};
       pushIf({ reference: `${asset.asset_code || "ASSET"} · ${asset.asset_name || "Gauge / Fixture"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: `${process.process_code || ""} ${process.process_name || "General"}`.trim(), due_date: String(r.next_due_date || "-"), status: String(r.service_type || "CALIBRATION"), quantity: `${r.frequency_days || 365} day frequency`, responsible_employee_id: String(r.responsible_employee_id || "") || undefined }, r.next_due_date);
+    }
+  } else if (["CUSTOMER_COMPLAINT_OPEN_OVERDUE","SUPPLIER_COMPLAINT_OPEN_OVERDUE","COMPLAINT_CUSTOMER_OPEN_OVERDUE","COMPLAINT_SUPPLIER_OPEN_OVERDUE"].includes(String(schedule.schedule_key))) {
+    const complaintType = ["CUSTOMER_COMPLAINT_OPEN_OVERDUE","COMPLAINT_CUSTOMER_OPEN_OVERDUE"].includes(String(schedule.schedule_key)) ? "CUSTOMER" : "SUPPLIER";
+    const { data = [] } = await admin.from("quality_complaints").select("id,complaint_number,complaint_type,party_id,part_id,subject,severity,target_closure_date,status,fourstar_responsible_employee_id,external_responsible_email").eq("tenant_id", tenantId).eq("complaint_type", complaintType).limit(5000);
+    for (const r of data) {
+      if (["CLOSED", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
+      const part = maps.parts.get(String(r.part_id)) || {}; const party = maps.parties.get(String(r.party_id)) || {};
+      pushIf({ reference: String(r.complaint_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(party.party_name || party.party_code || "-"), due_date: String(r.target_closure_date || "-"), status: `${String(r.severity || "").toUpperCase()} · ${String(r.status || "OPEN")}`, quantity: String(r.subject || "Complaint action pending"), supplier_id: String(r.party_id || ""), responsible_employee_id: String(r.fourstar_responsible_employee_id || "") || undefined }, r.target_closure_date);
+    }
+  } else if (schedule.schedule_key === "COMPLAINT_FOLLOWUP_DUE") {
+    const [{ data: actions = [] }, { data: complaints = [] }] = await Promise.all([
+      admin.from("quality_complaint_actions").select("id,complaint_id,action_no,action_type,action_description,owner_employee_id,target_date,status").eq("tenant_id", tenantId).limit(10000),
+      admin.from("quality_complaints").select("id,complaint_number,complaint_type,party_id,part_id,subject,severity,status,fourstar_responsible_employee_id").eq("tenant_id", tenantId).limit(5000),
+    ]);
+    const complaintMap = new Map<string, Row>(complaints.map((r: Row) => [String(r.id), r]));
+    for (const action of actions) {
+      if (["COMPLETED", "CANCELLED"].includes(String(action.status || "").toUpperCase())) continue;
+      const complaint = complaintMap.get(String(action.complaint_id)) || {};
+      if (!complaint.id || ["CLOSED", "CANCELLED"].includes(String(complaint.status || "").toUpperCase())) continue;
+      const part = maps.parts.get(String(complaint.part_id)) || {}; const party = maps.parties.get(String(complaint.party_id)) || {};
+      pushIf({ reference: `${complaint.complaint_number || "COMPLAINT"} · Action ${action.action_no || "-"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: String(party.party_name || party.party_code || "-"), due_date: String(action.target_date || "-"), status: `${String(action.action_type || "FOLLOW-UP")} · ${String(action.status || "OPEN")}`, quantity: String(action.action_description || complaint.subject || "Follow-up action pending"), supplier_id: String(complaint.party_id || ""), responsible_employee_id: String(action.owner_employee_id || complaint.fourstar_responsible_employee_id || "") || undefined }, action.target_date);
     }
   } else if (schedule.schedule_key === "NPD_PROCESS_OPEN_OVERDUE") {
     const { data: steps = [] } = await admin.from("npd_order_steps").select("*").eq("tenant_id", tenantId).limit(5000);
@@ -248,14 +259,15 @@ Deno.serve(async (req: Request) => {
         auth: settings.smtp_username ? { user: settings.smtp_username, pass: settings.smtp_password || "" } : undefined,
         connectionTimeout: Number(settings.timeout_seconds || 20) * 1000, greetingTimeout: Number(settings.timeout_seconds || 20) * 1000, socketTimeout: Number(settings.timeout_seconds || 20) * 1000,
       });
-      const [{ data: schedules = [] }, { data: parties = [] }, { data: parts = [] }, { data: employees = [] }, { data: templates = [] }] = await Promise.all([
+      const [{ data: schedules = [] }, { data: parties = [] }, { data: parts = [] }, { data: employees = [] }, { data: templates = [] }, { data: approvalRoutes = [] }] = await Promise.all([
         admin.from("qcms_notification_schedules").select("*").eq("tenant_id", tenantId).eq("enabled", true).limit(100),
         admin.from("parties").select("id,party_code,party_name,email,notification_emails").eq("tenant_id", tenantId).limit(5000),
         admin.from("parts").select("id,part_number,fsi_part_number,part_name").eq("tenant_id", tenantId).limit(5000),
         admin.from("employees").select("id,first_name,last_name,email,department,status,reports_to_employee_id").eq("tenant_id", tenantId).eq("status", "ACTIVE").limit(5000),
         admin.from("qcms_email_templates").select("*").eq("tenant_id", tenantId).eq("enabled", true).limit(500),
+        admin.from("qcms_module_approval_routes").select("*").eq("tenant_id", tenantId).eq("module_key", "SUPPLY_CHAIN").eq("status", "ACTIVE").limit(500),
       ]);
-      const maps = { parties: new Map<string, Row>(parties.map((r: Row) => [String(r.id), r])), parts: new Map<string, Row>(parts.map((r: Row) => [String(r.id), r])), employees: new Map<string, Row>(employees.map((r: Row) => [String(r.id), r])) };
+      const maps = { parties: new Map<string, Row>(parties.map((r: Row) => [String(r.id), r])), parts: new Map<string, Row>(parts.map((r: Row) => [String(r.id), r])), employees: new Map<string, Row>(employees.map((r: Row) => [String(r.id), r])), approvalRoutes };
       const templateMap = new Map<string, Row>(templates.map((r: Row) => [String(r.template_key), r]));
 
       for (const schedule of schedules) {
@@ -272,10 +284,26 @@ Deno.serve(async (req: Request) => {
         const bodyText = renderTemplate(String(template.body_template || "Attached is the QCMS open / overdue report for {{report_date}}."), baseCtx);
 
         const primaryRecipients: Array<{ email: string; name: string; rows: DigestRow[] }> = [];
-        if (schedule.schedule_key === "NPD_PROCESS_OPEN_OVERDUE" || schedule.schedule_key === "PO_PENDING_APPROVAL") {
+        if (["NPD_PROCESS_OPEN_OVERDUE", "PO_PENDING_APPROVAL", "CUSTOMER_COMPLAINT_OPEN_OVERDUE", "SUPPLIER_COMPLAINT_OPEN_OVERDUE", "COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "COMPLAINT_FOLLOWUP_DUE"].includes(String(schedule.schedule_key))) {
           const grouped = new Map<string, DigestRow[]>();
-          for (const row of rows) if (row.responsible_employee_id) grouped.set(row.responsible_employee_id, [...(grouped.get(row.responsible_employee_id) || []), row]);
+          for (const row of rows) {
+            const ids = [row.responsible_employee_id, ...(row.escalation_employee_ids || [])].filter(Boolean) as string[];
+            for (const id of Array.from(new Set(ids))) grouped.set(id, [...(grouped.get(id) || []), row]);
+          }
           for (const [employeeId, assignedRows] of grouped) { const emp = maps.employees.get(employeeId) || {}; if (emp.email) primaryRecipients.push({ email: String(emp.email), name: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(), rows: assignedRows }); }
+
+          if (schedule.schedule_key === "PO_PENDING_APPROVAL") {
+            const addConfiguredEscalation = (employeeId: string, thresholdHours: number) => {
+              if (!employeeId) return;
+              const thresholdDays = Math.max(1, Math.ceil(Number(thresholdHours || 24) / 24));
+              const assignedRows = rows.filter((row) => daysBetween(String(row.due_date || "").slice(0,10), clock.date) >= thresholdDays);
+              if (!assignedRows.length) return;
+              const emp = maps.employees.get(employeeId) || {};
+              if (emp.email) primaryRecipients.push({ email: String(emp.email), name: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(), rows: assignedRows });
+            };
+            addConfiguredEscalation(String(schedule.overdue_level1_employee_id || ""), Number(schedule.overdue_level1_after_hours || 24));
+            addConfiguredEscalation(String(schedule.overdue_level2_employee_id || ""), Number(schedule.overdue_level2_after_hours || 48));
+          }
         }
         if (!primaryRecipients.length) {
           if (schedule.employee_id) { const emp = maps.employees.get(String(schedule.employee_id)) || {}; if (emp.email) primaryRecipients.push({ email: String(emp.email), name: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(), rows }); }
@@ -284,6 +312,23 @@ Deno.serve(async (req: Request) => {
             for (const emp of employees) { const eDept = String(emp.department || "").toLowerCase().replace(/[^a-z0-9]/g, ""); if (dept && eDept === dept && emp.email) primaryRecipients.push({ email: String(emp.email), name: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(), rows }); }
           }
         }
+
+        // Merge duplicate addresses when the same employee is both the route approver and an overdue escalation recipient.
+        const mergedRecipients = new Map<string, { email: string; name: string; rows: DigestRow[] }>();
+        for (const recipient of primaryRecipients) {
+          const key = String(recipient.email || "").trim().toLowerCase();
+          if (!key) continue;
+          const existing = mergedRecipients.get(key);
+          if (!existing) mergedRecipients.set(key, { ...recipient, rows: [...recipient.rows] });
+          else {
+            const seen = new Set(existing.rows.map((r) => `${r.reference}|${r.due_date}`));
+            for (const row of recipient.rows) {
+              const rowKey = `${row.reference}|${row.due_date}`;
+              if (!seen.has(rowKey)) { existing.rows.push(row); seen.add(rowKey); }
+            }
+          }
+        }
+        primaryRecipients.splice(0, primaryRecipients.length, ...Array.from(mergedRecipients.values()));
 
         const supplierGroups = new Map<string, DigestRow[]>();
         if (schedule.include_suppliers) for (const row of rows) if (row.supplier_id) supplierGroups.set(row.supplier_id, [...(supplierGroups.get(row.supplier_id) || []), row]);
@@ -322,3 +367,4 @@ Deno.serve(async (req: Request) => {
     const message = error instanceof Error ? error.message : String(error); return new Response(JSON.stringify({ error: message }), { status: 500, headers: jsonHeaders });
   }
 });
+

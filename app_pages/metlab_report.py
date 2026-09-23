@@ -234,11 +234,7 @@ def _render_case_depth_traverse(existing: dict | None, *, key: str, layout_rows:
     saved = _case_depth_payload(existing)
     locations = _case_depth_layout_locations(layout_rows)
     if not locations:
-        st.info(
-            "Case Depth Traverse is not applicable because no Additional Layout Characteristic "
-            "Case Depth Traverse tick is selected in Inspection Layout Master. You can also keep legacy Parameter names containing 'Case Depth'. Add/tick parameters such as "
-            "'Effective Case Depth at Ground Face', '... at ID' or '... at OD' in the MetLAB layout to enable the traverse."
-        )
+        st.caption("Case Depth / Microhardness Traverse: Not applicable for this approved layout.")
         return {
             "case_depth_applicable": False,
             "case_depth_locations": [],

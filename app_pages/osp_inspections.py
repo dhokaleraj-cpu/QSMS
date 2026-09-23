@@ -84,6 +84,12 @@ def _existing_report(service: InspectionService, report_type: str, job_id: str, 
     return rows[0] if rows else None
 
 
+def _apply_saved_mode(state, mode_key):
+    """Consume a queued transition before the corresponding widget is created."""
+    if state.pop(f"{mode_key}_after_save", False):
+        state[mode_key] = "Edit Existing"
+
+
 def _render(report_type: str) -> None:
     is_dimensional = report_type == "DIMENSIONAL"
     module = "DIMENSIONAL_REPORT" if is_dimensional else "METLAB_REPORT"
@@ -100,6 +106,9 @@ def _render(report_type: str) -> None:
     existing_reports = inspection.repo.select(report_table, eq={"inspection_scope": scope}, order_by="updated_at", desc=True, limit=1000)
     existing_job_ids = {str(r.get("osp_job_id")) for r in existing_reports if r.get("osp_job_id")}
     existing_jobs = [r for r in osp.register() if str(r.get("id")) in existing_job_ids]
+    # Apply the post-save transition before instantiating the radio widget.
+    mode_key = f"osp_{report_type}_{scope}_mode"
+    _apply_saved_mode(st.session_state, mode_key)
     mode = st.radio("Record Mode", ["Pending / New", "Edit Existing"], horizontal=True, key=f"osp_{report_type}_{scope}_mode")
     active_rows = pending if mode == "Pending / New" else existing_jobs
     with stage_section("A", f'{_scope_label(scope).upper()} · {mode.upper()}', key="osp_inspections__render_a"):
@@ -209,7 +218,7 @@ def _render(report_type: str) -> None:
                     "process_id": job.get("process_id"), "inspection_scope": scope, "heat_number": job.get("heat_number"), "heat_code": job.get("heat_code"),
                     "batch_number": job.get("osp_batch_code"),
                     "supplier_id": source_inward.get("supplier_id") or opening_source.get("supplier_id"), "status": str((existing or {}).get("status") or "DRAFT"), "overall_result": "NOT_EVALUATED",
-                    "disposition": str((existing or {}).get("disposition") or "PENDING"), "remarks": remarks.strip() or None,
+                    "disposition": disposition, "remarks": remarks.strip() or None,
                     "prepared_by_employee_id": prepared, "layout_name_snapshot": plan.get("layout_name"), "layout_type_name": report_type,
                     "production_quantity_pcs": quantity, "process_specification_snapshot": job.get("process_specification"),
                     "vendor_batch_number_snapshot": job.get("vendor_batch_number"),
@@ -232,8 +241,14 @@ def _render(report_type: str) -> None:
                                 "METLAB_REPORT", str(saved["id"]), f"MICROSTRUCTURE_{slot}", image,
                                 "lab_tests", f"microstructure_image_{slot}_path",
                             )
-                save_success_popup(f"OSP {report_type.title()} Report {saved.get('report_number')} saved successfully.", queue_for_rerun=True); st.rerun()
-            except Exception as exc: st.error(str(exc))
+                if not saved or not saved.get("id"):
+                    raise RuntimeError("QCMS did not receive a saved report ID from the database.")
+                st.session_state[f"{mode_key}_after_save"] = True
+                st.session_state["osp_inspection_job_id"] = job_id
+                save_success_popup(f"OSP {report_type.title()} Report {saved.get('report_number')} saved successfully.", queue_for_rerun=True)
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Unable to save OSP {report_type.title()} Draft: {exc}")
 
         if existing:
             with stage_section("D", "EDIT / DELETE OSP INSPECTION RECORD", key=f"osp_inspection_manage_{report_type}_{scope}_{job_id}"):

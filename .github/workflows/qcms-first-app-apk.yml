@@ -1,0 +1,61 @@
+name: QCMS First-App Android APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: mobile/android_first_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install Android tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          MANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$MANAGER" --sdk_root="$SDK" --licenses >/dev/null 2>&1 || true
+          "$MANAGER" --sdk_root="$SDK" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+          printf 'sdk.dir=%s\n' "$SDK" > local.properties
+          echo "QCMS_ANDROID_SDK=$SDK" >> "$GITHUB_ENV"
+      - name: Verify stable first-app architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=app/src/main/java/com/fourstar/qcms/MainActivity.java
+          grep -Fq 'QCMSClassicShell/1.0.2' "$SRC"
+          grep -Fq 'return false;' "$SRC"
+          if grep -Eq '__qcmsNativeNavigate|QCMS_NAV_PENDING' "$SRC"; then echo 'Competing native navigation detected'; exit 1; fi
+      - name: Build and lint
+        run: gradle --no-daemon :app:assembleDebug :app:lintDebug
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p apk-artifacts
+          VERSION="$(sed -n "s/^[[:space:]]*versionName[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" app/build.gradle | head -1)"
+          APK="apk-artifacts/QCMS_Mobile_FIRST_APP_v${VERSION}_TEST.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          BT="$QCMS_ANDROID_SDK/build-tools/35.0.0"
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-artifacts/SIGNATURE_VERIFICATION.txt
+          grep -Fq 'Verified using v2 scheme (APK Signature Scheme v2): true' apk-artifacts/SIGNATURE_VERIFICATION.txt
+          "$BT/zipalign" -c -P 16 -v 4 "$APK" > apk-artifacts/ALIGNMENT_VERIFICATION.txt
+          sha256sum "$APK" > apk-artifacts/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QCMS-FIRST-APP-APK
+          path: mobile/android_first_app/apk-artifacts/
+          if-no-files-found: error

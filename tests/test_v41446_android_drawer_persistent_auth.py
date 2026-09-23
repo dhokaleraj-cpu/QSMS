@@ -30,10 +30,13 @@ def test_streamlit_restores_persistent_login_before_login_gate():
     assert app.index("restore_persistent_login()") < app.index("render_login(); st.stop()")
     assert "service_persistent_auth_bridge" in app
     assert "sync_persistent_login_browser" in app
-    assert "st.components.v2.component" in auth
-    assert "window.localStorage.getItem(key)" in auth
-    assert "window.localStorage.setItem(key, payload)" in auth
-    assert "window.localStorage.removeItem(key)" in auth
+    if "R3 stability hotfix: disable Components-v2 auth storage" in auth:
+        assert "return None" in auth[auth.index("def _persistent_auth_component"):auth.index("def _context_cookie")]
+    else:
+        assert "st.components.v2.component" in auth
+        assert "window.localStorage.getItem(key)" in auth
+        assert "window.localStorage.setItem(key, payload)" in auth
+        assert "window.localStorage.removeItem(key)" in auth
     assert "client.auth.set_session(access, refresh)" in auth
     assert "_PERSIST_STORAGE_PENDING" in auth
     assert "_qcms_auth_restore_pending" in auth

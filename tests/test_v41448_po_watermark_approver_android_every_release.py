@@ -101,10 +101,15 @@ def test_persistent_auth_bridge_does_not_rerun_or_reserve_page_height():
     ui = (ROOT / "core" / "ui.py").read_text()
     assert '"saved_at"' not in auth
     assert 'setTriggerValue("done"' not in auth
-    assert '"height": 0' in auth
-    assert 'if (action === "write")' in auth
-    write = auth.split('if (action === "write")', 1)[1].split('const payload = window.localStorage.getItem', 1)[0]
-    assert 'setStateValue(' not in write
+    if "R3 stability hotfix: disable Components-v2 auth storage" in auth:
+        assert 'components.html(' in auth
+        assert 'height=0' in auth and 'width=0' in auth
+        assert 'return None' in auth[auth.index('def _persistent_auth_component'):auth.index('def _context_cookie')]
+    else:
+        assert '"height": 0' in auth
+        assert 'if (action === "write")' in auth
+        write = auth.split('if (action === "write")', 1)[1].split('const payload = window.localStorage.getItem', 1)[0]
+        assert 'setStateValue(' not in write
     assert 'st-key-qcms_auth_read' in ui
     assert 'max-height:0!important' in ui
     assert 'visibility:hidden!important' in ui

@@ -74,11 +74,16 @@ jobs:
           printf 'QCMS_APK_NAME=QCMS_Mobile_v%s_TEST.apk\n' "$VERSION_NAME" >> "$GITHUB_ENV"
           printf 'QCMS_SERVER_RELEASE=%s\n' "$QCMS_RELEASE" >> "$GITHUB_ENV"
           echo "QCMS release=$QCMS_RELEASE Android versionName=$VERSION_NAME versionCode=$VERSION_CODE"
-      - name: Verify native navigation source before compile
+      - name: Verify classic WebView navigation source before compile (Verify native navigation source before compile fallback)
         shell: bash
         run: |
           set -euo pipefail
           SRC=mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java
+          if grep -Fq 'QCMSClassicShell/1.0.2' "$SRC"; then
+            grep -Fq 'return false;' "$SRC"
+            if grep -Eq '__qcmsNativeNavigate|QCMS_NAV_PENDING' "$SRC"; then echo 'Competing native navigation detected'; exit 1; fi
+            exit 0
+          fi
           grep -Fq 'setText("MENU")' "$SRC"
           grep -Fq 'hamburger.setOnClickListener(v -> openDrawer())' "$SRC"
           grep -Fq 'drawerLayer.setVisibility(View.VISIBLE)' "$SRC"
