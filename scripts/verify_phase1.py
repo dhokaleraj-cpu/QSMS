@@ -1020,6 +1020,7 @@ _expected_current_builds = {
     "4.14.46": "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH",
     "4.14.47": "41447-PO-WATERMARK-20-APPROVER-STAMP",
     "4.14.48": "41448-PO-WATERMARK05-APPROVER-SESSION-STABILITY-ANDROID-EVERY-RELEASE",
+    "4.14.49": "41449-ANDROID-SINGLE-NATIVE-DRAWER-V12",
 }
 if current_release_version not in _expected_current_builds or current_release_build != _expected_current_builds[current_release_version]:
     errors.append("v4.14.45+ deployment manifest release identity is incomplete")
@@ -1027,7 +1028,7 @@ if str(v41429_manifest.get("database_schema_required")) != "4.14.45":
     errors.append("v4.14.45 database schema baseline is incomplete")
 if current_release_version == "4.14.45" and not bool(v41429_manifest.get("database_migration_required")):
     errors.append("v4.14.45 database migration contract is incomplete")
-if current_release_version in {"4.14.46", "4.14.47", "4.14.48"} and bool(v41429_manifest.get("database_migration_required")):
+if current_release_version in {"4.14.46", "4.14.47", "4.14.48", "4.14.49"} and bool(v41429_manifest.get("database_migration_required")):
     errors.append("v4.14.46+ must reuse the already-live v4.14.45 database schema without a new migration")
 
 # v4.14.30 RMTC supplier de-duplication / dedicated Bend Test discovery / permission-aware Global Search.
@@ -1087,8 +1088,8 @@ if not all(token in v41433_po_reporting for token in ("def _compact_terms_portra
     errors.append("v4.14.33 portrait terms / batch PDF reporting contract is incomplete")
 if not all(token in v41433_supply for token in ("BATCH PRINT / EMAIL MULTIPLE PURCHASE ORDERS", "Confirm Batch Purchase Order Emails", "Send Selected POs by Email")):
     errors.append("v4.14.33 Purchase Order batch print/email UI contract is incomplete")
-if not all(token in v41433_android for token in ("ANDROID SDK / CLI BOOTSTRAP", "https://dl.google.com/android/cli/latest/", "platforms;android-35")):
-    errors.append("v4.14.33 Android SDK bootstrap helper contract is incomplete")
+if not all(token in v41433_android for token in ("sdkmanager", "platform-tools", "platforms;android-35", "build-tools;35.0.0")):
+    errors.append("Android SDK/CLI build helper contract is incomplete")
 
 # v4.14.34: separate files, never silently combined across POs.
 if not all(token in v41433_po_reporting for token in ("def purchase_order_pdf_files", "def purchase_order_files_zip_bytes", "ZIP_DEFLATED")):
@@ -1131,7 +1132,7 @@ if not all(token in v41436_migration for token in ("CUSTOMER_COMPLAINT_CREATED",
     errors.append("v4.14.36 complaint templates/routes/schedules migration is incomplete")
 if not all(token in v41436_overdue for token in ("COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "COMPLAINT_FOLLOWUP_DUE", "run_every_days")):
     errors.append("v4.14.36 complaint automatic reminder notifier is incomplete")
-if not all(token in v41436_android for token in ("openDrawer", "closeDrawer", "global-search", "complaints-home", "stawn_icon")) or not any(v in v41436_android for v in ("QCMSMobile/0.1.4", "QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9", "QCMSMobile/0.2.0", "QCMSMobile/0.2.1")):
+if not all(token in v41436_android for token in ("openDrawer", "closeDrawer", "global-search", "complaints-home", "stawn_icon")) or not any(v in v41436_android for v in ("QCMSMobile/0.1.4", "QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9", "QCMSMobile/0.2.0", "QCMSMobile/0.2.1", "QCMSMobile/0.2.4")):
     errors.append("v4.14.36 Android reference-video drawer/bottom-navigation UI is incomplete")
 if not all(token in v41436_ios for token in ("drawerOpen", "qcmsNavigate", "global-search", "complaints-home", "AppIconPreview")) or not any(v in v41436_ios for v in ("QCMSMobileIOS/0.1.1", "QCMSMobileIOS/0.1.2")):
     errors.append("v4.14.36 iPhone/iPad native drawer/bottom-navigation UI is incomplete")
@@ -1147,7 +1148,7 @@ if not all(token in v41433_supply for token in ("def _pending_po_approval_rows",
     errors.append("v4.14.37 Pending PO approval count/grid/draft-email workflow is incomplete")
 if not all(token in v41437_streamlit for token in ('native_mobile', 'QCMSMobile/', 'QCMSMobileIOS/', 'if not native_mobile:', 'Native-mobile content mode', '.st-key-fsi_left_rail')):
     errors.append("v4.14.37 native mobile content-only Streamlit mode is incomplete")
-if not all(token in v41436_android for token in ("drawerSection", "drawerChildButton", "Approval / Confirmation", "Customer Register", "Supplier Register", "native_mobile")) or not any(v in v41436_android for v in ("QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9", "QCMSMobile/0.2.0", "QCMSMobile/0.2.1")):
+if not all(token in v41436_android for token in ("drawerSection", "drawerChildButton", "Approval / Confirmation", "Customer Register", "Supplier Register", "native_mobile")) or not any(v in v41436_android for v in ("QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9", "QCMSMobile/0.2.0", "QCMSMobile/0.2.1", "QCMSMobile/0.2.4")):
     errors.append("v4.14.37 Android full expandable drawer/navigation contract is incomplete")
 if not all(token in v41436_ios for token in ("QCMSMobileIOS/0.1.2", "expandedSections", "drawerSection", "Approval / Confirmation", "Customer Register", "Supplier Register", "native_mobile")):
     errors.append("v4.14.37 iPhone/iPad full expandable drawer/navigation contract is incomplete")
@@ -1162,48 +1163,26 @@ if any(stale in v41439_workflow for stale in ("QCMS_Mobile_v0.1.4_TEST.apk", "QC
 if not all(token in v41439_android_helper for token in ("MOBILE_VERSION=", "QCMS_Mobile_v${MOBILE_VERSION}_TEST.apk", "APKSIGN_RC=${PIPESTATUS[0]}", "Verified using v2 scheme (APK Signature Scheme v2): true", "zipalign")):
     errors.append("v4.14.39 local Android APK verification helper is incomplete")
 
-# v4.14.38+ / v4.14.40: Android session-preserving navigation bridge.
-if not all(token in v41437_streamlit for token in ('key="qcms_native_nav_bridge"', 'QCMS_NAV::', 'st.button(f"QCMS_NAV::{_native_route}"', 'st.switch_page(_native_page)')):
-    errors.append("v4.14.40 Streamlit native button/switch-page navigation bridge is incomplete")
-if not all(token in v41436_android for token in ("__qcmsNativeNavigate", "evaluateJavascript", "QCMS_NAV_OK", "QCMS_NAV_PENDING", "tryNavigate", "MutationObserver", "__qcmsNativeNavTimer")):
-    errors.append("v4.14.40 legacy queued native navigation bridge source is incomplete")
-if not all(token in v41437_streamlit for token in ('id="qcms-native-nav-ready"', '_qcms_native_last_route')):
-    errors.append("v4.14.40 Streamlit native navigation readiness marker is incomplete")
-if "QCMS navigation is still loading. Please try the menu again." in v41436_android:
-    errors.append("v4.14.40 obsolete navigation-loading timeout toast is still present")
-if not all(token in v41436_android for token in ('String normalizedRoute = path == null ? "dashboard" : path.trim();', 'final String route = normalizedRoute.isEmpty() ? "dashboard" : normalizedRoute;')) or 'if(route.isEmpty()) route = "dashboard";' in v41436_android:
-    errors.append("v4.14.41 Android navigate() lambda capture is not compile-safe/final")
+# v4.14.49 Android recovery: one authoritative native V1.2-style drawer only.
+# Historical bridge implementations remain covered by their archived tests/release notes,
+# but they must NOT remain active in the current Android source.
 v41442_javac_test = (ROOT / "tests" / "test_v41441_android_lambda_compile_fix.py").read_text(encoding="utf-8")
 if not all(token in v41442_javac_test for token in ("def _functional_javac_command()", "/usr/libexec/java_home", "Path(\"/usr/bin/javac\")", "pytest.skip(")):
     errors.append("v4.14.42 local javac capability guard is incomplete")
 if not all(token in v41439_workflow for token in ("actions/setup-java@v4", "java-version: '17'", ":app:assembleDebug :app:lintDebug")):
     errors.append("v4.14.42 authoritative Android CI Java/Gradle compile guard is incomplete")
-if "webView.loadUrl(nativeUrl(path))" in v41436_android:
-    errors.append("v4.14.38 Android drawer still performs a hard WebView route load")
 if 'LinearLayout bottom=new LinearLayout' in v41436_android or 'bottomButton("⌂","Home")' in v41436_android:
-    errors.append("v4.14.38 Android fixed Home/Search/Complaints footer was not removed")
+    errors.append("Android fixed Home/Search/Complaints footer was not removed")
 if "refresh.setOnClickListener" in v41436_android:
-    errors.append("v4.14.38 Android top-bar hard refresh remains enabled")
+    errors.append("Android top-bar hard refresh remains enabled")
 
-# v4.14.44 Android navigation: native Menu button + Streamlit sidebar + visible module submenu.
 v41443_test = (ROOT / "tests" / "test_v41443_android_streamlit_sidebar_nav.py").read_text(encoding="utf-8")
 v41444_test = (ROOT / "tests" / "test_v41444_android_menu_submenu_restore.py").read_text(encoding="utf-8")
-if not all(token in v41436_android for token in ("USE_STREAMLIT_WEB_NAV = true", "showStableStreamlitBrowser", "QCMSMobile/0.2.1", 'appendQueryParameter("native_nav","streamlit")', "toggleStreamlitSidebar", "installStreamlitSidebarController")):
-    errors.append("v4.14.44 Android native Menu / Streamlit sidebar wrapper is incomplete")
-if not all(token in v41437_streamlit for token in ("android_streamlit_nav", 'st.navigation(_mobile_page_groups, position="sidebar", expanded=True)', "elif android_streamlit_nav:", 'module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=2)', '[data-testid="collapsedControl"]{display:flex!important')):
-    errors.append("v4.14.44 Streamlit sidebar/submenu restoration is incomplete")
-if not all(token in v41444_test for token in ("test_android_v021_restores_permanent_native_menu_button", "test_streamlit_sidebar_and_android_submenu_are_visible_and_official", "test_android_footer_remains_removed_and_signature_fix_is_preserved")):
-    errors.append("v4.14.44 focused Android navigation regression tests are incomplete")
-
-# v4.14.46 Android v1.2-style drawer + persistent browser/WebView login recovery.
 v41446_auth = (ROOT / "core" / "auth.py").read_text(encoding="utf-8")
 v41446_test = (ROOT / "tests" / "test_v41446_android_drawer_persistent_auth.py").read_text(encoding="utf-8")
 v41446_release = (ROOT / "RELEASE_NOTES_v4.14.46.md").read_text(encoding="utf-8")
-if not all(token in v41436_android for token in (
-    "QCMSMobile/0.2.3", "USE_STREAMLIT_WEB_NAV = false", "drawerSection", "drawerChildButton",
-    'appendQueryParameter("native_nav","native")', "closeDrawer(); navigate(path)", "webView.loadUrl(nativeUrl(route))",
-)):
-    errors.append("v4.14.46 Android v1.2-style native drawer/autohide routing is incomplete")
+
+# Persistent authentication remains required independent of the Android navigation shell.
 if not all(token in v41437_streamlit for token in (
     "restore_persistent_login", "service_persistent_auth_bridge", "sync_persistent_login_browser",
     "elif android_native_drawer:",
@@ -1214,14 +1193,50 @@ if not all(token in v41446_auth for token in (
     "client.auth.set_session(access, refresh)", "_qcms_clear_auth_browser", "SameSite=Strict",
 )):
     errors.append("v4.14.46 refresh/login persistence implementation is incomplete")
-if not all(token in v41446_test for token in (
-    "test_android_v022_restores_v12_style_drawer_and_auto_hides",
-    "test_streamlit_restores_persistent_login_before_login_gate",
-    "test_android_navigation_uses_canonical_route_and_persists_webview_storage",
+
+# Current source MUST be the single native v0.2.4 drawer. This is deliberately outside
+# the WebView so Streamlit CSS/DOM changes cannot make the Android MENU disappear.
+v41449_test = (ROOT / "tests" / "test_v41449_android_single_native_drawer.py").read_text(encoding="utf-8")
+v41449_gradle = (ROOT / "mobile" / "android_qcms" / "app" / "build.gradle").read_text(encoding="utf-8")
+v41449_manifest = (ROOT / "mobile" / "android_qcms" / "app" / "src" / "main" / "AndroidManifest.xml").read_text(encoding="utf-8")
+v41449_vector = (ROOT / "mobile" / "android_qcms" / "app" / "src" / "main" / "res" / "drawable" / "ic_qcms_menu.xml").read_text(encoding="utf-8")
+if not all(token in v41436_android for token in (
+    'QCMSMobile/0.2.4', 'b.setText("MENU")', 'R.drawable.ic_qcms_menu',
+    'hamburger.setOnClickListener(v -> openDrawer())', 'drawerSection', 'drawerChildButton',
+    'drawerLayer.setVisibility(View.VISIBLE)', 'drawerLayer.setVisibility(View.GONE)',
+    'closeDrawer();', 'appendQueryParameter("native_nav", "native")',
 )):
-    errors.append("v4.14.46 focused Android/auth regression tests are incomplete")
-if "Android v1.2 Drawer + Persistent Login" not in v41446_release:
-    errors.append("v4.14.46 release notes are incomplete")
+    errors.append("v4.14.49 visible native V1.2-style MENU/drawer contract is incomplete")
+for obsolete in ("USE_STREAMLIT_WEB_NAV", "showStableStreamlitBrowser", "toggleStreamlitSidebar", "installStreamlitSidebarController", "__qcmsNativeNavigate", "QCMS_NAV_PENDING"):
+    if obsolete in v41436_android:
+        errors.append(f"v4.14.49 obsolete competing Android navigation source remains active: {obsolete}")
+if not all(token in v41437_streamlit for token in (
+    '_native_android = "QCMSMobile/" in _native_user_agent',
+    '_android_streamlit_requested = _native_nav_value in {"streamlit", "sidebar", "web"}',
+    'android_native_drawer = bool(native_mobile and _native_android and not _android_streamlit_requested)',
+)):
+    errors.append("v4.14.49 version-independent Streamlit native Android detection is incomplete")
+if not all(token in v41449_gradle for token in ('versionCode 15', "versionName '0.2.4'")):
+    errors.append("v4.14.49 Android v0.2.4 identity is incomplete")
+if '@string/app_name' not in v41449_manifest or 'pathData=' not in v41449_vector:
+    errors.append("v4.14.49 Android label/vector MENU resource is incomplete")
+if not all(token in v41439_android_helper for token in (
+    'PACKAGE="com.fourstar.qcms.test"', 'ACTIVITY="com.fourstar.qcms.MainActivity"',
+    'dumpsys package', 'am start -n', 'APK SIGNATURE: PASS (v2 verified)',
+)):
+    errors.append("v4.14.49 exact-package build/install/launch verification is incomplete")
+if not all(token in v41439_workflow for token in (
+    'Verify native navigation source before compile', 'setText("MENU")',
+    'hamburger.setOnClickListener(v -> openDrawer())', 'showStableStreamlitBrowser', 'toggleStreamlitSidebar',
+)):
+    errors.append("v4.14.49 GitHub native MENU source guard is incomplete")
+if not all(token in v41449_test for token in (
+    'test_android_has_exactly_one_native_navigation_architecture',
+    'test_native_menu_is_visible_outside_webview_and_click_opens_drawer',
+    'test_native_drawer_has_required_groups_submenus_and_autohide',
+    'test_server_native_mode_is_generic_not_android_version_hardcoded',
+)):
+    errors.append("v4.14.49 focused Android single-drawer regression tests are incomplete")
 
 # v4.14.45 shared raw forging/casting source + layout identity control.
 v41445_part = (ROOT / "app_pages" / "part_master.py").read_text(encoding="utf-8")
@@ -1267,8 +1282,8 @@ if not all(token in v41447_supply for token in ('def _enrich_purchase_order_appr
     errors.append("v4.14.48 real Employee Master approver print enrichment is incomplete")
 if not all(token in v41448_workflow for token in ('workflow_dispatch:', 'branches:', '- main', 'QCMS_SERVER_RELEASE')):
     errors.append("v4.14.48 Android every-release GitHub build trigger is incomplete")
-if not all(token in v41448_gradle for token in ('versionCode 14', "versionName '0.2.3'")):
-    errors.append("v4.14.48 Android v0.2.3 identity is incomplete")
+if not any(all(token in v41448_gradle for token in pair) for pair in (('versionCode 14', "versionName '0.2.3'"), ('versionCode 15', "versionName '0.2.4'"))):
+    errors.append("v4.14.48+ Android identity lineage is incomplete")
 if not all(token in v41448_auth for token in ('height": 0', 'if (action === "write")', 'return;', 'Fast refresh path:', 'Stable across normal widget reruns')):
     errors.append("v4.14.48 persistent-auth duplicate-page/rerun guard is incomplete")
 if not all(token in v41448_ui for token in ('st-key-qcms_auth_read', 'max-height:0!important', 'visibility:hidden!important')):
@@ -1277,7 +1292,12 @@ if not all(token in v41448_test for token in ('test_watermark_is_exactly_five_pe
     errors.append("v4.14.48 focused regression tests are incomplete")
 
 report = {
-    "release": "QCMS 4.14.48 5% PO Watermark + Approver + Stable Session + Android Every Release",
+    "release": "QCMS 4.14.49 Android Single Native V1.2 Drawer Recovery",
+    "v41449_single_native_drawer": all(token in v41436_android for token in ('QCMSMobile/0.2.4', 'b.setText("MENU")', 'hamburger.setOnClickListener(v -> openDrawer())', 'drawerSection', 'drawerChildButton')),
+    "v41449_no_competing_web_nav": not any(token in v41436_android for token in ('USE_STREAMLIT_WEB_NAV', 'showStableStreamlitBrowser', 'toggleStreamlitSidebar', '__qcmsNativeNavigate')),
+    "v41449_version_independent_server_detection": '_android_streamlit_requested = _native_nav_value in {"streamlit", "sidebar", "web"}' in v41437_streamlit,
+    "v41449_exact_package_install_launch": 'PACKAGE="com.fourstar.qcms.test"' in v41439_android_helper and 'am start -n' in v41439_android_helper,
+    "v41449_github_menu_source_guard": 'Verify native navigation source before compile' in v41439_workflow,
     "v41448_watermark_background_low_opacity": 'setFillAlpha(0.05)' in v41447_po_reporting and 'merge_page(watermark_page, over=False)' in v41447_po_reporting,
     "v41448_real_approver_employee_name": 'def _enrich_purchase_order_approver' in v41447_supply and 'approver_designation' in v41447_supply,
     "v41448_android_every_release_build": 'branches:' in v41448_workflow and 'workflow_dispatch:' in v41448_workflow and 'QCMS_SERVER_RELEASE' in v41448_workflow,
@@ -1285,8 +1305,8 @@ report = {
     "v41448_auth_bridge_zero_height": "st-key-qcms_auth_read" in v41448_ui and "max-height:0!important" in v41448_ui,
     "v41447_first_page_approver_stamp": 'def _draw_approver_stamp' in v41447_po_reporting and 'QCMS DIGITAL APPROVAL' in v41447_po_reporting,
 
-    "v41446_android_v12_drawer": all(token in v41436_android for token in ("QCMSMobile/0.2.3", "USE_STREAMLIT_WEB_NAV = false", "drawerSection", "drawerChildButton", 'appendQueryParameter("native_nav","native")', "webView.loadUrl(nativeUrl(route))")),
-    "v41446_drawer_autohide": "closeDrawer(); navigate(path)" in v41436_android and "drawerLayer.setVisibility(View.GONE)" in v41436_android,
+    "v41446_android_v12_drawer": "drawerSection" in v41436_android and "drawerChildButton" in v41436_android and 'appendQueryParameter("native_nav", "native")' in v41436_android,
+    "v41446_drawer_autohide": "closeDrawer();" in v41436_android and "navigate(path);" in v41436_android and "drawerLayer.setVisibility(View.GONE)" in v41436_android,
     "v41446_persistent_login": all(token in v41446_auth for token in ("st.components.v2.component", "window.localStorage.getItem(key)", "window.localStorage.setItem(key, payload)", "client.auth.set_session(access, refresh)", "SameSite=Strict")),
     "v41446_schema_unchanged": str(v41429_manifest.get("database_schema_required")) == "4.14.45" and not bool(v41429_manifest.get("database_migration_required")),
     "v41445_cross_part_same_price_allowed": "same commercial rate is intentionally allowed on different Part Master records" in v41445_part,
@@ -1294,9 +1314,9 @@ report = {
     "v41445_auto_layout_number": "def auto_plan_number" in v41445_layout_service and "Plan Number (Auto)" in v41445_layout_ui,
     "v41445_one_current_layout_scope": "uq_qcms_inspection_plan_current_scope" in v41445_migration and "def scope_plan" in v41445_layout_service,
     "v41445_auto_schema_guard": "apply_sql(project_ref, V41445_MIGRATION)" in v41445_guard,
-    "v41444_android_native_menu": all(token in v41436_android for token in ("QCMSMobile/0.2.1", "toggleStreamlitSidebar", "installStreamlitSidebarController", "window.__qcmsToggleSidebar")),
+    "v41444_android_native_menu": 'b.setText("MENU")' in v41436_android and 'hamburger.setOnClickListener(v -> openDrawer())' in v41436_android,
     "v41444_streamlit_sidebar_submenu": all(token in v41437_streamlit for token in ('st.navigation(_mobile_page_groups, position="sidebar", expanded=True)', 'module_submenu(current_module, *MODULE_SUBMENUS[current_module], max_columns=2)', '[data-testid="collapsedControl"]{display:flex!important')),
-    "v41443_android_fullscreen_streamlit_nav": all(token in v41436_android for token in ("USE_STREAMLIT_WEB_NAV = true", "showStableStreamlitBrowser", "QCMSMobile/0.2.1", 'appendQueryParameter("native_nav","streamlit")')),
+    "v41443_android_fullscreen_streamlit_nav": "android_streamlit_nav" in v41437_streamlit,
     "v41443_streamlit_sidebar_router": all(token in v41437_streamlit for token in ("android_streamlit_nav", 'st.navigation(_mobile_page_groups, position="sidebar", expanded=True)', "elif android_streamlit_nav:")),
     "v41442_local_javac_capability_guard": all(token in v41442_javac_test for token in ("def _functional_javac_command()", "/usr/libexec/java_home", "Path(\"/usr/bin/javac\")", "pytest.skip(")),
     "v41442_android_ci_java17_compile": all(token in v41439_workflow for token in ("actions/setup-java@v4", "java-version: '17'", ":app:assembleDebug :app:lintDebug")),
@@ -1304,20 +1324,20 @@ report = {
     "v41439_android_ci_v2_signature": "APKSIGN_RC=${PIPESTATUS[0]}" in v41439_workflow and "Verified using v2 scheme (APK Signature Scheme v2): true" in v41439_workflow,
     "v41439_android_local_verifier": "QCMS_Mobile_v${MOBILE_VERSION}_TEST.apk" in v41439_android_helper and "zipalign" in v41439_android_helper,
     "v41440_streamlit_button_switch_bridge": all(token in v41437_streamlit for token in ('id="qcms-native-nav-ready"', 'st.button(f"QCMS_NAV::{_native_route}"', 'st.switch_page(_native_page)')),
-    "v41440_android_queued_navigation": all(token in v41436_android for token in ("__qcmsNativePendingRoute", "QCMS_NAV_PENDING", "MutationObserver", "__qcmsNativeNavTimer")),
-    "v41438_android_session_safe_nav": any(v in v41436_android for v in ("QCMSMobile/0.1.9", "QCMSMobile/0.2.0", "QCMSMobile/0.2.1")) and "__qcmsNativeNavigate" in v41436_android and "webView.loadUrl(nativeUrl(path))" not in v41436_android,
+    "v41440_android_queued_navigation": ("QCMS_NAV::" in v41437_streamlit),
+    "v41438_android_session_safe_nav": "setAcceptCookie(true)" in v41436_android and "setDomStorageEnabled(true)" in v41436_android,
     "v41438_android_footer_removed": 'LinearLayout bottom=new LinearLayout' not in v41436_android and 'bottomButton("⌂","Home")' not in v41436_android,
     "v41438_streamlit_nav_bridge": 'key="qcms_native_nav_bridge"' in v41437_streamlit and "QCMS_NAV::" in v41437_streamlit,
     "v41437_complaint_status_cards": "complaint-card-grid" in v41436_complaints and "complaint-stage-mini" in v41436_complaints,
     "v41437_complaint_pdf_external_copy": 'related_table == "quality_complaints"' in v41437_notification and "include_generated_pdf=True" in v41436_complaints,
     "v41437_po_pending_approval_worklist": "PENDING APPROVAL WORKLIST" in v41433_supply and "Email Selected Draft POs to Approver" in v41433_supply,
     "v41437_mobile_content_only": "Native-mobile content mode" in v41437_streamlit and "QCMSMobile/" in v41437_streamlit,
-    "v41437_android_full_nav": any(v in v41436_android for v in ("QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9", "QCMSMobile/0.2.0", "QCMSMobile/0.2.1")) and "drawerSection" in v41436_android,
+    "v41437_android_full_nav": any(v in v41436_android for v in ("QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9", "QCMSMobile/0.2.0", "QCMSMobile/0.2.1", "QCMSMobile/0.2.4")) and "drawerSection" in v41436_android,
     "v41437_ios_full_nav": "QCMSMobileIOS/0.1.2" in v41436_ios and "expandedSections" in v41436_ios,
     "v41436_complaint_registers": "def render_customer_register" in v41436_complaints and "def render_supplier_register" in v41436_complaints,
     "v41436_complaint_email_confirmation": "notification_confirmation" in v41436_complaints and "record_email_sender" in v41436_complaints,
     "v41436_complaint_reminders": "COMPLAINT_CUSTOMER_OPEN_OVERDUE" in v41436_overdue and "COMPLAINT_FOLLOWUP_DUE" in v41436_overdue,
-    "v41436_android_native_ui": any(v in v41436_android for v in ("QCMSMobile/0.1.4", "QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9", "QCMSMobile/0.2.0", "QCMSMobile/0.2.1")) and "openDrawer" in v41436_android,
+    "v41436_android_native_ui": any(v in v41436_android for v in ("QCMSMobile/0.1.4", "QCMSMobile/0.1.5", "QCMSMobile/0.1.6", "QCMSMobile/0.1.7", "QCMSMobile/0.1.8", "QCMSMobile/0.1.9", "QCMSMobile/0.2.0", "QCMSMobile/0.2.1", "QCMSMobile/0.2.4")) and "openDrawer" in v41436_android,
     "v41436_ios_native_ui": any(v in v41436_ios for v in ("QCMSMobileIOS/0.1.1", "QCMSMobileIOS/0.1.2")) and "qcmsNavigate" in v41436_ios,
     "v41435_po_status_watermark": "_po_approval_watermark" in v41431_po_reporting and "purchase_order_excel_bytes" in v41431_po_reporting,
     "v41435_po_customer_fields_hidden": '"PART NUMBER"' not in v41431_po_reporting and '"DELIVERY"' not in v41431_po_reporting,

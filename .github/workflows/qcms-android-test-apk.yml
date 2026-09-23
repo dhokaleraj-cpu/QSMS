@@ -1,6 +1,6 @@
 name: QCMS Android Test APK
 
-# QCMS v4.14.48: authoritative Android compilation runs for EVERY main-branch QCMS release push and remains manually runnable.
+# QCMS v4.14.49: authoritative Android compilation runs for EVERY main-branch QCMS release push and verifies the single native V1.2-style drawer source.
 
 # Builds only the mobile source. Does not deploy QCMS, access Supabase, or send emails.
 # Artifact/version values are read from app/build.gradle so future Android version bumps cannot leave stale CI checks behind.
@@ -74,6 +74,20 @@ jobs:
           printf 'QCMS_APK_NAME=QCMS_Mobile_v%s_TEST.apk\n' "$VERSION_NAME" >> "$GITHUB_ENV"
           printf 'QCMS_SERVER_RELEASE=%s\n' "$QCMS_RELEASE" >> "$GITHUB_ENV"
           echo "QCMS release=$QCMS_RELEASE Android versionName=$VERSION_NAME versionCode=$VERSION_CODE"
+      - name: Verify native navigation source before compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java
+          grep -Fq 'setText("MENU")' "$SRC"
+          grep -Fq 'hamburger.setOnClickListener(v -> openDrawer())' "$SRC"
+          grep -Fq 'drawerLayer.setVisibility(View.VISIBLE)' "$SRC"
+          grep -Fq 'drawerSection("▦", "Masters"' "$SRC"
+          grep -Fq 'drawerSection("▣", "Supply Chain"' "$SRC"
+          grep -Fq 'appendQueryParameter("native_nav", "native")' "$SRC"
+          if grep -Fq 'showStableStreamlitBrowser' "$SRC"; then echo 'Legacy dual-navigation code detected'; exit 1; fi
+          if grep -Fq 'toggleStreamlitSidebar' "$SRC"; then echo 'Legacy DOM/sidebar navigation code detected'; exit 1; fi
+          test -f mobile/android_qcms/app/src/main/res/drawable/ic_qcms_menu.xml
       - name: Compile APK and run Android lint
         working-directory: mobile/android_qcms
         run: gradle --no-daemon :app:assembleDebug :app:lintDebug

@@ -114,7 +114,7 @@ def test_reminder_guard_mobile_collapse_icon_and_ios_package_are_present():
     android = (ROOT / "mobile" / "android_qcms" / "app" / "src" / "main" / "java" / "com" / "fourstar" / "qcms" / "MainActivity.java").read_text()
     assert ("__qcmsMobileNavOpen" in android or ("openDrawer" in android and "closeDrawer" in android))
     assert ("navButton" in android or "drawerPanel" in android)
-    assert ("QCMSMobile/0.1.3" in android or "QCMSMobile/0.1.4" in android or "QCMSMobile/0.1.5" in android or "QCMSMobile/0.1.6" in android or "QCMSMobile/0.1.7" in android or "QCMSMobile/0.1.8" in android or "QCMSMobile/0.1.9" in android or "QCMSMobile/0.2.0" in android or "QCMSMobile/0.2.1" in android)
+    assert ("QCMSMobile/0.1.3" in android or "QCMSMobile/0.1.4" in android or "QCMSMobile/0.1.5" in android or "QCMSMobile/0.1.6" in android or "QCMSMobile/0.1.7" in android or "QCMSMobile/0.1.8" in android or "QCMSMobile/0.1.9" in android or "QCMSMobile/0.2.0" in android or "QCMSMobile/0.2.1" in android or "QCMSMobile/0.2.2" in android or "QCMSMobile/0.2.3" in android or "QCMSMobile/0.2.4" in android)
     assert (ROOT / "mobile" / "android_qcms" / "app" / "src" / "main" / "res" / "drawable-nodpi" / "stawn_icon.png").exists()
 
     ios = ROOT / "mobile" / "ios_qcms"

@@ -1,4 +1,13 @@
-# QCMS Mobile 0.2.3 test source
-See INSTALL_APK_ON_SAMSUNG.md for build and installation instructions.
-The repository workflow .github/workflows/qcms-android-test-apk.yml compiles a test-signed APK.
-This release does not include a precompiled APK. Use a successful GitHub Actions build or the local BUILD_APK_ONLY.command; do not describe the source ZIP as an APK.
+# QCMS Mobile 0.2.4 — single native V1.2-style drawer
+
+Android navigation is fully native and lives outside the WebView. Streamlit CSS and page reruns cannot hide the Android MENU button or drawer.
+
+Visible behavior:
+- A compact maroon top bar is always visible.
+- A white MENU label + hamburger icon is always at upper-left.
+- Tap MENU to open the full native QCMS module drawer.
+- Tap a module header to expand/collapse its submenu.
+- Tap a page to navigate; the drawer closes automatically.
+- Android Back closes the drawer first.
+
+The local build/install helper verifies the exact package/version and launches `com.fourstar.qcms.test` automatically to avoid opening an older similarly named QCMS app.

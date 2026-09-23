@@ -118,6 +118,7 @@ def test_android_workflow_builds_every_main_release_and_is_manually_runnable():
     assert 'branches:' in workflow and '- main' in workflow
     assert 'paths:' not in workflow.split('permissions:')[0]
     assert 'QCMS_SERVER_RELEASE' in workflow
-    assert "versionCode 14" in gradle
-    assert "versionName '0.2.3'" in gradle
-    assert 'QCMSMobile/0.2.3' in java
+    assert "versionCode 15" in gradle
+    assert "versionName '0.2.4'" in gradle
+    assert 'QCMSMobile/0.2.4' in java
+    assert 'Verify native navigation source before compile' in workflow

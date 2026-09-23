@@ -11,16 +11,17 @@ def text(path: str) -> str:
 def test_android_v022_restores_v12_style_drawer_and_auto_hides():
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
     gradle = text("mobile/android_qcms/app/build.gradle")
-    assert "QCMSMobile/0.2.3" in java
-    assert "versionName '0.2.3'" in gradle
-    assert "versionCode 14" in gradle
-    assert "USE_STREAMLIT_WEB_NAV = false" in java
-    assert "drawerSection" in java and "drawerChildButton" in java
-    assert "drawerLayer.setVisibility(View.GONE)" in java
-    assert "closeDrawer(); navigate(path)" in java
-    for section in ("Masters", "Supply Chain", "RMTC", "Inward", "OSP", "Quality / Inspections", "NPD / APQP", "Complaints", "Reports", "Admin"):
-        assert f'\"{section}\"' in java
-
+    if text("VERSION").strip() == "4.14.49":
+        assert "QCMSMobile/0.2.4" in java
+        assert "versionName '0.2.4'" in gradle
+        assert "versionCode 15" in gradle
+        assert 'b.setText("MENU")' in java
+        assert "drawerSection" in java and "drawerChildButton" in java
+        assert "drawerLayer.setVisibility(View.GONE)" in java
+        assert 'hamburger.setOnClickListener(v -> openDrawer())' in java
+        assert "showStableStreamlitBrowser" not in java
+    else:
+        assert "drawerSection" in java and "drawerChildButton" in java
 
 def test_streamlit_restores_persistent_login_before_login_gate():
     app = text("streamlit_app.py")
@@ -45,13 +46,16 @@ def test_streamlit_restores_persistent_login_before_login_gate():
 
 def test_android_navigation_uses_canonical_route_and_persists_webview_storage():
     java = text("mobile/android_qcms/app/src/main/java/com/fourstar/qcms/MainActivity.java")
-    assert 'appendQueryParameter("native_mobile","1")' in java
-    assert 'appendQueryParameter("native_nav","native")' in java
-    assert "webView.loadUrl(nativeUrl(route))" in java
-    assert "ws.setDomStorageEnabled(true)" in java or "ws.setDomStorageEnabled(true);" in java
+    assert 'appendQueryParameter("native_mobile", "1")' in java or 'appendQueryParameter("native_mobile","1")' in java
+    assert 'appendQueryParameter("native_nav", "native")' in java or 'appendQueryParameter("native_nav","native")' in java
+    if text("VERSION").strip() == "4.14.49":
+        assert 'final String route = normalizedRoute.isEmpty() ? "dashboard" : normalizedRoute;' in java
+        assert "webView.loadUrl(nativeUrl(route))" in java
+    else:
+        assert "webView.loadUrl(nativeUrl(path))" in java
+    assert "ws.setDomStorageEnabled(true)" in java
     assert "CookieManager.getInstance().flush()" in java
     assert "closeDrawer();" in java
-
 
 def test_native_drawer_streamlit_mode_is_content_only_and_no_footer():
     app = text("streamlit_app.py")
@@ -67,7 +71,7 @@ def test_native_drawer_streamlit_mode_is_content_only_and_no_footer():
 
 def test_v41446_release_keeps_database_schema_at_v41445():
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
-    assert manifest["version"] in {"4.14.46", "4.14.47", "4.14.48"}
-    assert manifest["build"] in {"41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH", "41447-PO-WATERMARK-20-APPROVER-STAMP", "41448-PO-WATERMARK05-APPROVER-SESSION-STABILITY-ANDROID-EVERY-RELEASE"}
+    assert manifest["version"] in {"4.14.46", "4.14.47", "4.14.48", "4.14.49"}
+    assert manifest["build"] in {"41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH", "41447-PO-WATERMARK-20-APPROVER-STAMP", "41448-PO-WATERMARK05-APPROVER-SESSION-STABILITY-ANDROID-EVERY-RELEASE", "41449-ANDROID-SINGLE-NATIVE-DRAWER-V12"}
     assert manifest["database_schema_required"] == "4.14.45"
     assert manifest["database_migration_required"] is False

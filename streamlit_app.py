@@ -1,5 +1,5 @@
-# QCMS 4.14.48 — PO 5% WATERMARK + APPROVER NAME + SESSION STABILITY + ANDROID EVERY RELEASE
-# BUILD 41448-PO-WATERMARK05-APPROVER-SESSION-STABILITY-ANDROID-EVERY-RELEASE
+# QCMS 4.14.49 — ANDROID SINGLE NATIVE DRAWER / V1.2 MENU RESTORE
+# BUILD 41449-ANDROID-SINGLE-NATIVE-DRAWER-V12
 # PRESERVED PREVIOUS BUILD MARKER: 41447-PO-WATERMARK-20-APPROVER-STAMP
 # PRESERVED PREVIOUS BUILD MARKER: 41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH
 # PRESERVED PREVIOUS BUILD MARKER: 41445-SHARED-RAW-SOURCE-LAYOUT-CONTROL
@@ -125,19 +125,12 @@ _native_ios = "QCMSMobileIOS/" in _native_user_agent
 if _native_value in {"1", "true", "yes", "native"} or _native_android or _native_ios:
     st.session_state["_qcms_native_mobile"] = True
 native_mobile = bool(st.session_state.get("_qcms_native_mobile"))
-# Android v0.2.1 uses a compact native top bar only to open Streamlit's official sidebar; page navigation itself remains owned by Streamlit.
-# This removes route-click timing bridges from the active Android path while preserving the authenticated WebView session and the iPhone/iPad native drawer.
-android_native_drawer = bool(
-    native_mobile
-    and _native_android
-    and (_native_nav_value in {"native", "drawer", "v12"} or "QCMSMobile/0.2.2" in _native_user_agent)
-)
-android_streamlit_nav = bool(
-    native_mobile
-    and _native_android
-    and not android_native_drawer
-    and (_native_nav_value in {"streamlit", "sidebar", "web"} or "QCMSMobile/0.2.0" in _native_user_agent or "QCMSMobile/0.2.1" in _native_user_agent)
-)
+# Android v0.2.4 has one authoritative navigation mode: the native V1.2-style drawer.
+# Do not hard-code Android version strings here. Future QCMSMobile/* builds default to
+# native navigation unless a diagnostic build explicitly asks for Streamlit sidebar mode.
+_android_streamlit_requested = _native_nav_value in {"streamlit", "sidebar", "web"}
+android_native_drawer = bool(native_mobile and _native_android and not _android_streamlit_requested)
+android_streamlit_nav = bool(native_mobile and _native_android and _android_streamlit_requested)
 
 # Keep an explicit route-to-Page registry. Streamlit may expose the default
 # page at the root URL even when a url_path was supplied, so deriving this
@@ -534,7 +527,7 @@ if not native_mobile:
     if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
         logout()
 
-    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH")
+    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41449-ANDROID-SINGLE-NATIVE-DRAWER-V12")
 
     # Persistent permission-aware Global Search launcher for desktop/web.
     with st.form("qcms_shell_global_search_form", border=False):
@@ -567,7 +560,7 @@ if not native_mobile:
                     nav.run()
                 app_footer()
 elif android_native_drawer:
-    # Android v0.2.2 restores the proven v1.2-style native hamburger drawer.
+    # Android v0.2.4 uses the single authoritative V1.2-style native hamburger drawer.
     # The drawer owns module + submenu presentation and auto-hides after a page
     # selection. Direct route loads are now safe because authentication is
     # reconstructed from the persistent Supabase browser/WebView localStorage bridge.

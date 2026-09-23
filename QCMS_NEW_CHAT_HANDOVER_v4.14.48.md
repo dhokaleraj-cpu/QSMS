@@ -1,9 +1,9 @@
 # QUALITY CONTROL MONITORING SYSTEM (QCMS/QSMS)
-## Complete New-Chat Handover — v4.14.48
+## Complete New-Chat Handover — v4.14.49
 
 ### Controlled baseline
-- Application Version: `4.14.48`
-- Build: `41448-PO-WATERMARK05-APPROVER-SESSION-STABILITY-ANDROID-EVERY-RELEASE`
+- Application Version: `4.14.49`
+- Build: `41449-ANDROID-SINGLE-NATIVE-DRAWER-V12`
 - Project path: `/Users/dhokaleraj/QSMS`
 - Database schema baseline: `4.14.45` (unchanged).
 
@@ -26,4 +26,4 @@
 
 ### Deployment
 - One self-contained macOS `.command` updater with backup, secret preservation, schema-baseline verification, compile, readiness, phase verification, complete pytest, Git commit/push and remote SHA verification.
-- No new Supabase migration for v4.14.48.
+- No new Supabase migration for v4.14.49.

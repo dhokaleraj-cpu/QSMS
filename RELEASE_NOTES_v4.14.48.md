@@ -1,4 +1,4 @@
-# QCMS v4.14.48 — 5% PO Watermark + Real Approver + Stable Session + Android Every Release
+# QCMS v4.14.49 — 5% PO Watermark + Real Approver + Stable Session + Android Every Release
 
 - Purchase Order PDF watermark is now **5% opacity**, very-light, and merged **behind** PO content so text/grids remain readable.
 - Approved PO first-page digital approval stamp resolves the actual Employee Master approver name/code/designation and saved approval timestamp. Generic `Authorised Approver` is no longer used when an Employee Master link exists.

@@ -269,11 +269,15 @@ required = [
     "QCMS_NEW_CHAT_HANDOVER_v4.14.48.md",
     "RELEASE_NOTES_v4.14.48.md",
     "tests/test_v41448_po_watermark_approver_android_every_release.py",
+    "QCMS_NEW_CHAT_HANDOVER_v4.14.49.md",
+    "RELEASE_NOTES_v4.14.49.md",
+    "tests/test_v41449_android_single_native_drawer.py",
+    "mobile/android_qcms/app/src/main/res/drawable/ic_qcms_menu.xml",
 ]
 missing = [path for path in required if not (ROOT / path).exists()]
 secrets = ROOT / ".streamlit" / "secrets.toml"
 report = {
-    "phase": "QCMS 4.14.48 - 5% PO Watermark + Approver + Stable Session + Android Every Release",
+    "phase": "QCMS 4.14.49 - Android Single Native V1.2 Drawer Recovery",
     "required_files": len(required),
     "missing": missing,
     "local_secrets_present": secrets.exists(),

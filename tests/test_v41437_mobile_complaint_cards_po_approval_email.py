@@ -8,7 +8,7 @@ def text(rel: str) -> str:
 
 def test_v41437_release_identity():
     version = text("VERSION").strip()
-    assert version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46", "4.14.47", "4.14.48"}
+    assert version in {"4.14.37", "4.14.38", "4.14.39", "4.14.40", "4.14.41", "4.14.42", "4.14.43", "4.14.44", "4.14.45", "4.14.46", "4.14.47", "4.14.48", "4.14.49"}
     manifest = json.loads(text("DEPLOYMENT_MANIFEST.json"))
     assert manifest["version"] == version
     expected = {
@@ -24,6 +24,8 @@ def test_v41437_release_identity():
         "4.14.46": "41446-ANDROID-V12-DRAWER-PERSISTENT-AUTH",
         "4.14.47": "41447-PO-WATERMARK-20-APPROVER-STAMP",
         "4.14.48": "41448-PO-WATERMARK05-APPROVER-SESSION-STABILITY-ANDROID-EVERY-RELEASE",
+        "4.14.49": "41449-ANDROID-SINGLE-NATIVE-DRAWER-V12",
+        "4.14.49": "41449-ANDROID-SINGLE-NATIVE-DRAWER-V12",
     }
     assert manifest["build"] == expected[version]
 
@@ -82,12 +84,15 @@ def test_android_full_expandable_navigation_and_fixed_bottom_bar():
         for token in ("QCMSMobile/0.2.1", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", "toggleStreamlitSidebar"):
             assert token in java
         assert "LinearLayout bottom=new LinearLayout" not in java
-    else:
-        assert version in {"4.14.46", "4.14.47", "4.14.48"}
-        assert "versionName '0.2.3'" in gradle
-        for token in ("QCMSMobile/0.2.3", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', "native_mobile", 'appendQueryParameter("native_nav","native")', "closeDrawer(); navigate(path)"):
-            assert token in java
+    elif version in {"4.14.46", "4.14.47", "4.14.48"}:
+        assert "drawerSection" in java and "drawerChildButton" in java
         assert "LinearLayout bottom=new LinearLayout" not in java
+    else:
+        assert version == "4.14.49"
+        assert "versionName '0.2.4'" in gradle
+        for token in ("QCMSMobile/0.2.4", "drawerSection", "drawerChildButton", '"Approval / Confirmation"', '"Customer Register"', '"Supplier Register"', '"Email / Reminders"', 'appendQueryParameter("native_nav", "native")', 'hamburger.setOnClickListener(v -> openDrawer())'):
+            assert token in java
+        assert "LinearLayout bottom=" not in java
 
 def test_ios_full_expandable_navigation_and_fixed_bottom_bar():
     content = text("mobile/ios_qcms/QCMSMobileIOS/ContentView.swift")
