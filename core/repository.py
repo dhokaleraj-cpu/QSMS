@@ -138,6 +138,7 @@ class Repository:
         order_by: str | None = None,
         desc: bool = False,
         limit: int | None = 500,
+        require_live: bool = False,
     ) -> list[dict]:
         eq = eq or {}
         in_ = in_ or {}
@@ -165,6 +166,8 @@ class Repository:
             return rows[:limit] if limit else rows
 
         if self.client is None:
+            if require_live:
+                raise RuntimeError("A live database connection is required for current master validation.")
             return []
 
         params = {
@@ -199,6 +202,8 @@ class Repository:
             self._read_cache()[key] = deepcopy(rows)
             return rows
         except RuntimeError:
+            if require_live:
+                raise
             cached = self._read_cache().get(key)
             if cached is not None:
                 st.warning("Live connection was interrupted. Showing the last successfully loaded data.")

@@ -45,7 +45,7 @@ def test_part_master_data_editors_are_batched_in_forms():
     for token in (
         'with st.form(f"osp_metlab_requirements_form_',
         'with st.form(f"metallurgical_requirements_form_',
-        'with st.form(f"raw_material_grid_form_',
+        'grid_revision_key = f"raw_grid_revision_',
         'with st.form(f"rm_technical_form_',
         'with st.form(f"price_history_form_',
         'with st.form(f"jominy_grid_form_',

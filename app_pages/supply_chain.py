@@ -497,6 +497,8 @@ def render_customer_orders() -> None:
         raw_rows=service.raw_material_options(str(part_id or "")) if part_id else []; raw_labels={}
         for r in raw_rows:
             supplier=parties.get(str(r.get("supplier_id"))) or {}; gross=number(r.get("gross_weight_kg") or r.get("input_weight_kg") or r.get("forging_weight_kg")); grade=(service.repo.get("material_grades",str(r.get("material_grade_id") or "")) or {}).get("grade_code") or "-"; source_part=part_by_id.get(str(r.get("source_part_id") or "")) or {}; source_text=f" · Source {source_part.get('part_number') or source_part.get('fsi_part_number')}" if source_part else ""; raw_labels[str(r["id"])]=f"{r.get('material_section_name') or 'Raw Material'} · Grade {grade} · {party_label(supplier)} · Gross {gross:.3f} kg/pc · {r.get('section_size') or '-'}{source_text} · Lead {int(r.get('lead_time_days') or 0)}d"
+        for row in raw_rows:
+            if row.get("_source_error"): st.warning(row["_source_error"])
         raw_id=st.selectbox("Part Master Raw Material / Forging Source",list(raw_labels),format_func=lambda v:raw_labels[v]) if raw_labels else None
         selected_raw=next((r for r in raw_rows if str(r["id"])==str(raw_id)),{}) if raw_id else {}; gross=number(selected_raw.get("gross_weight_kg") or selected_raw.get("input_weight_kg") or selected_raw.get("forging_weight_kg"))
         employees=service.repo.select("employees",eq={"status":"ACTIVE"},order_by="first_name",limit=5000)
@@ -1118,7 +1120,16 @@ def render_purchase_orders() -> None:
                 if not supplier_options:
                     st.error("The selected Customer Orders / Schedules do not share one common supplier-specific Raw Material record in Part Master. Split them into separate POs or add the same approved supplier to each Part Raw Material Detail.")
             else:
-                supplier_options=list(supplier_labels)
+                compatible_sets=[]
+                for order in selected_orders:
+                    options = service.raw_material_options(str(order.get("part_id") or ""))
+                    for option in options:
+                        if option.get("_source_error"): st.warning(option["_source_error"])
+                    compatible_sets.append({str(r.get("supplier_id")) for r in options if not r.get("_source_error")})
+                compatible=set.intersection(*compatible_sets) if compatible_sets else set()
+                supplier_options=[sid for sid in supplier_labels if sid in compatible]
+                if not supplier_options:
+                    st.error("No common valid supplier source. Maintain the linked raw part's ACTIVE Section E details and current supplier approval.")
             default_supplier=str(selected_orders[0].get("forging_supplier_id") or "") if po_type=="FORGING" and selected_orders else ""
             login_employee=service.repo.get("employees",login_employee_id) if login_employee_id else {}
             requisitioner_name=" ".join(v for v in (str((login_employee or {}).get("first_name") or "").strip(),str((login_employee or {}).get("last_name") or "").strip()) if v).strip()
@@ -1251,7 +1262,15 @@ def render_purchase_orders() -> None:
                     for src in selected_forging_sources:
                         oid=str(src.get("_customer_order_id") or ""); order=service.order(oid) or {}; part=parts.get(str(order.get("part_id"))) or {}; raw=service.raw_material_for_supplier(str(part.get("id") or ""),supplier_id,str(order.get("raw_material_detail_id") or "")) or {}
                         customer=parties.get(str(order.get("customer_id"))) or {}; balance=max(number(src.get("_balance_pcs")),0.0); common_code=str(raw.get("supplier_forging_part_number") or "").strip()
-                        current_price=service.effective_current_price(part,raw,supplier_id,on_date=order_date,uom="NOS"); source_part,source_raw=service.raw_source_context(part,raw,supplier_id); hsn=str(source_raw.get("hsn_sac_code") or raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip()
+                        try:
+                            current_price=service.effective_current_price(part,raw,supplier_id,on_date=order_date,uom="NOS")
+                            source_part,source_raw=service.raw_source_context(part,raw,supplier_id)
+                            hsn=str(source_raw.get("hsn_sac_code") or source_part.get("hsn_sac_code") or "").strip()
+                            if raw.get("source_part_id"):
+                                common_code=str(source_part.get("part_number") or source_raw.get("supplier_forging_part_number") or "")
+                        except ValueError as exc:
+                            st.error(str(exc)); all_lines_valid=False
+                            continue
                         forging_rows.append({"Order ID":oid,"Customer Order":order.get("master_reference_no"),"Customer":customer.get("party_name"),"Finished Part":part.get("part_number"),"FSI Part":part.get("fsi_part_number"),"Supplier Forging Part No.":common_code,"Available pcs":balance,"PO Qty pcs":balance,"Current Price":current_price,"HSN / SAC":hsn,"_source":src,"_raw":raw,"_part":part})
                     if forging_rows:
                         display=pd.DataFrame([{k:v for k,v in row.items() if not k.startswith("_")} for row in forging_rows])

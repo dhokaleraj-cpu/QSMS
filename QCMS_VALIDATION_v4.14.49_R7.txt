@@ -1,0 +1,10 @@
+QCMS 4.14.49 R7 validation — 24 September 2026
+Full suite: 650 passed, 1 skipped; 288 existing dependency warnings; 50.36 seconds.
+Linked-source behavior regressions: 20 passed (included in full suite).
+Python compilation: PASS.
+Online readiness: 268 required files; zero missing.
+Phase verification: zero errors.
+Release updater: bash syntax and embedded payload SHA-256 verified.
+Source, Android source and complete-release ZIP integrity: verified.
+No GitHub push, APK compilation, live Streamlit interaction, live data mutation, schema migration or email sends were performed.
+The updater repeats compile/readiness/test gates before committing and pushing from the user's Mac.

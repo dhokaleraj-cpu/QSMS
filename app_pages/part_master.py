@@ -20,6 +20,7 @@ from core.delete_service import password_delete_panel
 from core.osp_service import OSPService
 from core.master_service import MasterService
 from core.master_definitions import MASTER_BY_KEY
+from core.raw_source import effective_link, INHERITED_FIELDS
 from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
 from core.permissions import is_admin
@@ -141,7 +142,10 @@ def _save_rows(repo: Repository, table: str, part_id: str, rows: pd.DataFrame, k
             continue
         payload["part_id"] = part_id
         natural = {key: payload[key] for key in key_fields}
-        repo.upsert_by(table, payload, natural_key=natural)
+        if payload.get("id"):
+            repo.update(table, payload.pop("id"), payload)
+        else:
+            repo.upsert_by(table, payload, natural_key=natural)
 
 
 
@@ -900,6 +904,7 @@ def render_entry() -> None:
         # ("supplier_id", "material_section_name", "section_size", "forging_route")
         grade_by_name = {label: gid for gid, label in grade_map.items()}
         raw_df = pd.DataFrame([{
+            "_raw_id": r.get("id"),
             "Raw Material Type": r.get("material_section_name") or "Round Black Bar",
             "Source Raw Forging / Casting Part": source_part_map.get(str(r.get("source_part_id") or ""), ""),
             "Material Grade": grade_map.get(str(r.get("material_grade_id")), grade_map.get(str(existing.get("material_grade_id")), "")),
@@ -913,7 +918,7 @@ def render_entry() -> None:
             "Input Weight kg/part": r.get("input_weight_kg") or r.get("gross_weight_kg") or r.get("forging_weight_kg"),
             "Section Size": r.get("section_size"), "Forging Route": r.get("forging_route"),
             "Status": r.get("status") or "ACTIVE"
-        } for r in raw], columns=["Raw Material Type", "Source Raw Forging / Casting Part", "Material Grade", "Supplier Name / Location", "Supplier RM Item Code", "Supplier Forging Part No.", "HSN / SAC Code", "Lead Time (Days)", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
+        } for r in raw], columns=["_raw_id", "Raw Material Type", "Source Raw Forging / Casting Part", "Material Grade", "Supplier Name / Location", "Supplier RM Item Code", "Supplier Forging Part No.", "HSN / SAC Code", "Lead Time (Days)", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
         # v4.14.32: Raw Material Type is a controlled business list. Keep any legacy
         # value already stored on a Part visible for safe editing, but do not learn/add
         # arbitrary new material types from the reusable catalog.
@@ -925,10 +930,21 @@ def render_entry() -> None:
         with st.expander("Manage reusable Section Size and Forging Route lists", expanded=False):
             _catalog_add_control(catalog, "part.rm_section", "Section Size", section_options, f"section_{part_id}", duplicate_word_check=True)
             _catalog_add_control(catalog, "part.forging_route", "Forging Route", route_options, f"route_{part_id}", duplicate_word_check=True)
-        with st.form(f"raw_material_grid_form_{part_id}"):
+        grid_base_key = f"raw_grid_base_{part_id}"
+        grid_revision_key = f"raw_grid_revision_{part_id}"
+        grid_master_token = hashlib.sha256(repr(raw).encode()).hexdigest()
+        if st.session_state.get(f"raw_grid_token_{part_id}") != grid_master_token:
+            st.session_state[grid_base_key] = raw_df
+            st.session_state[f"raw_grid_token_{part_id}"] = grid_master_token
+            st.session_state[grid_revision_key] = st.session_state.get(grid_revision_key, 0) + 1
+        raw_df = st.session_state[grid_base_key]
+        section_options = sorted(set(section_options + [str(v) for v in raw_df["Section Size"].dropna()]))
+        route_options = sorted(set(route_options + [str(v) for v in raw_df["Forging Route"].dropna()]))
+        with st.container():
             raw_edit = st.data_editor(
-                raw_df, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"raw_{part_id}", disabled=not writable,
+                raw_df, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"raw_{part_id}_{st.session_state.get(grid_revision_key, 0)}", disabled=not writable,
                 column_config={
+                    "_raw_id": None,
                     "Raw Material Type": st.column_config.SelectboxColumn(options=rm_type_options or list(RAW_MATERIAL_TYPE_DEFAULTS), required=True, help="Controlled Raw Material Type: Forging, Round Black Bar, Casting, Bright Bar or Ground Bar."),
                     "Source Raw Forging / Casting Part": st.column_config.SelectboxColumn(options=[""] + list(source_part_by_label), required=False, help="For Forging or Casting only: select another Part Master when its common raw forging/casting is used to manufacture this finished Part. Leave blank when this Part uses its own raw source."),
                     "Material Grade": st.column_config.SelectboxColumn(options=list(grade_by_name), required=True),
@@ -945,9 +961,50 @@ def render_entry() -> None:
                     "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
                 },
             )
-            save_raw = st.form_submit_button("Save Raw Material Details", type="primary", disabled=not writable, width="stretch")
+            save_raw = st.button("Save Raw Material Details", type="primary", disabled=not writable, width="stretch")
+        st.caption("Linked rows inherit current Section E values from the selected raw part. Edit those values and approvals on the raw part itself. Select a supplier approved for that raw part.")
+        # The source driver reruns immediately. Re-seed the editor under a new
+        # widget key only when inherited cells differ, preserving other edits.
+        resolved_grid = raw_edit.copy()
+        grid_source_errors = []
+        inherited_columns = {
+            "Supplier RM Item Code": "supplier_rm_item_code", "Supplier Forging Part No.": "supplier_forging_part_number",
+            "HSN / SAC Code": "hsn_sac_code", "Lead Time (Days)": "lead_time_days",
+            "Forging Weight": "forging_weight_kg", "Gross Weight": "gross_weight_kg",
+            "Input Weight kg/part": "input_weight_kg", "Section Size": "section_size", "Forging Route": "forging_route",
+        }
+        for idx, edited_row in raw_edit.iterrows():
+            source_id = source_part_by_label.get(str(edited_row.get("Source Raw Forging / Casting Part") or ""))
+            if not source_id:
+                continue
+            sid = supplier_by_name.get(str(edited_row.get("Supplier Name / Location") or ""))
+            try:
+                if not sid:
+                    raise ValueError("Select a supplier for the linked raw part.")
+                live = effective_link(repo, {"id": part_id}, {"source_part_id": source_id, "supplier_id": sid, "material_section_name": edited_row.get("Raw Material Type")})
+                for column, field in inherited_columns.items():
+                    resolved_grid.at[idx, column] = live.get(field)
+                resolved_grid.at[idx, "Material Grade"] = grade_map.get(str(live.get("material_grade_id")), "")
+                st.caption(f"Linked source {source_part_map.get(source_id)} — current Section E and valid supplier approvals")
+                portal_table(pd.DataFrame([{
+                    "Supplier": supplier_map.get(str(a.get("supplier_id")), ""),
+                    "Supplier Part No.": a.get("supplier_part_number"), "Approval Reference": a.get("approval_reference"),
+                    "Valid From": a.get("valid_from"), "Valid To": a.get("valid_to"),
+                } for a in live.get("_supplier_approvals", [])]), hide_index=True, width="stretch")
+            except ValueError as exc:
+                grid_source_errors.append(str(exc))
+        for message in dict.fromkeys(grid_source_errors):
+            st.warning(message)
+        # Compare JSON-normalized cells so None/NaN and numeric dtype differences
+        # do not cause an endless rerun.
+        if resolved_grid.to_json(orient="records") != raw_edit.to_json(orient="records"):
+            st.session_state[grid_base_key] = resolved_grid
+            st.session_state[grid_revision_key] = st.session_state.get(grid_revision_key, 0) + 1
+            st.rerun()
         if save_raw:
             try:
+                if grid_source_errors:
+                    raise ValueError(" / ".join(dict.fromkeys(grid_source_errors)))
                 def mapper(row, index):
                     name = str(row.get("Supplier Name / Location") or "").strip(); sid = supplier_by_name.get(name)
                     grade_name = str(row.get("Material Grade") or "").strip(); row_grade_id = grade_by_name.get(grade_name)
@@ -966,6 +1023,9 @@ def render_entry() -> None:
                         raise ValueError("Source Raw Forging / Casting Part must be another Part Master record, not the same finished Part.")
                     if source_part_id and material_section.casefold() not in {"forging", "casting"}:
                         raise ValueError("Source Raw Forging / Casting Part can be selected only when Raw Material Type is Forging or Casting.")
+                    if source_part_id:
+                        live = effective_link(repo, {"id": part_id}, {"source_part_id": source_part_id, "supplier_id": sid, "material_section_name": material_section})
+                        return {**({"id": str(row["_raw_id"])} if pd.notna(row.get("_raw_id")) and str(row.get("_raw_id")) in {str(r["id"]) for r in raw} else {}), **{k: live.get(k) for k in INHERITED_FIELDS}, "material_section_name": material_section, "source_part_id": source_part_id, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
                     return {"supplier_id": sid, "material_grade_id": row_grade_id, "source_part_id": source_part_id, "supplier_rm_item_code": str(row.get("Supplier RM Item Code") or "").strip() or None, "supplier_forging_part_number": str(row.get("Supplier Forging Part No.") or "").strip() or None, "hsn_sac_code": str(row.get("HSN / SAC Code") or "").strip() or None, "lead_time_days": int(row.get("Lead Time (Days)") or 0), "material_section_name": material_section, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section Size") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
                 _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id", "material_grade_id", "material_section_name", "section_size", "forging_route"), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:

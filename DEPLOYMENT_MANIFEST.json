@@ -306,7 +306,10 @@
     "browser_auth_bridge_zero_height",
     "refresh_cookie_fast_restore",
     "po_approver_legacy_profile_recovery",
-    "duplicate_page_render_fix"
+    "duplicate_page_render_fix",
+    "linked_raw_part_live_section_e_authority",
+    "linked_raw_supplier_approval_validity",
+    "linked_raw_po_snapshot_and_customer_genealogy"
   ],
   "source": "controlled_release",
   "release_name": "QCMS 4.14.49 Android Single Native V1.2 Drawer Recovery",
@@ -375,5 +378,5 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R6"
+  "release_revision": "R7"
 }
