@@ -157,33 +157,7 @@ class RMTCService:
         return prepared
 
     def requirements(self,part_id):
-        rows = self.repo.select(
-            'part_metallurgical_requirements',
-            eq={'part_id':part_id,'status':'ACTIVE'},
-            order_by='sequence_no',
-            limit=200,
-        )
-        if rows:
-            prepared = []
-            for row in rows:
-                lower = row.get('minimum_spec')
-                upper = row.get('maximum_spec')
-                ctype = str(row.get('characteristic_type') or 'NUMBER').upper()
-                if ctype in ('TEXT', 'ATTRIBUTE'):
-                    requirement = str(row.get('specification_text') or '').strip()
-                else:
-                    requirement = ' '.join(
-                        value for value in (
-                            f"Min {lower}" if lower is not None else '',
-                            f"Max {upper}" if upper is not None else '',
-                        ) if value
-                    )
-                prepared.append({
-                    **row,
-                    'parameter_name': row.get('parameter_name'),
-                    'requirement_value': requirement,
-                })
-            return prepared
+        # Section H is reserved for Final Dispatch; raw certificates use RM details.
         return self.repo.select(
             'part_heat_treatment_details',
             eq={'part_id':part_id,'status':'ACTIVE'},

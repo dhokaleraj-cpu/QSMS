@@ -104,7 +104,8 @@ def test_chemical_analysis_is_horizontal_and_attached_order_is_enforced():
     assert exact_order in metlab
     assert exact_order in reporting
     assert "_chemical_horizontal_models" in metlab
-    assert "MetLAB Achieved · enter results horizontally" in metlab
+    assert "RMTC Actual (reference only)" in metlab
+    assert "reference_frame = _chemical_horizontal_models" in metlab
     assert "_chemical_horizontal_report_table" in reporting
     assert '"Spec. Min"' in reporting and '"Spec. Max"' in reporting
     assert '"RMTC Achieved"' in reporting and '"MetLAB Achieved"' in reporting

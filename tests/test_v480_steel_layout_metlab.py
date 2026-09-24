@@ -31,7 +31,7 @@ def test_layout_is_automatic_with_manual_override():
 
 def test_metlab_matches_rmtc_part_worksheet_sections():
     text = (ROOT / "app_pages/metlab_report.py").read_text()
-    for token in ["CHEMICAL COMPOSITION", "JOMINY HARDENABILITY", "HEAT TREATMENT / MECHANICAL REQUIREMENTS", "RMTC Actual"]:
+    for token in ["CHEMICAL COMPOSITION", "JOMINY HARDENABILITY", "LAYOUT MASTER INSPECTION REQUIREMENTS", "RMTC Actual"]:
         assert token in text
     service = (ROOT / "core/inspection_service.py").read_text()
     assert "rmtc_material_snapshot" in service

@@ -101,6 +101,37 @@ class InspectionService:
                 output.append(row)
         return output
 
+    @staticmethod
+    def is_raw_material_metlab(record: Mapping[str, Any]) -> bool:
+        scope = str(record.get("inspection_scope") or "").upper()
+        return scope in {"RAW_MATERIAL_STAGE", "MATERIAL_INWARD"} or bool(record.get("inward_lot_id"))
+
+    @staticmethod
+    def is_raw_material_metlab_plan(plan: Mapping[str, Any]) -> bool:
+        return (str(plan.get("layout_type") or "METLAB").upper() == "METLAB"
+                and str(plan.get("inward_type") or "MATERIAL_INWARD").upper() == "MATERIAL_INWARD"
+                and str(plan.get("requirement_scope") or "GENERAL").upper() == "GENERAL")
+
+    def raw_material_results(self, record: Mapping[str, Any], results: Mapping[str, Any]) -> dict:
+        """Use only the selected Layout Master characteristics for inward inspection."""
+        plan = self.get_plan(str(record.get("layout_plan_id") or "")) or {}
+        if not plan or not self.is_raw_material_metlab_plan(plan) or str(plan.get("part_id")) != str(record.get("part_id")):
+            raise ValueError("Raw Material MetLAB requires a matching Layout Master inward layout. Section H is Final Dispatch only. Select an approved inward layout and save the draft.")
+        characteristics = self.plan_characteristics(str(plan["id"]))
+        allowed = {str(row["id"]) for row in characteristics}
+        clean = dict(results)
+        clean["rows"] = [dict(row) for row in results.get("rows", []) if str(row.get("inspection_plan_characteristic_id") or "") in allowed]
+        has_case_depth = any(bool(row_metadata(row).get("case_depth_traverse")) or re.search(r"\bcase\s+depth\b", str(row.get("characteristic") or ""), re.I) for row in characteristics)
+        if not has_case_depth:
+            clean["case_depth_applicable"] = False
+            clean["case_depth_locations"] = []
+            clean["case_depth_traverse"] = []
+            clean["case_depth_na_reason"] = "Not applicable for this approved layout."
+        # RMTC values are reference data, not the inspection acceptance criteria.
+        for key in ("chemistry_rows", "jominy_rows", "requirement_rows"):
+            clean[key] = []
+        return clean
+
     def raw_material_metlab_plans(self, part_id: str, *, approved_only: bool = True) -> list[dict]:
         """Approved Layout Master plans eligible for Raw Material Inward MetLAB only.
 
@@ -109,7 +140,7 @@ class InspectionService:
         rows = self.plans("METLAB", part_id, approved_only=approved_only)
         return [
             row for row in rows
-            if str(row.get("inward_type") or "MATERIAL_INWARD").upper() == "MATERIAL_INWARD"
+            if self.is_raw_material_metlab_plan(row)
             and str(row.get("requirement_scope") or "GENERAL").upper() != "FINAL_METALLURGICAL"
         ]
 
@@ -125,10 +156,7 @@ class InspectionService:
             ]
         elif scope == "FINAL_DISPATCH_STAGE" and layout_type.upper() == "METLAB":
             final_rows = [row for row in candidates if str(row.get("requirement_scope") or "") == "FINAL_METALLURGICAL"]
-            if final_rows:
-                candidates = final_rows
-            else:
-                candidates = [row for row in candidates if str(row.get("inward_type") or "MATERIAL_INWARD") == "MATERIAL_INWARD"]
+            candidates = final_rows
         else:
             if layout_type == "METLAB":
                 general = self.raw_material_metlab_plans(part_id, approved_only=True)
@@ -138,8 +166,7 @@ class InspectionService:
                     if str(row.get("inward_type") or "MATERIAL_INWARD") == "MATERIAL_INWARD"
                     and str(row.get("requirement_scope") or "GENERAL") != "FINAL_METALLURGICAL"
                 ]
-            if general:
-                candidates = general
+            candidates = general
         def sort_key(row: dict) -> tuple[str, str, str]:
             return (str(row.get("effective_date") or ""), str(row.get("revision") or ""), str(row.get("updated_at") or ""))
         return sorted(candidates, key=sort_key, reverse=True)
@@ -475,7 +502,8 @@ class InspectionService:
         jominy_requirements = self.repo.select("part_jominy_requirements", eq={"part_id": part_id, "status": "ACTIVE"}, order_by="sequence_no", limit=200)
         jominy_band = {str(row.get("jominy_distance_id")): row for row in jominy_requirements}
         jominy = [{**row, "minimum_hrc": (jominy_band.get(str(row.get("jominy_distance_id"))) or {}).get("minimum_hrc"), "maximum_hrc": (jominy_band.get(str(row.get("jominy_distance_id"))) or {}).get("maximum_hrc")} for row in jominy]
-        requirements = self.repo.select("rmtc_requirement_results", eq={"rmtc_approval_id": rmtc_id, "part_id": part_id}, order_by="sequence_no", limit=300)
+        # Legacy RMTC requirements may contain Part Master Section H; do not import them.
+        requirements = []
         grade = self.repo.get("material_grades", str(part.get("material_grade_id") or "")) or {}
         supplier = self.repo.get("parties", str(inward.get("supplier_id") or "")) or {}
         steel_mill = self.repo.get("parties", str(rmtc.get("steel_mill_id") or "")) or {}
@@ -483,6 +511,12 @@ class InspectionService:
 
     def save_metlab(self, payload: Mapping[str, Any], results: Mapping[str, Sequence[Mapping[str, Any]]] | Sequence[Mapping[str, Any]], report_id: str | None = None) -> dict:
         full_payload = dict(payload)
+        if full_payload.get("layout_plan_id"):
+            selected_plan = self.get_plan(str(full_payload["layout_plan_id"])) or {}
+            if not report_id and self.is_raw_material_metlab(full_payload) and str(selected_plan.get("status") or "").upper() != "APPROVED":
+                raise ValueError("New Raw Material MetLAB reports require an approved Layout Master layout.")
+            if str(selected_plan.get("requirement_scope") or "").upper() == "FINAL_METALLURGICAL" and str(full_payload.get("inspection_scope") or "").upper() != "FINAL_DISPATCH_STAGE":
+                raise ValueError("Part Master Section H is only applicable to Final Dispatch MetLAB.")
         if isinstance(results, Mapping):
             # Keep stable RMTC-style section keys for database validation and reporting.
             full_payload["results"] = {
@@ -497,6 +531,8 @@ class InspectionService:
             }
         else:
             full_payload["results"] = {"rows": [dict(row) for row in results], "chemistry_rows": [], "jominy_rows": [], "requirement_rows": [], "case_depth_locations": [], "case_depth_traverse": [], "case_depth_applicable": False, "case_depth_na_reason": None}
+        if self.is_raw_material_metlab(full_payload):
+            full_payload["results"] = self.raw_material_results(full_payload, full_payload["results"])
         return self.repo.update("lab_tests", report_id, full_payload) if report_id else self.repo.insert("lab_tests", full_payload)
 
     def _report_employees(self, record: Mapping[str, Any]) -> dict[str, dict]:
@@ -534,6 +570,8 @@ class InspectionService:
         record = self.get_metlab(report_id) or {}
         if not record:
             raise ValueError("MetLAB report not found.")
+        if self.is_raw_material_metlab(record):
+            record = {**record, "results": self.raw_material_results(record, dict(record.get("results") or {}))}
         part = self.repo.get("parts", str(record.get("part_id") or "")) or {}
         inward = self.repo.get("inward_lots", str(record.get("inward_lot_id") or "")) or {}
         supplier = self.repo.get("parties", str(record.get("supplier_id") or inward.get("supplier_id") or "")) or {}
@@ -610,6 +648,11 @@ class InspectionService:
 
     def finalize_metlab(self, report_id: str, disposition: str, reason: str, validator: str, approver: str) -> dict:
         record = self.get_metlab(report_id) or {}
+        if self.is_raw_material_metlab(record):
+            stored = dict(record.get("results") or {})
+            cleaned = self.raw_material_results(record, stored)
+            if any(stored.get(key) for key in ("chemistry_rows", "jominy_rows", "requirement_rows")) or cleaned.get("rows") != stored.get("rows", []):
+                raise ValueError("This inward report contains legacy non-layout requirements. Review the Layout Master parameters and save the draft before finalizing.")
         if record and not record.get("inward_lot_id") and not record.get("osp_job_id"):
             payload = self._standalone_final_payload(disposition, reason, validator, approver)
             result_map = dict(record.get("results") or {})

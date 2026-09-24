@@ -119,11 +119,12 @@ def _range_from_text(value: Any) -> tuple[float | None, float | None]:
 
 def _layout_rows(service: InspectionService, plan_id: str | None, existing: dict | None) -> list[dict]:
     saved = _existing_rows(existing, "rows")
-    if saved:
+    raw_report = bool(existing and service.is_raw_material_metlab(existing))
+    if saved and not raw_report:
         return saved
     if not plan_id:
         return []
-    return [{
+    rows = [{
         "sequence_no": row.get("sequence_no") or position,
         "inspection_plan_characteristic_id": row.get("id"),
         "parameter": row.get("characteristic"), "specification": row.get("specification"),
@@ -135,6 +136,15 @@ def _layout_rows(service: InspectionService, plan_id: str | None, existing: dict
         "case_depth_traverse": bool(row_metadata(row).get("case_depth_traverse", False)),
         "case_depth_location": str(row_metadata(row).get("case_depth_location") or ""),
     } for position, row in enumerate(service.plan_characteristics(plan_id), start=1)]
+    if raw_report:
+        by_id = {str(row.get("inspection_plan_characteristic_id") or ""): row for row in saved}
+        for row in rows:
+            previous = by_id.get(str(row.get("inspection_plan_characteristic_id")), {})
+            for field in ("actual_value", "remarks", "applicability"):
+                if field in previous:
+                    row[field] = previous[field]
+    return rows
+
 
 
 CASE_DEPTH_DEFAULT_DISTANCES = [0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]
@@ -479,6 +489,9 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
         plan = service.get_plan(saved_plan_id) if saved_plan_id else None
         if plan and str(plan.get("part_id") or "") != part_id:
             plan = None
+        if plan and scope == "RAW_MATERIAL_STAGE" and not service.is_raw_material_metlab_plan(plan):
+            st.warning("This report used a Final/OSP layout. Select an inward Layout Master layout and review the results before saving.")
+            plan = None
         if plan and str(plan.get("status") or "").upper() != "APPROVED":
             st.warning("This saved report uses a historical MetLAB layout. QCMS loaded the original layout so the report can be edited without silently changing its specification basis.")
         if plan and required_inspection_method and service.plan_inspection_method(str(plan.get("id") or "")) != str(required_inspection_method).upper():
@@ -770,14 +783,14 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
         saved_plan_id = str((existing or {}).get("layout_plan_id") or "")
         if saved_plan_id and all(str(row.get("id")) != saved_plan_id for row in all_plans):
             historic_plan = service.get_plan(saved_plan_id) or {}
-            if historic_plan and str(historic_plan.get("part_id") or "") == part_id:
+            if historic_plan and str(historic_plan.get("part_id") or "") == part_id and service.is_raw_material_metlab_plan(historic_plan):
                 all_plans = [historic_plan, *all_plans]
                 st.warning("This saved report uses a historical MetLAB layout. It is preserved for traceability. New Raw Material Inward reports can only select a non-Final approved layout from Layout Master.")
         plan_id: str | None = None; plan: dict = {}
         if all_plans:
             plan_map = {str(row["id"]): f"{row.get('layout_name')} · {row.get('plan_number')} Rev {row.get('revision')}" for row in all_plans}
-            if existing:
-                plan_id = saved_plan_id if saved_plan_id in plan_map else next(iter(plan_map))
+            if existing and saved_plan_id in plan_map:
+                plan_id = saved_plan_id
                 st.selectbox("Raw Material Inward MetLAB Layout · Layout Master", [plan_id], format_func=lambda value: plan_map.get(value, value), disabled=True, key=f"linked_rm_metlab_saved_layout_{existing_id}")
             else:
                 plan_id = st.selectbox("Raw Material Inward MetLAB Layout · Layout Master", list(plan_map), format_func=lambda value: plan_map[value], key=f"linked_rm_metlab_layout_{inward_id}")
@@ -842,48 +855,14 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
                 default_caption = bend_defaults.get(slot, "") if inspection_method == BEND_TEST else ""
                 micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or default_caption), key=f"micro_caption_{slot}_{existing_id or 'new'}"))
 
-        existing_chem = {str(row.get("element")): row for row in _existing_rows(existing, "chemistry_rows")}
-        chem_preview, chem_actual_frame, chem_source_rows, chem_labels = _chemical_horizontal_models(list(snapshot.get("chemistry") or []), existing_chem)
-        chem_flag_frame = pd.DataFrame([{
-            "Element": str(row.get("element") or ""),
-            "NA": (existing_chem.get(str(row.get("element"))) or {}).get("result") == "NOT_APPLICABLE",
-            "Result": (existing_chem.get(str(row.get("element"))) or {}).get("result") or "NOT_EVALUATED",
-            "Remark": (existing_chem.get(str(row.get("element"))) or {}).get("remarks") or "",
-        } for row in chem_source_rows])
-    with stage_section("C", 'CHEMICAL COMPOSITION', 'Horizontal grid follows the attached report order: C, Mn, Si, S, P, Cr, Ni, Mo, V, Al, Cu, Nb, Ti; configured extra elements follow, and Al/N2 Ratio is always placed last when configured.', key="metlab_report_render_entry_c"):
-        if not chem_preview.empty:
-            portal_table(chem_preview, hide_index=True, width="stretch", height=min(230, 80 + len(chem_preview) * 38))
-            st.markdown("**MetLAB Achieved · enter results horizontally**")
-            chem_actual_edit = st.data_editor(chem_actual_frame, hide_index=True, width="stretch", disabled=["Row"], key=f"metlab_chem_horizontal_{existing_id or 'new'}_{inward_id}")
-            with st.expander("Chemical element NA / Result / Remark", expanded=False):
-                chem_flag_edit = st.data_editor(chem_flag_frame, hide_index=True, width="stretch", disabled=["Element", "Result"], column_config={"NA": st.column_config.CheckboxColumn()}, key=f"metlab_chem_flags_{existing_id or 'new'}_{inward_id}")
-        else:
-            st.info("No RMTC chemical elements are available for this material snapshot.")
-            chem_actual_edit = pd.DataFrame()
-            chem_flag_edit = pd.DataFrame()
-
-        existing_jom = {str(row.get("distance_label")): row for row in _existing_rows(existing, "jominy_rows")}
-        jom_frame = pd.DataFrame([{
-            "Distance": row.get("distance_label"), "MM": row.get("distance_mm"), "Min HRC": row.get("minimum_hrc"), "Max HRC": row.get("maximum_hrc"),
-            "RMTC Actual HRC": row.get("actual_hrc"), "MetLAB Actual HRC": (existing_jom.get(str(row.get("distance_label"))) or {}).get("actual_value"),
-            "NA": (existing_jom.get(str(row.get("distance_label"))) or {}).get("result") == "NOT_APPLICABLE",
-            "Result": (existing_jom.get(str(row.get("distance_label"))) or {}).get("result") or "NOT_EVALUATED",
-            "Remark": (existing_jom.get(str(row.get("distance_label"))) or {}).get("remarks") or "",
-        } for row in snapshot.get("jominy") or []])
-    with stage_section("D", 'JOMINY HARDENABILITY', key="metlab_report_render_entry_d"):
-        jom_edit = st.data_editor(jom_frame, hide_index=True, width="stretch", disabled=["Distance", "MM", "Min HRC", "Max HRC", "RMTC Actual HRC", "Result"], column_config={"NA": st.column_config.CheckboxColumn()}, key=f"metlab_jom_{existing_id or 'new'}_{inward_id}")
-
-        existing_req = {str(row.get("requirement_name")): row for row in _existing_rows(existing, "requirement_rows")}
-        req_frame = pd.DataFrame([{
-            "Parameter": row.get("requirement_name"), "Requirement": row.get("requirement_value"), "RMTC Actual": row.get("actual_value"),
-            "MetLAB Actual": (existing_req.get(str(row.get("requirement_name"))) or {}).get("actual_value"), "Unit": row.get("unit"),
-            "NA": (existing_req.get(str(row.get("requirement_name"))) or {}).get("result") == "NOT_APPLICABLE",
-            "Result": (existing_req.get(str(row.get("requirement_name"))) or {}).get("result") or "NOT_EVALUATED",
-            "Remark": (existing_req.get(str(row.get("requirement_name"))) or {}).get("remarks") or "",
-        } for row in snapshot.get("requirements") or []])
-    with stage_section("E", 'HEAT TREATMENT / MECHANICAL REQUIREMENTS', key="metlab_report_render_entry_e"):
-        req_edit = st.data_editor(req_frame, hide_index=True, width="stretch", disabled=["Parameter", "Requirement", "RMTC Actual", "Unit"], column_config={"NA": st.column_config.CheckboxColumn(), "Result": st.column_config.SelectboxColumn(options=list(RESULT_OPTIONS))}, key=f"metlab_req_{existing_id or 'new'}_{inward_id}")
-
+    with stage_section("C", "RMTC REFERENCE ONLY", key="metlab_rmtc_reference"):
+        st.caption("RMTC values are traceability references. Inspection requirements and acceptance limits come only from Layout Master.")
+        for title, key in (("CHEMICAL COMPOSITION", "chemistry"), ("JOMINY HARDENABILITY", "jominy")):
+            if snapshot.get(key):
+                st.markdown(f"**{title} · RMTC Actual (reference only)**")
+                reference_frame = _chemical_horizontal_models(list(snapshot[key]), {})[0] if key == "chemistry" else pd.DataFrame(snapshot[key])
+                portal_table(reference_frame, hide_index=True, width="stretch")
+    with stage_section("E", "LAYOUT MASTER INSPECTION REQUIREMENTS", key="metlab_report_render_entry_e"):
         layout_source = _layout_rows(service, plan_id, existing)
         layout_frame = pd.DataFrame([{"Sr No": row.get("sequence_no"), "Parameter": row.get("parameter"), "Specification": row.get("specification"), "Min": row.get("lower_spec"), "Max": row.get("upper_spec"), "Method / Aid": row.get("checking_method"), "Actual Value": row.get("actual_value"), "Unit": row.get("unit"), "NA": row.get("applicability") == "NOT_APPLICABLE", "Result": row.get("result"), "Remark": row.get("remarks"), "_characteristic_id": row.get("inspection_plan_characteristic_id"), "_type": row.get("characteristic_type")} for row in layout_source])
         if not layout_frame.empty:
@@ -906,24 +885,8 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
         conclusion_remark = st.text_area("Conclusion Remark (optional)", value=str(dict((existing or {}).get("results") or {}).get("conclusion_remark") or ""), height=68, help="Additional controlled remark shown in a separate highlighted row below the conclusion.")
 
         chemistry_rows = []
-        actual_row = dict(chem_actual_edit.iloc[0]) if not chem_actual_edit.empty else {}
-        flags = {str(row.get("Element") or ""): dict(row) for _, row in chem_flag_edit.iterrows()} if not chem_flag_edit.empty else {}
-        for source_row in chem_source_rows:
-            element = str(source_row.get("element") or "")
-            flag = flags.get(element, {})
-            na = bool(flag.get("NA", False))
-            actual_value = actual_row.get(chem_labels.get(element, _chemical_column_label(element)))
-            result = _band_result(actual_value, source_row.get("minimum_value"), source_row.get("maximum_value"), na)
-            chemistry_rows.append({"element": element, "minimum_value": source_row.get("minimum_value"), "maximum_value": source_row.get("maximum_value"), "rmtc_actual_value": source_row.get("actual_value"), "actual_value": actual_value, "unit": source_row.get("unit") or "%", "result": result, "remarks": flag.get("Remark")})
         jominy_rows = []
-        for _, row in jom_edit.iterrows():
-            na = bool(row.get("NA")); result = _band_result(row.get("MetLAB Actual HRC"), row.get("Min HRC"), row.get("Max HRC"), na)
-            jominy_rows.append({"distance_label": row.get("Distance"), "distance_mm": row.get("MM"), "minimum_hrc": row.get("Min HRC"), "maximum_hrc": row.get("Max HRC"), "rmtc_actual_hrc": row.get("RMTC Actual HRC"), "actual_value": row.get("MetLAB Actual HRC"), "result": result, "remarks": row.get("Remark")})
         requirement_rows = []
-        for _, row in req_edit.iterrows():
-            na = bool(row.get("NA")); low, high = _range_from_text(row.get("Requirement")); auto = _band_result(row.get("MetLAB Actual"), low, high, na)
-            result = auto if auto != "NOT_EVALUATED" or str(row.get("Result") or "") == "NOT_EVALUATED" else str(row.get("Result") or "NOT_EVALUATED")
-            requirement_rows.append({"requirement_name": row.get("Parameter"), "requirement_value": row.get("Requirement"), "rmtc_actual_value": row.get("RMTC Actual"), "actual_value": row.get("MetLAB Actual"), "unit": row.get("Unit"), "result": result, "remarks": row.get("Remark")})
         layout_metadata_by_id = {str(item.get("inspection_plan_characteristic_id") or ""): dict(item.get("layout_metadata") or {}) for item in layout_source}
         layout_rows = []
         for _, row in layout_edit.iterrows():

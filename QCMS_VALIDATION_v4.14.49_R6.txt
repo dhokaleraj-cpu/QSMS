@@ -1,0 +1,8 @@
+QCMS 4.14.49 R6 validation — 24 September 2026
+Full regression run: 629 passed, 1 skipped (288 existing dependency warnings).
+Final stage-isolation focused run: 10 passed, including an additional saved-layout rehydration regression.
+NaN plus stage-isolation focused run before the additional case: 16 passed.
+Compile: PASS. Phase verification: zero errors. Online readiness: 268 required files, zero missing.
+Live read-only verification: part 40257237 layout 7237RMMETLAB01, GENERAL/MATERIAL_INWARD, APPROVED, HARDNESS 140–210.
+No production report edits, database migration, email sends, or Edge Function deployments were performed.
+The updater reruns the full suite before Git commit/push. Live Streamlit behavior and GitHub APK compilation must be checked after deployment.

@@ -48,6 +48,18 @@ _T = TypeVar("_T")
 
 
 def _json_ready(value: Any) -> Any:
+    import math
+    import pandas as pd
+    # Blank cells in mixed numeric/text editor rows become NaN/NA/NaT.
+    # JSON has no NaN token: preserve missing cells as null, never as zero.
+    if value is pd.NA or value is pd.NaT:
+        return None
+    if isinstance(value, float):
+        if math.isnan(value):
+            return None
+        if not math.isfinite(value):
+            raise ValueError("An infinite numeric value cannot be saved. Enter a finite value or leave the cell blank.")
+        return value
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, Mapping):
@@ -56,9 +68,12 @@ def _json_ready(value: Any) -> Any:
         return [_json_ready(v) for v in value]
     if hasattr(value, "item") and callable(value.item):
         try:
-            return value.item()
+            scalar = value.item()
         except Exception:
             pass
+        else:
+            if scalar is not value:
+                return _json_ready(scalar)
     return value
 
 

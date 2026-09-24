@@ -1118,7 +1118,7 @@ def render_entry() -> None:
     with stage_section("G", "OSP INSPECTION FOR METLAB", key="part_master_render_entry_g"):
         _render_osp_metlab_requirements(repo, catalog, part_id, writable, perms["can_archive"], show_heading=False)
 
-    with stage_section("H", "METALLURGICAL REQUIREMENTS", key="part_master_render_entry_h"):
+    with stage_section("H", "METALLURGICAL REQUIREMENTS · FINAL DISPATCH ONLY", key="part_master_render_entry_h"):
         _render_metallurgical_requirements(repo, catalog, part_id, writable, perms["can_archive"], show_heading=False)
 
 
