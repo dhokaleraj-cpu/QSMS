@@ -23,7 +23,7 @@ def _employee_map(service: InspectionService) -> dict[str, str]:
 
 def _job_label(row: dict) -> str:
     return (
-        f"{row.get('osp_job_number')} · Part {row.get('part_number')} · "
+        f"{row.get('material_out_number') or row.get('osp_job_number')} · RMTC {row.get('rmtc_number') or 'Opening / legacy'} · {row.get('osp_job_number')} · Part {row.get('part_number')} · "
         f"FSI Batch {row.get('osp_batch_code') or '-'} · Vendor Batch {row.get('vendor_batch_number') or '-'} · "
         f"Heat {row.get('heat_number')} · {row.get('process_name')} · {row.get('vendor_name')}"
     )
@@ -70,7 +70,7 @@ def _pending_table(rows: list[dict], report_type: str, scope: str) -> None:
         "receipt_metlab_disposition"
     )
     frame = pd.DataFrame([{
-        "OSP Job": r.get("osp_job_number"), "Heat Number": r.get("heat_number"), "Part Number": r.get("part_number"), "FSI Part Number": r.get("fsi_part_number"),
+        "Material Out":r.get("material_out_number"), "RMTC":r.get("rmtc_number"), "OSP Job": r.get("osp_job_number"), "Heat Number": r.get("heat_number"), "Part Number": r.get("part_number"), "FSI Part Number": r.get("fsi_part_number"),
         "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"), "FSI Batch Number": r.get("osp_batch_code"), "Vendor Batch": r.get("vendor_batch_number"),
         "Quantity pcs": r.get("sample_quantity") if scope == "OSP_SAMPLE" else r.get("quantity_received"),
         "Decision": r.get(disposition_key) or "PENDING", "Status": r.get("status"),

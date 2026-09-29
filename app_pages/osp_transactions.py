@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from uuid import uuid4
+import hashlib
 
 import pandas as pd
 import streamlit as st
@@ -23,7 +25,7 @@ def _label(row: dict) -> str:
     fsi_batch = row.get("osp_batch_code") or row.get("fsi_batch_number") or "-"
     vendor_batch = row.get("vendor_batch_number") or "-"
     return (
-        f"{row.get('osp_job_number')} · Part {row.get('part_number')}{fsi} · "
+        f"{row.get('material_out_number') or row.get('osp_job_number')} · Line {row.get('material_out_line_no') or 1} · RMTC {row.get('rmtc_number') or 'Opening / legacy'} · {row.get('osp_job_number')} · Part {row.get('part_number')}{fsi} · "
         f"FSI Batch Number {fsi_batch} · Vendor Batch Number {vendor_batch} · Heat {row.get('heat_number')} · "
         f"{row.get('process_name')} · {row.get('vendor_name')}"
     )
@@ -65,59 +67,10 @@ def render_material_out() -> None:
     subpage_navigation(("osp-home", "OSP Home", ":material/arrow_back:"), ("osp-records", "OSP Records", ":material/table_view:"))
     page_header("OSP Material Out", "Dispatch released material by Part and Heat Number to an approved OSP vendor.", "Heat genealogy")
     service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS")
-    candidates = service.dispatch_candidates()
-    if not candidates:
-        st.info("No released Material Inward or eligible Opening Stock balance is available for OSP dispatch.")
-        return
-    def _source_batch_label(row: dict) -> str:
-        if row.get("source_type") == "OPENING_STOCK":
-            return str(row.get("inward_number") or "Opening Stock")
-        return f"SRC-{row.get('inward_number')}" if row.get("inward_number") else "-"
-    labels = {
-        str(row["candidate_key"]):
-        f"{'Opening Stock' if row.get('source_type') == 'OPENING_STOCK' else 'Material Inward'} · {row.get('inward_number')} · "
-        f"Source Batch / Lot {_source_batch_label(row)} · {row.get('part_number')} · FSI {row.get('fsi_part_number') or '-'} · Heat {row.get('heat_number')} · "
-        f"Stage {str(row.get('supply_chain_stage') or 'Released').replace('_',' ').title()} · Available {float(row.get('osp_available_quantity_pcs') or 0):,.0f} pcs"
-        for row in candidates
-    }
-    selected_key = st.selectbox("OSP Source · Released Inward / Opening Stock", list(labels), format_func=lambda value: labels[value])
-    candidate = next(row for row in candidates if str(row["candidate_key"]) == selected_key)
-    inward_id = candidate.get("inward_lot_id")
-    specifications = service.specifications(str(candidate.get("part_id")))
-    processes = service.processes(); vendors = service.vendors()
-    if not specifications:
-        st.warning("Create an active OSP Process Specification for this Part in Part Master before Material Out.")
-        return
-    spec_labels = {str(row["id"]): f"{process_label(processes.get(str(row.get('process_id'))) or {})} · {row.get('process_specification') or '-'}" for row in specifications}
-    vendor_labels = {str(row["id"]): party_label(row, include_type=True) for row in vendors}
-    new_scope = record_widget_token("osp-material-out-new", candidate, selected=selected_key)
-    with st.form(f"osp_material_out_form_{new_scope}"):
-        c = st.columns(4, gap="small")
-        spec_id = c[0].selectbox("OSP Process / Specification", list(spec_labels), format_func=lambda value: spec_labels[value])
-        vendor_id = c[1].selectbox("OSP Vendor", list(vendor_labels), format_func=lambda value: vendor_labels[value]) if vendor_labels else None
-        dispatch_date = c[2].date_input("Material Out Date", value=date.today(), format="DD-MM-YYYY")
-        expected_date = c[3].date_input("Expected Return Date", value=date.today() + timedelta(days=7), format="DD-MM-YYYY")
-        c = st.columns(5, gap="small")
-        challan = c[0].text_input("Material Out Challan Number")
-        quantity = c[1].number_input("Material Out Quantity (pcs)", min_value=1.0, max_value=float(candidate.get("osp_available_quantity_pcs") or 1), value=float(candidate.get("osp_available_quantity_pcs") or 1), step=1.0)
-        selected_spec = next(row for row in specifications if str(row["id"]) == spec_id)
-        sample_qty = c[2].number_input("Pre-inward Sample Quantity (pcs)", min_value=1, max_value=20, value=int(selected_spec.get("sample_quantity") or 1), step=1)
-        c[3].text_input("Heat Number", value=str(candidate.get("heat_number") or ""), disabled=True)
-        c[4].text_input("FSI Batch Number", value="Auto-generated on save", disabled=True, help="QCMS generates one controlled Four Star Industries batch number for this OSP Material Out and carries it through Sample, OSP inspection and OSP Inward.")
-        remarks = st.text_area("Dispatch Remarks", height=70)
-        submitted = st.form_submit_button("Create OSP Material Out", type="primary", disabled=not perms["can_create"] or not vendor_id, width="stretch")
-    if submitted:
-        try:
-            process_id = str(selected_spec.get("process_id"))
-            saved = service.create_dispatch({"inward_lot_id": inward_id, "opening_stock_id": candidate.get("opening_stock_id"), "vendor_id": vendor_id, "process_id": process_id, "process_specification_id": spec_id, "dispatch_date": dispatch_date.isoformat(), "dispatch_challan": challan, "quantity_dispatched": quantity, "expected_return_date": expected_date.isoformat(), "sample_quantity": sample_qty, "remarks": remarks})
-            batch = service.repo.get("production_batches", str(saved.get("osp_batch_id") or "")) or {}
-            batch_code = batch.get("batch_code") or "generated"
-            save_success_popup(f"OSP Material Out {saved.get('osp_job_number')} saved successfully · FSI Batch {batch_code}.", queue_for_rerun=True)
-            st.rerun()
-        except Exception as exc: st.error(str(exc))
-
+    _render_material_out_entry(service, perms)
+    _render_grouped_material_outs(service, perms)
     with stage_section("B", "EDIT / DELETE MATERIAL OUT", "Controlled changes are allowed only while downstream OSP receipt/inspection genealogy permits them.", key="osp_material_out_manage"):
-        managed = service.register()
+        managed = [r for r in service.register() if not r.get("material_out_id")]
         if managed:
             mlabels = {str(r["id"]): _label(r) for r in managed}
             mid = st.selectbox("Existing Material Out", list(mlabels), format_func=lambda value: mlabels[value], key="osp_material_out_manage_id")
@@ -148,6 +101,96 @@ def render_material_out() -> None:
                 st.rerun()
         else:
             st.info("No OSP Material Out transaction exists yet.")
+
+
+def _heat_line_table(lines: list[dict]) -> list[dict]:
+    return [{"Line":r.get("material_out_line_no") or i+1, "RMTC":r.get("rmtc_number") or "Opening / legacy",
+             "Supplier RMTC":r.get("supplier_rmtc_number") or "-", "Heat Number":r.get("heat_number"),
+             "Source Inward":r.get("inward_number"), "FSI Batch":r.get("osp_batch_code"),
+             "Out Qty pcs":r.get("quantity_dispatched"), "Received pcs":r.get("quantity_received"),
+             "Balance pcs":max(float(r.get("quantity_dispatched") or 0)-float(r.get("quantity_received") or 0),0),
+             "Vendor Batch":r.get("vendor_batch_number"), "Sample Gate":r.get("sample_gate_status"),
+             "Receipt Decision":r.get("receipt_quality_disposition")} for i,r in enumerate(lines)]
+
+
+def _render_material_out_entry(service, perms):
+    candidates = service.dispatch_candidates()
+    if not candidates:
+        st.info("No released Material Inward or eligible Opening Stock balance is available for OSP dispatch.")
+        return
+    parts = {str(r["part_id"]):f"{r.get('part_number')} · FSI {r.get('fsi_part_number') or '-'} · {r.get('part_name') or ''}" for r in candidates}
+    part_id = st.selectbox("Part for Material Out",list(parts),format_func=lambda v:parts[v])
+    candidates = [r for r in candidates if str(r["part_id"])==part_id]
+    def source_batch(row):
+        return str(row.get("inward_number") or "Opening Stock") if row.get("source_type")=="OPENING_STOCK" else f"SRC-{row.get('inward_number')}"
+    labels = {str(r["candidate_key"]): f"Source Batch / Lot {source_batch(r)} · RMTC {r.get('rmtc_number') or 'Opening / legacy'} · Supplier RMTC {r.get('supplier_rmtc_number') or '-'} · Heat {r.get('heat_number')} · Inward {r.get('inward_number')} · Available {float(r.get('osp_available_quantity_pcs') or 0):,.0f} pcs" for r in candidates}
+    selected_keys = st.multiselect("Select RMTCs / Heat Numbers / Source Lots",list(labels),format_func=lambda v:labels[v],key=f"osp_multi_sources_{part_id}")
+    selected = [r for r in candidates if str(r["candidate_key"]) in selected_keys]
+    if not selected:
+        st.info("Select one or more source lots. One Material Out can include several RMTCs and heat numbers for this part.")
+        return
+    specifications=service.specifications(part_id); processes=service.processes(); vendors=service.vendors()
+    if not specifications or not vendors:
+        st.warning("Maintain an ACTIVE OSP Process Specification and approved OSP Vendor before dispatch.")
+        return
+    specs={str(r["id"]):f"{process_label(processes.get(str(r.get('process_id'))) or {})} · {r.get('process_specification') or '-'}" for r in specifications}
+    vendor_labels={str(r["id"]):party_label(r,include_type=True) for r in vendors}
+    spec_id=st.selectbox("OSP Process / Specification",list(specs),format_func=lambda v:specs[v])
+    spec=next(r for r in specifications if str(r["id"])==spec_id)
+    scope=hashlib.sha256((part_id+spec_id+"|".join(sorted(selected_keys))).encode()).hexdigest()[:20]
+    request_key=f"osp_material_out_request_{scope}"
+    if request_key not in st.session_state: st.session_state[request_key]=str(uuid4())
+    with st.form(f"osp_material_out_form_{scope}_{st.session_state[request_key]}"):
+        c=st.columns(4,gap="small")
+        vendor_id=c[0].selectbox("OSP Vendor",list(vendor_labels),format_func=lambda v:vendor_labels[v])
+        dispatch_date=c[1].date_input("Material Out Date",value=date.today(),format="DD-MM-YYYY")
+        expected_date=c[2].date_input("Expected Return Date",value=date.today()+timedelta(days=7),format="DD-MM-YYYY")
+        challan=c[3].text_input("Material Out Challan Number")
+        grid=pd.DataFrame([{"Source":r["candidate_key"],"RMTC":r.get("rmtc_number") or "Opening / legacy","Supplier RMTC":r.get("supplier_rmtc_number") or "-","Heat Number":r.get("heat_number"),"Inward / Lot":r.get("inward_number"),"Available pcs":float(r.get("osp_available_quantity_pcs") or 0),"Out Qty pcs":float(r.get("osp_available_quantity_pcs") or 0),"Sample Qty pcs":min(float(spec.get("sample_quantity") or 1),float(r.get("osp_available_quantity_pcs") or 0))} for r in selected])
+        edited=st.data_editor(grid,hide_index=True,width="stretch",key=f"osp_out_lines_{scope}_{st.session_state[request_key]}",disabled=["Source","RMTC","Supplier RMTC","Heat Number","Inward / Lot","Available pcs"],column_config={"Source":None,"Out Qty pcs":st.column_config.NumberColumn(min_value=1.0,step=1.0,required=True),"Sample Qty pcs":st.column_config.NumberColumn(min_value=1.0,max_value=20.0,step=1.0,required=True)})
+        st.caption("One Material Out document; a separate FSI batch is generated for each heat line. Samples and inward quantities remain independent for each batch.")
+        remarks=st.text_area("Dispatch Remarks",height=70)
+        submitted=st.form_submit_button("Create OSP Material Out",type="primary",disabled=not perms["can_create"],width="stretch")
+    if submitted:
+        try:
+            source_map={str(r["candidate_key"]):r for r in selected}; lines=[]
+            for row in edited.to_dict("records"):
+                source=source_map[str(row["Source"])]
+                if float(row["Out Qty pcs"])>float(source["osp_available_quantity_pcs"]): raise ValueError(f"Heat {source.get('heat_number')}: quantity exceeds displayed balance. Refresh the source list.")
+                lines.append({"inward_lot_id":source.get("inward_lot_id"),"opening_stock_id":source.get("opening_stock_id"),"quantity_dispatched":row["Out Qty pcs"],"sample_quantity":row["Sample Qty pcs"]})
+            saved=service.create_material_out({"vendor_id":vendor_id,"process_id":spec["process_id"],"process_specification_id":spec_id,"dispatch_date":dispatch_date.isoformat(),"dispatch_challan":challan,"expected_return_date":expected_date.isoformat(),"remarks":remarks},lines,st.session_state[request_key])
+            st.session_state[request_key]=str(uuid4())
+            save_success_popup(f"Material Out {saved['material_out_number']} saved · {len(saved['lines'])} separately traceable heat batches.",queue_for_rerun=True); st.rerun()
+        except Exception as exc: st.error(str(exc))
+
+
+def _render_grouped_material_outs(service, perms):
+    documents=[r for r in service.material_out_documents(service.register()) if r["is_group"]]
+    if not documents: return
+    with stage_section("A", "MULTI-HEAT MATERIAL OUT DOCUMENTS", "One document with separately traceable heat / RMTC lines.",key="osp_multi_documents"):
+        labels={r["id"]:f"{r['material_out_number']} · Challan {r.get('dispatch_challan')} · Part {r.get('part_number')} · {len(r['lines'])} heat lines · {r['quantity_dispatched']:,.0f} pcs" for r in documents}
+        selected=st.selectbox("Material Out document",list(labels),format_func=lambda v:labels[v],key="osp_multi_manage")
+        doc=next(r for r in documents if r["id"]==selected)
+        portal_table(pd.DataFrame(_heat_line_table(doc["lines"])),hide_index=True,width="stretch")
+        pdf=controlled_record_pdf_bytes("OSP MATERIAL OUT",{"Part":doc.get("part_number"),"Vendor":doc.get("vendor_name"),"Process":doc.get("process_name"),"Challan":doc.get("dispatch_challan"),"Date":doc.get("dispatch_date"),"Expected Return":doc.get("expected_return_date"),"Total Qty pcs":doc["quantity_dispatched"],"Remarks":doc.get("dispatch_remarks")}, {"RMTC / HEAT DISPATCH LINES":[{"Line":r.get("material_out_line_no"),"RMTC":r.get("rmtc_number") or "Opening / legacy","Heat":r.get("heat_number"),"Inward":r.get("inward_number"),"FSI Batch":r.get("osp_batch_code"),"Qty pcs":r.get("quantity_dispatched")} for r in doc["lines"]]}, record_number=doc["material_out_number"])
+        st.download_button("Material Out PDF · All Heat Lines",pdf,file_name=f"{doc['material_out_number']}.pdf",mime="application/pdf",key=f"osp_multi_pdf_{selected}")
+        scope=record_widget_token("osp-group-edit",doc,selected=selected)
+        with st.form(f"osp_group_edit_{scope}"):
+            c=st.columns(3)
+            d=c[0].date_input("Dispatch Date",value=date.fromisoformat(str(doc["dispatch_date"])[:10]),format="DD-MM-YYYY")
+            e=c[1].date_input("Expected Return",value=date.fromisoformat(str(doc["expected_return_date"])[:10]) if doc.get("expected_return_date") else date.today(),format="DD-MM-YYYY")
+            ch=c[2].text_input("Common Challan",value=str(doc.get("dispatch_challan") or ""))
+            grid=pd.DataFrame([{"id":r["id"],"RMTC":r.get("rmtc_number"),"Heat":r.get("heat_number"),"FSI Batch":r.get("osp_batch_code"),"Out Qty pcs":float(r.get("quantity_dispatched") or 0)} for r in doc["lines"]])
+            edit=st.data_editor(grid,hide_index=True,width="stretch",disabled=["id","RMTC","Heat","FSI Batch"],column_config={"id":None,"Out Qty pcs":st.column_config.NumberColumn(min_value=1.0,step=1.0,required=True)},key=f"osp_group_edit_lines_{scope}")
+            remarks=st.text_area("Common Dispatch Remarks",value=str(doc.get("dispatch_remarks") or ""))
+            submit=st.form_submit_button("Update Material Out Document",disabled=not perms["can_edit"])
+        if submit:
+            try:
+                service.update_material_out_group(selected,{"dispatch_date":d.isoformat(),"expected_return_date":e.isoformat(),"dispatch_challan":ch,"remarks":remarks},[{"id":r["id"],"quantity_dispatched":r["Out Qty pcs"]} for r in edit.to_dict("records")])
+                save_success_popup("Material Out document updated.",queue_for_rerun=True); st.rerun()
+            except Exception as exc: st.error(str(exc))
+        if password_rpc_delete_panel(repo=service.repo,rpc_name="qcms_delete_osp_material_out_group",rpc_param="p_material_out_id",rows=[doc],labeler=lambda r:labels[r["id"]],key=f"osp_group_delete_{selected}",can_delete=perms["can_archive"],title="Delete Material Out document",help_text="Deletes all heat lines together only when existing downstream genealogy checks permit it; restores each source balance.",success_message="Material Out deleted and heat balances restored."):
+            st.rerun()
 
 
 def render_sample_receipt() -> None:
@@ -275,8 +318,11 @@ def render_inward() -> None:
 
 
 def _render_register(rows: list[dict], height: int = 560) -> None:
+    documents=OSPService.material_out_documents(rows)
+    portal_table(pd.DataFrame([{"Material Out":r["material_out_number"],"Challan":r.get("dispatch_challan"),"Date":r.get("dispatch_date"),"Part":r.get("part_number"),"Vendor":r.get("vendor_name"),"RMTCs":r["rmtc_numbers"],"Heat Numbers":r["heat_numbers"],"Heat Lines":len(r["lines"]),"Out Qty pcs":r["quantity_dispatched"],"Received pcs":r["quantity_received"],"Status":r["status"]} for r in documents]),hide_index=True,width="stretch",height=min(height,400))
+    st.caption("Heat-wise batch details — each line has independent receipt and inspection status.")
     display = pd.DataFrame([{
-        "OSP Job": r.get("osp_job_number"), "Material Out Date": r.get("dispatch_date"), "Heat Number": r.get("heat_number"),
+        "Material Out": r.get("material_out_number") or r.get("osp_job_number"), "Line":r.get("material_out_line_no") or 1, "RMTC":r.get("rmtc_number"), "OSP Job": r.get("osp_job_number"), "Material Out Date": r.get("dispatch_date"), "Heat Number": r.get("heat_number"),
         "Part Number": r.get("part_number"), "FSI Part Number": r.get("fsi_part_number"), "FSI Batch Number": r.get("osp_batch_code"), "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"),
         "Out Qty pcs": r.get("quantity_dispatched"), "Vendor Batch": r.get("vendor_batch_number"), "Material Out Remarks": r.get("dispatch_remarks"), "Sample Gate": r.get("sample_gate_status"),
         "OSP Inward": r.get("receipt_number"), "Inward Qty pcs": r.get("quantity_received"), "Receipt Decision": r.get("receipt_quality_disposition"),
@@ -290,7 +336,7 @@ def render_records() -> None:
     subpage_navigation(("osp-home", "OSP Home", ":material/arrow_back:"), ("osp-material-out", "Material Out", ":material/output:"), ("osp-inward", "OSP Inward", ":material/input:"))
     page_header("OSP Transaction Records", context="Heat · Part · Vendor Batch")
     service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS"); rows = service.register(); search = st.text_input("Search OSP Job, Heat, Part, Vendor, Process or Vendor Batch")
-    filtered = [r for r in rows if not search or search.casefold() in " ".join(str(r.get(k) or "") for k in ("osp_job_number","receipt_number","heat_number","part_number","fsi_part_number","osp_batch_code","vendor_name","process_name","vendor_batch_number","vendor_invoice_number","tc_number","dispatch_remarks")).casefold()]
+    filtered = [r for r in rows if not search or search.casefold() in " ".join(str(r.get(k) or "") for k in ("material_out_number","rmtc_number","supplier_rmtc_number","osp_job_number","receipt_number","heat_number","part_number","fsi_part_number","osp_batch_code","vendor_name","process_name","vendor_batch_number","vendor_invoice_number","tc_number","dispatch_remarks")).casefold()]
     if filtered:
         labels = {str(r["id"]): _label(r) for r in filtered}
         selected = st.selectbox("Select OSP record for controlled reports", list(labels), format_func=lambda value: labels[value], key="osp_record_print_selection")
@@ -310,7 +356,7 @@ def render_records() -> None:
             transaction_pdf = controlled_record_pdf_bytes(
                 "OSP TRANSACTION RECORD",
                 {
-                    "OSP Job": selected_row.get("osp_job_number"), "Heat Number": selected_row.get("heat_number"),
+                    "Material Out":selected_row.get("material_out_number"), "RMTC":selected_row.get("rmtc_number"), "OSP Job": selected_row.get("osp_job_number"), "Heat Number": selected_row.get("heat_number"),
                     "Part Number": selected_row.get("part_number"), "FSI Part Number": selected_row.get("fsi_part_number"), "OSP Vendor": selected_row.get("vendor_name"),
                     "Process": selected_row.get("process_name"), "Material Out Date": selected_row.get("dispatch_date"),
                     "Out Qty pcs": selected_row.get("quantity_dispatched"), "Expected Return": selected_row.get("expected_return_date"),

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Any, Mapping
+from decimal import Decimal, InvalidOperation
+from uuid import UUID
 
 from core.repository import Repository
 from core.record_audit import annotate_transaction_rows
@@ -38,10 +40,15 @@ class OSPService:
         for row in rows:
             item=dict(row)
             source=raw_map.get(str(item.get("id"))) or {}
-            for key in ("created_by","updated_by","created_at","updated_at"):
+            for key in ("created_by","updated_by","created_at","updated_at","material_out_id","material_out_line_no"):
                 item[key]=source.get(key) or item.get(key)
             merged.append(item)
-        return annotate_transaction_rows(self.repo, merged)
+        group_ids = sorted({str(r["material_out_id"]) for r in merged if r.get("material_out_id")})
+        headers = self.repo.select("osp_material_outs", in_={"id": group_ids}, limit=5000) if group_ids else []
+        numbers = {str(h["id"]): h["material_out_number"] for h in headers}
+        for row in merged:
+            row["material_out_number"] = numbers.get(str(row.get("material_out_id")), row.get("osp_job_number"))
+        return annotate_transaction_rows(self.repo, self._enrich_rmtc(merged))
 
     def dispatch_candidates(self) -> list[dict]:
         inward_rows = self._enrich_part_identity(self.repo.select("v_qsms_osp_dispatch_candidates", order_by="inward_date", desc=True, limit=5000))
@@ -79,7 +86,77 @@ class OSPService:
                 "osp_available_quantity_pcs": available,
             })
         candidates.extend(self._enrich_part_identity(opening_rows))
-        return candidates
+        return self._enrich_rmtc(candidates)
+
+    def _enrich_rmtc(self, rows: list[dict]) -> list[dict]:
+        """Resolve the certificate through the exact inward, never just heat text."""
+        ids = sorted({str(r.get("source_inward_lot_id") or r.get("inward_lot_id")) for r in rows if r.get("source_inward_lot_id") or r.get("inward_lot_id")})
+        inwards = self.repo.select("inward_lots", in_={"id": ids}, limit=5000) if ids else []
+        inward_map = {str(r["id"]): r for r in inwards}
+        cert_ids = sorted({str(r["rmtc_approval_id"]) for r in inwards if r.get("rmtc_approval_id")})
+        certs = self.repo.select("rmtc_approvals", in_={"id": cert_ids}, limit=5000) if cert_ids else []
+        cert_map = {str(r["id"]): r for r in certs}
+        result = []
+        for row in rows:
+            inward = inward_map.get(str(row.get("source_inward_lot_id") or row.get("inward_lot_id"))) or {}
+            cert = cert_map.get(str(inward.get("rmtc_approval_id"))) or {}
+            result.append({**row, "rmtc_approval_id": inward.get("rmtc_approval_id"),
+                           "rmtc_part_approval_id": inward.get("rmtc_part_approval_id"),
+                           "rmtc_number": cert.get("rmtc_number"), "supplier_rmtc_number": cert.get("certificate_reference")})
+        return result
+
+    @staticmethod
+    def material_out_documents(rows: list[dict]) -> list[dict]:
+        groups = {}
+        for row in rows:
+            key = str(row.get("material_out_id") or row["id"])
+            groups.setdefault(key, []).append(row)
+        result = []
+        for key, lines in groups.items():
+            lines = sorted(lines, key=lambda r: (r.get("material_out_line_no") or 0, str(r["id"])))
+            first = lines[0]
+            states = {r.get("status") for r in lines}
+            result.append({**first, "id": key, "is_group": bool(first.get("material_out_id")), "lines": lines,
+                "material_out_number": first.get("material_out_number") or first.get("osp_job_number"),
+                "heat_numbers": ", ".join(dict.fromkeys(str(r.get("heat_number") or "-") for r in lines)),
+                "rmtc_numbers": ", ".join(dict.fromkeys(str(r.get("rmtc_number") or "Opening / legacy") for r in lines)),
+                "quantity_dispatched": sum(float(r.get("quantity_dispatched") or 0) for r in lines),
+                "quantity_received": sum(float(r.get("quantity_received") or 0) for r in lines),
+                "status": next(iter(states)) if len(states)==1 else "PARTIAL / MIXED"})
+        return result
+
+    @staticmethod
+    def validate_dispatch_lines(lines: list[dict]) -> list[dict]:
+        if not 1 <= len(lines) <= 100:
+            raise ValueError("Select between 1 and 100 RMTC / heat lines.")
+        result=[]; seen=set()
+        for row in lines:
+            inward, opening = row.get("inward_lot_id"), row.get("opening_stock_id")
+            if bool(inward) == bool(opening):
+                raise ValueError("Each heat line requires exactly one released inward or opening-stock source.")
+            source = ("INWARD" if inward else "OPEN", str(inward or opening))
+            if source in seen: raise ValueError("The same source cannot be selected twice.")
+            seen.add(source)
+            try:
+                qty=Decimal(str(row.get("quantity_dispatched"))); sample=Decimal(str(row.get("sample_quantity",1)))
+            except InvalidOperation as exc:
+                raise ValueError("Enter valid dispatch and sample quantities for every heat line.") from exc
+            if not qty.is_finite() or qty<=0: raise ValueError("Every heat line needs a finite positive dispatch quantity.")
+            if not sample.is_finite() or not 0<sample<=min(qty,Decimal(20)):
+                raise ValueError("Sample quantity must be positive, at most 20, and no more than its heat quantity.")
+            result.append({"inward_lot_id":inward or None,"opening_stock_id":opening or None,"quantity_dispatched":float(qty),"sample_quantity":float(sample)})
+        return result
+
+    def create_material_out(self, header: Mapping[str, Any], lines: list[dict], request_id: str) -> dict:
+        request_id = str(UUID(str(request_id)))
+        clean = self.validate_dispatch_lines(lines)
+        saved = self.repo.rpc("qcms_create_osp_material_out", {"p_request_id":request_id,"p_header":dict(header),"p_lines":clean}) or {}
+        if not saved.get("id") or len(saved.get("lines") or []) != len(clean):
+            raise RuntimeError("Material Out save could not be confirmed. Retry the same entry to recover its saved document.")
+        return saved
+
+    def update_material_out_group(self, group_id: str, header: dict, lines: list[dict]) -> dict:
+        return self.repo.rpc("qcms_update_osp_material_out_group", {"p_material_out_id":group_id,"p_header":header,"p_lines":lines}) or {}
 
     def vendors(self) -> list[dict]:
         rows = self.repo.select(

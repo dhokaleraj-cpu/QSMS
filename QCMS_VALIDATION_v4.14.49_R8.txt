@@ -1,0 +1,11 @@
+QCMS 4.14.49 R8 validation — 29 September 2026
+Python full suite: 668 passed, 1 skipped, 288 existing dependency warnings; 44.51 seconds.
+New R8 Python/AppTest regressions: 18 passed (included in full suite).
+Isolated PostgreSQL/PLpgSQL transaction checks: 25 passed using PGlite with controlled doubles for legacy RPCs.
+Checks cover one header/multiple heat batches, duplicate-source rejection, invalid quantities, cross-tenant/part rejection, idempotent retry, rollback of earlier allocations when a later line fails, group edits/deletion, source identity protection, downstream guards, RLS and anonymous access denial.
+Compile: PASS. Online readiness: 268 required files, none missing. Phase verification: zero errors.
+Live migration: rollback-only schema dry run passed; additive migration applied successfully on xxrxopzxzyjnzumrwuwy.
+Live verification: RLS enabled; create/edit/delete RPCs present; SECURITY INVOKER; authenticated execute allowed; anon denied; zero new documents or grouped business jobs. No business data mutations or email sends.
+Security advisor run: no finding referencing the new feature.
+Updater: shell syntax checked; embedded payload checksum and archive integrity verified.
+Not performed: production multi-heat dispatch/sample/inward transactions; GitHub source push or APK compilation. Run the updater and follow the handover acceptance checks.

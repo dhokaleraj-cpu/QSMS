@@ -1,0 +1,15 @@
+{
+  "project_ref": "xxrxopzxzyjnzumrwuwy",
+  "contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
+  "verified_date": "2026-09-29",
+  "migration_file": "supabase/migrations/20260929083249_qcms_r8_multi_heat_osp_material_out.sql",
+  "sha256": "99de289ecc823a49c81a8e21329232c06167b1f9787fa09247206d2fad5a1380",
+  "method": "Supabase apply_migration; post-apply SQL contract and permission checks",
+  "production_business_rows_created": 0,
+  "supplemental_migrations": [
+    {
+      "migration_file": "supabase/migrations/20260929085020_qcms_r8_osp_archive_lock.sql",
+      "sha256": "240ce6187e0294e16392a43d64b7f4a04084891d967d9ace64fe0b5662c802a5"
+    }
+  ]
+}
