@@ -1,0 +1,12 @@
+QCMS 4.14.49 R9 validation — 3 October 2026
+
+Full Python suite: 684 passed, 1 skipped, 289 dependency deprecation warnings; 29.28 seconds.
+R9 regressions: 16 passed, included above.
+Coverage: both FSI RM flow save paths; single-header/two-part RM PO with separate customer allocations; Direct Forging RM rejection; forging source waits for RM dispatch; direct-production excluded from forging; bend save/metadata/PDF/Excel; missing and zero angle; invalid finite/range checks; embedded part photo; recipient confirmation invalidated by edited address.
+Compile: PASS.
+Readiness: 268 required files; none missing.
+Phase verification: PASS, zero errors.
+Initial regression run caught compatibility checks on a renamed UI label; original label restored and final full suite passed.
+No R9 migration required. No live DB writes or real email sends during this release.
+Updater header: shell syntax checked. Embedded payload SHA256 and changed-file byte comparison checked. All generated ZIP archives integrity checked.
+Not performed here: live manufacturing transactions, SMTP delivery, GitHub source push, Android APK compilation or physical-device acceptance. The included updater performs local gates before commit/push; GitHub Actions builds the APK.

@@ -1099,7 +1099,7 @@ class SupplyChainService:
                 order = self.order(order_id) or {}
                 if not order:
                     raise ValueError("One selected Customer Order / Schedule no longer exists.")
-                if self.flow_for_order(order) != FLOW_FSI_RM:
+                if self.flow_for_order(order) not in FLOW_REQUIRES_FSI_RM:
                     raise ValueError(f"{order.get('master_reference_no')}: Raw Material Purchase Order is not applicable to the Direct Forging flow.")
                 if not bool(order.get("rm_procurement_required", True)):
                     raise ValueError(f"{order.get('master_reference_no')}: RM Procurement is not enabled because available stock covers the saved three-month decision.")

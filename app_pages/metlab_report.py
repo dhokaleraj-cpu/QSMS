@@ -578,6 +578,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
         current_spec_ref = str((existing or {}).get("specification_reference") or plan.get("format_number") or part.get("drawing_number") or "")
         spec_ref, reference_documents = _reference_controls(catalog, existing, current_spec_ref, key=f"standalone_metlab_ref_{existing_id or 'new'}_{plan_id}")
 
+    bend_angle = st.number_input("Part Bend Angle (degrees)", min_value=0.0, max_value=360.0, value=dict((existing or {}).get("results") or {}).get("bend_angle_degrees"), step=1.0, key=f"standalone_bend_angle_{existing_id or 'new'}") if inspection_method == BEND_TEST else None
     photo_title = "BEND TEST EVIDENCE / PHOTOGRAPHS" if inspection_method == BEND_TEST else "MICROSTRUCTURE PHOTOGRAPHS"
     photo_help = "Photo 1 can hold the machine / Load-vs-CHT test report; remaining photos can show bend angle and plating condition." if inspection_method == BEND_TEST else "Up to four report photographs with controlled titles."
     with stage_section("B", photo_title, photo_help, key="metlab_standalone_photos"):
@@ -586,7 +587,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             with col:
                 if (existing or {}).get(f"microstructure_image_{slot}_path"):
                     st.caption(f"Photo {slot} already uploaded")
-                micro_files.append(st.file_uploader(f"Photo {slot}", type=MICROSTRUCTURE_IMAGE_TYPES, key=f"standalone_metlab_photo_{slot}_{existing_id or 'new'}"))
+                micro_files.append(st.file_uploader(("Part Bend Photograph" if inspection_method == BEND_TEST and slot == 2 else f"Photo {slot}"), type=MICROSTRUCTURE_IMAGE_TYPES, key=f"standalone_metlab_photo_{slot}_{existing_id or 'new'}"))
                 bend_defaults = {1: "Load Vs CHT / Machine Test Report", 2: "Bend Test Part / Bend Angle", 3: "Plating Surface Condition", 4: "Additional Bend Test Evidence"}
                 default_caption = bend_defaults.get(slot, "") if inspection_method == BEND_TEST else ""
                 micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or default_caption), key=f"standalone_metlab_caption_{slot}_{existing_id or 'new'}"))
@@ -614,7 +615,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             na = bool(row.get("NA")); result = service.evaluate_characteristic({"characteristic_type": row.get("_type"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max")}, [row.get("Actual Value")], na)
             layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type"), "layout_metadata": layout_metadata_by_id.get(str(row.get("_characteristic_id") or ""), {})})
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
-        metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"standalone_metlab_notify_{existing_id or 'new'}", context={"part_number":(parts.get(str(part_id)) or {}).get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing_id)) if not existing_id else {"send":False,"confirmed":True,"preview":{}}
+        metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"standalone_metlab_notify_{existing_id or 'new'}", context={"part_number":(parts.get(str(part_id)) or {}).get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing_id))
         if st.button("Save Standalone MetLAB Report", type="primary", width="stretch", disabled=not writable or not prepared or not sample_ref.strip() or not case_depth_valid or (metlab_notify_pref["send"] and not metlab_notify_pref["confirmed"])):
             try:
                 final_number = report_no.strip() or service.next_number("METLAB")
@@ -640,17 +641,18 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                 catalog.remember_many("metlab.reference_document", reference_documents)
                 result_payload = {
                     "rows": layout_rows, "chemistry_rows": [], "jominy_rows": [], "requirement_rows": [],
-                    "inspection_method": inspection_method, "reference_documents": reference_documents,
+                    "inspection_method": inspection_method, "reference_documents": reference_documents, "bend_angle_degrees": bend_angle,
                     "conclusion_remark": conclusion_remark.strip() or None, **case_depth_results,
                 }
                 saved = service.save_metlab(payload, result_payload, existing_id or None)
+                st.session_state["edit_metlab_id"] = str(saved["id"])
                 # Save report copy / microstructure evidence BEFORE notifying so first approval email carries the documents.
                 if attachment is not None:
                     service.upload_attachment("METLAB_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "lab_tests", "attachment_path")
                 for slot, image in enumerate(micro_files, start=1):
                     if image is not None:
                         service.upload_attachment("METLAB_REPORT", str(saved["id"]), f"MICROSTRUCTURE_{slot}", image, "lab_tests", f"microstructure_image_{slot}_path")
-                if not existing_id and metlab_notify_pref["send"] and metlab_notify_pref["confirmed"]:
+                if metlab_notify_pref["send"] and metlab_notify_pref["confirmed"]:
                     NotificationService(service.repo).notify(
                         "METLAB_APPROVAL_PENDING",
                         subject=f"QCMS · MetLAB approval pending · {saved.get('report_number') or final_number}",
@@ -661,6 +663,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                         context={"lab_test_id":str(saved.get("id")),"next_task":"MetLAB Approval"},
                         **notification_overrides(metlab_notify_pref),
                     )
+                    st.session_state.pop(f"standalone_metlab_notify_{existing_id or 'new'}_confirmed_signature", None)
                 st.session_state["edit_metlab_id"] = str(saved["id"]); save_success_popup(f"Standalone MetLAB Report {final_number} saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
                 st.error(str(exc))
@@ -839,6 +842,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
 
         # Legacy test marker: MICROSTRUCTURE PHOTOS
     linked_photo_title = "BEND TEST EVIDENCE / PHOTOGRAPHS" if inspection_method == BEND_TEST else "MICROSTRUCTURE PHOTOGRAPHS"
+    bend_angle = st.number_input("Part Bend Angle (degrees)", min_value=0.0, max_value=360.0, value=dict((existing or {}).get("results") or {}).get("bend_angle_degrees"), step=1.0, key=f"linked_bend_angle_{(existing or {}).get('id') or inward_id}") if inspection_method == BEND_TEST else None
     linked_photo_help = "Photo 1 can hold the machine / Load-vs-CHT test report; remaining photos can show bend angle and plating condition." if inspection_method == BEND_TEST else "Upload up to four microstructure images and enter a title for each photograph."
     with stage_section("B", linked_photo_title, linked_photo_help, key="metlab_report_render_entry_b"):
         micro_cols = st.columns(4, gap="small")
@@ -849,7 +853,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
                 existing_path = str((existing or {}).get(f"microstructure_image_{slot}_path") or "")
                 if existing_path:
                     st.caption(f"Photo {slot} already uploaded")
-                photo_label = f"Bend Test Evidence {slot}" if inspection_method == BEND_TEST else f"Microstructure Photo {slot}"
+                photo_label = ("Part Bend Photograph" if slot == 2 else f"Bend Test Evidence {slot}") if inspection_method == BEND_TEST else f"Microstructure Photo {slot}"
                 micro_files.append(st.file_uploader(photo_label, type=MICROSTRUCTURE_IMAGE_TYPES, key=f"microstructure_{slot}_{existing_id or 'new'}"))
                 bend_defaults = {1: "Load Vs CHT / Machine Test Report", 2: "Bend Test Part / Bend Angle", 3: "Plating Surface Condition", 4: "Additional Bend Test Evidence"}
                 default_caption = bend_defaults.get(slot, "") if inspection_method == BEND_TEST else ""
@@ -894,7 +898,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
             layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type"), "layout_metadata": layout_metadata_by_id.get(str(row.get("_characteristic_id") or ""), {})})
 
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
-        linked_metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"linked_metlab_notify_{str((existing or {}).get('id') or inward_id or 'new')}", context={"part_number":part.get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing)) if not existing else {"send":False,"confirmed":True,"preview":{}}
+        linked_metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"linked_metlab_notify_{str((existing or {}).get('id') or inward_id or 'new')}", context={"part_number":part.get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing))
         if st.button("Save Raw Material MetLAB Draft", type="primary", disabled=not writable or not prepared or not sample_ref.strip() or not case_depth_valid or (linked_metlab_notify_pref["send"] and not linked_metlab_notify_pref["confirmed"]), width="stretch"):
             try:
                 final_number = report_no.strip() or service.next_number("METLAB")
@@ -903,18 +907,19 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
                 catalog.remember_many("metlab.reference_document", reference_documents)
                 results = {
                     "rows": layout_rows, "chemistry_rows": chemistry_rows, "jominy_rows": jominy_rows, "requirement_rows": requirement_rows,
-                    "inspection_method": inspection_method, "reference_documents": reference_documents,
+                    "inspection_method": inspection_method, "reference_documents": reference_documents, "bend_angle_degrees": bend_angle,
                     "conclusion_remark": conclusion_remark.strip() or None, **case_depth_results,
                 }
                 with st.spinner("Saving RMTC verification sections…"):
                     saved = service.save_metlab(payload, results, str(existing["id"]) if existing else None)
+                    st.session_state["edit_metlab_id"] = str(saved["id"])
                     # Save report copy / microstructure evidence BEFORE notifying so first approval email carries the documents.
                     if attachment is not None:
                         service.upload_attachment("METLAB_REPORT", str(saved["id"]), "REPORT_COPY", attachment, "lab_tests", "attachment_path")
                     for slot, image in enumerate(micro_files, start=1):
                         if image is not None:
                             service.upload_attachment("METLAB_REPORT", str(saved["id"]), f"MICROSTRUCTURE_{slot}", image, "lab_tests", f"microstructure_image_{slot}_path")
-                    if not existing and linked_metlab_notify_pref["send"] and linked_metlab_notify_pref["confirmed"]:
+                    if linked_metlab_notify_pref["send"] and linked_metlab_notify_pref["confirmed"]:
                         NotificationService(service.repo).notify(
                             "METLAB_APPROVAL_PENDING",
                             subject=f"QCMS · MetLAB approval pending · {saved.get('report_number') or final_number}",
@@ -925,6 +930,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
                             context={"lab_test_id":str(saved.get("id")),"inward_lot_id":str(inward_id),"next_task":"MetLAB Approval"},
                             **notification_overrides(linked_metlab_notify_pref),
                         )
+                        st.session_state.pop(f"linked_metlab_notify_{str((existing or {}).get('id') or inward_id or 'new')}_confirmed_signature", None)
                 st.session_state["edit_metlab_id"] = str(saved["id"])
                 save_success_popup(f"Raw Material MetLAB Report {final_number} saved successfully.", queue_for_rerun=True)
                 st.rerun()

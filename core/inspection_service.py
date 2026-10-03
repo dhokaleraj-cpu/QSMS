@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import math
 from difflib import SequenceMatcher
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -518,8 +519,20 @@ class InspectionService:
             if str(selected_plan.get("requirement_scope") or "").upper() == "FINAL_METALLURGICAL" and str(full_payload.get("inspection_scope") or "").upper() != "FINAL_DISPATCH_STAGE":
                 raise ValueError("Part Master Section H is only applicable to Final Dispatch MetLAB.")
         if isinstance(results, Mapping):
+            angle = results.get("bend_angle_degrees")
+            if angle is not None:
+                try:
+                    angle = float(angle)
+                except (TypeError, ValueError):
+                    raise ValueError("Bend angle must be a number in degrees.")
+                if not math.isfinite(angle) or not 0 <= angle <= 360:
+                    raise ValueError("Bend angle must be between 0 and 360 degrees.")
             # Keep stable RMTC-style section keys for database validation and reporting.
             full_payload["results"] = {
+                "inspection_method": str(results.get("inspection_method") or "GENERAL_METLAB"),
+                "bend_angle_degrees": angle,
+                "reference_documents": list(results.get("reference_documents") or []),
+                "conclusion_remark": results.get("conclusion_remark"),
                 "rows": [dict(row) for row in results.get("rows", [])],
                 "chemistry_rows": [dict(row) for row in results.get("chemistry_rows", [])],
                 "jominy_rows": [dict(row) for row in results.get("jominy_rows", [])],

@@ -381,7 +381,13 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R8",
+  "release_revision": "R9",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
-  "r8_migration_preapplied": true
+  "r8_migration_preapplied": true,
+  "r9_changes": [
+    "rm_po_direct_production_flow",
+    "multi_order_multi_part_rm_allocations",
+    "bend_angle_and_part_photograph",
+    "metlab_saved_draft_approval_email_confirmation"
+  ]
 }

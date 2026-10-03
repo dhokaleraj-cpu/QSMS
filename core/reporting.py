@@ -123,6 +123,8 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
         ("Approved By", _employee_name(employees.get(str(record.get("approved_by_employee_id"))))),
     ]
 
+    if inspection_method == "BEND_TEST":
+        summary_rows.append(("Part Bend Angle (degrees)", result_map.get("bend_angle_degrees")))
     buffer = BytesIO()
     used: set[str] = set()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
@@ -1281,6 +1283,9 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         story.append(_rmtc_grid(rows, [20*mm, 17*mm, 22*mm, 22*mm, 25*mm, 28*mm, 22*mm, 38*mm], sty["header"], sty["small"], status_columns=(6,)))
 
     story.append(CondPageBreak(70 * mm))
+    if is_bend_test:
+        angle = results.get("bend_angle_degrees")
+        story.append(Paragraph(f"Part Bend Angle: {angle if angle is not None else 'Not recorded'} degrees", sty["cell"]))
     evidence_title = "BEND TEST EVIDENCE / PART PHOTOGRAPHS" if is_bend_test else "MICROSTRUCTURE PHOTOGRAPHS"
     story.append(_rmtc_section_bar(evidence_title, content_width, sty["section"]))
     story.append(_photo_grid_table(microstructure_images, content_width, sty["center"], columns=2, max_height=46*mm))
