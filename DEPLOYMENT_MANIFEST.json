@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R9",
+  "release_revision": "R10",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -389,5 +389,13 @@
     "multi_order_multi_part_rm_allocations",
     "bend_angle_and_part_photograph",
     "metlab_saved_draft_approval_email_confirmation"
+  ],
+  "r10_changes": [
+    "forging_po_server_side_source_gate",
+    "fsi_rm_forging_po_requires_rm_dispatch",
+    "forging_po_supplier_locked_to_dispatch_forger",
+    "direct_production_rejects_forging_po",
+    "forging_po_qty_within_order_balance",
+    "forging_source_grid_shows_forger_and_heat_code"
   ]
 }

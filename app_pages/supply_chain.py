@@ -1087,7 +1087,7 @@ def render_purchase_orders() -> None:
             data=[]
             for r in pending:
                 order=service.order(str(r.get("_customer_order_id") or "")) or {}
-                data.append({**service.order_context(order),"Source":r.get("_source_type"),"Forging Balance pcs":r.get("_balance_pcs"),"RM Dispatch":(r.get("_rm_dispatch") or {}).get("dispatch_number"),"Heat Number":(r.get("_rm_dispatch") or {}).get("heat_number"),"Status":"ELIGIBLE","_source_id":r.get("_source_id")})
+                data.append({**service.order_context(order),"Source":r.get("_source_type"),"Forging Balance pcs":r.get("_balance_pcs"),"RM Dispatch":(r.get("_rm_dispatch") or {}).get("dispatch_number"),"Heat Number":(r.get("_rm_dispatch") or {}).get("heat_number"),"Heat Code":(r.get("_rm_dispatch") or {}).get("heat_code"),"Forger (RM sent to)":(parties.get(str((r.get("_rm_dispatch") or {}).get("forging_supplier_id") or "")) or {}).get("party_name"),"Status":"ELIGIBLE","_source_id":r.get("_source_id")})
             if data:
                 _searchable_grid(pd.DataFrame(data).drop(columns=["_source_id"],errors="ignore"),title="Eligible Forging Purchase Order Sources",key="supply_po_forging_pending",height=320)
             labels={}
@@ -1127,9 +1127,17 @@ def render_purchase_orders() -> None:
                         if option.get("_source_error"): st.warning(option["_source_error"])
                     compatible_sets.append({str(r.get("supplier_id")) for r in options if not r.get("_source_error")})
                 compatible=set.intersection(*compatible_sets) if compatible_sets else set()
+                # R10: an FSI RM -> Forging source is locked to the forger the RM was dispatched to.
+                dispatch_forgers={str((src.get("_rm_dispatch") or {}).get("forging_supplier_id") or "").strip() for src in selected_forging_sources if src.get("_rm_dispatch")}
+                dispatch_forgers.discard("")
+                if len(dispatch_forgers)>1:
+                    st.error("The selected RM-to-Forger dispatches were sent to different forgers. Create a separate Forging PO for each forger.")
+                    compatible=set()
+                elif dispatch_forgers:
+                    compatible&=dispatch_forgers
                 supplier_options=[sid for sid in supplier_labels if sid in compatible]
-                if not supplier_options:
-                    st.error("No common valid supplier source. Maintain the linked raw part's ACTIVE Section E details and current supplier approval.")
+                if not supplier_options and len(dispatch_forgers)<=1:
+                    st.error("No common valid supplier source. Maintain the linked raw part's ACTIVE Section E details and current supplier approval."+(" The PO supplier must be the forger the RM was dispatched to." if dispatch_forgers else ""))
             default_supplier=str(selected_orders[0].get("forging_supplier_id") or "") if po_type=="FORGING" and selected_orders else ""
             login_employee=service.repo.get("employees",login_employee_id) if login_employee_id else {}
             requisitioner_name=" ".join(v for v in (str((login_employee or {}).get("first_name") or "").strip(),str((login_employee or {}).get("last_name") or "").strip()) if v).strip()

@@ -1019,6 +1019,53 @@ class SupplyChainService:
         rows.sort(key=lambda r: (str(r.get("customer_delivery_date") or "9999-12-31"), str(r.get("master_reference_no") or "")))
         return rows
 
+    def _assert_forging_sources(self, raw_sources: Sequence[Mapping[str, Any]], supplier_id: str) -> None:
+        """R10 server-side gate for Forging PO sources (runs before any write).
+
+        * FSI RM -> Direct Production orders never receive a Forging PO.
+        * FSI RM -> Forging orders need an RM-to-Forger dispatch of the same Customer
+          Order that is not already linked to an active Forging PO, and the PO supplier
+          must be the forger the RM was dispatched to.
+        * Quantity per Customer Order cannot exceed its pending forging balance.
+        """
+        linked = {str(r.get("rm_dispatch_id")) for r in self.forging_orders() if r.get("rm_dispatch_id") and str(r.get("status") or "") != "CANCELLED"}
+        seen_dispatch: set[str] = set()
+        qty_by_order: dict[str, float] = {}
+        for src in raw_sources:
+            order_id = str(src.get("customer_order_id") or "")
+            order = self.order(order_id) or {}
+            if not order:
+                raise ValueError("One selected Forging PO source no longer exists.")
+            ref = str(order.get("master_reference_no") or order.get("customer_order_no") or "Customer Order")
+            if str(order.get("status") or "") in {"COMPLETED", "CANCELLED"}:
+                raise ValueError(f"{ref}: Customer Order is {str(order.get('status')).title()}; a Forging PO cannot be created.")
+            flow = self.flow_for_order(order)
+            if flow == FLOW_FSI_RM_DIRECT_PRODUCTION:
+                raise ValueError(f"{ref}: FSI RM → Direct Production flow does not use a Forging Purchase Order.")
+            if flow == FLOW_FSI_RM:
+                dispatch_ref = dict(src.get("rm_dispatch") or {})
+                dispatch_id = str(dispatch_ref.get("id") or "").strip()
+                if not dispatch_id:
+                    raise ValueError(f"{ref}: FSI RM → Forging flow needs an RM-to-Forger dispatch before the Forging PO. Post RM Receipt and RM to Forger first.")
+                dispatch = self.repo.get("supply_rm_dispatches", dispatch_id) or {}
+                if not dispatch:
+                    raise ValueError(f"{ref}: the selected RM-to-Forger dispatch no longer exists.")
+                if str(dispatch.get("customer_order_id") or "") != order_id:
+                    raise ValueError(f"{ref}: the selected RM-to-Forger dispatch belongs to a different Customer Order.")
+                if dispatch_id in linked or dispatch_id in seen_dispatch:
+                    raise ValueError(f"{ref}: RM dispatch {dispatch.get('dispatch_number') or dispatch_id} is already linked to a Forging Purchase Order.")
+                forger = str(dispatch.get("forging_supplier_id") or "").strip()
+                if forger and forger != str(supplier_id):
+                    raise ValueError(f"{ref}: RM dispatch {dispatch.get('dispatch_number') or dispatch_id} was sent to a different forger. Select that forging supplier on the PO.")
+                seen_dispatch.add(dispatch_id)
+            qty_by_order[order_id] = qty_by_order.get(order_id, 0.0) + number(src.get("quantity"))
+        for order_id, qty in qty_by_order.items():
+            order = self.order(order_id) or {}
+            ref = str(order.get("master_reference_no") or order.get("customer_order_no") or "Customer Order")
+            balance = max(number(order.get("order_qty_pcs")) - self.totals(order_id)["forging_ordered_pcs"], 0.0)
+            if qty > balance + 0.0001:
+                raise ValueError(f"{ref}: Forging PO quantity {qty:,.0f} pcs exceeds the pending forging balance of {balance:,.0f} pcs.")
+
     def create_purchase_order(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         p = dict(payload)
         po_type = str(p.get("po_type") or "").upper()
@@ -1204,6 +1251,7 @@ class SupplyChainService:
             raise ValueError("Select at least one Forging PO source.")
         prepared_forging: list[dict[str, Any]] = []
         groups: dict[str, dict[str, Any]] = {}
+        self._assert_forging_sources(raw_sources, supplier_id)
         for src in raw_sources:
             order_id = str(src.get("customer_order_id") or ""); order = self.order(order_id) or {}
             if not order: raise ValueError("One selected Forging PO source no longer exists.")

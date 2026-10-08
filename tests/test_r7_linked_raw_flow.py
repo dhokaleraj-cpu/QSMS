@@ -32,7 +32,8 @@ class Repo:
 
 def service():
     svc=SupplyChainService(Repo())
-    svc.order=lambda oid: {'id':oid,'part_id':'finished','raw_material_detail_id':'link','gross_weight_kg_snapshot':99}
+    # R10: a Forging PO without an RM dispatch is the Direct Forging flow; the order carries its quantity.
+    svc.order=lambda oid: {'id':oid,'part_id':'finished','raw_material_detail_id':'link','gross_weight_kg_snapshot':99,'supply_flow':'DIRECT_FORGING','order_qty_pcs':100}
     svc.save_transaction=lambda table,payload: svc.repo.insert(table,payload)
     svc.sync_order_status=lambda oid: None
     return svc

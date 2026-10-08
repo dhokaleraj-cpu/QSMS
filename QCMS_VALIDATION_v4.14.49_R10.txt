@@ -1,0 +1,11 @@
+QCMS 4.14.49 R10 validation — 3 October 2026
+
+Full Python suite: 688 passed, 4 failed (environment-only, see below).
+R10 regressions: 7 new tests in tests/test_r10_forging_source_gate.py, all passed. R7/R9 regressions passed.
+Environment-only failures in the preparation sandbox (PyPI blocked; pyarrow and PyMuPDF native wheels unavailable):
+  - tests/test_r8_multi_heat_osp.py::test_streamlit_multiple_sources_submit_one_document (needs pyarrow for st.data_editor)
+  - tests/test_v41432 / v41433 / v41434 PO terms page-count tests (need PyMuPDF to compact terms)
+  The same 4 tests fail identically on unmodified R9 source in this sandbox; they pass on the Mac .venv. The updater runs the full suite on the Mac before committing.
+Compile: PASS. Readiness: 268 required files; none missing. Phase verification: PASS, zero errors.
+No migration. No live DB writes or real email sends.
+Not performed: live manufacturing transactions, SMTP delivery, GitHub push, APK compilation/device acceptance.
