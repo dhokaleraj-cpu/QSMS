@@ -44,6 +44,7 @@ from app_pages import (
     company_branch,
     dimensional_report,
     employee_master,
+    email_center,
     email_settings,
     global_search,
     inspection_home,
@@ -102,14 +103,23 @@ if not is_logged_in() and not _auth_clearing:
 if not is_logged_in() and st.session_state.pop("_qcms_auth_restore_pending", False):
     # First Components-v2 mount returns asynchronously and triggers an immediate
     # rerun. Do not flash the Login screen while persistent auth is being read.
-    st.caption("Restoring QCMS session…")
-    st.stop()
+    # R13 guard: if the browser bridge never answers (blocked storage / hosting
+    # proxy), stop waiting after 2 attempts and show the normal Login screen.
+    _restore_attempts = int(st.session_state.get("_qcms_auth_restore_attempts", 0)) + 1
+    st.session_state["_qcms_auth_restore_attempts"] = _restore_attempts
+    if _restore_attempts <= 3:
+        st.caption("Restoring QCMS session…")
+        import time as _time
+        _time.sleep(0.8)
+        st.rerun()
+    st.session_state["_qcms_auth_restore_failed"] = True
 if not is_logged_in():
     # A failed restore queues localStorage + cookie deletion to prevent invalid
     # token loops, then falls back to normal interactive login.
     service_persistent_auth_bridge()
     render_login(); st.stop()
 profile = current_profile() or {}
+st.session_state.pop("_qcms_auth_restore_attempts", None)
 sync_persistent_login_browser()
 service_persistent_auth_bridge()
 
@@ -238,6 +248,10 @@ PAGE_ITEMS = (
     ("global-search", st.Page(global_search.render, title="Global Search", icon=":material/search:", url_path="global-search")),
     ("kpi-dashboards", st.Page(kpi_dashboards.render, title="KPI Dashboards", icon=":material/insights:", url_path="kpi-dashboards")),
     ("system-settings", st.Page(system_settings.render, title="System Settings", icon=":material/tune:", url_path="system-settings")),
+    ("email-send", st.Page(email_center.render_send, title="Send Email", icon=":material/send:", url_path="email-send")),
+    ("email-groups", st.Page(email_center.render_groups, title="Email Groups", icon=":material/groups:", url_path="email-groups")),
+    ("email-my-settings", st.Page(email_center.render_my_settings, title="My Email Settings", icon=":material/manage_accounts:", url_path="email-my-settings")),
+    ("email-sent", st.Page(email_center.render_sent, title="My Sent Emails", icon=":material/outbox:", url_path="email-sent")),
 )
 PAGES = tuple(page for _, page in PAGE_ITEMS)
 PAGE_BY_PATH = dict(PAGE_ITEMS)
@@ -249,6 +263,12 @@ MODULE_SUBMENUS = {
         ("dashboard", "Quality Dashboard", ":material/dashboard:"),
         ("kpi-dashboards", "KPI Dashboards", ":material/insights:"),
         ("global-search", "Search & AI", ":material/search:"),
+    ),
+    "Email": (
+        ("email-send", "Send Email", ":material/send:"),
+        ("email-groups", "Email Groups", ":material/groups:"),
+        ("email-sent", "My Sent Emails", ":material/outbox:"),
+        ("email-my-settings", "My Email Settings", ":material/manage_accounts:"),
     ),
     "KPI Dashboards": (
         ("kpi-dashboards", "KPI Dashboards", ":material/insights:"),
@@ -400,7 +420,7 @@ RECORD_ROUTES = {
     "grade-records", "reference-records", "employee-records", "standards-records",
 }
 ROUTE_MODULE = {
-    "dashboard": "Dashboard", "my-account": "Dashboard", "kpi-dashboards": "KPI Dashboards", "system-settings": "Admin",
+    "dashboard": "Dashboard", "my-account": "Dashboard", "kpi-dashboards": "KPI Dashboards", "system-settings": "Admin", "email-send": "Email", "email-groups": "Email", "email-my-settings": "Email", "email-sent": "Email",
     "masters": "Masters", "company-branch-entry": "Masters", "company-branch-records": "Masters", "part-entry": "Masters", "process-entry": "Masters",
     "grade-entry": "Masters", "reference-entry": "Masters", "employee-entry": "Masters",
     "user-access": "Admin", "email-settings": "Admin", "deployment-diagnostics": "Admin", "master-import": "Masters", "standards-entry": "Masters",
@@ -452,6 +472,7 @@ PAGE_TITLE_TO_PATH = {
     "Bend Test Report": "bend-test-entry", "Bend Test Records": "bend-test-records", "Bend Test Reports": "bend-test-report",
     "Global Search": "global-search",
     "KPI Dashboards": "kpi-dashboards", "System Settings": "system-settings",
+    "Send Email": "email-send", "Email Groups": "email-groups", "My Email Settings": "email-my-settings", "My Sent Emails": "email-sent",
 }
 
 
@@ -484,7 +505,7 @@ ROUTE_PERMISSION_MODULE = {
 # the same authenticated Streamlit session. No JavaScript click bridge is used.
 if android_streamlit_nav:
     _mobile_group_order = (
-        "Dashboard", "KPI Dashboards", "Masters", "Supply Chain", "RMTC", "Inward", "OSP",
+        "Dashboard", "KPI Dashboards", "Email", "Masters", "Supply Chain", "RMTC", "Inward", "OSP",
         "Inspections", "NPD & APQP", "QC Calculation Tools", "Complaints",
         "Calibration & Validation", "Records", "Reports", "Search", "Templates", "Admin",
     )
@@ -526,6 +547,8 @@ RAIL_NAV = (
     (PAGE_BY_PATH["dashboard"], "Dashboard", "Dashboard", ":material/home:"),
     (PAGE_BY_PATH["kpi-dashboards"], "KPI Dashboards", "KPI Dashboards", ":material/insights:"),
     (PAGE_BY_PATH["global-search"], "Search & AI", "Search", ":material/search:"),
+    (None, "Communication", "", ""),
+    (PAGE_BY_PATH["email-send"], "Email", "Email", ":material/mail:"),
     (None, "Master Data", "", ""),
     (PAGE_BY_PATH["masters"], "Masters", "Masters", ":material/database:"),
     (None, "Procurement", "", ""),
@@ -552,18 +575,18 @@ if not native_mobile:
     if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):
         logout()
 
-    st.caption(f"LIVE BUILD · QCMS v{settings.version} · 41449-ANDROID-SINGLE-NATIVE-DRAWER-V12")
-
-    # Persistent permission-aware Global Search launcher for desktop/web.
-    with st.form("qcms_shell_global_search_form", border=False):
-        gs1, gs2 = st.columns([8.75, 1.25], gap="small")
-        shell_global_query = gs1.text_input(
-            "Global Search",
-            key="qcms_shell_global_search_query",
-            placeholder="Global Search · Part, Heat, RMTC, Batch, Supplier, Customer, PO, Report...",
-            label_visibility="collapsed",
-        )
-        shell_global_submit = gs2.form_submit_button("Search", icon=":material/search:", width="stretch")
+    # R14: compact Global Search directly under the top menu, on the left.
+    with st.container(border=False, key="qcms_top_search"):
+        with st.form("qcms_shell_global_search_form", border=False):
+            gs1, gs2, gs3 = st.columns([4.4, 1.0, 6.6], gap="small", vertical_alignment="center")
+            shell_global_query = gs1.text_input(
+                "Global Search",
+                key="qcms_shell_global_search_query",
+                placeholder="Search Part, Heat, RMTC, PO, Supplier… or ask AI",
+                label_visibility="collapsed",
+            )
+            shell_global_submit = gs2.form_submit_button("Search", icon=":material/search:", width="stretch")
+            gs3.caption(f"LIVE BUILD · QCMS v{settings.version} · 41449-ANDROID-SINGLE-NATIVE-DRAWER-V12")
     if shell_global_submit:
         cleaned_global_query = str(shell_global_query or "").strip()
         if len(cleaned_global_query) < 2:

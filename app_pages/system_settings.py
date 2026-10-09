@@ -45,6 +45,47 @@ def render() -> None:
         if not key_ready:
             st.info("To use the AI Assistant, the Claude API key must be set once: on the Mac run `bash /Users/dhokaleraj/QSMS/scripts/set_ai_key.sh`; for the online app add it in Streamlit Cloud → Settings → Secrets.")
 
+    from core.system_settings import MS365_CLIENT_KEY, MS365_TENANT_KEY, get_system_value, set_system_value
+    with stage_section("B", "MICROSOFT 365 SIGN-IN FOR EMAIL", "One-time setup so every user can connect their own Office 365 mailbox (Email module). These IDs are not passwords.", key="system_settings_ms365"):
+        tenant, t_src = get_system_value(repo, MS365_TENANT_KEY, secret_name="QCMS_MS365_TENANT_ID")
+        client, c_src = get_system_value(repo, MS365_CLIENT_KEY, secret_name="QCMS_MS365_CLIENT_ID")
+        cred_ready = bool(str(_secret("QCMS_CREDENTIAL_KEY", "") or "").strip())
+        c1, c2, c3 = st.columns(3, gap="small")
+        c1.metric("Tenant ID", "Set" if tenant else "Missing")
+        c2.metric("Client ID", "Set" if client else "Missing")
+        c3.metric("Encryption key", "Set" if cred_ready else "Missing")
+        with st.expander("Step-by-step: register QCMS in Microsoft Entra (Microsoft 365 admin, ~5 minutes)", expanded=not (tenant and client)):
+            st.markdown(
+                "1. Open **entra.microsoft.com** with a Microsoft 365 administrator account.\n"
+                "2. **Identity → Applications → App registrations → New registration**. Name: `QCMS Email`. Supported account types: **Accounts in this organizational directory only**. Redirect URI: leave empty. Click **Register**.\n"
+                "3. On the app **Overview** page copy **Application (client) ID** and **Directory (tenant) ID** into the boxes below.\n"
+                "4. **Authentication** → *Advanced settings* → **Allow public client flows = Yes** → **Save**.\n"
+                "5. **API permissions → Add a permission → Microsoft Graph → Delegated permissions** → tick **Mail.Send**, **User.Read**, **offline_access** → **Add permissions**.\n"
+                "6. Click **Grant admin consent for Four Star Industries** → **Yes**.\n"
+                "7. Save here. Each user then opens **Email → My Email Settings → Connect Microsoft 365**.\n\n"
+                "No client secret is needed — QCMS never receives anyone's Microsoft password."
+            )
+        with st.form("system_settings_ms365_form", border=False):
+            t_in = st.text_input("Directory (tenant) ID", value=tenant, disabled=t_src == "secret")
+            c_in = st.text_input("Application (client) ID", value=client, disabled=c_src == "secret")
+            ms_saved = st.form_submit_button("Save Microsoft 365 settings", type="primary", width="stretch")
+        if ms_saved:
+            try:
+                import re as _re
+                for label, value in (("Tenant ID", t_in), ("Client ID", c_in)):
+                    if value.strip() and not _re.fullmatch(r"[0-9a-fA-F-]{36}", value.strip()):
+                        raise ValueError(f"{label} must be a 36-character ID like 1a2b3c4d-....")
+                if t_src != "secret":
+                    set_system_value(repo, MS365_TENANT_KEY, t_in, profile)
+                if c_src != "secret":
+                    set_system_value(repo, MS365_CLIENT_KEY, c_in, profile)
+                save_success_dialog("Microsoft 365 settings saved", "Users can now connect their mailbox in **Email → My Email Settings**.")
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+        if not cred_ready:
+            st.warning("Encryption key `QCMS_CREDENTIAL_KEY` is missing. The R14 updater adds it to your Mac's secrets automatically; for the online app copy your secrets to Streamlit Cloud (see release notes).")
+
     section_bar("SYSTEM INFORMATION", "Read-only.")
     from core.config import get_settings
     settings = get_settings()

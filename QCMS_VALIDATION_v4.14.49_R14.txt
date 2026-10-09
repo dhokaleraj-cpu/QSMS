@@ -1,0 +1,6 @@
+QCMS 4.14.49 R14 validation — 9 October 2026
+Full suite: 732 passed, 4 failed (environment-only: pyarrow/PyMuPDF unavailable in the preparation sandbox; same 4 fail on unmodified R9; pass on Mac .venv).
+R14 tests: 7 passed (encryption + wrong key, recipient expansion/dedupe/inactive/invalid, message splitting & limits & HTML escaping, device-code flow + login-mailbox check, account store encryption/rotation/send/401, migration owner-only, app wiring/search/startup guard/cache).
+Visual check (preview mode, headless Chromium): compact search bar, Communication rail group, Send Email and My Email Settings pages, System Settings gate.
+Compile PASS (Python 3.12 and 3.13); readiness none missing; phase verification zero errors.
+Not performed: live Microsoft sign-in / Graph send (needs Entra registration), SQL migration on live DB (connector timed out), Streamlit Cloud deploy, GitHub push.

@@ -1352,7 +1352,12 @@ def apply_teal_material_theme() -> None:
     html body [class*="st-key-qcms_rail_active_"] div[data-testid="stPageLink"] a{background:var(--tm-primary)!important;box-shadow:0 2px 6px rgba(15,139,141,.30)!important;}
     html body [class*="st-key-qcms_rail_active_"] div[data-testid="stPageLink"] a *{color:#fff!important;fill:#fff!important;}
 
-    html body .qcms-rail-head{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--tm-muted);padding:12px 12px 3px;}
+    html body div.st-key-qcms_top_search,html body [class~="st-key-qcms_top_search"]{margin:-2px 0 8px!important;padding:0!important;background:transparent!important;border:0!important;}
+    html body div.st-key-qcms_top_search [data-testid="stForm"]{background:transparent!important;border:0!important;padding:0!important;box-shadow:none!important;}
+    html body div.st-key-qcms_top_search div[data-baseweb="input"]{border-radius:999px!important;background:#fff!important;}
+    html body div.st-key-qcms_top_search [data-testid="stCaptionContainer"]{text-align:right!important;}
+    html body div.st-key-qcms_top_search label[data-testid="stWidgetLabel"]{display:none!important;}
+    html body .qcms-rail-head{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--tm-muted);padding:12px 12px 3px;margin-bottom:6px;line-height:1.2;}
     html body .qcms-rail-head:first-child{padding-top:4px;}
 
     /* Module sub-menu */

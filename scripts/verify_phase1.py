@@ -145,7 +145,7 @@ expected_paths = {
     "user-access", "email-settings", "master-import", "standards-entry", "standards-records", "my-account", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
     "osp-material-out", "osp-sample-receipt", "osp-inward", "osp-dimensional", "osp-metlab", "osp-records",
     "inspection-layout-entry", "inspection-layout-records", "dimensional-entry",
-    "dimensional-records", "metlab-entry", "metlab-records", "bend-test-entry", "bend-test-records", "bend-test-report", "global-search", "kpi-dashboards", "system-settings",
+    "dimensional-records", "metlab-entry", "metlab-records", "bend-test-entry", "bend-test-records", "bend-test-report", "global-search", "kpi-dashboards", "system-settings", "email-send", "email-groups", "email-my-settings", "email-sent",
 }
 if set(paths) != expected_paths or len(paths) != len(expected_paths):
     errors.append(f"Expected {len(expected_paths)} unique registered pages, found {paths}")

@@ -232,12 +232,18 @@ class Repository:
 
         try:
             rows = self._retry(execute, operation=f"reading {table}")
-            self._read_cache()[key] = deepcopy(rows)
+            # One stored copy serves both the outage fallback and the fresh cache
+            # (R13 memory fix: previously two deep copies of every result were kept).
+            stored = deepcopy(rows)
+            fallback = self._read_cache()
+            if len(fallback) > 300:
+                fallback.clear()
+            fallback[key] = stored
             if ttl > 0:
                 cache = _fresh_cache()
-                if len(cache) > 600:
+                if len(cache) > 200:
                     cache.clear()
-                cache[key] = (time.monotonic(), deepcopy(rows))
+                cache[key] = (time.monotonic(), stored)
             return rows
         except RuntimeError:
             if require_live:

@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R13",
+  "release_revision": "R14",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -422,5 +422,16 @@
     "top_10_kpi_dashboards_live",
     "grouped_left_rail_layout_overview_masterdata_procurement_quality_engineering_reports_admin",
     "header_menu_home_kpis_masters_supply_quality_reports_records_admin"
-  ]
+  ],
+  "r14_changes": [
+    "email_module_send_to_employees_departments_groups",
+    "personal_ms365_sign_in_device_code_graph_send",
+    "owner_only_encrypted_mail_credentials_rls_no_admin",
+    "email_groups_and_private_sent_log",
+    "admin_ms365_setup_in_system_settings",
+    "global_search_compact_top_left",
+    "startup_session_restore_guard",
+    "repository_cache_memory_halved"
+  ],
+  "r14_migration_file": "supabase/migrations/20261009100000_qcms_r14_personal_mail.sql"
 }
