@@ -48,6 +48,7 @@ from app_pages import (
     global_search,
     inspection_home,
     inspection_layouts,
+    kpi_dashboards,
     master_home,
     master_import,
     material_grade,
@@ -66,6 +67,7 @@ from app_pages import (
     rmtc_pages,
     standards_bank,
     supply_chain,
+    system_settings,
     user_access,
     template_center,
 )
@@ -234,6 +236,8 @@ PAGE_ITEMS = (
     ("bend-test-records", st.Page(metlab_report.render_bend_test_records, title="Bend Test Records", icon=":material/table_view:", url_path="bend-test-records")),
     ("bend-test-report", st.Page(metlab_report.render_bend_test_records, title="Bend Test Reports", icon=":material/assessment:", url_path="bend-test-report")),
     ("global-search", st.Page(global_search.render, title="Global Search", icon=":material/search:", url_path="global-search")),
+    ("kpi-dashboards", st.Page(kpi_dashboards.render, title="KPI Dashboards", icon=":material/insights:", url_path="kpi-dashboards")),
+    ("system-settings", st.Page(system_settings.render, title="System Settings", icon=":material/tune:", url_path="system-settings")),
 )
 PAGES = tuple(page for _, page in PAGE_ITEMS)
 PAGE_BY_PATH = dict(PAGE_ITEMS)
@@ -243,6 +247,13 @@ render_pending_popups()
 MODULE_SUBMENUS = {
     "Dashboard": (
         ("dashboard", "Quality Dashboard", ":material/dashboard:"),
+        ("kpi-dashboards", "KPI Dashboards", ":material/insights:"),
+        ("global-search", "Search & AI", ":material/search:"),
+    ),
+    "KPI Dashboards": (
+        ("kpi-dashboards", "KPI Dashboards", ":material/insights:"),
+        ("dashboard", "Quality Dashboard", ":material/dashboard:"),
+        ("reports-home", "Reports", ":material/assessment:"),
     ),
     "Masters": (
         ("masters", "Masters Home", ":material/dataset:"),
@@ -259,6 +270,7 @@ MODULE_SUBMENUS = {
     "Admin": (
         ("user-access", "Users & Access", ":material/admin_panel_settings:"),
         ("email-settings", "Email Server & Notifications", ":material/forward_to_inbox:"),
+        ("system-settings", "System Settings", ":material/tune:"),
         ("deployment-diagnostics", "Deployment Diagnostics", ":material/verified:"),
     ),
     "RMTC": (
@@ -371,7 +383,8 @@ MODULE_SUBMENUS = {
         ("standards-report", "Customer Standards", ":material/menu_book:"),
     ),
     "Search": (
-        ("global-search", "Global Search", ":material/search:"),
+        ("global-search", "Search & AI Assistant", ":material/search:"),
+        ("kpi-dashboards", "KPI Dashboards", ":material/insights:"),
     ),
     "Templates": (
         ("templates", "Download Templates", ":material/download:"),
@@ -387,7 +400,7 @@ RECORD_ROUTES = {
     "grade-records", "reference-records", "employee-records", "standards-records",
 }
 ROUTE_MODULE = {
-    "dashboard": "Dashboard", "my-account": "Dashboard",
+    "dashboard": "Dashboard", "my-account": "Dashboard", "kpi-dashboards": "KPI Dashboards", "system-settings": "Admin",
     "masters": "Masters", "company-branch-entry": "Masters", "company-branch-records": "Masters", "part-entry": "Masters", "process-entry": "Masters",
     "grade-entry": "Masters", "reference-entry": "Masters", "employee-entry": "Masters",
     "user-access": "Admin", "email-settings": "Admin", "deployment-diagnostics": "Admin", "master-import": "Masters", "standards-entry": "Masters",
@@ -438,6 +451,7 @@ PAGE_TITLE_TO_PATH = {
     "MetLAB Report": "metlab-entry", "MetLAB Records": "metlab-records",
     "Bend Test Report": "bend-test-entry", "Bend Test Records": "bend-test-records", "Bend Test Reports": "bend-test-report",
     "Global Search": "global-search",
+    "KPI Dashboards": "kpi-dashboards", "System Settings": "system-settings",
 }
 
 
@@ -463,14 +477,14 @@ ROUTE_PERMISSION_MODULE = {
     "npd-process-flow":"NPD_APQP","npd-status":"NPD_APQP","apqp":"NPD_APQP","qc-tools":"QC_CALCULATION_TOOLS","qc-calculation-records":"QC_CALCULATION_TOOLS",
     "complaints-home":"COMPLAINT_MANAGEMENT","customer-complaint":"COMPLAINT_MANAGEMENT","supplier-complaint":"COMPLAINT_MANAGEMENT","customer-complaint-register":"COMPLAINT_MANAGEMENT","supplier-complaint-register":"COMPLAINT_MANAGEMENT","complaint-email-settings":"COMPLAINT_MANAGEMENT","complaint-analysis":"COMPLAINT_MANAGEMENT","complaint-records":"COMPLAINT_MANAGEMENT",
     "calibration-validation":"CALIBRATION_VALIDATION","standard-room-inspection":"CALIBRATION_VALIDATION",
-    "user-access":"USER_ACCESS","email-settings":"USER_ACCESS","deployment-diagnostics":"USER_ACCESS",
+    "user-access":"USER_ACCESS","email-settings":"USER_ACCESS","deployment-diagnostics":"USER_ACCESS","system-settings":"USER_ACCESS",
 }
 # Android stable-navigation mode uses Streamlit's own page router and sidebar.
 # The sidebar is collapsed by default on phones and page changes remain inside
 # the same authenticated Streamlit session. No JavaScript click bridge is used.
 if android_streamlit_nav:
     _mobile_group_order = (
-        "Dashboard", "Masters", "Supply Chain", "RMTC", "Inward", "OSP",
+        "Dashboard", "KPI Dashboards", "Masters", "Supply Chain", "RMTC", "Inward", "OSP",
         "Inspections", "NPD & APQP", "QC Calculation Tools", "Complaints",
         "Calibration & Validation", "Records", "Reports", "Search", "Templates", "Admin",
     )
@@ -496,31 +510,41 @@ log_route_view(current_path, current_permission_module, nav.title)
 QUALITY_HEADER_MODULES = {"RMTC", "Inward", "OSP", "QC Calculation Tools", "Complaints", "Calibration & Validation", "Inspections"}
 quality_active_module = current_module if current_module in QUALITY_HEADER_MODULES else "Inspections"
 HEADER_NAV = (
-    (PAGE_BY_PATH["dashboard"], "Dashboard", "Dashboard"),
+    (PAGE_BY_PATH["dashboard"], "Home", "Dashboard"),
+    (PAGE_BY_PATH["kpi-dashboards"], "KPIs", "KPI Dashboards"),
     (PAGE_BY_PATH["masters"], "Masters", "Masters"),
-    (PAGE_BY_PATH["supply-chain-home"], "Supply Chain", "Supply Chain"),
+    (PAGE_BY_PATH["supply-chain-home"], "Supply", "Supply Chain"),
     (PAGE_BY_PATH["inspection-home"], "Quality", quality_active_module),
-    (PAGE_BY_PATH["global-search"], "Search", "Search"),
     (PAGE_BY_PATH["reports-home"], "Reports", "Reports"),
     (PAGE_BY_PATH["records-center"], "Records", "Records"),
     (PAGE_BY_PATH["user-access"], "Admin", "Admin"),
 )
+# R13 restructured layout: the left rail is grouped by business area. Rows whose
+# page is None are group headings (rendered as small captions, not links).
 RAIL_NAV = (
+    (None, "Overview", "", ""),
     (PAGE_BY_PATH["dashboard"], "Dashboard", "Dashboard", ":material/home:"),
+    (PAGE_BY_PATH["kpi-dashboards"], "KPI Dashboards", "KPI Dashboards", ":material/insights:"),
+    (PAGE_BY_PATH["global-search"], "Search & AI", "Search", ":material/search:"),
+    (None, "Master Data", "", ""),
     (PAGE_BY_PATH["masters"], "Masters", "Masters", ":material/database:"),
+    (None, "Procurement", "", ""),
     (PAGE_BY_PATH["supply-chain-home"], "Supply Chain", "Supply Chain", ":material/local_shipping:"),
+    (None, "Quality", "", ""),
     (PAGE_BY_PATH["rmtc-entry"], "RMTC", "RMTC", ":material/fact_check:"),
     (PAGE_BY_PATH["inward-entry"], "Inward", "Inward", ":material/input:"),
+    (PAGE_BY_PATH["inspection-home"], "Inspections", "Inspections", ":material/verified_user:"),
     (PAGE_BY_PATH["osp-home"], "OSP", "OSP", ":material/factory:"),
-    (PAGE_BY_PATH["inspection-home"], "Quality", "Inspections", ":material/verified_user:"),
-    (PAGE_BY_PATH["npd-status"], "NPD / APQP", "NPD & APQP", ":material/timeline:"),
-    (PAGE_BY_PATH["qc-tools"], "QC Tools", "QC Calculation Tools", ":material/calculate:"),
     (PAGE_BY_PATH["complaints-home"], "Complaints", "Complaints", ":material/support_agent:"),
     (PAGE_BY_PATH["calibration-validation"], "Calibration", "Calibration & Validation", ":material/straighten:"),
-    (PAGE_BY_PATH["global-search"], "Search", "Search", ":material/search:"),
-    (PAGE_BY_PATH["records-center"], "Records", "Records", ":material/description:"),
+    (None, "Engineering", "", ""),
+    (PAGE_BY_PATH["npd-status"], "NPD / APQP", "NPD & APQP", ":material/timeline:"),
+    (PAGE_BY_PATH["qc-tools"], "QC Tools", "QC Calculation Tools", ":material/calculate:"),
+    (None, "Reports & Records", "", ""),
     (PAGE_BY_PATH["reports-home"], "Reports", "Reports", ":material/assessment:"),
+    (PAGE_BY_PATH["records-center"], "Records", "Records", ":material/description:"),
     (PAGE_BY_PATH["templates"], "Templates", "Templates", ":material/download:"),
+    (None, "Administration", "", ""),
     (PAGE_BY_PATH["user-access"], "Admin", "Admin", ":material/groups:"),
 )
 

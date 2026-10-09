@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R12",
+  "release_revision": "R13",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -416,5 +416,11 @@
     "pdf_excel_export_bytes_session_memo",
     "ai_key_setup_script_scripts_set_ai_key_sh",
     "global_search_tabs_plain_labels"
+  ],
+  "r13_changes": [
+    "admin_system_settings_ai_assistant_mode_all_admin_only_disabled",
+    "top_10_kpi_dashboards_live",
+    "grouped_left_rail_layout_overview_masterdata_procurement_quality_engineering_reports_admin",
+    "header_menu_home_kpis_masters_supply_quality_reports_records_admin"
   ]
 }

@@ -324,8 +324,17 @@ def render() -> None:
 
     repo = Repository()
     profile = current_profile() or {}
+    from core.system_settings import ai_allowed, get_ai_mode
+    ai_mode, _source = get_ai_mode(repo)
+    if not ai_allowed(ai_mode, profile):
+        # R13: System Administrator has disabled the AI Assistant (or limited it to admins).
+        st.caption("AI Assistant is switched off by the System Administrator. Keyword Search is available below.")
+        _render_keyword_search(repo, profile)
+        return
     ai_tab, keyword_tab = st.tabs(["✨ AI Assistant", "🔎 Keyword Search"])
     with ai_tab:
+        if ai_mode == "ADMIN_ONLY":
+            st.caption("AI Assistant is currently enabled for System Administrators only (Admin → System Settings).")
         _render_ai_assistant(repo, profile)
     with keyword_tab:
         _render_keyword_search(repo, profile)

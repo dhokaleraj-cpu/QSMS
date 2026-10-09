@@ -1352,6 +1352,9 @@ def apply_teal_material_theme() -> None:
     html body [class*="st-key-qcms_rail_active_"] div[data-testid="stPageLink"] a{background:var(--tm-primary)!important;box-shadow:0 2px 6px rgba(15,139,141,.30)!important;}
     html body [class*="st-key-qcms_rail_active_"] div[data-testid="stPageLink"] a *{color:#fff!important;fill:#fff!important;}
 
+    html body .qcms-rail-head{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--tm-muted);padding:12px 12px 3px;}
+    html body .qcms-rail-head:first-child{padding-top:4px;}
+
     /* Module sub-menu */
     html body [class*="st-key-fsi_module_subnav_"]{border:1px solid var(--tm-line)!important;border-radius:var(--tm-r)!important;overflow:hidden!important;}
     html body [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a:hover{color:var(--tm-primary)!important;background:var(--tm-soft)!important;}
@@ -1499,6 +1502,10 @@ def render_left_navigation(current_module: str, items: Sequence[tuple[Any, str, 
         return
     with st.container(border=False, key="fsi_left_rail"):
         for page, label, module_name, icon in items:
+            if page is None:
+                # R13 grouped rail: section heading, not a link.
+                st.markdown(f'<div class="qcms-rail-head">{safe(label)}</div>', unsafe_allow_html=True)
+                continue
             slug = re.sub(r"[^a-z0-9]+", "_", label.casefold()).strip("_")
             key = f"qcms_rail_active_{slug}" if module_name == current_module else f"qcms_rail_{slug}"
             with st.container(border=False, key=key):

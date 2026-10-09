@@ -1,0 +1,6 @@
+QCMS 4.14.49 R13 validation — 9 October 2026
+Full suite: 725 passed, 4 failed (environment-only: pyarrow/PyMuPDF unavailable in preparation sandbox; same 4 fail on unmodified R9; pass on Mac .venv).
+R13 tests: 15 passed (10 dashboards build with data and empty, KPI values, admin AI switch incl. non-admin refusal and secret override, search gating, navigation registration, KPI page renders in preview mode).
+Visual check (preview mode, headless Chromium): KPI overview + calibration dashboard charts, grouped left rail, header.
+Compile PASS; readiness none missing; phase verification zero errors.
+Not performed: live Supabase data KPIs, GitHub push, Streamlit Cloud deploy, APK build.
