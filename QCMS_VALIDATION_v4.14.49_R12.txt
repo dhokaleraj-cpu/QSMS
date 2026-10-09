@@ -1,0 +1,6 @@
+QCMS 4.14.49 R12 validation — 9 October 2026
+Full suite: 710 passed, 4 failed (environment-only: pyarrow/PyMuPDF wheels unavailable in preparation sandbox; same 4 fail on unmodified R9; pass on the Mac .venv).
+R12 tests: 6 passed (theme render via AppTest, read cache hit/invalidate/require_live, export memo, background logging, live duplicate reads, key script TOML output and rejection). R11: 16 passed. R10: 7 passed.
+Visual check: app run in preview mode with headless Chromium — dashboard, Part Master entry (expanded), Global Search; teal theme, icons and expander titles verified.
+Compile PASS; readiness none missing; phase verification zero errors.
+Not performed: live Supabase timing measurement, live Claude call, GitHub push, APK build.

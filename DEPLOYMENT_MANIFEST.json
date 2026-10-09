@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R10",
+  "release_revision": "R12",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -397,5 +397,24 @@
     "direct_production_rejects_forging_po",
     "forging_po_qty_within_order_balance",
     "forging_source_grid_shows_forger_and_heat_code"
+  ],
+  "r11_changes": [
+    "part_master_exact_duplicate_block_case_space_dash_insensitive",
+    "part_master_4_digit_similarity_warn_confirm",
+    "part_master_save_modal_popup",
+    "part_master_admin_only_delete_entry_and_records",
+    "global_search_ai_assistant_claude_read_only_permission_aware",
+    "ai_reports_excel_csv_charts",
+    "design_concepts_preview_10"
+  ],
+  "r12_changes": [
+    "design_07_teal_material_theme_app_wide_and_login",
+    "repository_session_read_cache_45s_cleared_on_every_write",
+    "duplicate_checks_force_live_reads",
+    "activity_logging_background_thread",
+    "employee_link_refresh_memo_30s",
+    "pdf_excel_export_bytes_session_memo",
+    "ai_key_setup_script_scripts_set_ai_key_sh",
+    "global_search_tabs_plain_labels"
   ]
 }

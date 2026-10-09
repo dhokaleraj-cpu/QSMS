@@ -24,6 +24,6 @@ def test_high_contrast_export_shipment_theme_is_streamlit_wrapper_safe():
 
 def test_streamlit_theme_matches_export_shipment_background():
     config = (ROOT / ".streamlit" / "config.toml").read_text()
-    assert any(token in config for token in ('primaryColor = "#315F79"', 'primaryColor = "#1884D8"', 'primaryColor = "#0A68AC"'))
-    assert 'backgroundColor = "#F1F3F5"' in config or 'backgroundColor = "#F8FBFE"' in config or 'backgroundColor = "#EFEFEF"' in config
-    assert 'textColor = "#1E2A33"' in config or 'textColor = "#121820"' in config or 'textColor = "#343434"' in config
+    assert any(token in config for token in ('primaryColor = "#315F79"', 'primaryColor = "#1884D8"', 'primaryColor = "#0A68AC"', 'primaryColor = "#0F8B8D"'))
+    assert 'backgroundColor = "#F1F3F5"' in config or 'backgroundColor = "#F8FBFE"' in config or 'backgroundColor = "#EFEFEF"' in config or 'backgroundColor = "#F1F6F6"' in config
+    assert 'textColor = "#1E2A33"' in config or 'textColor = "#121820"' in config or 'textColor = "#343434"' in config or 'textColor = "#173233"' in config

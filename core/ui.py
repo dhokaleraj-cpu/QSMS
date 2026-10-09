@@ -1299,6 +1299,129 @@ def apply_global_style() -> None:
     }
     </style>
     """, unsafe_allow_html=True)
+    apply_teal_material_theme()
+
+
+# QCMS R12 — DESIGN CONCEPT 07 "TEAL MATERIAL" (approved by user 9 Oct 2026).
+# Applied LAST so it overrides the earlier maroon/charcoal palette without
+# removing the historical CSS contracts that regression tests protect.
+TEAL_MATERIAL_THEME = {
+    "primary": "#0F8B8D", "primary_dark": "#0B6E70", "primary_soft": "#E3F2F2",
+    "bg": "#F1F6F6", "panel": "#FFFFFF", "text": "#173233", "muted": "#5C7778",
+    "line": "#D5E4E4", "line_strong": "#B5CFCF", "radius": "16px", "radius_small": "10px",
+}
+
+
+def apply_teal_material_theme() -> None:
+    t = TEAL_MATERIAL_THEME
+    css = r"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap');
+    :root{
+      --tm-primary:%(primary)s;--tm-primary-dark:%(primary_dark)s;--tm-soft:%(primary_soft)s;
+      --tm-bg:%(bg)s;--tm-panel:%(panel)s;--tm-text:%(text)s;--tm-muted:%(muted)s;
+      --tm-line:%(line)s;--tm-line-strong:%(line_strong)s;--tm-r:%(radius)s;--tm-rs:%(radius_small)s;
+      --tm-font:Roboto,"Segoe UI",Arial,sans-serif;
+      --qcms-red:%(primary)s;--qcms-red-dark:%(primary_dark)s;--qcms-maroon:%(primary_dark)s;--qcms-maroon-dark:%(primary_dark)s;
+      --qcms-v4135-maroon:%(primary_dark)s;--qcms-v4135-maroon-dark:%(primary_dark)s;
+    }
+    html body .stApp,html body [data-testid="stAppViewContainer"],html body .main{background:var(--tm-bg)!important;font-family:var(--tm-font)!important;color:var(--tm-text)!important;}
+    html body .stApp p,html body .stApp label,html body .stApp input,html body .stApp textarea,
+    html body .stApp span:not([data-testid="stIconMaterial"]):not(.material-symbols-rounded):not(.material-icons){font-family:var(--tm-font)!important;}
+
+    /* Top bar: teal */
+    html body div.st-key-fsi_shell,html body [class~="st-key-fsi_shell"]{
+      background:linear-gradient(90deg,var(--tm-primary-dark),var(--tm-primary))!important;
+      border-radius:0 0 var(--tm-r) var(--tm-r)!important;box-shadow:0 2px 10px rgba(15,139,141,.18)!important;
+    }
+    html body .fsi-user-avatar{color:var(--tm-primary)!important;}
+    html body .fsi-logo-card{border-radius:var(--tm-rs)!important;}
+    html body [class*="st-key-qcms_header_nav_active_"] div[data-testid="stPageLink"] a{background:rgba(255,255,255,.18)!important;border-radius:999px!important;box-shadow:none!important;}
+    html body [class*="st-key-qcms_header_nav_"] div[data-testid="stPageLink"] a:hover{border-radius:999px!important;}
+    html body [class*="st-key-qcms_header_exit"] .stButton>button{border-radius:999px!important;}
+
+    /* Left rail: white card with teal active pill */
+    html body div.st-key-fsi_left_rail,html body [class~="st-key-fsi_left_rail"]{
+      background:var(--tm-panel)!important;border:1px solid var(--tm-line)!important;border-radius:var(--tm-r)!important;padding:8px 6px 12px!important;
+    }
+    html body [class*="st-key-qcms_rail_"] div[data-testid="stPageLink"] a{
+      color:#24494A!important;border-bottom:0!important;border-radius:999px!important;margin:2px 0!important;min-height:38px!important;
+    }
+    html body [class*="st-key-qcms_rail_"] div[data-testid="stPageLink"] a *{color:#24494A!important;fill:#24494A!important;}
+    html body [class*="st-key-qcms_rail_"] div[data-testid="stPageLink"] a:hover{background:var(--tm-soft)!important;}
+    html body [class*="st-key-qcms_rail_active_"] div[data-testid="stPageLink"] a{background:var(--tm-primary)!important;box-shadow:0 2px 6px rgba(15,139,141,.30)!important;}
+    html body [class*="st-key-qcms_rail_active_"] div[data-testid="stPageLink"] a *{color:#fff!important;fill:#fff!important;}
+
+    /* Module sub-menu */
+    html body [class*="st-key-fsi_module_subnav_"]{border:1px solid var(--tm-line)!important;border-radius:var(--tm-r)!important;overflow:hidden!important;}
+    html body [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a:hover{color:var(--tm-primary)!important;background:var(--tm-soft)!important;}
+    html body [class*="st-key-fsi_module_subnav_"] div[data-testid="stPageLink"] a[aria-current="page"]{color:var(--tm-primary)!important;background:var(--tm-soft)!important;box-shadow:inset 0 -3px 0 var(--tm-primary)!important;}
+
+    /* Titles, section bars, stage expanders */
+    html body .fsi-page-head{border-radius:var(--tm-r)!important;border:1px solid var(--tm-line)!important;padding:8px 14px!important;}
+    html body .fsi-page-title,html body .fsi-page-title *{color:var(--tm-text)!important;}
+    html body .fsi-section-bar,html body .fsi-section-bar *{color:var(--tm-primary-dark)!important;}
+    html body .fsi-section-bar{border:1px solid var(--tm-line)!important;border-left:4px solid var(--tm-primary)!important;border-radius:var(--tm-rs)!important;}
+    html body [data-testid="stExpander"] details,html body [class*="st-key-fsi_stage_"] [data-testid="stExpander"] details{
+      border:1px solid var(--tm-line)!important;border-radius:var(--tm-r)!important;box-shadow:0 1px 3px rgba(23,50,51,.06)!important;
+    }
+    html body [data-testid="stExpander"] details summary,html body [class*="st-key-fsi_stage_"] [data-testid="stExpander"] details summary{border-bottom:1px solid var(--tm-line)!important;}
+    html body [data-testid="stExpander"] details summary p,html body [data-testid="stExpander"] details summary span,
+    html body [data-testid="stExpander"] details summary strong,html body [data-testid="stExpander"] details summary div,
+    html body [class*="st-key-fsi_stage_"] [data-testid="stExpander"] details summary p{color:var(--tm-primary-dark)!important;}
+    html body [data-testid="stExpander"] details summary svg{color:var(--tm-primary)!important;fill:var(--tm-primary)!important;}
+    html body .stApp [data-testid="stExpander"] details summary [data-testid="stMarkdownContainer"] p,
+    html body .stApp [class*="st-key-fsi_stage_"] [data-testid="stExpander"] details summary [data-testid="stMarkdownContainer"] p{color:var(--tm-primary-dark)!important;}
+    html body [class*="st-key-fsi_stage_"] [data-testid="stExpander"] details>div{background:#F7FBFB!important;}
+
+    /* Fields: rounded, teal focus */
+    html body div[data-testid="stTextInput"] div[data-baseweb="input"],html body div[data-testid="stNumberInput"] div[data-baseweb="input"],
+    html body div[data-testid="stDateInput"] div[data-baseweb="input"],html body div[data-testid="stTimeInput"] div[data-baseweb="input"],
+    html body div[data-testid="stSelectbox"] div[data-baseweb="select"]>div,html body div[data-testid="stMultiSelect"] div[data-baseweb="select"]>div,
+    html body div[data-testid="stTextArea"] textarea,html body [data-testid="stFileUploaderDropzone"]{
+      border:1.25px solid var(--tm-line-strong)!important;border-radius:var(--tm-rs)!important;
+    }
+    html body div[data-baseweb="input"]:focus-within,html body div[data-baseweb="select"]>div:focus-within,html body div[data-testid="stTextArea"] textarea:focus{
+      border-color:var(--tm-primary)!important;box-shadow:0 0 0 3px rgba(15,139,141,.15)!important;
+    }
+
+    /* Buttons */
+    html body .stButton>button,html body .stDownloadButton>button,html body .stFormSubmitButton>button,html body .stLinkButton>a{
+      border-radius:999px!important;border:1px solid var(--tm-line-strong)!important;background:#fff!important;color:var(--tm-text)!important;
+    }
+    html body .stButton>button:hover,html body .stDownloadButton>button:hover,html body .stFormSubmitButton>button:hover{background:var(--tm-soft)!important;border-color:var(--tm-primary)!important;}
+    html body .stButton>button:not([kind="primary"]) *,html body .stFormSubmitButton>button:not([kind="primary"]) *,html body .stLinkButton>a *{color:var(--tm-text)!important;}
+    html body .stDownloadButton>button{border-color:var(--tm-primary)!important;color:var(--tm-primary-dark)!important;}
+    html body .stDownloadButton>button *{color:var(--tm-primary-dark)!important;fill:var(--tm-primary-dark)!important;}
+    html body .stDownloadButton>button[kind="primary"] *{color:#fff!important;fill:#fff!important;}
+    html body .stButton>button[kind="primary"],html body .stFormSubmitButton>button[kind="primary"],html body .stDownloadButton>button[kind="primary"]{
+      background:var(--tm-primary)!important;border-color:var(--tm-primary)!important;color:#fff!important;box-shadow:0 2px 6px rgba(15,139,141,.25)!important;
+    }
+    html body .stButton>button[kind="primary"]:hover,html body .stFormSubmitButton>button[kind="primary"]:hover{background:var(--tm-primary-dark)!important;}
+    html body .stButton>button[kind="primary"] *,html body .stFormSubmitButton>button[kind="primary"] *{color:#fff!important;}
+
+    /* KPI / status / dashboard cards */
+    html body .fsi-kpi,html body .fsi-status-card,html body .fsi-dashboard-card,html body [class*="st-key-master_card_"],
+    html body [class*="st-key-dashboard_card_"],html body .qcms-pocket,html body .fsi-flow-step,html body .supply-order-card{
+      border:1px solid var(--tm-line)!important;border-radius:var(--tm-r)!important;box-shadow:0 1px 3px rgba(23,50,51,.06)!important;
+    }
+    html body .fsi-kpi-value,html body .fsi-status-card .value{color:var(--tm-primary)!important;}
+    html body .fsi-kpi-label,html body .fsi-status-card .label{color:var(--tm-muted)!important;}
+
+    /* Tables */
+    html body .qcms-enterprise-table-wrap,html body div[data-testid="stDataFrame"],html body div[data-testid="stDataEditor"]{
+      border:1px solid var(--tm-line)!important;border-radius:var(--tm-rs)!important;overflow:hidden!important;
+    }
+    html body .qcms-enterprise-table thead th{background:var(--tm-soft)!important;color:var(--tm-primary-dark)!important;}
+
+    /* Tabs, pills, alerts, dialog */
+    html body [data-baseweb="tab-list"] button[aria-selected="true"]{color:var(--tm-primary)!important;}
+    html body [data-baseweb="tab-highlight"]{background:var(--tm-primary)!important;}
+    html body div[data-testid="stAlert"]{border-radius:var(--tm-rs)!important;}
+    html body div[role="dialog"]{border-radius:var(--tm-r)!important;}
+    </style>
+    """ % t
+    st.markdown(css, unsafe_allow_html=True)
 
 
 def render_public_brand() -> None:
@@ -1624,8 +1747,38 @@ def delete_success_popup(message: str = "Selected record deleted successfully.",
     st.success(text)
 
 
+def save_success_dialog(title: str, message: str) -> None:
+    """Queue a modal save-confirmation popup shown after the next rerun (R11).
+
+    The modal stays on screen until the user clicks OK, so the confirmation is not
+    missed the way a short toast can be.
+    """
+    st.session_state["_qcms_pending_save_dialog"] = {
+        "title": str(title or "Saved").strip() or "Saved",
+        "message": str(message or "Record saved successfully.").strip(),
+    }
+
+
+def _show_save_dialog(payload: dict) -> None:
+    title = str(payload.get("title") or "Saved")
+    message = str(payload.get("message") or "Record saved successfully.")
+
+    @st.dialog(title)
+    def _dialog() -> None:
+        st.markdown(f"### ✅ {title}")
+        st.markdown(message)
+        if st.button("OK", type="primary", width="stretch", key="qcms_save_dialog_ok"):
+            st.rerun()
+
+    _dialog()
+
+
 def render_pending_popups() -> None:
     """Render queued save/delete confirmations after Streamlit reruns."""
+    dialog_payload = st.session_state.pop("_qcms_pending_save_dialog", None)
+    if isinstance(dialog_payload, dict):
+        st.toast(str(dialog_payload.get("title") or "Saved"), icon="✅")
+        _show_save_dialog(dialog_payload)
     save_message = st.session_state.pop("_qcms_pending_save_popup", None)
     delete_message = st.session_state.pop("_qcms_pending_delete_popup", None)
     if save_message:

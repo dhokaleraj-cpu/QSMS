@@ -24,8 +24,9 @@ from core.raw_source import effective_link, INHERITED_FIELDS
 from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
 from core.permissions import is_admin
+from core.part_identity import find_part_conflicts
 from core.selection_labels import customer_standard_label, material_grade_label, part_label, party_label, process_label
-from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
+from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_dialog, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
 
 DRAWING_TYPES = (
     ("FINISH_DRAWING", "Finish Drawing"),
@@ -519,6 +520,66 @@ def _render_metallurgical_requirements(
         except Exception as exc:
             st.error(str(exc))
 
+PART_USAGE_TABLES: tuple[tuple[str, str], ...] = (
+    ("supply_customer_orders", "Customer Orders / Schedules"),
+    ("supply_purchase_order_items", "Purchase Order items"),
+    ("rmtc_approvals", "RMTC"),
+    ("inward_lots", "Material Inward"),
+    ("production_batches", "Production / FSI Batches"),
+    ("osp_jobs", "OSP Jobs"),
+    ("inspection_reports", "Dimensional Reports"),
+    ("lab_tests", "MetLAB / Bend Test Reports"),
+    ("quality_complaints", "Quality Complaints"),
+    ("npd_orders", "NPD Orders"),
+    ("ppap_projects", "PPAP / APQP Projects"),
+)
+
+
+def part_usage_counts(repo: Repository, part_id: str) -> list[dict[str, Any]]:
+    """Count transactions that reference a Part (shown before an admin delete)."""
+    usage: list[dict[str, Any]] = []
+    for table, label in PART_USAGE_TABLES:
+        try:
+            count = len(repo.select(table, eq={"part_id": part_id}, limit=1000))
+        except Exception:
+            continue
+        if count:
+            usage.append({"Linked Register": label, "Records": count if count < 1000 else "1000+"})
+    return usage
+
+
+def _admin_part_delete_panel(repo: Repository, part_row: dict, *, key: str) -> bool:
+    """R11: Administrator-only permanent deletion of a Part Master record."""
+    admin = is_admin(current_profile())
+    part_id = str(part_row.get("id") or "")
+    if not part_id:
+        return False
+    if not admin:
+        st.caption("Part Master deletion is restricted to the QCMS Administrator. Set Status to INACTIVE to stop using a Part.")
+        return False
+    usage = part_usage_counts(repo, part_id)
+    help_text = "Administrator only. Permanent deletion requires your current QCMS password. Part child rows (raw material, requirements, grade links) are removed by the database where configured."
+    if usage:
+        help_text += " WARNING: this Part is referenced by the transactions listed below; the database will refuse the delete while they exist. Delete/reverse those transactions first, or set the Part INACTIVE."
+    with st.container():
+        if usage:
+            st.warning(f"Part {part_row.get('part_number')} is used in {len(usage)} register(s).")
+            portal_table(pd.DataFrame(usage), hide_index=True, width="stretch")
+        deleted = password_delete_panel(
+            repo=repo,
+            table="parts",
+            rows=[part_row],
+            labeler=lambda r: f"{r.get('part_number')} · {r.get('fsi_part_number') or '-'} · {r.get('part_name')}",
+            key=key,
+            can_delete=admin,
+            title="Delete Selected Part Master (Administrator)",
+            help_text=help_text,
+        )
+    if deleted:
+        st.session_state.pop("edit_part_id", None)
+    return deleted
+
+
 def render_entry() -> None:
     subpage_navigation(
         ("masters", "Back to Masters", ":material/arrow_back:"),
@@ -562,6 +623,11 @@ def render_entry() -> None:
                 help="A Part may use multiple approved grades. Each supplier Raw Material row below selects the applicable grade.",
             ) if grade_map else []
             remarks = st.text_area("Remarks", value=str(existing.get("remarks") or ""), height=80)
+            not_duplicate_confirmed = st.checkbox(
+                "Not a duplicate — I have reviewed the similar Part Numbers (4+ matching digits) shown after Save",
+                value=False, key=f"part_not_duplicate_{header_scope}",
+                help="Exact duplicates (ignoring case, spaces and dashes) are always blocked. When 4 or more consecutive digits match an existing Part Number / FSI Part Number, QCMS lists the similar Parts and asks you to confirm before saving.",
+            )
             submitted = st.form_submit_button("Save Part Master", type="primary", disabled=not writable, width="stretch")
         if submitted:
             try:
@@ -571,13 +637,19 @@ def render_entry() -> None:
                 if existing:
                     payload["drawing_number"] = existing.get("drawing_number")
                     payload["drawing_revision"] = existing.get("drawing_revision")
-                for row in repo.select("parts", limit=5000):
-                    if existing and str(row.get("id")) == str(existing.get("id")):
-                        continue
-                    if str(row.get("part_number") or "").strip().casefold() == part_number.strip().casefold():
-                        raise ValueError("Duplicate Part Number is not allowed.")
-                    if fsi_part_number.strip() and str(row.get("fsi_part_number") or "").strip().casefold() == fsi_part_number.strip().casefold():
-                        raise ValueError("Duplicate FSI Part Number is not allowed.")
+                # R11 duplicate control: exact (case/space/dash-insensitive) is blocked;
+                # 4+ consecutive matching digits must be reviewed and confirmed.
+                conflicts = find_part_conflicts(part_number, fsi_part_number, repo.select("parts", limit=10000, require_live=True), exclude_id=existing.get("id") if existing else None)
+                if conflicts["exact"]:
+                    portal_table(pd.DataFrame(conflicts["exact"]).drop(columns=["id"], errors="ignore"), hide_index=True, width="stretch")
+                    reasons = " ".join(str(r.get("Reason") or "") for r in conflicts["exact"])
+                    if reasons.startswith("FSI Part Number") and "Part Number " + part_number.strip() not in reasons:
+                        raise ValueError("Duplicate FSI Part Number is not allowed. The same identity already exists in Part Master (case, spaces and dashes are ignored).")
+                    raise ValueError("Duplicate Part Number is not allowed. The same identity already exists in Part Master (case, spaces and dashes are ignored).")
+                if conflicts["similar"] and not not_duplicate_confirmed:
+                    st.warning(f"{len(conflicts['similar'])} existing Part(s) share 4 or more consecutive digits with this Part Number / FSI Part Number. Review them below.")
+                    portal_table(pd.DataFrame(conflicts["similar"]).drop(columns=["id"], errors="ignore"), hide_index=True, width="stretch")
+                    raise ValueError("Possible duplicate Part. If this is a different Part, tick 'Not a duplicate' and click Save Part Master again.")
                 saved = repo.update("parts", str(existing["id"]), payload) if existing else repo.insert("parts", payload)
                 saved_part_id = str(saved["id"])
                 # Multiple approved grades: parts.material_grade_id stays the primary grade
@@ -598,7 +670,9 @@ def render_entry() -> None:
                 for gid, link in by_grade.items():
                     if gid not in wanted_grades:
                         repo.update("part_material_grade_links", str(link["id"]), {"is_primary": False, "status": "INACTIVE"})
-                st.session_state["edit_part_id"] = saved_part_id; save_success_popup("Part Master saved successfully.", queue_for_rerun=True); st.rerun()
+                st.session_state["edit_part_id"] = saved_part_id
+                save_success_dialog("Part Master Saved", f"Part Master saved successfully.\n\nPart Number: **{part_number.strip()}**" + (f"  ·  FSI Part Number: **{fsi_part_number.strip()}**" if fsi_part_number.strip() else "") + f"\n\nDescription: {part_name.strip()}" + ("\n\nSaved after similar-number review (confirmed not a duplicate)." if conflicts["similar"] else ""))
+                st.rerun()
             except Exception as exc:
                 st.error(str(exc))
 
@@ -606,6 +680,8 @@ def render_entry() -> None:
             st.info("Save the Part header first. Drawing attachments and requirement grids will then become available.")
             return
         part_id = str(existing["id"])
+        if _admin_part_delete_panel(repo, existing, key=f"delete_part_entry_{part_id}"):
+            st.rerun()
 
     with stage_section("B", 'CONTROLLED DRAWINGS', 'Drawing Number, Revision Number and Revision Date are revision-controlled. Uploading a new revision automatically makes the previous revision INACTIVE; old drawings remain downloadable in history.', key="part_master_render_entry_b"):
         drawing_rows = [
@@ -1242,16 +1318,7 @@ def render_records() -> None:
             )
             st.download_button("Download Part Master PDF", pdf, file_name=f"Part_Master_{selected_row.get('part_number')}.pdf", mime="application/pdf", width="stretch")
         with c3:
-            if password_delete_panel(
-                repo=repo,
-                table="parts",
-                rows=[selected_row],
-                labeler=lambda r: f"{r.get('part_number')} · {r.get('part_name')}",
-                key=f"delete_part_{selected}",
-                can_delete=perms["can_archive"],
-                title="Delete Selected Part Master",
-                help_text="Permanent deletion is allowed only when no protected transaction depends on this Part. Otherwise set the Part to Inactive.",
-            ):
+            if _admin_part_delete_panel(repo, selected_row, key=f"delete_part_{selected}"):
                 st.rerun()
     else:
         st.info("No Part Master records match the search.")

@@ -98,6 +98,34 @@ def _cache_key(kind: str, table: str, payload: Mapping[str, Any]) -> str:
     return f"{kind}:{table}:" + json.dumps(_json_ready(payload), sort_keys=True, default=str)
 
 
+def _fresh_cache_seconds() -> float:
+    """R12 performance: seconds a live read is reused within one user session.
+
+    Streamlit reruns the whole page after every widget change. Without this cache
+    every rerun repeated dozens of Supabase reads (the main cause of slow field
+    entry). Any write made through Repository clears the cache immediately, so a
+    user always sees their own saves; other users' changes appear within this
+    window. Set QCMS_READ_CACHE_SECONDS = 0 in secrets to disable.
+    """
+    try:
+        from core.config import _secret
+        return max(0.0, float(_secret("QCMS_READ_CACHE_SECONDS", "45") or 45))
+    except Exception:
+        return 45.0
+
+
+def _fresh_cache() -> dict[str, Any]:
+    return st.session_state.setdefault("_qcms_repository_fresh_cache", {})
+
+
+def invalidate_read_cache() -> None:
+    """Clear the per-session fresh read cache (called after every write)."""
+    try:
+        st.session_state["_qcms_repository_fresh_cache"] = {}
+    except Exception:
+        pass
+
+
 class Repository:
     """RLS-aware Supabase repository with retry and session cache for transient reads."""
 
@@ -175,6 +203,11 @@ class Repository:
             "search_term": search_term, "order_by": order_by, "desc": desc, "limit": limit,
         }
         key = _cache_key("select", table, params)
+        ttl = 0.0 if require_live else _fresh_cache_seconds()
+        if ttl > 0:
+            hit = _fresh_cache().get(key)
+            if hit is not None and (time.monotonic() - hit[0]) < ttl:
+                return deepcopy(hit[1])
 
         def execute() -> list[dict]:
             query = self.client.table(table).select("*")
@@ -200,6 +233,11 @@ class Repository:
         try:
             rows = self._retry(execute, operation=f"reading {table}")
             self._read_cache()[key] = deepcopy(rows)
+            if ttl > 0:
+                cache = _fresh_cache()
+                if len(cache) > 600:
+                    cache.clear()
+                cache[key] = (time.monotonic(), deepcopy(rows))
             return rows
         except RuntimeError:
             if require_live:
@@ -238,6 +276,7 @@ class Repository:
             return row
         if self.client is None:
             raise RuntimeError("Supabase session is unavailable.")
+        invalidate_read_cache()
         response = self._retry(lambda: self.client.table(table).insert(row).execute(), operation=f"inserting {table}")
         if not response.data:
             raise RuntimeError(f"Insert into {table} returned no data.")
@@ -258,6 +297,7 @@ class Repository:
             raise KeyError(f"{table} record {record_id} was not found.")
         if self.client is None:
             raise RuntimeError("Supabase session is unavailable.")
+        invalidate_read_cache()
         response = self._retry(
             lambda: self.client.table(table).update(changes).eq("id", record_id).execute(),
             operation=f"updating {table}",
@@ -275,6 +315,7 @@ class Repository:
             return
         if self.client is None:
             raise RuntimeError("Supabase session is unavailable.")
+        invalidate_read_cache()
         self._retry(lambda: self.client.table(table).delete().eq("id", record_id).execute(), operation=f"deleting {table}")
         log_activity("DELETE", table_name=table, row_id=str(record_id))
 
@@ -307,6 +348,7 @@ class Repository:
             return deepcopy(prepared)
         if self.client is None:
             raise RuntimeError("Supabase session is unavailable.")
+        invalidate_read_cache()
         response = self._retry(
             lambda: self.client.table(table).upsert(prepared, on_conflict=on_conflict).execute(),
             operation=f"bulk upserting {table}",
@@ -344,6 +386,7 @@ class Repository:
             raise RuntimeError("RPC functions are unavailable in controlled preview mode.")
         if self.client is None:
             raise RuntimeError("Supabase session is unavailable.")
+        invalidate_read_cache()
         response = self._retry(
             lambda: self.client.rpc(function_name, _json_ready(params or {})).execute(),
             operation=f"running {function_name}",

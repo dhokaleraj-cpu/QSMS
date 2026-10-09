@@ -954,3 +954,10 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
     out = BytesIO(); writer.write(out)
     return _watermark_pdf_bytes(out.getvalue(), _po_approval_watermark(header))
 
+
+
+# R12 performance: reuse identical export bytes across Streamlit reruns.
+from core.export_cache import session_memo_bytes as _session_memo_bytes
+purchase_order_pdf_bytes = _session_memo_bytes(purchase_order_pdf_bytes)
+purchase_order_excel_bytes = _session_memo_bytes(purchase_order_excel_bytes)
+batch_purchase_order_pdf_bytes = _session_memo_bytes(batch_purchase_order_pdf_bytes)

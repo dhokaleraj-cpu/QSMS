@@ -351,6 +351,11 @@ def refresh_current_employee_link() -> dict[str, Any] | None:
     profile = current_profile() or {}
     if client is None or not profile:
         return None
+    # R12 performance: reuse the live link for 30 s inside one session so page
+    # reruns do not repeat two Supabase round-trips on every widget change.
+    memo = st.session_state.get("_qcms_employee_link_memo")
+    if isinstance(memo, dict) and memo.get("profile_id") == str(profile.get("id") or "") and (time.monotonic() - float(memo.get("at") or 0)) < 30:
+        return dict(memo.get("row") or {}) or None
     employee_id = ""
     try:
         response = client.rpc("qcms_current_login_employee_id").execute()
@@ -386,6 +391,7 @@ def refresh_current_employee_link() -> dict[str, Any] | None:
         "is_top_level_authority": bool(row.get("is_top_level_authority")),
     })
     st.session_state["profile"] = refreshed
+    st.session_state["_qcms_employee_link_memo"] = {"profile_id": str(profile.get("id") or ""), "at": time.monotonic(), "row": dict(row)}
     return row
 
 
@@ -684,6 +690,21 @@ def render_login() -> None:
         }
         </style>
         """,
+        unsafe_allow_html=True,
+    )
+    # R12 Design 07: teal login colours (override block; original contract kept above).
+    st.markdown(
+        """<style>
+        .stApp{background:#F1F6F6!important;}
+        html body div[data-testid="stAppViewContainer"],html body section[data-testid="stMain"]{background:#F1F6F6!important;}
+        html body .qcms-login-welcome,html body .qcms-login-form-title{color:#0F8B8D!important;}
+        html body div[data-testid="stForm"] div[data-baseweb="input"]:focus-within,
+        html body div[data-testid="stForm"] [data-baseweb="base-input"]:focus-within{border-color:#0F8B8D!important;box-shadow:0 0 0 3px rgba(15,139,141,.15)!important;}
+        html body div[data-testid="stForm"] .stFormSubmitButton>button{background:#0F8B8D!important;border-color:#0B6E70!important;border-radius:999px!important;}
+        html body div[data-testid="stForm"] .stFormSubmitButton>button:hover{background:#0B6E70!important;border-color:#095A5C!important;}
+        html body div[data-testid="stForm"],html body div.st-key-qcms_login_image_card{border-radius:16px!important;border-color:#D5E4E4!important;}
+        html body div[data-testid="stForm"] div[data-baseweb="input"]{border-radius:10px!important;}
+        </style>""",
         unsafe_allow_html=True,
     )
 

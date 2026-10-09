@@ -61,5 +61,5 @@ def test_minimal_metallic_ui_contract():
     ):
         assert token in ui
     assert "4111-ZOHO-VISIBLE-SHELL" in auth
-    assert 'backgroundColor = "#F8FBFE"' in config or 'backgroundColor = "#EFEFEF"' in config
-    assert 'primaryColor = "#1884D8"' in config
+    assert 'backgroundColor = "#F8FBFE"' in config or 'backgroundColor = "#EFEFEF"' in config or 'backgroundColor = "#F1F6F6"' in config
+    assert 'primaryColor = "#1884D8"' in config or 'primaryColor = "#0F8B8D"' in config

@@ -1655,7 +1655,7 @@ class SupplyChainService:
         expected = tuple(normalize_match(payload.get(k)) for k in fields)
         if not any(expected):
             return
-        for row in self.repo.select(table, limit=10000):
+        for row in self.repo.select(table, limit=10000, require_live=True):
             if str(row.get("id")) == str(record_id or ""):
                 continue
             if tuple(normalize_match(row.get(k)) for k in fields) == expected:

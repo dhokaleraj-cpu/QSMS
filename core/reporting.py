@@ -1692,3 +1692,16 @@ def qc_calculation_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         record_number=str(record.get("calculation_number") or ""),
         subtitle="Stored quality calculation result",
     )
+
+
+# R12 performance: reuse identical export bytes across Streamlit reruns.
+from core.export_cache import session_memo_bytes as _session_memo_bytes
+quality_record_excel_bytes = _session_memo_bytes(quality_record_excel_bytes)
+report_pdf_bytes = _session_memo_bytes(report_pdf_bytes)
+rmtc_record_pdf_bytes = _session_memo_bytes(rmtc_record_pdf_bytes)
+metlab_record_pdf_bytes = _session_memo_bytes(metlab_record_pdf_bytes)
+dimensional_record_pdf_bytes = _session_memo_bytes(dimensional_record_pdf_bytes)
+material_inward_record_pdf_bytes = _session_memo_bytes(material_inward_record_pdf_bytes)
+controlled_record_pdf_bytes = _session_memo_bytes(controlled_record_pdf_bytes)
+npd_pending_status_pdf_bytes = _session_memo_bytes(npd_pending_status_pdf_bytes)
+qc_calculation_pdf_bytes = _session_memo_bytes(qc_calculation_pdf_bytes)

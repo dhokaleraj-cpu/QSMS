@@ -87,6 +87,27 @@ def module_for_table(table: str | None) -> str | None:
     return _TABLE_MODULES.get(str(table).strip())
 
 
+_ACTIVITY_EXECUTOR = None
+
+
+def _submit_background(task) -> None:
+    global _ACTIVITY_EXECUTOR
+    try:
+        if _ACTIVITY_EXECUTOR is None:
+            from concurrent.futures import ThreadPoolExecutor
+            _ACTIVITY_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="qcms-activity")
+        _ACTIVITY_EXECUTOR.submit(_quiet, task)
+    except Exception:
+        _quiet(task)
+
+
+def _quiet(task) -> None:
+    try:
+        task()
+    except Exception:
+        pass
+
+
 def log_activity(
     action: str,
     *,
@@ -103,17 +124,17 @@ def log_activity(
         return
     try:
         client = get_session_client()
-        client.rpc(
-            "qcms_log_user_activity",
-            {
-                "p_action": str(action or "").upper(),
-                "p_module_key": module_key or module_for_table(table_name),
-                "p_section_key": section_key,
-                "p_table_name": table_name,
-                "p_row_id": str(row_id or "") or None,
-                "p_details": dict(details or {}),
-            },
-        ).execute()
+        params = {
+            "p_action": str(action or "").upper(),
+            "p_module_key": module_key or module_for_table(table_name),
+            "p_section_key": section_key,
+            "p_table_name": table_name,
+            "p_row_id": str(row_id or "") or None,
+            "p_details": dict(details or {}),
+        }
+        # R12 performance: telemetry is sent in the background so page views,
+        # section views and saves never wait for the audit round-trip.
+        _submit_background(lambda: client.rpc("qcms_log_user_activity", params).execute())
     except Exception:
         # Audit logging is deliberately non-blocking; row-change database triggers
         # remain the authoritative mutation audit even if this optional activity

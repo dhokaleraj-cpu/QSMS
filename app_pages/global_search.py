@@ -221,12 +221,117 @@ def _open_result(result: dict) -> None:
     _open_selected_record_for_edit(table, row)
 
 
+AI_EXAMPLE_PROMPTS: tuple[str, ...] = (
+    "Show all open Purchase Orders by supplier with total value",
+    "Which parts have the most quality complaints this year? Chart it",
+    "List Material Inward received in the last 30 days with heat numbers",
+    "Monthly trend of MetLAB reports by result for 2026",
+    "Overdue Forging Orders with expected date and supplier",
+    "Everything about Part 40256626",
+)
+
+
+def _ai_settings() -> tuple[str, str]:
+    from core.config import _secret
+    from core.ai_assistant import DEFAULT_MODEL
+    return _secret("ANTHROPIC_API_KEY", "").strip(), (_secret("QCMS_AI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL)
+
+
+def _render_ai_report(report, index: int) -> None:
+    import plotly.express as px
+    from core.ai_assistant import report_excel_bytes
+    section_bar(report.title.upper(), f"{len(report.frame):,} row(s) · source: {report.dataset}")
+    frame = report.frame
+    chart = report.chart or {}
+    x, y, kind = chart.get("x"), chart.get("y"), str(chart.get("type") or "bar")
+    if x in frame.columns and y in frame.columns and not frame.empty:
+        try:
+            data = frame.copy(); data[y] = pd.to_numeric(data[y], errors="coerce")
+            fig = px.pie(data, names=x, values=y) if kind == "pie" else (px.line(data.sort_values(x), x=x, y=y, markers=True) if kind == "line" else px.bar(data, x=x, y=y))
+            fig.update_layout(height=360, margin=dict(l=10, r=10, t=30, b=10), title=report.title)
+            st.plotly_chart(fig, width="stretch", key=f"qcms_ai_chart_{index}")
+        except Exception as exc:
+            st.caption(f"Chart could not be drawn: {exc}")
+    display = frame.copy()
+    for column in display.columns:
+        if display[column].map(lambda v: isinstance(v, (dict, list))).any():
+            display[column] = display[column].astype(str)
+    portal_table(display, hide_index=True, width="stretch", height=min(520, 90 + max(1, len(display)) * 35))
+    safe_name = "".join(ch if ch.isalnum() else "_" for ch in report.title)[:60] or "QCMS_AI_Report"
+    c1, c2 = st.columns(2, gap="small")
+    try:
+        c1.download_button("Download Excel", report_excel_bytes(report), file_name=f"{safe_name}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch", key=f"qcms_ai_xlsx_{index}")
+    except Exception as exc:
+        c1.caption(f"Excel export unavailable: {exc}")
+    c2.download_button("Download CSV", display.to_csv(index=False).encode("utf-8"), file_name=f"{safe_name}.csv", mime="text/csv", width="stretch", key=f"qcms_ai_csv_{index}")
+
+
+def _render_ai_assistant(repo: Repository, profile: dict) -> None:
+    from core.ai_assistant import QCMSAIAssistant
+    api_key, model = _ai_settings()
+    st.caption("Ask in plain English for any information, analysis or report. The assistant is read-only and uses only the modules you are permitted to view.")
+    if not api_key:
+        st.info(
+            "**AI Assistant is not switched on yet.** One-time setup (about 3 minutes):\n\n"
+            "1. Open **console.anthropic.com**, sign in, add a little credit under **Billing**, then **API Keys → Create Key** and copy it (starts with `sk-ant-`).\n"
+            "2. On the Mac, open **Terminal** and run:  `bash /Users/dhokaleraj/QSMS/scripts/set_ai_key.sh`  — paste the key and press Enter.\n"
+            "3. Restart QCMS (Ctrl+C in the Terminal running it, then start it again).\n"
+            "4. For the online app: Streamlit Cloud → your app → **⋮ → Settings → Secrets** → paste the two lines the script printed → **Save**.\n\n"
+            "Keyword Search (next tab) works without a key."
+        )
+        return
+    history: list[dict] = st.session_state.setdefault("_qcms_ai_history", [])
+    pick = st.pills("Examples", list(AI_EXAMPLE_PROMPTS), selection_mode="single", key="qcms_ai_example", label_visibility="collapsed")
+    if pick and st.session_state.get("_qcms_ai_last_pick") != pick:
+        st.session_state["_qcms_ai_last_pick"] = pick
+        st.session_state["qcms_ai_prompt"] = pick
+    with st.form("qcms_ai_form", border=False):
+        prompt = st.text_area("Ask QCMS AI", key="qcms_ai_prompt", height=90, placeholder="e.g. Rejection quantity by supplier for forging receipts in Q3 2026 with a bar chart", label_visibility="collapsed")
+        c1, c2 = st.columns([8, 2], gap="small")
+        asked = c1.form_submit_button("Ask AI", icon=":material/auto_awesome:", type="primary", width="stretch")
+        cleared = c2.form_submit_button("Clear", icon=":material/delete_sweep:", width="stretch")
+    if cleared:
+        st.session_state["_qcms_ai_history"] = []; history = []
+    if asked and str(prompt or "").strip():
+        permission_cache: dict[str, bool] = {}
+        def can_view(module_key: str) -> bool:
+            if module_key not in permission_cache:
+                permission_cache[module_key] = bool(module_permissions(profile, module_key, repo).get("can_view"))
+            return permission_cache[module_key]
+        user_label = " ".join(v for v in (str(profile.get("full_name") or ""), str(profile.get("role") or "")) if v).strip()
+        assistant = QCMSAIAssistant(repo, SEARCH_SOURCES, can_view, api_key=api_key, model=model, user_label=user_label)
+        with st.spinner("QCMS AI is reading your permitted data and preparing the answer..."):
+            answer = assistant.ask(str(prompt), history=[{"prompt": h["prompt"], "answer": h["answer"]} for h in history])
+        history.append({"prompt": str(prompt).strip(), "answer": answer.text, "reports": answer.reports, "error": answer.error, "steps": answer.tool_calls, "model": answer.model})
+        st.session_state["_qcms_ai_history"] = history[-10:]
+    for index, turn in reversed(list(enumerate(st.session_state.get("_qcms_ai_history") or []))):
+        with st.container(border=True):
+            st.markdown(f"**You:** {turn['prompt']}")
+            if turn.get("error"):
+                st.error(turn["error"])
+            if turn.get("answer"):
+                st.markdown(turn["answer"])
+            for r_index, report in enumerate(turn.get("reports") or []):
+                _render_ai_report(report, index * 100 + r_index)
+            if turn.get("steps"):
+                with st.expander(f"How this answer was built ({len(turn['steps'])} data step(s) · {turn.get('model')})", expanded=False):
+                    st.json(turn["steps"], expanded=False)
+
+
 def render() -> None:
     subpage_navigation(("dashboard", "Dashboard", ":material/arrow_back:"), ("records-center", "Records Centre", ":material/table_view:"))
-    page_header("Global Search", "Search Part, Heat, RMTC, Batch, Supplier, Customer, PO, Report and other QCMS records from one place.", "Permission-aware")
+    page_header("Global Search", "Ask QCMS AI in plain English, or search Part, Heat, RMTC, Batch, Supplier, Customer, PO, Report and other records.", "AI + Permission-aware")
 
     repo = Repository()
     profile = current_profile() or {}
+    ai_tab, keyword_tab = st.tabs(["✨ AI Assistant", "🔎 Keyword Search"])
+    with ai_tab:
+        _render_ai_assistant(repo, profile)
+    with keyword_tab:
+        _render_keyword_search(repo, profile)
+
+
+def _render_keyword_search(repo: Repository, profile: dict) -> None:
     incoming = str(st.session_state.pop("_qcms_global_search_pending_query", "") or "").strip()
     if incoming:
         st.session_state["qcms_global_search_page_query"] = incoming

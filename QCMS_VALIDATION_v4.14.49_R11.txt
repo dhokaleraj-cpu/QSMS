@@ -1,0 +1,6 @@
+QCMS 4.14.49 R11 validation — 9 October 2026
+Full Python suite: 704 passed, 4 failed (environment-only: pyarrow and PyMuPDF native wheels unavailable in the preparation sandbox; identical failures on unmodified R9/R10 source; pass on the Mac .venv).
+R11 tests: 16 passed (duplicate exact/similar, self-exclusion, save modal via AppTest, admin delete wiring, AI permission filter, read-only tool set, filters/labels/aggregation/month trend, Excel export, tool loop with fake API, missing key).
+R10 tests: 7 passed.
+Compile PASS. Readiness: none missing. Phase verification PASS, zero errors.
+Not performed: live Claude API call (no key in sandbox), live Supabase delete/save, GitHub push, APK build.
