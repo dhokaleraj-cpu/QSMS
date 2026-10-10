@@ -24,6 +24,59 @@ from core.selection_labels import employee_label, party_label
 from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
 
 
+BEND_PHOTO_LABELS = {
+    1: "Load Vs CHT graph (compression test report image)",
+    2: "Bend Test Part photograph (bent part showing the angle)",
+    3: "Plating surface close-up after bend (peeling / flaking check)",
+    4: "Additional bend test evidence (optional)",
+}
+BEND_PHOTO_CAPTIONS = {1: "Load Vs CHT", 2: "Bend Test Part / Bend Angle", 3: "Plating Surface Condition", 4: "Additional Bend Test Evidence"}
+
+
+def _bend_report_fields(existing: dict | None, *, key: str) -> dict:
+    """R15: Bend Test report header / baking / result fields (stored in results.bend_report)."""
+    saved = dict(dict((existing or {}).get("results") or {}).get("bend_report") or {})
+    section_bar("BEND TEST REPORT DETAILS", "Printed exactly in the Bend Test Report layout. Leave blank to use the values from Part Master / layout readings.")
+    def t(label, field, col, default=""):
+        return col.text_input(label, value=str(saved.get(field) or default), key=f"{key}_bend_{field}")
+    c = st.columns(4, gap="small")
+    out = {
+        "baking_batch_no": t("Baking Batch No.", "baking_batch_no", c[0]),
+        "batch_quantity_pcs": t("Batch Quantity (Pcs)", "batch_quantity_pcs", c[1]),
+        "part_diameter": t("Part Diameter", "part_diameter", c[2]),
+        "ht_batch_no": t("HT Batch No.", "ht_batch_no", c[3]),
+    }
+    c = st.columns(4, gap="small")
+    out.update({
+        "fsi_batch_no": t("FSI Batch No.", "fsi_batch_no", c[0]),
+        "steel_heat_code": t("Steel Heat Code", "steel_heat_code", c[1]),
+        "customer_name": t("Customer Name (print)", "customer_name", c[2]),
+        "material_used": t("Material Used (print)", "material_used", c[3]),
+    })
+    st.caption("Baking / Aging — Specification and Actual")
+    c = st.columns(3, gap="small")
+    out.update({
+        "baking_temp_spec": t("Baking Temp. · Specification", "baking_temp_spec", c[0]),
+        "baking_time_spec": t("Baking Time · Specification", "baking_time_spec", c[1]),
+        "hardness_spec": t("Base Metal Hardness · Specification", "hardness_spec", c[2]),
+    })
+    c = st.columns(3, gap="small")
+    out.update({
+        "baking_temp_actual": t("Baking Temp. · Actual", "baking_temp_actual", c[0]),
+        "baking_time_actual": t("Baking Time · Actual", "baking_time_actual", c[1]),
+        "hardness_actual": t("Base Metal Hardness · Actual", "hardness_actual", c[2]),
+    })
+    st.caption("Bend Test Results")
+    c = st.columns(4, gap="small")
+    out.update({
+        "load_kn": t("Load Vs CHT (kN at peak)", "load_kn", c[0]),
+        "cht_mm": t("CHT (mm)", "cht_mm", c[1]),
+        "bend_status": c[2].selectbox("Bend Test Status", ["", "Passed", "Failed"], index=["", "Passed", "Failed"].index(str(saved.get("bend_status") or "")) if str(saved.get("bend_status") or "") in {"", "Passed", "Failed"} else 0, key=f"{key}_bend_status", help="Blank = from final decision"),
+        "surface_remark": t("Remark under part photo", "surface_remark", c[3], "No Peeling, Flaking on the plating surface."),
+    })
+    return {k: v.strip() if isinstance(v, str) else v for k, v in out.items()}
+
+
 def _maps(service: InspectionService):
     parts = {str(row["id"]): row for row in service.parts()}
     parties = {str(row["id"]): row for row in service.parties()}
@@ -501,9 +554,9 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             raw_plans = _filter_plans_by_method(service, service.raw_material_metlab_plans(part_id, approved_only=True), required_inspection_method)
             if not raw_plans:
                 if required_inspection_method == BEND_TEST:
-                    st.warning("No APPROVED Bend Test layout exists in Layout Master for this Part. Create/approve a METLAB layout with Inspection Method / Sub Category = Bend Test first.")
+                    st.warning("No APPROVED Bend Test layout exists in Layout Master for this Part. Create/approve it in Bend Test → Bend Test Layout Master first.")
                     if (st.session_state.get("_qsms_pages") or {}).get("inspection-layout-entry"):
-                        st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Bend Test Layout", icon=":material/add:", width="stretch")
+                        st.page_link(st.session_state["_qsms_pages"].get("bend-layout-entry") or st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Bend Test Layout", icon=":material/add:", width="stretch")
                 else:
                     st.warning("No approved Raw Material Inward MetLAB layout exists in Layout Master for this Part. Create/approve a MetLAB layout in Inspection Layout Master. Part Master Final Metallurgical Requirements are intentionally not available here.")
                 return
@@ -516,9 +569,9 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             plan = candidates[0] if candidates else None
         if not plan:
             if required_inspection_method == BEND_TEST:
-                st.warning("No APPROVED Bend Test layout is available for this Part and selected report stage. Create/approve a METLAB layout with Inspection Method / Sub Category = Bend Test in Inspection Layout Master, then return here.")
+                st.warning("No APPROVED Bend Test layout is available for this Part and selected report stage. Create/approve it in Bend Test → Bend Test Layout Master, then return here.")
                 if (st.session_state.get("_qsms_pages") or {}).get("inspection-layout-entry"):
-                    st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Bend Test Layout", icon=":material/add:", width="stretch")
+                    st.page_link(st.session_state["_qsms_pages"].get("bend-layout-entry") or st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Bend Test Layout", icon=":material/add:", width="stretch")
             elif scope == "OSP_STAGE":
                 st.warning("The Part Master OSP MetLAB requirements exist, but the controlled OSP MetLAB layout has not been generated/approved. Use Part Master → OSP Inspection for MetLAB → Create / Update OSP MetLAB Inspection Layout.")
             elif scope == "FINAL_DISPATCH_STAGE":
@@ -579,6 +632,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
         spec_ref, reference_documents = _reference_controls(catalog, existing, current_spec_ref, key=f"standalone_metlab_ref_{existing_id or 'new'}_{plan_id}")
 
     bend_angle = st.number_input("Part Bend Angle (degrees)", min_value=0.0, max_value=360.0, value=dict((existing or {}).get("results") or {}).get("bend_angle_degrees"), step=1.0, key=f"standalone_bend_angle_{existing_id or 'new'}") if inspection_method == BEND_TEST else None
+    bend_report = _bend_report_fields(existing, key=f"standalone_{existing_id or 'new'}") if inspection_method == BEND_TEST else {}
     photo_title = "BEND TEST EVIDENCE / PHOTOGRAPHS" if inspection_method == BEND_TEST else "MICROSTRUCTURE PHOTOGRAPHS"
     photo_help = "Photo 1 can hold the machine / Load-vs-CHT test report; remaining photos can show bend angle and plating condition." if inspection_method == BEND_TEST else "Up to four report photographs with controlled titles."
     with stage_section("B", photo_title, photo_help, key="metlab_standalone_photos"):
@@ -587,8 +641,8 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             with col:
                 if (existing or {}).get(f"microstructure_image_{slot}_path"):
                     st.caption(f"Photo {slot} already uploaded")
-                micro_files.append(st.file_uploader(("Part Bend Photograph" if inspection_method == BEND_TEST and slot == 2 else f"Photo {slot}"), type=MICROSTRUCTURE_IMAGE_TYPES, key=f"standalone_metlab_photo_{slot}_{existing_id or 'new'}"))
-                bend_defaults = {1: "Load Vs CHT / Machine Test Report", 2: "Bend Test Part / Bend Angle", 3: "Plating Surface Condition", 4: "Additional Bend Test Evidence"}
+                micro_files.append(st.file_uploader((("Part Bend Photograph · " + BEND_PHOTO_LABELS[slot]) if inspection_method == BEND_TEST and slot == 2 else (BEND_PHOTO_LABELS[slot] if inspection_method == BEND_TEST else f"Photo {slot}")), type=MICROSTRUCTURE_IMAGE_TYPES, key=f"standalone_metlab_photo_{slot}_{existing_id or 'new'}"))
+                bend_defaults = BEND_PHOTO_CAPTIONS
                 default_caption = bend_defaults.get(slot, "") if inspection_method == BEND_TEST else ""
                 micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or default_caption), key=f"standalone_metlab_caption_{slot}_{existing_id or 'new'}"))
 
@@ -641,7 +695,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                 catalog.remember_many("metlab.reference_document", reference_documents)
                 result_payload = {
                     "rows": layout_rows, "chemistry_rows": [], "jominy_rows": [], "requirement_rows": [],
-                    "inspection_method": inspection_method, "reference_documents": reference_documents, "bend_angle_degrees": bend_angle,
+                    "inspection_method": inspection_method, "reference_documents": reference_documents, "bend_angle_degrees": bend_angle, "bend_report": bend_report,
                     "conclusion_remark": conclusion_remark.strip() or None, **case_depth_results,
                 }
                 saved = service.save_metlab(payload, result_payload, existing_id or None)
@@ -801,9 +855,9 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
             plan = next((row for row in all_plans if str(row.get("id")) == plan_id), {})
         else:
             if bend_mode:
-                st.error("No APPROVED Bend Test layout is available in Layout Master for this Part. Create/approve a METLAB layout with Inspection Method / Sub Category = Bend Test first.")
+                st.error("No APPROVED Bend Test layout is available in Layout Master for this Part. Create/approve it in Bend Test → Bend Test Layout Master first.")
                 if (st.session_state.get("_qsms_pages") or {}).get("inspection-layout-entry"):
-                    st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Bend Test Layout", icon=":material/add:", width="stretch")
+                    st.page_link(st.session_state["_qsms_pages"].get("bend-layout-entry") or st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Bend Test Layout", icon=":material/add:", width="stretch")
             else:
                 st.error("No approved Raw Material Inward MetLAB layout is available in Layout Master for this Part. Create and approve a MetLAB layout before entering the Raw Material Inward report. Part Master Final Metallurgical Requirements cannot be used for this stage.")
             return
@@ -843,6 +897,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
         # Legacy test marker: MICROSTRUCTURE PHOTOS
     linked_photo_title = "BEND TEST EVIDENCE / PHOTOGRAPHS" if inspection_method == BEND_TEST else "MICROSTRUCTURE PHOTOGRAPHS"
     bend_angle = st.number_input("Part Bend Angle (degrees)", min_value=0.0, max_value=360.0, value=dict((existing or {}).get("results") or {}).get("bend_angle_degrees"), step=1.0, key=f"linked_bend_angle_{(existing or {}).get('id') or inward_id}") if inspection_method == BEND_TEST else None
+    bend_report = _bend_report_fields(existing, key=f"linked_{(existing or {}).get('id') or inward_id}") if inspection_method == BEND_TEST else {}
     linked_photo_help = "Photo 1 can hold the machine / Load-vs-CHT test report; remaining photos can show bend angle and plating condition." if inspection_method == BEND_TEST else "Upload up to four microstructure images and enter a title for each photograph."
     with stage_section("B", linked_photo_title, linked_photo_help, key="metlab_report_render_entry_b"):
         micro_cols = st.columns(4, gap="small")
@@ -853,9 +908,9 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
                 existing_path = str((existing or {}).get(f"microstructure_image_{slot}_path") or "")
                 if existing_path:
                     st.caption(f"Photo {slot} already uploaded")
-                photo_label = ("Part Bend Photograph" if slot == 2 else f"Bend Test Evidence {slot}") if inspection_method == BEND_TEST else f"Microstructure Photo {slot}"
+                photo_label = (("Part Bend Photograph · " + BEND_PHOTO_LABELS[slot]) if slot == 2 else BEND_PHOTO_LABELS[slot]) if inspection_method == BEND_TEST else f"Microstructure Photo {slot}"
                 micro_files.append(st.file_uploader(photo_label, type=MICROSTRUCTURE_IMAGE_TYPES, key=f"microstructure_{slot}_{existing_id or 'new'}"))
-                bend_defaults = {1: "Load Vs CHT / Machine Test Report", 2: "Bend Test Part / Bend Angle", 3: "Plating Surface Condition", 4: "Additional Bend Test Evidence"}
+                bend_defaults = BEND_PHOTO_CAPTIONS
                 default_caption = bend_defaults.get(slot, "") if inspection_method == BEND_TEST else ""
                 micro_captions.append(st.text_input(f"Photo {slot} Title", value=str((existing or {}).get(f"microstructure_caption_{slot}") or default_caption), key=f"micro_caption_{slot}_{existing_id or 'new'}"))
 
@@ -907,7 +962,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
                 catalog.remember_many("metlab.reference_document", reference_documents)
                 results = {
                     "rows": layout_rows, "chemistry_rows": chemistry_rows, "jominy_rows": jominy_rows, "requirement_rows": requirement_rows,
-                    "inspection_method": inspection_method, "reference_documents": reference_documents, "bend_angle_degrees": bend_angle,
+                    "inspection_method": inspection_method, "reference_documents": reference_documents, "bend_angle_degrees": bend_angle, "bend_report": bend_report,
                     "conclusion_remark": conclusion_remark.strip() or None, **case_depth_results,
                 }
                 with st.spinner("Saving RMTC verification sections…"):

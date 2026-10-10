@@ -257,8 +257,12 @@ class InspectionService:
             _layout_token(layout_name, "LAYOUT", 36),
         ))
 
-    def scope_plan(self, payload: Mapping[str, Any], *, exclude_id: str | None = None) -> dict | None:
-        """Return another current layout in the same controlled Part/Stage/Process scope."""
+    def scope_plan(self, payload: Mapping[str, Any], *, exclude_id: str | None = None, inspection_method: str | None = None) -> dict | None:
+        """Return another current layout in the same controlled Part/Stage/Process scope.
+
+        R15: for METLAB layouts the Inspection Method (General MetLAB vs Bend Test) is part
+        of the scope, so a Bend Test layout can exist beside the general MetLAB layout of
+        the same Part + Stage + Process (separate Bend Test Layout Master)."""
         part_id = str(payload.get("part_id") or "")
         if not part_id:
             return None
@@ -279,6 +283,9 @@ class InspectionService:
                 str(row.get("requirement_scope") or "GENERAL").upper(),
             )
             if scope == wanted:
+                if wanted[2] == "METLAB" and inspection_method:
+                    if self.plan_inspection_method(str(row.get("id") or "")) != str(inspection_method).upper():
+                        continue
                 return row
         return None
 
@@ -369,14 +376,29 @@ class InspectionService:
         process = (self.repo.get("processes", str(controlled.get("process_id") or "")) or {}) if controlled.get("process_id") else {}
         stage = (self.repo.get("inspection_stages", str(controlled.get("inspection_stage_id") or "")) or {}) if controlled.get("inspection_stage_id") else {}
         controlled["plan_number"] = self.auto_plan_number(part, process, stage, str(controlled.get("layout_name") or ""))
+        is_bend = str(controlled.get("layout_type") or "").upper() == "METLAB" and inspection_method_from_rows([dict(r) for r in rows], " ".join(str(controlled.get(k) or "") for k in ("layout_name", "report_title"))) == BEND_TEST
+        if is_bend and "BEND" not in controlled["plan_number"].upper():
+            controlled["plan_number"] = f"{controlled['plan_number']}-BEND"
+        # R15: the DB unique index (uq_qcms_inspection_plan_current_scope) includes inspection_method,
+        # so a Bend Test layout is stored as its own scope beside the general MetLAB layout.
+        controlled["inspection_method"] = BEND_TEST if is_bend else "GENERAL"
         if str(controlled.get("requirement_scope") or "GENERAL").upper() != "FINAL_METALLURGICAL" and str(controlled.get("status") or "DRAFT").upper() in {"DRAFT", "APPROVAL_PENDING", "APPROVED"}:
-            duplicate = self.scope_plan(controlled, exclude_id=plan_id)
+            method = inspection_method_from_rows([dict(r) for r in rows], " ".join(str(controlled.get(k) or "") for k in ("layout_name", "report_title"))) if str(controlled.get("layout_type") or "").upper() == "METLAB" else None
+            duplicate = self.scope_plan(controlled, exclude_id=plan_id, inspection_method=method)
             if duplicate:
                 raise ValueError(
                     "Only one current inspection layout is allowed for the same Part + Inspection Stage + Process + Layout Type. "
                     f"Edit or supersede existing layout {duplicate.get('plan_number') or duplicate.get('layout_name') or duplicate.get('id')} instead of creating another one."
                 )
-        plan = self.repo.update("inspection_plans", plan_id, controlled) if plan_id else self.repo.insert("inspection_plans", controlled)
+        try:
+            plan = self.repo.update("inspection_plans", plan_id, controlled) if plan_id else self.repo.insert("inspection_plans", controlled)
+        except Exception as exc:
+            if is_bend and "uq_qcms_inspection_plan_current_scope" in str(exc):
+                raise ValueError(
+                    "The database still uses the old one-layout rule, so the Bend Test layout cannot sit beside the MetLAB layout yet. "
+                    "Ask the administrator to run the R15 SQL (supabase/migrations/20261010100000_qcms_r15_bend_layout_scope.sql) once in Supabase → SQL Editor, then save again."
+                ) from exc
+            raise
         pid = str(plan["id"])
         existing = {
             int(row.get("sequence_no") or 0): row
@@ -533,6 +555,7 @@ class InspectionService:
                 "bend_angle_degrees": angle,
                 "reference_documents": list(results.get("reference_documents") or []),
                 "conclusion_remark": results.get("conclusion_remark"),
+                "bend_report": {str(k): v for k, v in dict(results.get("bend_report") or {}).items() if v not in (None, "")},
                 "rows": [dict(row) for row in results.get("rows", [])],
                 "chemistry_rows": [dict(row) for row in results.get("chemistry_rows", [])],
                 "jominy_rows": [dict(row) for row in results.get("jominy_rows", [])],

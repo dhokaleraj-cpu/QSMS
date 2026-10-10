@@ -10,7 +10,11 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.MediaStore;
 import android.provider.Settings;
+import android.content.ContentValues;
+import android.webkit.WebResourceError;
+import android.widget.ProgressBar;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
@@ -30,6 +34,13 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 /**
+ * QCMS Mobile 1.1.0 (R15) — classic first-app architecture plus:
+ *  - camera option in every photo upload (bend test / microstructure / complaint photos),
+ *  - page-loading progress bar and an offline / server-waking retry screen,
+ *  - Clear cache & reload in the menu.
+ * All QCMS modules (Bend Test, KPI Dashboards, Email, AI Search, System Settings ...)
+ * come from the website menu, so every new QCMS release is available in the app at once.
+ *
  * QCMS Mobile 1.0.2 — First-App Architecture Recovery.
  *
  * This intentionally restores the original v0.1.0 design: one hardened WebView,
@@ -42,10 +53,12 @@ public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 701;
     private static final String PREFS = "qcms_mobile";
     private static final String PREF_URL = "qcms_url";
-    private static final String CLASSIC_UA = "QCMSClassicShell/1.0.2";
+    private static final String CLASSIC_UA = "QCMSClassicShell/1.0.2 QCMSApp/1.1.0";
 
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
+    private Uri cameraUri;
+    private ProgressBar progress;
     private SharedPreferences prefs;
 
     @Override
@@ -206,6 +219,11 @@ public class MainActivity extends Activity {
 
         root.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
 
+        progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setMax(100);
+        progress.setIndeterminate(false);
+        root.addView(progress, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4)));
+
         webView = new WebView(this);
         WebSettings ws = webView.getSettings();
         ws.setJavaScriptEnabled(true);
@@ -249,17 +267,56 @@ public class MainActivity extends Activity {
                 super.onPageFinished(view, loadedUrl);
                 CookieManager.getInstance().flush();
             }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request != null && request.isForMainFrame()) {
+                    String html = "<html><body style='font-family:sans-serif;padding:28px;color:#173233'>"
+                        + "<h2 style='color:#0B6E70'>QCMS is not reachable</h2>"
+                        + "<p>No internet connection, or the online QCMS server is waking up (this can take up to a minute after it was idle).</p>"
+                        + "<p><a href='" + prefs.getString(PREF_URL, "") + "' style='display:inline-block;background:#0B6E70;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none'>Try again</a></p>"
+                        + "</body></html>";
+                    view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+                }
+            }
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onProgressChanged(WebView view, int newProgress) {
+                if (progress != null) {
+                    progress.setProgress(newProgress);
+                    progress.setVisibility(newProgress >= 100 ? android.view.View.INVISIBLE : android.view.View.VISIBLE);
+                }
+            }
+
             @Override
             public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
                 fileCallback = filePathCallback;
                 Intent intent = fileChooserParams.createIntent();
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
+                Intent chooser = Intent.createChooser(intent, "Choose file or take photo");
+                cameraUri = null;
+                if (acceptsImages(fileChooserParams.getAcceptTypes())) {
+                    try {
+                        ContentValues values = new ContentValues();
+                        values.put(MediaStore.Images.Media.DISPLAY_NAME, "QCMS_" + System.currentTimeMillis() + ".jpg");
+                        values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                        cameraUri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                        if (cameraUri != null) {
+                            Intent camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                            camera.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
+                            camera.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                            chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{camera});
+                        }
+                    } catch (Exception ignored) {
+                        cameraUri = null;
+                    }
+                }
                 try {
-                    startActivityForResult(intent, FILE_CHOOSER_REQUEST);
+                    startActivityForResult(chooser, FILE_CHOOSER_REQUEST);
                 } catch (Exception ex) {
                     fileCallback = null;
                     Toast.makeText(MainActivity.this, "No file picker is available.", Toast.LENGTH_LONG).show();
@@ -298,18 +355,30 @@ public class MainActivity extends Activity {
         });
         settings.setOnClickListener(v -> new AlertDialog.Builder(this)
             .setTitle("QCMS Mobile")
-            .setItems(new String[]{"Change QCMS URL", "Open current URL in Chrome", "Android WebView settings"}, (dialog, which) -> {
+            .setItems(new String[]{"Change QCMS URL", "Open current URL in Chrome", "Clear cache & reload", "Android WebView settings"}, (dialog, which) -> {
                 if (which == 0) {
                     prefs.edit().remove(PREF_URL).apply();
                     showSetupScreen();
                 } else if (which == 1) {
                     startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(prefs.getString(PREF_URL, url))));
+                } else if (which == 2) {
+                    webView.clearCache(true);
+                    webView.loadUrl(prefs.getString(PREF_URL, url));
                 } else {
                     startActivity(new Intent(Settings.ACTION_WEBVIEW_SETTINGS));
                 }
             }).show());
 
         webView.loadUrl(url);
+    }
+
+    private static boolean acceptsImages(String[] types) {
+        if (types == null || types.length == 0) return true;
+        for (String type : types) {
+            String t = type == null ? "" : type.trim().toLowerCase(java.util.Locale.ROOT);
+            if (t.isEmpty() || t.startsWith("image") || t.equals("*/*") || t.equals(".jpg") || t.equals(".jpeg") || t.equals(".png")) return true;
+        }
+        return false;
     }
 
     @Override
@@ -323,7 +392,14 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == FILE_CHOOSER_REQUEST && fileCallback != null) {
             Uri[] results = null;
-            if (resultCode == Activity.RESULT_OK && data != null) {
+            boolean pickedFile = data != null && (data.getData() != null || data.getClipData() != null);
+            if (resultCode == Activity.RESULT_OK && !pickedFile && cameraUri != null) {
+                results = new Uri[]{cameraUri};
+            } else if (cameraUri != null) {
+                try { getContentResolver().delete(cameraUri, null, null); } catch (Exception ignored) { }
+            }
+            cameraUri = null;
+            if (resultCode == Activity.RESULT_OK && pickedFile) {
                 if (data.getClipData() != null) {
                     int count = data.getClipData().getItemCount();
                     results = new Uri[count];

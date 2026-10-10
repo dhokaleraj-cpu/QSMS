@@ -18,7 +18,7 @@ MOBILE_CODE="$(sed -n "s/^[[:space:]]*versionCode[[:space:]]*\([0-9][0-9]*\).*/\
 [ -n "$MOBILE_CODE" ] || fail "Unable to read Android versionCode."
 
 echo "============================================================"
-echo " QCMS Mobile v${MOBILE_VERSION} - FIRST APP RECOVERY"
+echo " QCMS Mobile v${MOBILE_VERSION} - R15 (camera upload, progress, offline retry)"
 echo "============================================================"
 echo "Project : $HERE"
 echo "Package : $PACKAGE"

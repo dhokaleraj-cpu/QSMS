@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R14",
+  "release_revision": "R15",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -433,5 +433,15 @@
     "startup_session_restore_guard",
     "repository_cache_memory_halved"
   ],
-  "r14_migration_file": "supabase/migrations/20261009100000_qcms_r14_personal_mail.sql"
+  "r14_migration_file": "supabase/migrations/20261009100000_qcms_r14_personal_mail.sql",
+  "r15_changes": [
+    "separate_bend_test_module_and_bend_layout_master",
+    "bend_layout_own_scope_inspection_method_in_unique_index",
+    "bend_test_report_pdf_customer_layout_with_part_photos",
+    "bend_report_header_fields",
+    "osp_finalize_reason_gate_checklist_login_approver",
+    "ai_assistant_free_providers_gemini_groq_plus_claude_openai",
+    "android_first_app_1_1_0_camera_upload_progress_offline_retry"
+  ],
+  "r15_migration": "supabase/migrations/20261010100000_qcms_r15_bend_layout_scope.sql"
 }

@@ -21,6 +21,55 @@ def _employee_map(service: InspectionService) -> dict[str, str]:
     return {str(r["id"]): f"{r.get('employee_code')} · {r.get('first_name')} {r.get('last_name')}" for r in service.employees()}
 
 
+GATE_STEPS = (
+    ("sample_dimensional", "Sample Dimensional", "dimensional_required"),
+    ("sample_metlab", "Sample MetLAB", "metlab_required"),
+    ("receipt_dimensional", "Receipt Dimensional", "dimensional_required"),
+    ("receipt_metlab", "Receipt MetLAB", "metlab_required"),
+)
+
+
+def osp_gate_checklist(job: dict) -> list[dict]:
+    """R15: plain-language status of every OSP quality-gate report for one OSP job."""
+    rows: list[dict] = []
+    for key, label, flag in GATE_STEPS:
+        required = job.get(flag)
+        if required is False:
+            continue
+        value = str(job.get(f"{key}_disposition") or "").upper()
+        if not value or value in {"NONE", "NOT_STARTED"}:
+            state = "Report not created"
+        elif value == "PENDING":
+            state = "Report saved · decision pending"
+        else:
+            state = f"Finalized · {value.title()}"
+        rows.append({"Gate Report": label, "Status": state, "Done": value not in {"", "NONE", "NOT_STARTED", "PENDING"}})
+    return rows
+
+
+def osp_finalize_blockers(*, existing: dict, can_approve: bool, disposition: str, validator: str, approver: str, login_employee_id: str, employees: dict[str, str]) -> list[str]:
+    """R15: every reason the Finalize OSP Decision button is disabled, in plain words."""
+    reasons: list[str] = []
+    if str(existing.get("status") or "").upper() == "FINAL":
+        who = employees.get(str(existing.get("approved_by_employee_id") or ""), "")
+        when = str(existing.get("approved_at") or existing.get("updated_at") or "")[:10]
+        reasons.append("This report is already FINAL" + (f" (approved by {who}" + (f" on {when}" if when else "") + ")" if who else "") + ". Nothing more to approve here — use Reopen for Edit only if a correction is needed.")
+        return reasons
+    if not can_approve:
+        reasons.append("Your role does not have Approve permission for this module. Ask the System Administrator to give Approve rights.")
+    if str(disposition or "PENDING").upper() == "PENDING":
+        reasons.append("Validation Decision is still PENDING — choose Accepted / Rejected / Hold / Reserve above and save the draft.")
+    if not validator:
+        reasons.append("Select Validated By.")
+    if not approver:
+        reasons.append("Select Approved By.")
+    elif login_employee_id and approver != login_employee_id:
+        reasons.append("Approved By must be your own login employee — the database only accepts approval from the person signed in.")
+    if not login_employee_id:
+        reasons.append("Your login is not linked to an Employee record. Ask the System Administrator to link your user to your employee code.")
+    return reasons
+
+
 def _job_label(row: dict) -> str:
     return (
         f"{row.get('material_out_number') or row.get('osp_job_number')} · RMTC {row.get('rmtc_number') or 'Opening / legacy'} · {row.get('osp_job_number')} · Part {row.get('part_number')} · "
@@ -259,10 +308,26 @@ def _render(report_type: str) -> None:
                 if password_delete_panel(repo=inspection.repo, table=report_table, rows=[existing], labeler=lambda row:f"{row.get('report_number')} · {_scope_label(scope)}", key=f"osp_delete_{report_type}_{scope}_{report_id}", can_delete=perms["can_archive"], title=f"Delete OSP {report_type.title()} Record", help_text="Requires current QCMS password and Delete/Archive permission. Downstream dependencies can block unsafe deletion."):
                     st.rerun()
             disposition_cards([{"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")}, {"label": "Decision", "value": existing.get("disposition")}, {"label": "Gate", "value": _scope_label(scope)}])
+            gate_rows = osp_gate_checklist(job)
+            if gate_rows:
+                st.markdown("**OSP Quality Gate Checklist**")
+                st.caption("The OSP batch is released only when every required report below is finalized. Open the pending report from OSP Dimensional / OSP MetLAB with the matching Inspection Stage.")
+                portal_table(pd.DataFrame([{k: v for k, v in r.items() if k != "Done"} for r in gate_rows]), hide_index=True, width="stretch")
+            try:
+                from core.auth import current_employee_id
+                login_employee = current_employee_id(refresh=False)
+            except Exception:
+                login_employee = ""
             c = st.columns(3, gap="small")
             validator = c[0].selectbox("Validated By", employee_options, format_func=lambda value: employees.get(value, "— Select —"), key=f"osp_validator_{report_type}_{scope}_{job_id}")
-            approver = c[1].selectbox("Approved By", employee_options, format_func=lambda value: employees.get(value, "— Select —"), key=f"osp_approver_{report_type}_{scope}_{job_id}")
-            if c[2].button("Finalize OSP Decision", disabled=not perms["can_approve"] or disposition == "PENDING" or not validator or not approver or str(existing.get("status")) == "FINAL", width="stretch"):
+            approver_key = f"osp_approver_{report_type}_{scope}_{job_id}"
+            if login_employee in employee_options and approver_key not in st.session_state:
+                st.session_state[approver_key] = login_employee
+            approver = c[1].selectbox("Approved By", employee_options, format_func=lambda value: employees.get(value, "— Select —"), key=approver_key, help="Approval is recorded against the signed-in employee.")
+            blockers = osp_finalize_blockers(existing=existing, can_approve=bool(perms["can_approve"]), disposition=disposition, validator=validator, approver=approver, login_employee_id=login_employee, employees=employees)
+            if blockers:
+                st.info("Finalize OSP Decision is not available yet:\n\n" + "\n".join(f"- {b}" for b in blockers))
+            if c[2].button("Finalize OSP Decision", disabled=bool(blockers), width="stretch"):
                 try:
                     if is_dimensional: inspection.finalize_dimensional(report_id, disposition, reason, validator, approver)
                     else: inspection.finalize_metlab(report_id, disposition, reason, validator, approver)

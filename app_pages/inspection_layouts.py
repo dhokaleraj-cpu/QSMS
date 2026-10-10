@@ -55,9 +55,16 @@ def _rows_frame(rows: list[dict], default_sample: int) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def render_entry() -> None:
+def render_bend_layout_entry() -> None:
+    """R15: dedicated Bend Test Layout Master (separate from general MetLAB layouts)."""
+    render_entry(bend_mode=True)
+
+
+def render_entry(bend_mode: bool = False) -> None:
     subpage_navigation(("masters", "Masters", ":material/dataset:"), ("inspection-home", "Inspections", ":material/biotech:"), ("inspection-layout-records", "Layout Records", ":material/table_view:"))
-    page_header("Inspection Layout Master", context="Part · Process · Stage")
+    page_header("Bend Test Layout Master" if bend_mode else "Inspection Layout Master", context="Bend Test · Part · Process · Stage" if bend_mode else "Part · Process · Stage")
+    if bend_mode:
+        st.info("Bend Test layouts are kept separately from the general MetLAB layout. A Part can have one current Bend Test layout AND one current MetLAB layout for the same Stage + Process.")
     template_download_row([("Inspection_Layout_Template.xlsx", "Download Generic Layout Template"), ("Dimensional_Inspection_Report_Template.xlsx", "Download Dimensional Template"), ("MetLAB_Report_Layout_Template.xlsx", "Download MetLAB Template")], key_prefix="inspection_layout")
     service = InspectionService(); perms = current_permissions("INSPECTION_LAYOUTS")
     parts, part_map, process_map, stage_map = _maps(service)
@@ -68,32 +75,38 @@ def render_entry() -> None:
         st.warning("Create an active Part Master first.")
         return
 
-    force_new = consume_master_blank_request("inspection-layout-entry", edit_keys=("edit_inspection_layout_id",), widget_keys=("inspection_layout_selector", "inspection_layout_type_selector"))
-    requested = str(st.session_state.get("edit_inspection_layout_id") or "")
+    page_key = "bend-layout-entry" if bend_mode else "inspection-layout-entry"
+    edit_key = "edit_bend_layout_id" if bend_mode else "edit_inspection_layout_id"
+    force_new = consume_master_blank_request(page_key, edit_keys=(edit_key,), widget_keys=(("bend_layout_selector",) if bend_mode else ("inspection_layout_selector", "inspection_layout_type_selector")))
+    requested = str(st.session_state.get(edit_key) or "")
     existing = service.get_plan(requested) if requested else None
     type_key = "inspection_layout_type_selector"
     if force_new:
         st.session_state[type_key] = "DIMENSIONAL"
     elif existing and st.session_state.get(type_key) not in {"DIMENSIONAL","METLAB"}:
         st.session_state[type_key] = str(existing.get("layout_type") or "DIMENSIONAL")
-    layout_type = st.selectbox("Layout Type", ["DIMENSIONAL", "METLAB"], index=0 if not existing or existing.get("layout_type") == "DIMENSIONAL" else 1, key=type_key)
-    all_plans = service.plans(layout_type)
+    if bend_mode:
+        layout_type = "METLAB"
+        all_plans = [row for row in service.plans("METLAB") if service.plan_inspection_method(str(row.get("id"))) == BEND_TEST]
+    else:
+        layout_type = st.selectbox("Layout Type", ["DIMENSIONAL", "METLAB"], index=0 if not existing or existing.get("layout_type") == "DIMENSIONAL" else 1, key=type_key)
+        all_plans = service.plans(layout_type)
     labels = {str(row["id"]): f"{row.get('plan_number')} Rev {row.get('revision')} · {part_map.get(str(row.get('part_id')), 'Part')}" for row in all_plans}
-    options = ["__new__"] + list(labels); selector_key="inspection_layout_selector"
+    options = ["__new__"] + list(labels); selector_key="bend_layout_selector" if bend_mode else "inspection_layout_selector"
     if force_new: st.session_state[selector_key]="__new__"
     elif requested in options: st.session_state[selector_key]=requested
     elif st.session_state.get(selector_key) not in options: st.session_state[selector_key]="__new__"
-    selected = st.selectbox("Select Layout", options, format_func=lambda value: "＋ New Layout" if value == "__new__" else labels[value], key=selector_key)
+    selected = st.selectbox("Select Bend Test Layout" if bend_mode else "Select Layout", options, format_func=lambda value: ("＋ New Bend Test Layout" if bend_mode else "＋ New Layout") if value == "__new__" else labels[value], key=selector_key)
     if selected != "__new__" and selected != requested:
-        st.session_state["edit_inspection_layout_id"] = selected
+        st.session_state[edit_key] = selected
         st.rerun()
     if selected == "__new__" and requested:
-        st.session_state.pop("edit_inspection_layout_id", None)
+        st.session_state.pop(edit_key, None)
         existing = None
     elif selected != "__new__":
         existing = service.get_plan(selected)
 
-    editor_token = record_widget_token("inspection-layout-entry", existing or {}, selected=selected or "__new__")
+    editor_token = record_widget_token(page_key, existing or {}, selected=selected or "__new__")
     current_part = str((existing or {}).get("part_id") or next(iter(part_map)))
     current_process = str((existing or {}).get("process_id") or "")
     current_stage = str((existing or {}).get("inspection_stage_id") or "")
@@ -122,13 +135,15 @@ def render_entry() -> None:
     st.caption(f"Auto Plan Number: {auto_plan_no}. Only one current layout is permitted for each Part + Inspection Stage + Process + Layout Type scope; a duplicate current layout is blocked, while older history may remain SUPERSEDED.")
 
     c1, c2, c3, c4 = st.columns(4, gap="small")
-    report_title = c1.text_input("Report Title", value=str((existing or {}).get("report_title") or ("DIMENSIONAL INSPECTION REPORT" if layout_type == "DIMENSIONAL" else "METLAB REPORT")), key=f"layout_report_title_{editor_token}")
+    report_title = c1.text_input("Report Title", value=str((existing or {}).get("report_title") or ("BEND TEST REPORT" if bend_mode else ("DIMENSIONAL INSPECTION REPORT" if layout_type == "DIMENSIONAL" else "METLAB REPORT"))), key=f"layout_report_title_{editor_token}")
     format_no = c2.text_input("Format Number", value=str((existing or {}).get("format_number") or ""), key=f"layout_format_no_{editor_token}")
     format_rev = c3.text_input("Format Revision", value=str((existing or {}).get("format_revision") or "00"), key=f"layout_format_rev_{editor_token}")
     effective = c4.date_input("Effective Date", value=date.fromisoformat(str((existing or {}).get("effective_date"))[:10]) if (existing or {}).get("effective_date") else date.today(), format="DD-MM-YYYY", key=f"layout_effective_{editor_token}")
 
     inspection_method = GENERAL_METLAB
-    if layout_type == "METLAB":
+    if bend_mode:
+        inspection_method = BEND_TEST
+    elif layout_type == "METLAB":
         method_labels = {key: label for key, label in METLAB_INSPECTION_METHODS}
         method_options = list(method_labels)
         current_method = service.plan_inspection_method(str((existing or {}).get("id") or "")) if existing else GENERAL_METLAB
@@ -290,7 +305,7 @@ def render_entry() -> None:
                     "status": row.get("Status") or "ACTIVE", "id": row.get("_id"),
                 })
             saved = service.save_plan(payload, rows, str(existing["id"]) if existing else None)
-            st.session_state["edit_inspection_layout_id"] = str(saved["id"])
+            st.session_state[edit_key] = str(saved["id"])
             st.session_state.pop("inspection_layout_import", None)
             save_success_popup("Inspection layout saved successfully.")
             st.rerun()

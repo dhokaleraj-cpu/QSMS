@@ -245,6 +245,7 @@ PAGE_ITEMS = (
     ("bend-test-entry", st.Page(metlab_report.render_bend_test_entry, title="Bend Test Report", icon=":material/architecture:", url_path="bend-test-entry")),
     ("bend-test-records", st.Page(metlab_report.render_bend_test_records, title="Bend Test Records", icon=":material/table_view:", url_path="bend-test-records")),
     ("bend-test-report", st.Page(metlab_report.render_bend_test_records, title="Bend Test Reports", icon=":material/assessment:", url_path="bend-test-report")),
+    ("bend-layout-entry", st.Page(inspection_layouts.render_bend_layout_entry, title="Bend Test Layout Master", icon=":material/design_services:", url_path="bend-layout-entry")),
     ("global-search", st.Page(global_search.render, title="Global Search", icon=":material/search:", url_path="global-search")),
     ("kpi-dashboards", st.Page(kpi_dashboards.render, title="KPI Dashboards", icon=":material/insights:", url_path="kpi-dashboards")),
     ("system-settings", st.Page(system_settings.render, title="System Settings", icon=":material/tune:", url_path="system-settings")),
@@ -263,6 +264,11 @@ MODULE_SUBMENUS = {
         ("dashboard", "Quality Dashboard", ":material/dashboard:"),
         ("kpi-dashboards", "KPI Dashboards", ":material/insights:"),
         ("global-search", "Search & AI", ":material/search:"),
+    ),
+    "Bend Test": (
+        ("bend-test-entry", "Bend Test Report", ":material/architecture:"),
+        ("bend-layout-entry", "Bend Test Layout Master", ":material/design_services:"),
+        ("bend-test-report", "Bend Test Reports", ":material/assessment:"),
     ),
     "Email": (
         ("email-send", "Send Email", ":material/send:"),
@@ -436,7 +442,7 @@ ROUTE_MODULE = {
     "complaint-analysis": "Complaints", "complaint-email-settings": "Complaints",
     "calibration-validation": "Calibration & Validation", "standard-room-inspection": "Calibration & Validation",
     "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
-    "dimensional-entry": "Inspections", "metlab-entry": "Inspections", "bend-test-entry": "Inspections",
+    "dimensional-entry": "Inspections", "metlab-entry": "Inspections", "bend-test-entry": "Bend Test", "bend-layout-entry": "Bend Test",
     "global-search": "Search",
     "reports-home": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports", "supply-chain-report": "Reports", "rmtc-report": "Reports", "inward-report": "Reports", "dimensional-report": "Reports", "metlab-report": "Reports", "bend-test-report": "Reports", "complaints-report": "Reports", "traceability-report": "Reports", "npd-report": "Reports", "apqp-report": "Reports", "qc-report": "Reports", "inspection-layout-report": "Reports", "standards-report": "Reports",
     "templates": "Templates",
@@ -469,7 +475,7 @@ PAGE_TITLE_TO_PATH = {
     "Inspection Layout Records": "inspection-layout-records",
     "Dimensional Report": "dimensional-entry", "Dimensional Records": "dimensional-records",
     "MetLAB Report": "metlab-entry", "MetLAB Records": "metlab-records",
-    "Bend Test Report": "bend-test-entry", "Bend Test Records": "bend-test-records", "Bend Test Reports": "bend-test-report",
+    "Bend Test Report": "bend-test-entry", "Bend Test Records": "bend-test-records", "Bend Test Reports": "bend-test-report", "Bend Test Layout Master": "bend-layout-entry",
     "Global Search": "global-search",
     "KPI Dashboards": "kpi-dashboards", "System Settings": "system-settings",
     "Send Email": "email-send", "Email Groups": "email-groups", "My Email Settings": "email-my-settings", "My Sent Emails": "email-sent",
@@ -492,7 +498,7 @@ ROUTE_PERMISSION_MODULE = {
     "inward-entry":"MATERIAL_INWARD","inward-records":"MATERIAL_INWARD",
     "osp-home":"OSP_TRANSACTIONS","osp-material-out":"OSP_TRANSACTIONS","osp-sample-receipt":"OSP_TRANSACTIONS","osp-inward":"OSP_TRANSACTIONS","osp-records":"OSP_TRANSACTIONS",
     "osp-dimensional":"DIMENSIONAL_REPORT","osp-metlab":"METLAB_REPORT",
-    "dimensional-entry":"DIMENSIONAL_REPORT","dimensional-records":"DIMENSIONAL_REPORT","metlab-entry":"METLAB_REPORT","metlab-records":"METLAB_REPORT","bend-test-entry":"METLAB_REPORT","bend-test-records":"METLAB_REPORT","bend-test-report":"METLAB_REPORT",
+    "dimensional-entry":"DIMENSIONAL_REPORT","dimensional-records":"DIMENSIONAL_REPORT","metlab-entry":"METLAB_REPORT","metlab-records":"METLAB_REPORT","bend-test-entry":"METLAB_REPORT","bend-layout-entry":"INSPECTION_LAYOUTS","bend-test-records":"METLAB_REPORT","bend-test-report":"METLAB_REPORT",
     "inspection-layout-entry":"INSPECTION_LAYOUTS","inspection-layout-records":"INSPECTION_LAYOUTS",
     "supply-chain-home":"SUPPLY_CHAIN","supply-customer-orders":"SUPPLY_CHAIN","supply-opening-stock":"SUPPLY_CHAIN","supply-rm-procurement":"SUPPLY_CHAIN","supply-purchase-orders":"SUPPLY_CHAIN","supply-po-order-list":"SUPPLY_CHAIN","supply-po-edit":"SUPPLY_CHAIN","supply-po-pdf":"SUPPLY_CHAIN","supply-po-approval":"SUPPLY_CHAIN","supply-rm-receipt":"SUPPLY_CHAIN","supply-rm-dispatch":"SUPPLY_CHAIN","supply-forging":"SUPPLY_CHAIN","supply-downstream":"SUPPLY_CHAIN","supply-traceability":"SUPPLY_CHAIN","supply-order-mis":"SUPPLY_CHAIN",
     "npd-process-flow":"NPD_APQP","npd-status":"NPD_APQP","apqp":"NPD_APQP","qc-tools":"QC_CALCULATION_TOOLS","qc-calculation-records":"QC_CALCULATION_TOOLS",
@@ -506,7 +512,7 @@ ROUTE_PERMISSION_MODULE = {
 if android_streamlit_nav:
     _mobile_group_order = (
         "Dashboard", "KPI Dashboards", "Email", "Masters", "Supply Chain", "RMTC", "Inward", "OSP",
-        "Inspections", "NPD & APQP", "QC Calculation Tools", "Complaints",
+        "Inspections", "Bend Test", "NPD & APQP", "QC Calculation Tools", "Complaints",
         "Calibration & Validation", "Records", "Reports", "Search", "Templates", "Admin",
     )
     _mobile_page_groups = {}
@@ -528,7 +534,7 @@ log_route_view(current_path, current_permission_module, nav.title)
 # Legacy v4.12.8 marker: QCMS v4.12.8 — responsive enterprise navigation contract.
 # The red header stays intentionally concise while the charcoal rail preserves
 # direct access to every operational module from the previous releases.
-QUALITY_HEADER_MODULES = {"RMTC", "Inward", "OSP", "QC Calculation Tools", "Complaints", "Calibration & Validation", "Inspections"}
+QUALITY_HEADER_MODULES = {"RMTC", "Inward", "OSP", "QC Calculation Tools", "Complaints", "Calibration & Validation", "Inspections", "Bend Test"}
 quality_active_module = current_module if current_module in QUALITY_HEADER_MODULES else "Inspections"
 HEADER_NAV = (
     (PAGE_BY_PATH["dashboard"], "Home", "Dashboard"),
@@ -557,6 +563,7 @@ RAIL_NAV = (
     (PAGE_BY_PATH["rmtc-entry"], "RMTC", "RMTC", ":material/fact_check:"),
     (PAGE_BY_PATH["inward-entry"], "Inward", "Inward", ":material/input:"),
     (PAGE_BY_PATH["inspection-home"], "Inspections", "Inspections", ":material/verified_user:"),
+    (PAGE_BY_PATH["bend-test-entry"], "Bend Test", "Bend Test", ":material/architecture:"),
     (PAGE_BY_PATH["osp-home"], "OSP", "OSP", ":material/factory:"),
     (PAGE_BY_PATH["complaints-home"], "Complaints", "Complaints", ":material/support_agent:"),
     (PAGE_BY_PATH["calibration-validation"], "Calibration", "Calibration & Validation", ":material/straighten:"),

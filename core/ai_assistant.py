@@ -1,6 +1,6 @@
 """QCMS AI Assistant for Global Search (R11).
 
-Natural-language questions, analysis and reports over QCMS data using the Claude API.
+Natural-language questions, analysis and reports over QCMS data using Claude, or a free provider (Google Gemini / Groq) - R15.
 
 Security contract
 -----------------
@@ -25,6 +25,38 @@ import pandas as pd
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
 DEFAULT_MODEL = "claude-sonnet-5-5"
+
+# R15 · pluggable providers. "gemini" and "groq" have free API tiers (rate-limited, and the
+# provider may use free-tier prompts to improve its products). Both speak the OpenAI
+# chat-completions format with tool calling, so one adapter serves them all.
+PROVIDERS: dict[str, dict[str, str]] = {
+    "claude": {"label": "Claude (Anthropic) · paid API", "key": "ANTHROPIC_API_KEY", "model": DEFAULT_MODEL, "url": API_URL, "style": "anthropic"},
+    "gemini": {"label": "Google Gemini · FREE tier available", "key": "GEMINI_API_KEY", "model": "gemini-flash-latest", "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "style": "openai"},
+    "groq": {"label": "Groq (open models) · FREE tier available", "key": "GROQ_API_KEY", "model": "openai/gpt-oss-120b", "url": "https://api.groq.com/openai/v1/chat/completions", "style": "openai"},
+    "openai": {"label": "OpenAI (ChatGPT API) · paid API", "key": "OPENAI_API_KEY", "model": "gpt-5-mini", "url": "https://api.openai.com/v1/chat/completions", "style": "openai"},
+}
+
+
+def resolve_provider(secret: Callable[[str, str], str]) -> tuple[str, str, str]:
+    """Return (provider, api_key, model) from secrets.
+
+    ``QCMS_AI_PROVIDER`` picks the provider explicitly; otherwise the first provider that
+    has a key wins, free providers first so a free key is used before a paid one.
+    """
+    wanted = str(secret("QCMS_AI_PROVIDER", "") or "").strip().lower()
+    order = [wanted] if wanted in PROVIDERS else ["gemini", "groq", "claude", "openai"]
+    for name in order:
+        key = str(secret(PROVIDERS[name]["key"], "") or "").strip()
+        if key or wanted == name:
+            model = str(secret("QCMS_AI_MODEL", "") or "").strip()
+            if not model or (name != "claude" and model.startswith("claude")):
+                model = PROVIDERS[name]["model"]
+            return name, key, model
+    return "gemini", "", PROVIDERS["gemini"]["model"]
+
+
+def openai_tools(tools: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    return [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""), "parameters": t.get("input_schema") or {"type": "object", "properties": {}}}} for t in tools]
 MAX_FETCH_ROWS = 5000          # rows read from Supabase per tool call
 MAX_ROWS_TO_MODEL = 60         # rows sent back to the model per tool call
 MAX_CELL_CHARS = 240
@@ -187,13 +219,15 @@ class QCMSAIAssistant:
         api_key: str,
         model: str | None = None,
         post: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        provider: str = "claude",
         today: date | None = None,
         user_label: str = "",
     ) -> None:
         self.repo = repo
         self.can_view = can_view
         self.api_key = str(api_key or "").strip()
-        self.model = str(model or DEFAULT_MODEL).strip() or DEFAULT_MODEL
+        self.provider = provider if provider in PROVIDERS else "claude"
+        self.model = str(model or PROVIDERS[self.provider]["model"]).strip() or PROVIDERS[self.provider]["model"]
         self._post = post
         self.today = today or date.today()
         self.user_label = user_label
@@ -451,26 +485,56 @@ class QCMSAIAssistant:
         if self._post is not None:
             return self._post(payload)
         import httpx
-        response = httpx.post(
-            API_URL,
-            headers={"x-api-key": self.api_key, "anthropic-version": API_VERSION, "content-type": "application/json"},
-            json=payload,
-            timeout=120.0,
-        )
+        spec = PROVIDERS[self.provider]
+        if spec["style"] == "anthropic":
+            headers = {"x-api-key": self.api_key, "anthropic-version": API_VERSION, "content-type": "application/json"}
+        else:
+            headers = {"Authorization": f"Bearer {self.api_key}", "content-type": "application/json"}
+        response = httpx.post(spec["url"], headers=headers, json=payload, timeout=120.0)
         if response.status_code >= 400:
             try:
-                detail = response.json().get("error", {}).get("message")
+                body = response.json()
+                body = body[0] if isinstance(body, list) and body else body
+                detail = (body.get("error") or {}).get("message") if isinstance(body.get("error"), dict) else body.get("error")
             except Exception:
                 detail = response.text[:300]
-            raise RuntimeError(f"Claude API error {response.status_code}: {detail}")
+            hint = " (free-tier limit reached — wait a minute and try again)" if response.status_code == 429 else ""
+            raise RuntimeError(f"{spec['label'].split(' ·')[0]} API error {response.status_code}: {detail}{hint}")
         return response.json()
+
+    def _ask_openai(self, messages_in: list[dict[str, Any]], calls: list[dict[str, Any]]) -> str:
+        """Tool loop for OpenAI-compatible providers (Gemini, Groq, OpenAI)."""
+        messages: list[dict[str, Any]] = [{"role": "system", "content": self.system_prompt()}, *messages_in]
+        tools = openai_tools(TOOLS)
+        final_text = ""
+        for _ in range(MAX_TOOL_ROUNDS):
+            response = self._call_api({"model": self.model, "messages": messages, "tools": tools, "tool_choice": "auto"})
+            choice = (response.get("choices") or [{}])[0]
+            message = dict(choice.get("message") or {})
+            text = str(message.get("content") or "")
+            if text.strip():
+                final_text = text
+            tool_calls = list(message.get("tool_calls") or [])
+            if not tool_calls:
+                return final_text
+            messages.append({"role": "assistant", "content": message.get("content") or "", "tool_calls": tool_calls})
+            for call in tool_calls:
+                fn = call.get("function") or {}
+                try:
+                    args = json.loads(fn.get("arguments") or "{}") if isinstance(fn.get("arguments"), str) else dict(fn.get("arguments") or {})
+                except Exception:
+                    args = {}
+                output = self.run_tool(str(fn.get("name") or ""), args)
+                calls.append({"tool": fn.get("name"), "input": args, "error": output.get("error")})
+                messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": json.dumps(output, default=_json_default, ensure_ascii=False)})
+        return (final_text + "\n\n" if final_text else "") + "_Stopped after the maximum number of analysis steps; refine the question for a more specific answer._"
 
     def ask(self, prompt: str, history: Sequence[Mapping[str, str]] | None = None) -> AIAnswer:
         prompt = str(prompt or "").strip()
         if not prompt:
             return AIAnswer(text="", error="Enter a question or report request.")
         if not self.api_key:
-            return AIAnswer(text="", error="AI Assistant is not configured. Add ANTHROPIC_API_KEY to Streamlit secrets.")
+            return AIAnswer(text="", error=f"AI Assistant is not configured. Add {PROVIDERS[self.provider]['key']} to Streamlit secrets (run scripts/set_ai_key.sh).")
         if not self.datasets:
             return AIAnswer(text="", error="You do not have View permission on any QCMS dataset.")
         self.reports = []
@@ -482,6 +546,12 @@ class QCMSAIAssistant:
         messages.append({"role": "user", "content": prompt})
         calls: list[dict[str, Any]] = []
         final_text = ""
+        if PROVIDERS[self.provider]["style"] == "openai":
+            try:
+                final_text = self._ask_openai(messages, calls)
+            except Exception as exc:
+                return AIAnswer(text=final_text, reports=list(self.reports), tool_calls=calls, model=self.model, error=str(exc))
+            return AIAnswer(text=final_text or "No answer was returned.", reports=list(self.reports), tool_calls=calls, model=self.model)
         try:
             for _ in range(MAX_TOOL_ROUNDS):
                 response = self._call_api({"model": self.model, "max_tokens": 4096, "system": self.system_prompt(), "tools": TOOLS, "messages": messages})

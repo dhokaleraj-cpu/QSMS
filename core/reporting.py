@@ -1148,6 +1148,175 @@ def _case_depth_chart(locations: list[dict], traverse: list[dict], width: float,
     drawing.add(legend)
     return drawing
 
+def _bend_find_row(rows: list[dict], *, units: tuple[str, ...] = (), words: tuple[str, ...] = (), text_only: bool = False) -> dict:
+    for row in rows:
+        unit = str(row.get("unit") or "").strip().casefold()
+        name = " ".join(str(row.get(k) or "") for k in ("parameter", "characteristic", "specification")).casefold()
+        ctype = str(row.get("characteristic_type") or "").upper()
+        if text_only and ctype not in {"TEXT", "ATTRIBUTE"}:
+            continue
+        if (units and unit in units) or (words and any(w in name for w in words)):
+            return row
+    return {}
+
+
+def _bend_actual(row: Mapping[str, object]) -> str:
+    value = row.get("actual_value")
+    if value in (None, ""):
+        obs = [str(v) for v in (row.get("observations") or []) if str(v or "").strip()]
+        value = ", ".join(obs)
+    return "" if value in (None, "None") else str(value)
+
+
+def _bend_spec(row: Mapping[str, object]) -> str:
+    return str(row.get("specification") or "").strip()
+
+
+def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
+    """R15 · Dedicated Bend Test Report (A4 portrait) matching the Four Star MetLAB bend report:
+    header grid, Baking / Aging spec vs actual, Bend Test Results, Load-vs-CHT graph,
+    Bend Test Part photographs with the bend angle, conclusion, signatures, references."""
+    record = dict(payload.get("record") or {})
+    part = dict(payload.get("part") or {})
+    customer = dict(payload.get("customer") or {})
+    grade = dict(payload.get("material_grade") or {})
+    inward = dict(payload.get("inward") or {})
+    osp_job = dict(payload.get("osp_job") or {})
+    employees = dict(payload.get("employees") or {})
+    results = dict(payload.get("results") or {})
+    details = dict(results.get("bend_report") or {})
+    images = {int(dict(r).get("slot") or i): dict(r) for i, r in enumerate(payload.get("microstructure_images") or [], start=1)}
+    rows = [dict(r) for r in (results.get("rows") or [])]
+
+    title = "BEND TEST REPORT"
+    buffer = BytesIO()
+    page_width, _ = A4
+    edge = 9 * mm
+    W = page_width - 2 * edge
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=edge, rightMargin=edge, topMargin=28 * mm, bottomMargin=12 * mm,
+                            title=title, author="Four Star Industries - Quality Control Monitoring System", allowSplitting=1)
+    base = getSampleStyleSheet()["Normal"]
+    lab = ParagraphStyle("BtLabel", parent=base, fontName="Helvetica-Bold", fontSize=8.6, leading=10.4, textColor=colors.black)
+    val = ParagraphStyle("BtVal", parent=base, fontName="Helvetica", fontSize=8.6, leading=10.4)
+    bar = ParagraphStyle("BtBar", parent=base, fontName="Helvetica-Bold", fontSize=10, leading=12, alignment=TA_CENTER)
+    cen = ParagraphStyle("BtCen", parent=val, alignment=TA_CENTER)
+    big = ParagraphStyle("BtBig", parent=base, fontName="Helvetica", fontSize=20, leading=24, alignment=TA_CENTER)
+    small = ParagraphStyle("BtSmall", parent=val, fontSize=7.4, leading=9)
+    passed = ParagraphStyle("BtPass", parent=val, fontName="Helvetica-Bold", textColor=colors.HexColor("#1F5FA8"))
+    grey = colors.HexColor("#D9D9D9")
+
+    def esc(v):
+        return str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+
+    def P(v, st=val, raw=False):
+        if v in (None, ""):
+            return Paragraph("" if raw else "-", st)
+        return Paragraph(str(v) if raw else esc(v), st)
+
+    def bar_row(text):
+        t = Table([[P(text, bar)]], colWidths=[W])
+        t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), grey), ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+        return t
+
+    story: list[object] = [bar_row(title)]
+    batch = details.get("fsi_batch_no") or record.get("batch_number")
+    info = [
+        ["Report No.", record.get("report_number"), "Date", record.get("test_date")],
+        ["Part #", part.get("part_number"), "Part Name", part.get("part_name")],
+        ["Customer Name", details.get("customer_name") or customer.get("party_name"), "Material Used", details.get("material_used") or grade.get("grade_code") or grade.get("grade_name")],
+        ["Baking Batch No.", details.get("baking_batch_no") or record.get("vendor_batch_number_snapshot"), "Batch Quantity (Pcs)", details.get("batch_quantity_pcs") or record.get("production_quantity_pcs")],
+        ["Steel Heat Code", details.get("steel_heat_code") or record.get("heat_code") or inward.get("heat_code") or record.get("heat_number"), "Part Diameter", details.get("part_diameter")],
+        ["FSI Batch No.", batch, "HT Batch No.", details.get("ht_batch_no") or osp_job.get("vendor_batch_number")],
+    ]
+    t = Table([[P(a, lab), P(b), P(c, lab), P(d)] for a, b, c, d in info], colWidths=[W * .19, W * .31, W * .19, W * .31])
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]))
+    story.append(t)
+
+    temp = _bend_find_row(rows, units=("°c", "c", "deg c", "degc"), words=("°c", "baking temp"))
+    btime = _bend_find_row(rows, units=("minutes", "minute", "min", "mins"), words=("minutes", "baking time"))
+    hard = _bend_find_row(rows, units=("hrc", "hv", "hrc/hv"), words=("hrc", "hardness"))
+    story.append(bar_row("Baking / Aging"))
+    bk = Table([
+        [P("", lab, raw=True), P("Baking Temp.", lab), P("Baking Time (Minutes)", lab), P(details.get("hardness_title") or "Base Metal Hardness below plating in HV0.5kgs at 0.1mm & (HRC) Avg reading of Three observations", lab)],
+        [P("Specification", lab), P(details.get("baking_temp_spec") or _bend_spec(temp)), P(details.get("baking_time_spec") or _bend_spec(btime)), P(details.get("hardness_spec") or _bend_spec(hard))],
+        [P("Actual", lab), P(details.get("baking_temp_actual") or (_bend_actual(temp) + ("°C" if _bend_actual(temp) and "°" not in _bend_actual(temp) else ""))), P(details.get("baking_time_actual") or ((_bend_actual(btime) + " Minutes") if _bend_actual(btime) else "")), P(details.get("hardness_actual") or ((_bend_actual(hard) + " " + str(hard.get("unit") or "")).strip()))],
+    ], colWidths=[W * .19, W * .22, W * .24, W * .35])
+    bk.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]))
+    story.append(bk)
+
+    load = _bend_find_row(rows, units=("kn",), words=("load",))
+    cht = _bend_find_row(rows, units=("mm",), words=("cross head", "cht"))
+    angle_value = results.get("bend_angle_degrees")
+    if angle_value in (None, ""):
+        angle_value = _bend_actual(_bend_find_row(rows, units=("degree", "degrees", "deg", "°"), words=("angle",)))
+    try:
+        angle_text = f"{float(angle_value):g}°"
+    except (TypeError, ValueError):
+        angle_text = str(angle_value or "-")
+    disposition = str(record.get("disposition") or record.get("overall_result") or "").upper()
+    status_text = details.get("bend_status") or ("Passed" if disposition in {"ACCEPTED", "PASS"} else ("Failed" if disposition in {"REJECTED", "FAIL"} else (disposition.replace("_", " ").title() or "Pending")))
+    story.append(bar_row("Bend Test Results"))
+    rs = Table([
+        [P("Load Vs CHT", lab), P("CHT (mm)", lab), P("Bend Angle (Degree)", lab), P("Bend Test Status", lab)],
+        [P(details.get("load_kn") or _bend_actual(load)), P(details.get("cht_mm") or _bend_actual(cht)), P(f"Including angle&nbsp;&nbsp;&nbsp;{esc(angle_text)}" if angle_text != "-" else "-", val, raw=True), P(status_text, passed if str(status_text).lower().startswith("pass") else val)],
+    ], colWidths=[W * .25, W * .25, W * .25, W * .25])
+    rs.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]))
+    story.append(rs)
+
+    half = W / 2
+    hdr = Table([[P("Load Vs CHT", bar), P("Bend Test Part", bar)]], colWidths=[half, half])
+    hdr.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), grey), ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+    story.append(hdr)
+
+    def img(slot, w, h):
+        item = images.get(slot) or {}
+        flow = _fit_image_flowable(bytes(item.get("bytes") or b""), w, h)
+        if flow is None:
+            ph = Table([[P("No image uploaded", cen)]], colWidths=[w], rowHeights=[min(h, 30 * mm)])
+            ph.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.4, BORDER), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+            return ph
+        return flow
+
+    left = [img(1, half - 6 * mm, 112 * mm)]
+    right = [P(angle_text, big), Spacer(1, 2 * mm), img(2, half - 6 * mm, 48 * mm), Spacer(1, 2 * mm), img(3, half - 6 * mm, 48 * mm)]
+    if (images.get(4) or {}).get("bytes"):
+        right += [Spacer(1, 2 * mm), img(4, half - 6 * mm, 30 * mm)]
+    surface = details.get("surface_remark") or _bend_actual(_bend_find_row(rows, words=("peeling", "flaking", "plating"), text_only=True)) or _bend_spec(_bend_find_row(rows, words=("peeling", "flaking", "plating"), text_only=True))
+    right += [Spacer(1, 2 * mm), P(f"<b>{esc(surface)}</b>" if surface else "", cen, raw=True)]
+    ph = Table([[left, right]], colWidths=[half, half])
+    ph.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("TOPPADDING", (0, 0), (-1, -1), 3)]))
+    story.append(ph)
+    story.append(Paragraph(f"Part Bend Angle: {angle_text}", small))
+    story.append(Paragraph("BEND TEST PART PHOTOGRAPHS: " + " · ".join(str((images.get(s) or {}).get("caption") or "") for s in (1, 2, 3, 4) if (images.get(s) or {}).get("bytes")) , small))
+
+    conclusion = str(results.get("conclusion_remark") or record.get("remarks") or "").strip()
+    story.append(Spacer(1, 3 * mm))
+    cl = Table([[P("Conclusion:-", ParagraphStyle("BtC", parent=lab, fontSize=10)), P(f"<b>{esc(conclusion)}</b>" if conclusion else "-", val, raw=True)]], colWidths=[W * .2, W * .8])
+    cl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    story.append(cl)
+    prepared = _employee_name(employees.get(str(record.get("prepared_by_employee_id"))))
+    approved = _employee_name(employees.get(str(record.get("approved_by_employee_id")))) or _employee_name(employees.get(str(record.get("validated_by_employee_id"))))
+    story.append(Spacer(1, 4 * mm))
+    sg = Table([[P(prepared or "", val), P(approved or "", val)], [P("Prepared By", lab), P("Verified & Approved By", lab)]], colWidths=[W * .6, W * .4])
+    story.append(sg)
+    refs = [str(v).strip() for v in (results.get("reference_documents") or []) if str(v).strip()]
+    if refs:
+        story.append(Spacer(1, 3 * mm))
+        story.append(Paragraph("<u><b>Referance Documents:</b></u>", val))
+        for ref in refs:
+            story.append(Paragraph("- " + ref.replace("&", "&amp;").replace("<", "&lt;"), small))
+    unmapped = [r for r in rows if r not in (temp, btime, hard, load, cht) and str(r.get("unit") or "").casefold() not in {"degree", "degrees", "deg", "°"} and str(r.get("characteristic_type") or "NUMBER").upper() not in {"TEXT", "ATTRIBUTE"}]
+    if unmapped:
+        story.append(Spacer(1, 3 * mm))
+        story.append(bar_row("Layout Parameters"))
+        grid = [["Parameter / Specification", "Actual", "Unit", "Result"]] + [[r.get("specification") or r.get("parameter") or r.get("characteristic"), _bend_actual(r), r.get("unit") or "", r.get("result") or ""] for r in unmapped]
+        gt = Table([[P(c, small) for c in row] for row in grid], colWidths=[W * .55, W * .2, W * .1, W * .15])
+        gt.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.3, BORDER), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEF2F5"))]))
+        story.append(gt)
+    doc.build(story, canvasmaker=lambda *args, **kwargs: _PageNumberCanvas(*args, report_title="METALLURGICAL LABORATORY - BEND TEST REPORT", **kwargs))
+    return buffer.getvalue()
+
+
 def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     """Controlled A4 portrait MetLAB report for Material Inward and OSP modules."""
     record = dict(payload.get("record") or {})
@@ -1167,6 +1336,8 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     microstructure_images = [dict(row) for row in (payload.get("microstructure_images") or [])]
     inspection_method = str(results.get("inspection_method") or "GENERAL_METLAB").strip().upper()
     is_bend_test = inspection_method == "BEND_TEST"
+    if is_bend_test:
+        return bend_test_report_pdf_bytes(payload)
 
     scope = str(record.get("inspection_scope") or "MATERIAL_INWARD")
     is_osp = scope.startswith("OSP_") or scope == "OSP_STAGE" or bool(record.get("osp_job_id"))
@@ -1700,6 +1871,7 @@ quality_record_excel_bytes = _session_memo_bytes(quality_record_excel_bytes)
 report_pdf_bytes = _session_memo_bytes(report_pdf_bytes)
 rmtc_record_pdf_bytes = _session_memo_bytes(rmtc_record_pdf_bytes)
 metlab_record_pdf_bytes = _session_memo_bytes(metlab_record_pdf_bytes)
+bend_test_report_pdf_bytes = _session_memo_bytes(bend_test_report_pdf_bytes)
 dimensional_record_pdf_bytes = _session_memo_bytes(dimensional_record_pdf_bytes)
 material_inward_record_pdf_bytes = _session_memo_bytes(material_inward_record_pdf_bytes)
 controlled_record_pdf_bytes = _session_memo_bytes(controlled_record_pdf_bytes)

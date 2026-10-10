@@ -19,13 +19,14 @@ def render() -> None:
     repo = Repository()
     mode, source = get_ai_mode(repo)
     from core.config import _secret
-    key_ready = bool(str(_secret("ANTHROPIC_API_KEY", "") or "").strip())
-    model = str(_secret("QCMS_AI_MODEL", "") or "claude-sonnet-5-5")
+    from core.ai_assistant import PROVIDERS, resolve_provider
+    provider, provider_key, model = resolve_provider(lambda name, default="": _secret(name, default))
+    key_ready = bool(provider_key)
 
     with stage_section("A", "AI ASSISTANT (GLOBAL SEARCH)", "Switch the AI Assistant on or off for the whole company, or keep it for administrators only.", key="system_settings_ai"):
         c1, c2, c3 = st.columns(3, gap="small")
         c1.metric("Current mode", {"ALL": "Enabled · all users", "ADMIN_ONLY": "Admins only", "DISABLED": "Disabled"}[mode])
-        c2.metric("Claude API key", "Configured" if key_ready else "Not configured")
+        c2.metric("AI engine", (PROVIDERS[provider]["label"].split(" ·")[0] + " · key set") if key_ready else "No key configured")
         c3.metric("Model", model)
         if source == "secret":
             st.warning("The mode is fixed by the `QCMS_AI_MODE` secret (Streamlit secrets). Remove that line from secrets to manage it here.")
@@ -43,7 +44,8 @@ def render() -> None:
             except Exception as exc:
                 st.error(str(exc))
         if not key_ready:
-            st.info("To use the AI Assistant, the Claude API key must be set once: on the Mac run `bash /Users/dhokaleraj/QSMS/scripts/set_ai_key.sh`; for the online app add it in Streamlit Cloud → Settings → Secrets.")
+            st.info("To use the AI Assistant, set an API key once: on the Mac run `bash /Users/dhokaleraj/QSMS/scripts/set_ai_key.sh` and pick **Google Gemini (FREE)** or Groq (FREE), Claude or OpenAI (paid); for the online app paste the printed lines in Streamlit Cloud → Settings → Secrets.")
+        st.caption("Free tiers (Gemini, Groq) are rate-limited and the provider may use free-tier prompts to improve its services. Only rows the user is allowed to see are sent, but for strictly confidential data use a paid key.")
 
     from core.system_settings import MS365_CLIENT_KEY, MS365_TENANT_KEY, get_system_value, set_system_value
     with stage_section("B", "MICROSOFT 365 SIGN-IN FOR EMAIL", "One-time setup so every user can connect their own Office 365 mailbox (Email module). These IDs are not passwords.", key="system_settings_ms365"):

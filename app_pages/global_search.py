@@ -231,10 +231,11 @@ AI_EXAMPLE_PROMPTS: tuple[str, ...] = (
 )
 
 
-def _ai_settings() -> tuple[str, str]:
+def _ai_settings() -> tuple[str, str, str]:
+    """R15: (provider, api_key, model) — Gemini/Groq free tiers or Claude/OpenAI."""
     from core.config import _secret
-    from core.ai_assistant import DEFAULT_MODEL
-    return _secret("ANTHROPIC_API_KEY", "").strip(), (_secret("QCMS_AI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL)
+    from core.ai_assistant import resolve_provider
+    return resolve_provider(lambda name, default="": _secret(name, default))
 
 
 def _render_ai_report(report, index: int) -> None:
@@ -268,18 +269,20 @@ def _render_ai_report(report, index: int) -> None:
 
 def _render_ai_assistant(repo: Repository, profile: dict) -> None:
     from core.ai_assistant import QCMSAIAssistant
-    api_key, model = _ai_settings()
+    provider, api_key, model = _ai_settings()
     st.caption("Ask in plain English for any information, analysis or report. The assistant is read-only and uses only the modules you are permitted to view.")
     if not api_key:
         st.info(
-            "**AI Assistant is not switched on yet.** One-time setup (about 3 minutes):\n\n"
-            "1. Open **console.anthropic.com**, sign in, add a little credit under **Billing**, then **API Keys → Create Key** and copy it (starts with `sk-ant-`).\n"
-            "2. On the Mac, open **Terminal** and run:  `bash /Users/dhokaleraj/QSMS/scripts/set_ai_key.sh`  — paste the key and press Enter.\n"
+            "**AI Assistant is not switched on yet.** FREE option (about 3 minutes, no credit card):\n\n"
+            "1. Open **aistudio.google.com**, sign in with a Google account, click **Get API key → Create API key** and copy it (starts with `AIza`).\n"
+            "2. On the Mac, open **Terminal** and run:  `bash /Users/dhokaleraj/QSMS/scripts/set_ai_key.sh`  — choose **1 (Gemini FREE)**, paste the key and press Enter.\n"
             "3. Restart QCMS (Ctrl+C in the Terminal running it, then start it again).\n"
-            "4. For the online app: Streamlit Cloud → your app → **⋮ → Settings → Secrets** → paste the two lines the script printed → **Save**.\n\n"
-            "Keyword Search (next tab) works without a key."
+            "4. For the online app: Streamlit Cloud → your app → **⋮ → Settings → Secrets** → paste the lines the script printed → **Save**.\n\n"
+            "Other choices in the same script: Groq (free, open models), Claude or OpenAI (paid). Keyword Search (next tab) works without a key."
         )
         return
+    from core.ai_assistant import PROVIDERS
+    st.caption(f"Engine: {PROVIDERS[provider]['label']} · model `{model}`" + (" · free tiers are rate-limited and Google/Groq may use free-tier prompts to improve their services — avoid asking about confidential customer pricing." if provider in {"gemini", "groq"} else ""))
     history: list[dict] = st.session_state.setdefault("_qcms_ai_history", [])
     pick = st.pills("Examples", list(AI_EXAMPLE_PROMPTS), selection_mode="single", key="qcms_ai_example", label_visibility="collapsed")
     if pick and st.session_state.get("_qcms_ai_last_pick") != pick:
@@ -299,7 +302,7 @@ def _render_ai_assistant(repo: Repository, profile: dict) -> None:
                 permission_cache[module_key] = bool(module_permissions(profile, module_key, repo).get("can_view"))
             return permission_cache[module_key]
         user_label = " ".join(v for v in (str(profile.get("full_name") or ""), str(profile.get("role") or "")) if v).strip()
-        assistant = QCMSAIAssistant(repo, SEARCH_SOURCES, can_view, api_key=api_key, model=model, user_label=user_label)
+        assistant = QCMSAIAssistant(repo, SEARCH_SOURCES, can_view, api_key=api_key, model=model, provider=provider, user_label=user_label)
         with st.spinner("QCMS AI is reading your permitted data and preparing the answer..."):
             answer = assistant.ask(str(prompt), history=[{"prompt": h["prompt"], "answer": h["answer"]} for h in history])
         history.append({"prompt": str(prompt).strip(), "answer": answer.text, "reports": answer.reports, "error": answer.error, "steps": answer.tool_calls, "model": answer.model})
