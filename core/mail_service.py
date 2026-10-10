@@ -388,7 +388,7 @@ COMPANY_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 def company_outbox_rows(
     *, subject: str, html_body: str, text_body: str, to: Sequence[Recipient], cc: Sequence[Recipient] = (), bcc: Sequence[Recipient] = (),
-    sender_name: str, sender_email: str, attachment_manifest: Sequence[Mapping[str, Any]] = (),
+    sender_name: str, sender_email: str, attachment_manifest: Sequence[Mapping[str, Any]] = (), from_mode: str = "COMPANY",
 ) -> list[dict]:
     """Return qcms_notification_outbox rows for the company-mailbox send (one row per message).
 
@@ -428,6 +428,40 @@ def company_outbox_rows(
             "attachment_manifest": list(attachment_manifest),
             "is_automatic": False,
             "status": "PENDING",
-            "context": {"to_emails": to_list, "sender_name": sender_name, "sender_email": sender_email, "from_mode": "SEND_AS_USER", "message_index": index + 1, "message_count": len(batches)},
+            "context": {"to_emails": to_list, "sender_name": sender_name, "sender_email": sender_email, "from_mode": "USER" if str(from_mode).upper() == "USER" else "COMPANY", "message_index": index + 1, "message_count": len(batches)},
         })
     return rows
+
+
+# ----------------------------------------------------------------------------- R18 editable From
+USER_FROM_PREFIX = "qcms.email.from."
+
+
+def load_user_from(repo: Any, user_id: str) -> dict:
+    """User's saved From name / email (editable in My Email Settings). Empty dict when not saved."""
+    import json
+    if not user_id:
+        return {}
+    try:
+        rows = repo.select("master_value_catalog", eq={"field_key": USER_FROM_PREFIX + str(user_id), "status": "ACTIVE"}, order_by="last_used_at", desc=True, limit=1)
+        return dict(json.loads(rows[0].get("value_text") or "{}")) if rows else {}
+    except Exception:
+        return {}
+
+
+def save_user_from(repo: Any, user_id: str, name: str, email: str) -> dict:
+    import json
+    from datetime import datetime, timezone
+    name = str(name or "").strip()
+    email = _valid(email)
+    if not name:
+        raise ValueError("Enter the From name.")
+    if not email:
+        raise ValueError("Enter a valid From email address.")
+    now = datetime.now(timezone.utc).isoformat()
+    key = USER_FROM_PREFIX + str(user_id)
+    payload = {"field_key": key, "value_text": json.dumps({"name": name, "email": email}), "normalized_value": email, "status": "ACTIVE", "last_used_at": now, "updated_at": now}
+    rows = repo.select("master_value_catalog", eq={"field_key": key}, limit=5, require_live=True)
+    if rows:
+        return repo.update("master_value_catalog", str(rows[0]["id"]), payload)
+    return repo.insert("master_value_catalog", payload)

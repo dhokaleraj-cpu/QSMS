@@ -6,7 +6,7 @@ import streamlit as st
 from core.auth import current_profile
 from core.permissions import is_admin
 from core.repository import Repository
-from core.system_settings import AI_MODES, ai_mode_record, get_ai_mode, set_ai_mode
+from core.system_settings import AI_MODES, ai_mode_record, get_ai_mode, set_ai_mode, set_system_value
 from core.ui import page_header, save_success_dialog, section_bar, stage_section
 
 
@@ -56,11 +56,23 @@ def render() -> None:
         c1.metric("Email server", "Enabled" if server.get("enabled") else "Not enabled")
         c2.metric("SMTP host", str(server.get("smtp_host") or "—"))
         c3.metric("Company mailbox", str(server.get("sender_email") or "—"))
+        from core.system_settings import EMAIL_FROM_MODE_KEY, EMAIL_FROM_MODES, get_email_from_mode
+        current_mode = get_email_from_mode(repo)
+        with st.form("system_settings_email_from", border=False):
+            from_mode = st.radio("What recipients see as the sender", list(EMAIL_FROM_MODES), index=list(EMAIL_FROM_MODES).index(current_mode), format_func=EMAIL_FROM_MODES.get)
+            save_mode = st.form_submit_button("Save email From setting", type="primary", width="stretch")
+        if save_mode:
+            try:
+                set_system_value(repo, EMAIL_FROM_MODE_KEY, from_mode, profile)
+                save_success_dialog("Email From setting saved", EMAIL_FROM_MODES[from_mode])
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
         st.markdown(
-            "- **Send Email** uses this server for every user. Recipients see the **user's own name and email** as the sender and replies go to the user.\n"
-            "- To show the user's own address with Microsoft 365, give the company mailbox **Send As** permission on each user mailbox "
-            "(Exchange admin center → Recipients → Mailboxes → user → Delegation → Send as). Without it QCMS sends as **\"User Name via QCMS\"** from the company mailbox with replies to the user.\n"
-            "- Change the server in **Admin → Email Settings**."
+            "- **Company mailbox (recommended, default):** Microsoft 365 always delivers it. Recipients see *User Name via QCMS* and **Reply goes to the user's own email**.\n"
+            "- **User's own email:** only after the Microsoft 365 admin gives the company mailbox **Send As** permission on every user mailbox "
+            "(Exchange admin center → Recipients → Mailboxes → user → Delegation → Send as). Without it Microsoft 365 silently bounces the email (NDR 5.7.60 SendAsDenied).\n"
+            "- Each user can edit their own From name / reply-to email in **Email → My Email Settings**. Change the server in **Admin → Email Settings**."
         )
         pages = st.session_state.get("_qsms_pages", {})
         if "email-settings" in pages:

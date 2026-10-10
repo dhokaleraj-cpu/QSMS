@@ -123,3 +123,17 @@ def set_system_value(repo: Any, field_key: str, value: str, profile: Mapping[str
     if target:
         return repo.update("master_value_catalog", str(target["id"]), {"status": "ACTIVE", "last_used_at": now, "updated_at": now})
     return repo.insert("master_value_catalog", {"field_key": field_key, "value_text": value, "status": "ACTIVE", "last_used_at": now})
+
+
+# R18 · Email module "From" mode (default email server).
+EMAIL_FROM_MODE_KEY = "qcms.system.email_from_mode"
+EMAIL_FROM_MODES = {
+    "COMPANY": "Company mailbox shows the user's name — replies go to the user (works without extra Microsoft 365 rights)",
+    "USER": "User's own email address as From (needs Microsoft 365 'Send As' permission for the company mailbox on every user)",
+}
+
+
+def get_email_from_mode(repo: Any) -> str:
+    value, _ = get_system_value(repo, EMAIL_FROM_MODE_KEY, secret_name="QCMS_EMAIL_FROM_MODE")
+    value = str(value or "").strip().upper()
+    return value if value in EMAIL_FROM_MODES else "COMPANY"

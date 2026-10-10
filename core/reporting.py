@@ -494,6 +494,34 @@ def _tone(style: ParagraphStyle, color: colors.Color, *, bold: bool | None = Non
     return ParagraphStyle(f"{style.name}_t{color.hexval()}{font}", parent=style, textColor=color, fontName=font)
 
 
+_ALIGN_RIGHT_WORDS = ("KG", "QTY", "QUANTITY", "WEIGHT", "AMOUNT", "VALUE", "RATE", "PRICE", "BALANCE", "PCS", "TOTAL")
+_ALIGN_CENTER_WORDS = ("SR", "NO.", "SR.", "UNIT", "MIN", "MAX", "RESULT", "STATUS", "DECISION", "DATE", "SPEC", "ACTUAL", "OBSERV",
+                       "READING", "HARDNESS", "HRC", "HV", "DEPTH", "DISTANCE", "GRADE", "HEAT", "%", "SAMPLE", "TOLERANCE", "LOCATION", "J", "DISPOSITION", "VALIDATION", "WORKSHEET")
+_ALIGN_LEFT_WORDS = ("PARAMETER", "CHARACTERISTIC", "DESCRIPTION", "REMARK", "NAME", "SUPPLIER", "METHOD", "AID", "PROPERTY", "SOURCE", "DOCUMENT", "TEST", "ELEMENT", "PART", "REQUIREMENT", "PROCESS")
+
+
+def _column_alignment(header: object) -> int:
+    """R18 print alignment: text columns left, measured / status columns centred, quantities right."""
+    from reportlab.lib.enums import TA_RIGHT
+    text = re.sub(r"<[^>]+>", "", str(header or "")).upper().strip()
+    if not text:
+        return TA_CENTER
+    if any(w in text for w in _ALIGN_LEFT_WORDS) and not any(w in text for w in ("RESULT", "STATUS", "DATE", "QTY", "KG")):
+        return TA_LEFT
+    if any(w in text for w in _ALIGN_RIGHT_WORDS):
+        return TA_RIGHT
+    tokens = set(re.split(r"[^A-Z0-9%.]+", text))
+    if tokens & {"SR", "SR.", "NO", "NO.", "#", "S.NO"} or any(w in text for w in _ALIGN_CENTER_WORDS):
+        return TA_CENTER
+    return TA_LEFT
+
+
+def _aligned(style: ParagraphStyle, alignment: int) -> ParagraphStyle:
+    if style.alignment == alignment:
+        return style
+    return ParagraphStyle(f"{style.name}_a{alignment}", parent=style, alignment=alignment)
+
+
 def _is_remark_label(text: object) -> bool:
     return "REMARK" in str(text or "").upper()
 
@@ -515,12 +543,15 @@ def _rmtc_grid(
     head = _tone(header_style, INK, bold=True)
     remark_cols = {i for i, v in enumerate(rows[0] if rows else []) if _is_remark_label(v)}
     conclusion_cols = {i for i, v in enumerate(rows[0] if rows else []) if _is_conclusion_label(v)}
+    alignments = [_column_alignment(v) for v in (rows[header_rows - 1] if len(rows) >= header_rows else [])]
     prepared: list[list[Paragraph]] = []
     for row_index, row in enumerate(rows):
         cells = []
         for col_index, value in enumerate(row):
             if row_index < header_rows:
-                style = head
+                style = _aligned(head, TA_CENTER)
+                cells.append(_paragraph(value, style))
+                continue
             elif col_index in status_columns:
                 style = _tone(cell_style, _status_text_color(value), bold=True)
             elif col_index in remark_cols:
@@ -529,7 +560,10 @@ def _rmtc_grid(
                 style = _tone(cell_style, CONCLUSION_COLOR, bold=True)
             else:
                 style = cell_style
-            cells.append(_paragraph(value, style))
+            align = alignments[col_index] if col_index < len(alignments) else TA_LEFT
+            if align == TA_LEFT and re.fullmatch(r"[-+]?\d+(?:[.,]\d+)?(?:\s*%)?", str(value or "").strip()):
+                align = TA_CENTER  # plain numbers in a text column are centred
+            cells.append(_paragraph(value, _aligned(style, align)))
         prepared.append(cells)
     table = Table(
         prepared,
@@ -1254,6 +1288,7 @@ def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     val = ParagraphStyle("BtVal", parent=base, fontName="Helvetica", fontSize=8.6, leading=10.4)
     bar = ParagraphStyle("BtBar", parent=base, fontName="Helvetica-Bold", fontSize=10.5, leading=12.6, alignment=TA_LEFT, textColor=WHITE)
     cen = ParagraphStyle("BtCen", parent=val, alignment=TA_CENTER)
+    labc = ParagraphStyle("BtLabC", parent=lab, alignment=TA_CENTER)
     big = ParagraphStyle("BtBig", parent=base, fontName="Helvetica", fontSize=20, leading=24, alignment=TA_CENTER)
     small = ParagraphStyle("BtSmall", parent=val, fontSize=7.4, leading=9)
     passed = ParagraphStyle("BtPass", parent=val, fontName="Helvetica-Bold", textColor=CONCLUSION_COLOR)
@@ -1291,9 +1326,9 @@ def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     hard = _bend_find_row(rows, units=("hrc", "hv", "hrc/hv"), words=("hrc", "hardness"))
     story.append(bar_row("Baking / Aging"))
     bk = Table([
-        [P("", lab, raw=True), P("Baking Temp.", lab), P("Baking Time (Minutes)", lab), P(details.get("hardness_title") or "Base Metal Hardness below plating in HV0.5kgs at 0.1mm & (HRC) Avg reading of Three observations", lab)],
-        [P("Specification", lab), P(details.get("baking_temp_spec") or _bend_spec(temp)), P(details.get("baking_time_spec") or _bend_spec(btime)), P(details.get("hardness_spec") or _bend_spec(hard))],
-        [P("Actual", lab), P(details.get("baking_temp_actual") or (_bend_actual(temp) + ("°C" if _bend_actual(temp) and "°" not in _bend_actual(temp) else ""))), P(details.get("baking_time_actual") or ((_bend_actual(btime) + " Minutes") if _bend_actual(btime) else "")), P(details.get("hardness_actual") or ((_bend_actual(hard) + " " + str(hard.get("unit") or "")).strip()))],
+        [P("", lab, raw=True), P("Baking Temp.", labc), P("Baking Time (Minutes)", labc), P(details.get("hardness_title") or "Base Metal Hardness below plating in HV0.5kgs at 0.1mm & (HRC) Avg reading of Three observations", labc)],
+        [P("Specification", lab), P(details.get("baking_temp_spec") or _bend_spec(temp), cen), P(details.get("baking_time_spec") or _bend_spec(btime), cen), P(details.get("hardness_spec") or _bend_spec(hard), cen)],
+        [P("Actual", lab), P(details.get("baking_temp_actual") or (_bend_actual(temp) + ("°C" if _bend_actual(temp) and "°" not in _bend_actual(temp) else "")), cen), P(details.get("baking_time_actual") or ((_bend_actual(btime) + " Minutes") if _bend_actual(btime) else ""), cen), P(details.get("hardness_actual") or ((_bend_actual(hard) + " " + str(hard.get("unit") or "")).strip()), cen)],
     ], colWidths=[W * .19, W * .22, W * .24, W * .35])
     bk.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, 0), 1.0, INK), ("LINEBELOW", (0, 1), (-1, -1), 0.4, RULE), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
     story.append(bk)
@@ -1311,8 +1346,8 @@ def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     status_text = details.get("bend_status") or ("Passed" if disposition in {"ACCEPTED", "PASS"} else ("Failed" if disposition in {"REJECTED", "FAIL"} else (disposition.replace("_", " ").title() or "Pending")))
     story.append(bar_row("Bend Test Results"))
     rs = Table([
-        [P("Load Vs CHT", lab), P("CHT (mm)", lab), P("Bend Angle (Degree)", lab), P("Bend Test Status", lab)],
-        [P(details.get("load_kn") or _bend_actual(load)), P(details.get("cht_mm") or _bend_actual(cht)), P(f"Including angle&nbsp;&nbsp;&nbsp;{esc(angle_text)}" if angle_text != "-" else "-", val, raw=True), P(status_text, passed if str(status_text).lower().startswith("pass") else val)],
+        [P("Load Vs CHT", labc), P("CHT (mm)", labc), P("Bend Angle (Degree)", labc), P("Bend Test Status", labc)],
+        [P(details.get("load_kn") or _bend_actual(load), cen), P(details.get("cht_mm") or _bend_actual(cht), cen), P(f"Including angle&nbsp;&nbsp;&nbsp;{esc(angle_text)}" if angle_text != "-" else "-", cen, raw=True), P(status_text, ParagraphStyle("BtPassC", parent=passed, alignment=TA_CENTER) if str(status_text).lower().startswith("pass") else cen)],
     ], colWidths=[W * .25, W * .25, W * .25, W * .25])
     rs.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, 0), 1.0, INK), ("LINEBELOW", (0, 1), (-1, -1), 0.4, RULE), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
     story.append(rs)

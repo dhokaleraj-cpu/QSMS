@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import nodemailer from "npm:nodemailer@6.9.16";
 import { Buffer } from "node:buffer";
 
-// QCMS qcms-send-email · build 4.14.49-R16
+// QCMS qcms-send-email · build 4.14.49-R18
 // Based on the production v4 function (claim + send-is-current guards) plus R16:
 // user emails from the Email module (event USER_EMAIL) show the signed-in user's
 // name and email as the sender while QCMS sends through the company SMTP account.
@@ -84,15 +84,18 @@ Deno.serve(async (req: Request) => {
         const cc = Array.isArray(row.cc_emails) && row.cc_emails.length ? row.cc_emails : undefined;
         const bcc = Array.isArray(row.bcc_emails) && row.bcc_emails.length ? row.bcc_emails : undefined;
         const base = { to: toList ? toList : quoted(row.recipient_name, row.recipient_email), cc, bcc, subject: row.subject, text: row.body_text, html: row.body_html || undefined, attachments };
-        if (senderEmail) {
-          // Email module: From = the signed-in user; the company account authenticates and is the envelope sender.
+        if (senderEmail && String(ctx.from_mode || "COMPANY").toUpperCase() !== "USER") {
+          // R18 default: Microsoft 365 rejects "Send As" after accepting the message (NDR 5.7.60), so the
+          // company mailbox is the From address, showing the user's name; replies go to the user.
+          await transporter.sendMail({ ...base, from: quoted(`${String(ctx.sender_name || senderEmail)} via QCMS`, settings.sender_email), replyTo: quoted(ctx.sender_name, senderEmail) });
+          viaCompany++;
+        } else if (senderEmail) {
+          // Admin chose "User's own email": only works when the company mailbox has Send As rights.
           const everyone = [...(toList || [row.recipient_email]), ...(cc || []), ...(bcc || [])];
           try {
             await transporter.sendMail({ ...base, from: quoted(ctx.sender_name, senderEmail), sender: settings.sender_email, replyTo: senderEmail, envelope: { from: settings.sender_email, to: everyone } });
           } catch (sendAsError) {
             if (!sendAsRefused(sendAsError)) throw sendAsError;
-            // The company mailbox has no "Send As" right for this user: send from the company mailbox
-            // showing the user's name, with replies going to the user.
             await transporter.sendMail({ ...base, from: quoted(`${String(ctx.sender_name || senderEmail)} via QCMS`, settings.sender_email), replyTo: senderEmail });
             viaCompany++;
           }
@@ -107,7 +110,7 @@ Deno.serve(async (req: Request) => {
         failed++;
       }
     }
-    return new Response(JSON.stringify({ processed: outbox.length, sent, failed, suppressed, via_company: viaCompany, build: "4.14.49-R16" }), { headers: jsonHeaders });
+    return new Response(JSON.stringify({ processed: outbox.length, sent, failed, suppressed, via_company: viaCompany, build: "4.14.49-R18" }), { headers: jsonHeaders });
   } catch (error) {
     return new Response(JSON.stringify({ error: cleanError(error) }), { status: 500, headers: jsonHeaders });
   }

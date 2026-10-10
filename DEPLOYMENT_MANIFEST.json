@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R17",
+  "release_revision": "R18",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -462,5 +462,12 @@
     "email_module_default_server_only_no_office365_signin",
     "system_settings_email_default_server_panel",
     "kpi_dashboards_first_page_after_login"
+  ],
+  "r18_changes": [
+    "print_columns_aligned_left_center_right",
+    "email_from_company_mailbox_with_user_name_reply_to_user",
+    "editable_from_name_and_email_per_user",
+    "admin_email_from_mode_company_or_user",
+    "qcms_send_email_edge_function_v6"
   ]
 }

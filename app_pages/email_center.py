@@ -46,11 +46,26 @@ def render_my_settings() -> None:
     page_header("My Email Settings", "Your emails are sent through the company's default email server. No Office 365 sign-in is needed.", "Email")
     repo = Repository(); profile, user_id, login_email = _user()
     sender_name, sender_email = _sender_identity(repo, profile, login_email)
-    with stage_section("A", "HOW MY EMAILS APPEAR", "Recipients see your name and email address; replies come to you.", key="email_my_identity"):
-        c1, c2 = st.columns(2, gap="small")
-        c1.text_input("From name", value=sender_name, disabled=True)
-        c2.text_input("From email", value=sender_email, disabled=True)
-        st.caption("Taken from Employee Master (or your QCMS login). Ask the administrator to correct your email in Employee Master if it is wrong.")
+    from core.system_settings import get_email_from_mode
+    mode = get_email_from_mode(repo)
+    with stage_section("A", "MY FROM NAME & EMAIL", "Edit how your emails appear. Saved for your login only.", key="email_my_identity"):
+        with st.form("email_my_from_form", border=False):
+            c1, c2 = st.columns(2, gap="small")
+            new_name = c1.text_input("From name", value=sender_name)
+            new_email = c2.text_input("From / reply-to email", value=sender_email)
+            saved_from = st.form_submit_button("Save From details", type="primary", width="stretch")
+        if saved_from:
+            try:
+                ms.save_user_from(repo, user_id, new_name, new_email)
+                save_success_dialog("From details saved", f"Your emails will show **{new_name.strip()}** and replies will go to **{new_email.strip()}**.")
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+        company = _company_mailbox(repo)
+        if mode == "USER":
+            st.caption(f"Recipients see **{sender_name} <{sender_email}>** as the sender (company server sends as you).")
+        else:
+            st.caption(f"Recipients see **{sender_name} via QCMS <{company or 'company mailbox'}>**; when they press Reply it goes to **{sender_email}**.")
     with stage_section("B", "MY SIGNATURE", "Added at the end of emails you send from QCMS (stored only in this browser session).", key="email_my_signature"):
         st.session_state["qcms_mail_signature"] = st.text_area("Signature", value=st.session_state.get("qcms_mail_signature", f"{sender_name}\nFour Star Industries Pvt. Ltd."), height=90)
 
@@ -61,7 +76,10 @@ PERSONAL_MODE = "My Microsoft 365 mailbox"
 
 
 def _sender_identity(repo: Repository, profile: dict, login_email: str) -> tuple[str, str]:
-    """Signed-in user's display name and email (Employee Master first, then the login profile)."""
+    """Signed-in user's From name and email: saved My Email Settings value first, then Employee Master, then login."""
+    saved = ms.load_user_from(repo, str(profile.get("id") or ""))
+    if saved.get("name") and saved.get("email"):
+        return str(saved["name"]), str(saved["email"])
     name = str(profile.get("full_name") or "").strip()
     email = login_email
     try:
@@ -74,6 +92,14 @@ def _sender_identity(repo: Repository, profile: dict, login_email: str) -> tuple
     except Exception:
         pass
     return name or email.split("@")[0], email
+
+
+def _company_mailbox(repo: Repository) -> str:
+    try:
+        row = (repo.select("qcms_email_settings", limit=1) or [{}])[0]
+        return str(row.get("sender_email") or "")
+    except Exception:
+        return ""
 
 
 def _upload_company_attachments(repo: Repository, attachments: list[tuple[str, bytes, str]]) -> list[dict]:
@@ -104,9 +130,18 @@ def render_send() -> None:
     # R17: the Email module always uses the default email server (no Office 365 sign-in).
     mode = COMPANY_MODE
     store = None
-    sender_name, sender_email = _sender_identity(repo, profile, login_email)
+    from core.system_settings import get_email_from_mode
+    from_mode = get_email_from_mode(repo)
+    default_name, default_email = _sender_identity(repo, profile, login_email)
+    c1, c2 = st.columns(2, gap="small")
+    sender_name = c1.text_input("From name", value=default_name, key="mail_from_name").strip() or default_name
+    sender_email = c2.text_input("From / reply-to email", value=default_email, key="mail_from_email").strip() or default_email
     account = {"mailbox_email": sender_email}
-    st.caption(f"From: **{sender_name} <{sender_email}>** · sent through the company email server · replies come to you")
+    company = _company_mailbox(repo)
+    if from_mode == "USER":
+        st.caption(f"Recipients see **{sender_name} <{sender_email}>** as the sender. (Change the default in My Email Settings.)")
+    else:
+        st.caption(f"Recipients see **{sender_name} via QCMS <{company or 'company mailbox'}>** and replies go to **{sender_email}**. (Change the default in My Email Settings.)")
     employees = _employees(repo); groups = _groups(repo)
     emp_label = {str(e["id"]): f"{ms.employee_name(e)} · {e.get('department') or '-'} · {ms.employee_email(e) or 'no email'}" for e in employees}
     departments = sorted({str(e.get("department") or "").strip() for e in employees if str(e.get("department") or "").strip()})
@@ -161,7 +196,7 @@ def render_send() -> None:
                     with st.spinner("Sending through the company mailbox..."):
                         manifest = _upload_company_attachments(repo, pending["attachments"])
                         rows_out = ms.company_outbox_rows(subject=pending["subject"], html_body=ms.body_html(pending["body"], st.session_state.get("qcms_mail_signature", "")), text_body=pending["body"],
-                                                          to=pending["to"], cc=pending["cc"], bcc=pending["bcc"], sender_name=sender_name, sender_email=sender_email, attachment_manifest=manifest)
+                                                          to=pending["to"], cc=pending["cc"], bcc=pending["bcc"], sender_name=sender_name, sender_email=sender_email, attachment_manifest=manifest, from_mode=from_mode)
                         count = len(rows_out)
                         inserted = [repo.insert("qcms_notification_outbox", r) for r in rows_out]
                         result = NotificationService(repo).dispatch(inserted)
@@ -198,7 +233,7 @@ def render_send() -> None:
                 for key in ("mail_subject", "mail_body", "mail_to_extra", "mail_cc_extra", "mail_bcc_extra"):
                     st.session_state.pop(key, None)
                 if mode == COMPANY_MODE:
-                    save_success_dialog("Email sent" if status == "SENT" else "Email queued", f"Your email **{pending['subject']}** {'was sent' if status == 'SENT' else 'is queued'} to **{len(rows)}** recipient(s). Recipients see **{sender_name} <{sender_email}>** as the sender and replies come to you.")
+                    save_success_dialog("Email sent" if status == "SENT" else "Email queued", f"Your email **{pending['subject']}** {'was sent' if status == 'SENT' else 'is queued'} to **{len(rows)}** recipient(s). Replies go to **{sender_email}**.")
                 else:
                     save_success_dialog("Email sent", f"Your email **{pending['subject']}** was sent to **{len(rows)}** recipient(s) from {account.get('mailbox_email')}. A copy is in your Outlook Sent Items.")
                 st.rerun()
