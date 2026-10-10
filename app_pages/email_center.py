@@ -129,27 +129,76 @@ def render_my_settings() -> None:
 
 
 # ----------------------------------------------------------------------------- Send Email
+COMPANY_MODE = "Company mailbox (shows my name & email)"
+PERSONAL_MODE = "My Microsoft 365 mailbox"
+
+
+def _sender_identity(repo: Repository, profile: dict, login_email: str) -> tuple[str, str]:
+    """Signed-in user's display name and email (Employee Master first, then the login profile)."""
+    name = str(profile.get("full_name") or "").strip()
+    email = login_email
+    try:
+        from core.auth import current_employee_id
+        emp_id = current_employee_id(refresh=False)
+        if emp_id:
+            emp = repo.get("employees", emp_id) or {}
+            name = ms.employee_name(emp) or name
+            email = ms.employee_email(emp) or email
+    except Exception:
+        pass
+    return name or email.split("@")[0], email
+
+
+def _upload_company_attachments(repo: Repository, attachments: list[tuple[str, bytes, str]]) -> list[dict]:
+    import re
+    import uuid
+    from core.database import get_session_client
+    if not attachments:
+        return []
+    client = get_session_client()
+    if client is None:
+        raise RuntimeError("Attachments need a live QCMS session (not available in preview mode).")
+    manifest = []
+    folder = f"{repo.tenant_id}/notification_exports/{uuid.uuid4().hex}"
+    for name, data, ctype in attachments:
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(name or "attachment")).strip("_") or "attachment"
+        path = f"{folder}/{safe}"
+        client.storage.from_("quality-documents").upload(path, data, {"content-type": ctype or "application/octet-stream", "upsert": "false"})
+        manifest.append({"bucket": "quality-documents", "object_path": path, "file_name": safe, "mime_type": ctype or "application/octet-stream", "generated": False})
+    return manifest
+
+
 def render_send() -> None:
-    page_header("Send Email", "Send from your own Microsoft 365 mailbox to employees, departments and email groups.", "Email")
+    page_header("Send Email", "Send to employees, departments and email groups. The email shows your own name and email address as the sender.", "Email")
     repo = Repository(); profile, user_id, login_email = _user()
-    if not _tables_ready(repo):
-        st.error(SETUP_SQL_NOTE); return
-    config = ms.load_config(repo)
-    if not config.ready:
-        st.warning("Email sending is not set up yet. Missing: " + "; ".join(config.missing())); return
-    store = ms.MailAccountStore(repo, config, user_id)
-    account = store.get()
-    if not account:
-        st.info("Connect your Microsoft 365 mailbox first.")
+    tables_ready = _tables_ready(repo)
+    if not tables_ready:
+        st.caption("Email Groups and My Microsoft 365 need the R14/R15 database step; Company mailbox sending works now.")
+    config = ms.load_config(repo) if tables_ready else ms.MailConfig("", "", "")
+    store = ms.MailAccountStore(repo, config, user_id) if config.ready else None
+    try:
+        account = store.get() if store else None
+    except Exception:
+        account = None
+    modes = [COMPANY_MODE] + ([PERSONAL_MODE] if config.ready else [])
+    mode = st.radio("Send using", modes, index=modes.index(PERSONAL_MODE) if account and PERSONAL_MODE in modes else 0, horizontal=True, key="mail_send_mode",
+                    help="Company mailbox: QCMS sends through the company email account set by the administrator — no personal sign-in needed, recipients see your name and email and replies come to you. My Microsoft 365: sent from your own Outlook (copy in your Sent Items).")
+    sender_name, sender_email = _sender_identity(repo, profile, login_email)
+    if mode == PERSONAL_MODE and not account:
+        st.info("Connect your Microsoft 365 mailbox first, or choose Company mailbox.")
         pages = st.session_state.get("_qsms_pages", {})
         if "email-my-settings" in pages:
             st.page_link(pages["email-my-settings"], label="Open My Email Settings", icon=":material/settings:")
         return
+    if mode == COMPANY_MODE:
+        account = {"mailbox_email": sender_email}
+        st.caption(f"From: **{sender_name} <{sender_email}>** · sent through the company mailbox · replies come to you")
     employees = _employees(repo); groups = _groups(repo)
     emp_label = {str(e["id"]): f"{ms.employee_name(e)} · {e.get('department') or '-'} · {ms.employee_email(e) or 'no email'}" for e in employees}
     departments = sorted({str(e.get("department") or "").strip() for e in employees if str(e.get("department") or "").strip()})
     group_label = {str(g["id"]): f"{g.get('group_name')} ({len(g.get('member_employee_ids') or []) + len(g.get('extra_emails') or [])})" for g in groups}
-    st.caption(f"From: **{account.get('mailbox_email')}**")
+    if mode == PERSONAL_MODE:
+        st.caption(f"From: **{account.get('mailbox_email')}**")
 
     with st.form("qcms_send_email_form", border=False):
         section_bar("TO", "Choose people, whole departments or saved groups. Typed addresses: separate with ; or ,")
@@ -165,7 +214,7 @@ def render_send() -> None:
         hide = st.checkbox("Send department / group recipients as BCC (recipients do not see each other)", value=True, key="mail_hide")
         subject = st.text_input("Subject", key="mail_subject")
         body = st.text_area("Message", height=220, key="mail_body")
-        files = st.file_uploader("Attachments (max 3 MB in total)", accept_multiple_files=True, key="mail_files")
+        files = st.file_uploader("Attachments (total: 10 MB company mailbox · 3 MB Microsoft 365)", accept_multiple_files=True, key="mail_files")
         importance = st.radio("Importance", ["normal", "high"], horizontal=True, format_func=str.title, key="mail_importance")
         preview = st.form_submit_button("Review recipients", type="primary", width="stretch")
 
@@ -191,26 +240,55 @@ def render_send() -> None:
         s1, s2 = st.columns(2, gap="small")
         if s1.button(f"Send email to {len(rows)} recipient(s)", type="primary", width="stretch", disabled=not rows, key="mail_send_now"):
             status, error, count = "SENT", None, 1
-            try:
-                payloads = ms.build_messages(subject=pending["subject"], html_body=ms.body_html(pending["body"], st.session_state.get("qcms_mail_signature", "")),
-                                             to=pending["to"], cc=pending["cc"], bcc=pending["bcc"], attachments=pending["attachments"], importance=pending["importance"])
-                count = len(payloads)
-                with st.spinner("Sending from your Microsoft 365 mailbox..."):
-                    token, _ = store.access_token()
-                    errors = ms.send_messages(token, payloads)
-                if errors:
-                    status, error = ("PARTIAL" if len(errors) < count else "FAILED"), "; ".join(errors)[:900]
-            except Exception as exc:
-                status, error = "FAILED", str(exc)[:900]
+            if mode == COMPANY_MODE:
+                try:
+                    from core.notification_service import NotificationService
+                    total = sum(len(a[1]) for a in pending["attachments"])
+                    if total > ms.COMPANY_MAX_ATTACHMENT_BYTES:
+                        raise ValueError(f"Attachments are {total / 1048576:.1f} MB. The limit is 10 MB per email.")
+                    with st.spinner("Sending through the company mailbox..."):
+                        manifest = _upload_company_attachments(repo, pending["attachments"])
+                        rows_out = ms.company_outbox_rows(subject=pending["subject"], html_body=ms.body_html(pending["body"], st.session_state.get("qcms_mail_signature", "")), text_body=pending["body"],
+                                                          to=pending["to"], cc=pending["cc"], bcc=pending["bcc"], sender_name=sender_name, sender_email=sender_email, attachment_manifest=manifest)
+                        count = len(rows_out)
+                        inserted = [repo.insert("qcms_notification_outbox", r) for r in rows_out]
+                        result = NotificationService(repo).dispatch(inserted)
+                    sent_n = int(result.get("sent") or 0); failed_n = int(result.get("failed") or 0)
+                    if result.get("error") or failed_n:
+                        detail = str(result.get("error") or "")
+                        if not detail:
+                            ids = [str(r.get("id")) for r in inserted if r and r.get("id")]
+                            rows_now = [repo.get("qcms_notification_outbox", i) or {} for i in ids]
+                            detail = "; ".join(str(r.get("last_error") or "") for r in rows_now if r.get("last_error"))
+                        status, error = ("PARTIAL" if sent_n else "FAILED"), (detail or "Company mailbox did not accept the email.")[:900]
+                    elif not sent_n:
+                        status, error = "QUEUED", "Queued — will be sent by the company mailbox shortly."
+                except Exception as exc:
+                    status, error = "FAILED", str(exc)[:900]
+            else:
+                try:
+                    payloads = ms.build_messages(subject=pending["subject"], html_body=ms.body_html(pending["body"], st.session_state.get("qcms_mail_signature", "")),
+                                                 to=pending["to"], cc=pending["cc"], bcc=pending["bcc"], attachments=pending["attachments"], importance=pending["importance"])
+                    count = len(payloads)
+                    with st.spinner("Sending from your Microsoft 365 mailbox..."):
+                        token, _ = store.access_token()
+                        errors = ms.send_messages(token, payloads)
+                    if errors:
+                        status, error = ("PARTIAL" if len(errors) < count else "FAILED"), "; ".join(errors)[:900]
+                except Exception as exc:
+                    status, error = "FAILED", str(exc)[:900]
             try:
                 repo.insert("qcms_mail_sent_log", {"sender_email": str(account.get("mailbox_email")), "subject": pending["subject"], "recipient_count": len(rows), "recipient_summary": ", ".join(r["Email"] for r in rows[:40]) + (" …" if len(rows) > 40 else ""), "message_count": count, "status": status, "error_text": error})
             except Exception:
                 pass
-            if status == "SENT":
+            if status in {"SENT", "QUEUED"}:
                 st.session_state.pop("_qcms_mail_pending", None)
                 for key in ("mail_subject", "mail_body", "mail_to_extra", "mail_cc_extra", "mail_bcc_extra"):
                     st.session_state.pop(key, None)
-                save_success_dialog("Email sent", f"Your email **{pending['subject']}** was sent to **{len(rows)}** recipient(s) from {account.get('mailbox_email')}. A copy is in your Outlook Sent Items.")
+                if mode == COMPANY_MODE:
+                    save_success_dialog("Email sent" if status == "SENT" else "Email queued", f"Your email **{pending['subject']}** {'was sent' if status == 'SENT' else 'is queued'} to **{len(rows)}** recipient(s). Recipients see **{sender_name} <{sender_email}>** as the sender and replies come to you.")
+                else:
+                    save_success_dialog("Email sent", f"Your email **{pending['subject']}** was sent to **{len(rows)}** recipient(s) from {account.get('mailbox_email')}. A copy is in your Outlook Sent Items.")
                 st.rerun()
             else:
                 st.error(f"Email not fully sent: {error}")

@@ -485,10 +485,13 @@ STANDALONE_STAGES = {
 }
 
 
-def _filter_plans_by_method(service: InspectionService, plans: list[dict], required_method: str | None) -> list[dict]:
+def _filter_plans_by_method(service: InspectionService, plans: list[dict], required_method: str | None, part_id: str | None = None) -> list[dict]:
     if not required_method:
         return list(plans)
     required = str(required_method).upper()
+    if required == BEND_TEST and part_id:
+        # R16: a Bend Test can be done at any point - offer every approved Bend Test layout of the Part.
+        return service.bend_plans(part_id)
     return [row for row in plans if service.plan_inspection_method(str(row.get("id") or "")) == required]
 
 
@@ -551,7 +554,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             st.error("The selected saved report is not a Bend Test report. Open it from MetLAB Records instead.")
             return
         if not plan and scope == "RAW_MATERIAL_STAGE":
-            raw_plans = _filter_plans_by_method(service, service.raw_material_metlab_plans(part_id, approved_only=True), required_inspection_method)
+            raw_plans = _filter_plans_by_method(service, service.raw_material_metlab_plans(part_id, approved_only=True), required_inspection_method, part_id)
             if not raw_plans:
                 if required_inspection_method == BEND_TEST:
                     st.warning("No APPROVED Bend Test layout exists in Layout Master for this Part. Create/approve it in Bend Test → Bend Test Layout Master first.")
@@ -565,8 +568,13 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             plan = next(row for row in raw_plans if str(row.get("id")) == selected_raw_plan)
             st.caption("Source: Inspection Layout Master only. Part Master Final Metallurgical Requirements are reserved for Final Dispatch MetLAB.")
         elif not plan:
-            candidates = _filter_plans_by_method(service, service.standalone_plans("METLAB", part_id, scope, process_id), required_inspection_method)
-            plan = candidates[0] if candidates else None
+            candidates = _filter_plans_by_method(service, service.standalone_plans("METLAB", part_id, scope, process_id), required_inspection_method, part_id)
+            if required_inspection_method == BEND_TEST and len(candidates) > 1:
+                bend_map = {str(row["id"]): f"{row.get('layout_name')} · {row.get('plan_number')} Rev {row.get('revision')}" for row in candidates}
+                pick = st.selectbox("Bend Test Layout", list(bend_map), format_func=lambda value: bend_map[value], key=f"standalone_bend_layout_{existing_id or part_id}")
+                plan = next(row for row in candidates if str(row.get("id")) == pick)
+            else:
+                plan = candidates[0] if candidates else None
         if not plan:
             if required_inspection_method == BEND_TEST:
                 st.warning("No APPROVED Bend Test layout is available for this Part and selected report stage. Create/approve it in Bend Test → Bend Test Layout Master, then return here.")
@@ -836,7 +844,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
         snapshot = service.rmtc_material_snapshot(inward)
         rmtc = snapshot.get("rmtc") or {}; grade = snapshot.get("grade") or {}; supplier = snapshot.get("supplier") or {}; steel_mill = snapshot.get("steel_mill") or {}
 
-        all_plans = _filter_plans_by_method(service, service.raw_material_metlab_plans(part_id, approved_only=True), required_inspection_method)
+        all_plans = _filter_plans_by_method(service, service.raw_material_metlab_plans(part_id, approved_only=True), required_inspection_method, part_id)
         saved_plan_id = str((existing or {}).get("layout_plan_id") or "")
         if saved_plan_id and all(str(row.get("id")) != saved_plan_id for row in all_plans):
             historic_plan = service.get_plan(saved_plan_id) or {}

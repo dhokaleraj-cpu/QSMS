@@ -12,7 +12,7 @@ echo "Project : $ROOT"
 echo "File    : $SECRETS"
 echo ""
 echo "Choose the AI engine:"
-echo "  1) Google Gemini  - FREE  (key from aistudio.google.com → Get API key, starts with AIza)"
+echo "  1) Google Gemini  - FREE  (key from aistudio.google.com → Get API key, starts with AIza or AQ.)"
 echo "  2) Groq           - FREE  (key from console.groq.com → API Keys, starts with gsk_)"
 echo "  3) Claude         - paid  (key from console.anthropic.com, starts with sk-ant-)"
 echo "  4) OpenAI/ChatGPT - paid  (key from platform.openai.com, starts with sk-)"
@@ -21,7 +21,7 @@ CHOICE="$(printf '%s' "${CHOICE:-1}" | tr -d '[:space:]')"
 KEY=""
 # A pasted key is accepted directly and the engine is detected from its prefix.
 case "$CHOICE" in
-  AIza*) KEY="$CHOICE"; CHOICE=1 ;;
+  AIza*|AQ.*) KEY="$CHOICE"; CHOICE=1 ;;
   gsk_*) KEY="$CHOICE"; CHOICE=2 ;;
   sk-ant-*) KEY="$CHOICE"; CHOICE=3 ;;
   sk-*) KEY="$CHOICE"; CHOICE=4 ;;
@@ -36,13 +36,16 @@ esac
 
 if [ -z "$KEY" ]; then
   echo ""
-  echo "Paste your $PROVIDER API key. Nothing is shown while you paste; press Enter after pasting."
-  read -r -s -p "API key: " KEY || true
+  echo "Copy your $PROVIDER API key first (Cmd+C), then press Enter here - QCMS reads it from the clipboard."
+  echo "(Or paste it now; nothing is shown while you paste.)"
+  read -r -s -p "Press Enter: " KEY || true
   echo ""
+  if [ -z "$(printf '%s' "$KEY" | tr -d '[:space:]')" ] && command -v pbpaste >/dev/null 2>&1; then KEY="$(pbpaste)"; fi
 fi
 KEY="$(printf '%s' "$KEY" | tr -d '[:space:]')"
 case "$KEY" in
   "$PREFIX"*) ;;
+  AQ.*) [ "$PROVIDER" = "gemini" ] || { echo "ERROR: that does not look like a $PROVIDER key. Nothing was changed."; exit 1; } ;;
   *) echo "ERROR: that does not look like a $PROVIDER key (it must start with $PREFIX). Nothing was changed."; exit 1 ;;
 esac
 
@@ -50,7 +53,7 @@ CODE="skipped"
 if [ "${QCMS_SKIP_KEY_CHECK:-0}" != "1" ]; then
   echo "Checking the key..."
   case "$PROVIDER" in
-    gemini) CODE="$(curl -s -o /dev/null -w '%{http_code}' "https://generativelanguage.googleapis.com/v1beta/models?key=$KEY" || echo 000)" ;;
+    gemini) CODE="$(curl -s -o /dev/null -w '%{http_code}' https://generativelanguage.googleapis.com/v1beta/openai/chat/completions -H "Authorization: Bearer $KEY" -H "content-type: application/json" -d '{"model":"gemini-flash-latest","messages":[{"role":"user","content":"OK"}],"max_tokens":5}' || echo 000)" ;;
     groq)   CODE="$(curl -s -o /dev/null -w '%{http_code}' https://api.groq.com/openai/v1/models -H "Authorization: Bearer $KEY" || echo 000)" ;;
     claude) CODE="$(curl -s -o /dev/null -w '%{http_code}' https://api.anthropic.com/v1/models -H "x-api-key: $KEY" -H "anthropic-version: 2023-06-01" || echo 000)" ;;
     openai) CODE="$(curl -s -o /dev/null -w '%{http_code}' https://api.openai.com/v1/models -H "Authorization: Bearer $KEY" || echo 000)" ;;

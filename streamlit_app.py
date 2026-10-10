@@ -50,6 +50,7 @@ from app_pages import (
     inspection_home,
     inspection_layouts,
     kpi_dashboards,
+    report_builder,
     master_home,
     master_import,
     material_grade,
@@ -248,6 +249,8 @@ PAGE_ITEMS = (
     ("bend-layout-entry", st.Page(inspection_layouts.render_bend_layout_entry, title="Bend Test Layout Master", icon=":material/design_services:", url_path="bend-layout-entry")),
     ("global-search", st.Page(global_search.render, title="Global Search", icon=":material/search:", url_path="global-search")),
     ("kpi-dashboards", st.Page(kpi_dashboards.render, title="KPI Dashboards", icon=":material/insights:", url_path="kpi-dashboards")),
+    ("report-builder", st.Page(report_builder.render, title="Report Builder", icon=":material/query_stats:", url_path="report-builder")),
+    ("master-lists", st.Page(report_builder.render_master_lists, title="Master List Excel", icon=":material/table_chart:", url_path="master-lists")),
     ("system-settings", st.Page(system_settings.render, title="System Settings", icon=":material/tune:", url_path="system-settings")),
     ("email-send", st.Page(email_center.render_send, title="Send Email", icon=":material/send:", url_path="email-send")),
     ("email-groups", st.Page(email_center.render_groups, title="Email Groups", icon=":material/groups:", url_path="email-groups")),
@@ -392,6 +395,8 @@ MODULE_SUBMENUS = {
     ),
     "Reports": (
         ("reports-home", "Reports Home", ":material/assessment:"),
+        ("report-builder", "Report Builder", ":material/query_stats:"),
+        ("master-lists", "Master List Excel", ":material/table_chart:"),
         ("supply-chain-report", "Supply Chain MIS", ":material/analytics:"),
         ("heat-transaction-report", "Heat Global Balance", ":material/monitoring:"),
         ("osp-balance-report", "OSP Heat Balance", ":material/factory:"),
@@ -444,7 +449,7 @@ ROUTE_MODULE = {
     "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
     "dimensional-entry": "Inspections", "metlab-entry": "Inspections", "bend-test-entry": "Bend Test", "bend-layout-entry": "Bend Test",
     "global-search": "Search",
-    "reports-home": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports", "supply-chain-report": "Reports", "rmtc-report": "Reports", "inward-report": "Reports", "dimensional-report": "Reports", "metlab-report": "Reports", "bend-test-report": "Reports", "complaints-report": "Reports", "traceability-report": "Reports", "npd-report": "Reports", "apqp-report": "Reports", "qc-report": "Reports", "inspection-layout-report": "Reports", "standards-report": "Reports",
+    "reports-home": "Reports", "report-builder": "Reports", "master-lists": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports", "supply-chain-report": "Reports", "rmtc-report": "Reports", "inward-report": "Reports", "dimensional-report": "Reports", "metlab-report": "Reports", "bend-test-report": "Reports", "complaints-report": "Reports", "traceability-report": "Reports", "npd-report": "Reports", "apqp-report": "Reports", "qc-report": "Reports", "inspection-layout-report": "Reports", "standards-report": "Reports",
     "templates": "Templates",
     **{path: "Records" for path in RECORD_ROUTES},
 }
@@ -478,6 +483,7 @@ PAGE_TITLE_TO_PATH = {
     "Bend Test Report": "bend-test-entry", "Bend Test Records": "bend-test-records", "Bend Test Reports": "bend-test-report", "Bend Test Layout Master": "bend-layout-entry",
     "Global Search": "global-search",
     "KPI Dashboards": "kpi-dashboards", "System Settings": "system-settings",
+    "Report Builder": "report-builder", "Master List Excel": "master-lists",
     "Send Email": "email-send", "Email Groups": "email-groups", "My Email Settings": "email-my-settings", "My Sent Emails": "email-sent",
 }
 

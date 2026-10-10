@@ -375,3 +375,59 @@ class MailAccountStore:
         except Exception:
             pass
         return str(tokens["access_token"]), account
+
+
+# ----------------------------------------------------------------------------- R16 company mailbox
+# "Like the payroll email module": QCMS sends through the company SMTP account configured by the
+# administrator (Admin → Email Settings), but the email shows the signed-in user's own name and
+# email address as the sender. Recipients' replies go to the user.
+COMPANY_EVENT_KEY = "USER_EMAIL"
+COMPANY_MAX_RECIPIENTS = 90          # keep each SMTP message well below typical relay limits
+COMPANY_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+
+
+def company_outbox_rows(
+    *, subject: str, html_body: str, text_body: str, to: Sequence[Recipient], cc: Sequence[Recipient] = (), bcc: Sequence[Recipient] = (),
+    sender_name: str, sender_email: str, attachment_manifest: Sequence[Mapping[str, Any]] = (),
+) -> list[dict]:
+    """Return qcms_notification_outbox rows for the company-mailbox send (one row per message).
+
+    The edge function ``qcms-send-email`` reads ``context.to_emails`` and ``context.sender_*``:
+    From = "User Name <user@company>"; if the SMTP server refuses to send as the user it retries
+    as "User Name via QCMS <company mailbox>" with Reply-To = the user.
+    """
+    if not str(subject or "").strip():
+        raise ValueError("Enter a subject.")
+    if not (to or cc or bcc):
+        raise ValueError("Select at least one recipient.")
+    sender_email = _valid(sender_email)
+    if not sender_email:
+        raise ValueError("Your QCMS login has no valid email address, so the email cannot show you as the sender.")
+    fixed = len(to) + len(cc)
+    if fixed > COMPANY_MAX_RECIPIENTS:
+        raise ValueError(f"To + CC has {fixed} addresses. Put large lists in BCC (limit {COMPANY_MAX_RECIPIENTS} per message).")
+    room = COMPANY_MAX_RECIPIENTS - fixed
+    bcc = list(bcc)
+    batches = [bcc[:room]] + chunk(bcc[room:], COMPANY_MAX_RECIPIENTS) if len(bcc) > room else [bcc]
+    batches = [b for b in batches if b] or [[]]
+    rows: list[dict] = []
+    for index, part in enumerate(batches):
+        to_list = [r.email for r in to] if index == 0 else []
+        cc_list = [r.email for r in cc] if index == 0 else []
+        primary = to_list[0] if to_list else sender_email   # BCC-only copies go "to" the sender
+        rows.append({
+            "event_key": COMPANY_EVENT_KEY,
+            "recipient_email": primary,
+            "recipient_name": (to[0].name if index == 0 and to else sender_name) or None,
+            "cc_emails": cc_list,
+            "bcc_emails": [r.email for r in part],
+            "subject": str(subject).strip(),
+            "body_text": text_body,
+            "body_html": html_body,
+            "template_key": COMPANY_EVENT_KEY,
+            "attachment_manifest": list(attachment_manifest),
+            "is_automatic": False,
+            "status": "PENDING",
+            "context": {"to_emails": to_list, "sender_name": sender_name, "sender_email": sender_email, "from_mode": "SEND_AS_USER", "message_index": index + 1, "message_count": len(batches)},
+        })
+    return rows

@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R15",
+  "release_revision": "R16",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -443,5 +443,16 @@
     "ai_assistant_free_providers_gemini_groq_plus_claude_openai",
     "android_first_app_1_1_0_camera_upload_progress_offline_retry"
   ],
-  "r15_migration": "supabase/migrations/20261010100000_qcms_r15_bend_layout_scope.sql"
+  "r15_migration": "supabase/migrations/20261010100000_qcms_r15_bend_layout_scope.sql",
+  "r16_changes": [
+    "bend_layout_any_stage_no_inward_type",
+    "bend_entry_selects_any_approved_bend_layout",
+    "report_builder_filters_group_totals_charts_saved_reports",
+    "master_list_excel_workbook_all_masters",
+    "email_company_mailbox_shows_user_name_and_email",
+    "qcms_send_email_edge_function_v5_send_as_user_with_fallback",
+    "print_design_options_for_approval",
+    "ai_key_script_accepts_AQ_gemini_keys_and_clipboard"
+  ],
+  "r16_edge_function": "qcms-send-email v5 deployed 2026-10-10"
 }

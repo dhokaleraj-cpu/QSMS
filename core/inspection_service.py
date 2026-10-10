@@ -145,6 +145,14 @@ class InspectionService:
             and str(row.get("requirement_scope") or "GENERAL").upper() != "FINAL_METALLURGICAL"
         ]
 
+    def bend_plans(self, part_id: str, *, approved_only: bool = True) -> list[dict]:
+        """R16: every Bend Test layout of the Part, at any stage / inward type / process.
+
+        A bend test can be done at any point, so Bend Test entry may select any approved
+        Bend Test layout of the Part."""
+        rows = self.plans("METLAB", part_id, approved_only=approved_only)
+        return [row for row in rows if str(row.get("inspection_method") or "").upper() == BEND_TEST or self.plan_inspection_method(str(row.get("id") or "")) == BEND_TEST]
+
     def standalone_plans(self, layout_type: str, part_id: str, scope: str, process_id: str | None = None) -> list[dict]:
         """Return controlled approved layouts eligible for a standalone stage."""
         layout_type = layout_type.upper()

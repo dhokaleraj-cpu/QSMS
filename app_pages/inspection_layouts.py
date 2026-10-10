@@ -64,7 +64,7 @@ def render_entry(bend_mode: bool = False) -> None:
     subpage_navigation(("masters", "Masters", ":material/dataset:"), ("inspection-home", "Inspections", ":material/biotech:"), ("inspection-layout-records", "Layout Records", ":material/table_view:"))
     page_header("Bend Test Layout Master" if bend_mode else "Inspection Layout Master", context="Bend Test · Part · Process · Stage" if bend_mode else "Part · Process · Stage")
     if bend_mode:
-        st.info("Bend Test layouts are kept separately from the general MetLAB layout. A Part can have one current Bend Test layout AND one current MetLAB layout for the same Stage + Process.")
+        st.info("Bend Test layouts are kept separately from the general MetLAB layout. A bend test can be done at any point, so no Inward Type is needed — Process and Inspection Stage are optional. Every approved Bend Test layout of the Part can be selected in Bend Test Report.")
     template_download_row([("Inspection_Layout_Template.xlsx", "Download Generic Layout Template"), ("Dimensional_Inspection_Report_Template.xlsx", "Download Dimensional Template"), ("MetLAB_Report_Layout_Template.xlsx", "Download MetLAB Template")], key_prefix="inspection_layout")
     service = InspectionService(); perms = current_permissions("INSPECTION_LAYOUTS")
     parts, part_map, process_map, stage_map = _maps(service)
@@ -114,7 +114,12 @@ def render_entry(bend_mode: bool = False) -> None:
     current_inward_type = str((existing or {}).get("inward_type") or "MATERIAL_INWARD")
     c1, c2, c3, c4, c5 = st.columns(5, gap="small")
     part_id = c1.selectbox("Part Number", list(part_map), index=list(part_map).index(current_part) if current_part in part_map else 0, format_func=lambda value: part_map[value], key=f"layout_part_{editor_token}")
-    inward_type = c2.selectbox("Inward Type", inward_type_options, index=inward_type_options.index(current_inward_type) if current_inward_type in inward_type_options else 0, format_func=lambda value: value.replace("_", " ").title(), key=f"layout_inward_type_{editor_token}")
+    if bend_mode:
+        # R16: a Bend Test can be done at any point - no Inward Type selection.
+        inward_type = "MATERIAL_INWARD"
+        c2.text_input("Applies To", value="Any stage (Bend Test)", disabled=True, key=f"layout_inward_any_{editor_token}")
+    else:
+        inward_type = c2.selectbox("Inward Type", inward_type_options, index=inward_type_options.index(current_inward_type) if current_inward_type in inward_type_options else 0, format_func=lambda value: value.replace("_", " ").title(), key=f"layout_inward_type_{editor_token}")
     allowed_process_ids = [pid for pid in process_map if inward_type != "OSP_PROCESS" or str((process_rows.get(pid) or {}).get("process_type")) == "OUTSOURCED"]
     process_options = [""] + allowed_process_ids
     if current_process and current_process not in process_options:
