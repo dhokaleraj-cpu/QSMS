@@ -15,7 +15,13 @@ def new_client(settings: Settings | None = None) -> Client:
             "Supabase is not configured. Add SUPABASE_URL and "
             "SUPABASE_PUBLISHABLE_KEY to .streamlit/secrets.toml."
         )
-    return create_client(settings.supabase_url, settings.supabase_public_key)
+    # R19: email sending through the edge function can take 10-20 s (SMTP); the default
+    # 5 s functions timeout produced "The read operation timed out".
+    try:
+        from supabase import ClientOptions
+        return create_client(settings.supabase_url, settings.supabase_public_key, options=ClientOptions(function_client_timeout=60))
+    except Exception:
+        return create_client(settings.supabase_url, settings.supabase_public_key)
 
 
 def get_session_client() -> Client | None:

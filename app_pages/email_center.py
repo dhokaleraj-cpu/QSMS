@@ -102,6 +102,36 @@ def _company_mailbox(repo: Repository) -> str:
         return ""
 
 
+def _wait_for_outbox(repo: Repository, ids: list[str], timeout: float = 45.0) -> list[dict]:
+    """Poll the outbox until every row is SENT/FAILED (or timeout). Returns the latest rows."""
+    deadline = time.time() + timeout
+    rows: list[dict] = []
+    while True:
+        rows = []
+        for outbox_id in ids:
+            try:
+                found = repo.select("qcms_notification_outbox", eq={"id": outbox_id}, limit=1, require_live=True)
+            except TypeError:
+                found = repo.select("qcms_notification_outbox", eq={"id": outbox_id}, limit=1)
+            except Exception:
+                found = []
+            rows.append(dict(found[0]) if found else {"id": outbox_id, "status": "UNKNOWN"})
+        if all(str(r.get("status")) in {"SENT", "FAILED", "UNKNOWN"} for r in rows) or time.time() >= deadline:
+            return rows
+        time.sleep(1.5)
+
+
+def _outbox_outcome(rows: list[dict], result: dict | None = None) -> tuple[str, str | None]:
+    """Map outbox rows to the Send Email status shown to the user."""
+    statuses = [str(r.get("status") or "") for r in rows]
+    if statuses and all(s == "SENT" for s in statuses):
+        return "SENT", None
+    errors = "; ".join(str(r.get("last_error") or "") for r in rows if str(r.get("status")) == "FAILED" and r.get("last_error"))
+    if "FAILED" in statuses:
+        return ("PARTIAL" if "SENT" in statuses else "FAILED"), (errors or str((result or {}).get("error") or "") or "The email server did not accept the email.")[:900]
+    return "QUEUED", "The email server is still sending - it will be delivered in a moment. Check My Sent Emails."
+
+
 def _upload_company_attachments(repo: Repository, attachments: list[tuple[str, bytes, str]]) -> list[dict]:
     import re
     import uuid
@@ -200,16 +230,14 @@ def render_send() -> None:
                         count = len(rows_out)
                         inserted = [repo.insert("qcms_notification_outbox", r) for r in rows_out]
                         result = NotificationService(repo).dispatch(inserted)
-                    sent_n = int(result.get("sent") or 0); failed_n = int(result.get("failed") or 0)
-                    if result.get("error") or failed_n:
-                        detail = str(result.get("error") or "")
-                        if not detail:
-                            ids = [str(r.get("id")) for r in inserted if r and r.get("id")]
-                            rows_now = [repo.get("qcms_notification_outbox", i) or {} for i in ids]
-                            detail = "; ".join(str(r.get("last_error") or "") for r in rows_now if r.get("last_error"))
-                        status, error = ("PARTIAL" if sent_n else "FAILED"), (detail or "Company mailbox did not accept the email.")[:900]
-                    elif not sent_n:
-                        status, error = "QUEUED", "Queued — will be sent by the company mailbox shortly."
+                        # R19: the edge function keeps sending even when this call times out
+                        # ("The read operation timed out"), so the outbox rows are the truth.
+                        ids = [str(r.get("id")) for r in inserted if r and r.get("id")]
+                        rows_now = _wait_for_outbox(repo, ids, timeout=15.0)
+                        if any(str(r.get("status")) == "PENDING" for r in rows_now):
+                            NotificationService(repo).dispatch([r for r in rows_now if str(r.get("status")) == "PENDING"])
+                            rows_now = _wait_for_outbox(repo, ids)
+                    status, error = _outbox_outcome(rows_now, result)
                 except Exception as exc:
                     status, error = "FAILED", str(exc)[:900]
             else:
