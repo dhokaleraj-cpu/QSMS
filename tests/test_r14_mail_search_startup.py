@@ -109,4 +109,4 @@ def test_app_wiring_search_bar_and_startup_guard():
         assert token in app
     repo_src = (ROOT / "core/repository.py").read_text()
     assert "stored = deepcopy(rows)" in repo_src and "len(cache) > 200" in repo_src
-    assert "MICROSOFT 365 SIGN-IN FOR EMAIL" in (ROOT / "app_pages/system_settings.py").read_text()
+    assert "EMAIL MODULE · DEFAULT EMAIL SERVER" in (ROOT / "app_pages/system_settings.py").read_text()  # R17: no Office 365 sign-in

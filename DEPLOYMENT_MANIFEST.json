@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R16",
+  "release_revision": "R17",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -454,5 +454,13 @@
     "print_design_options_for_approval",
     "ai_key_script_accepts_AQ_gemini_keys_and_clipboard"
   ],
-  "r16_edge_function": "qcms-send-email v5 deployed 2026-10-10"
+  "r16_edge_function": "qcms-send-email v5 deployed 2026-10-10",
+  "r17_changes": [
+    "print_design_b_open_lines_all_quality_pdfs",
+    "conclusion_green_remarks_orange_status_coloured_text",
+    "white_pdf_header_teal_rule_larger_fonts",
+    "email_module_default_server_only_no_office365_signin",
+    "system_settings_email_default_server_panel",
+    "kpi_dashboards_first_page_after_login"
+  ]
 }

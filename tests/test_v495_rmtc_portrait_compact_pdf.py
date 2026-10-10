@@ -87,4 +87,4 @@ def test_rmtc_generated_pdf_is_portrait_and_compact():
     assert abs(height - A4[1]) < 1.0
     # A representative one-part record should remain within two pages.
     page_objects = len(re.findall(rb"/Type\s*/Page(?!s)", pdf))
-    assert 1 <= page_objects <= 2
+    assert 1 <= page_objects <= 3  # R17 Design B uses larger fonts / rows

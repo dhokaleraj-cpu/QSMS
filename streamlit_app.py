@@ -150,7 +150,7 @@ android_streamlit_nav = bool(native_mobile and _native_android and _android_stre
 # page at the root URL even when a url_path was supplied, so deriving this
 # mapping from page.url_path can drop the "dashboard" key.
 PAGE_ITEMS = (
-    ("dashboard", st.Page(dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard", default=True)),
+    ("dashboard", st.Page(dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard")),
     ("deployment-diagnostics", st.Page(deployment_diagnostics.render, title="Deployment Diagnostics", icon=":material/verified:", url_path="deployment-diagnostics")),
     ("masters", st.Page(master_home.render, title="Masters", icon=":material/dataset:", url_path="masters")),
     ("company-branch-entry", st.Page(company_branch.render_entry, title="Company Branch Master", icon=":material/account_balance:", url_path="company-branch-entry")),
@@ -248,7 +248,7 @@ PAGE_ITEMS = (
     ("bend-test-report", st.Page(metlab_report.render_bend_test_records, title="Bend Test Reports", icon=":material/assessment:", url_path="bend-test-report")),
     ("bend-layout-entry", st.Page(inspection_layouts.render_bend_layout_entry, title="Bend Test Layout Master", icon=":material/design_services:", url_path="bend-layout-entry")),
     ("global-search", st.Page(global_search.render, title="Global Search", icon=":material/search:", url_path="global-search")),
-    ("kpi-dashboards", st.Page(kpi_dashboards.render, title="KPI Dashboards", icon=":material/insights:", url_path="kpi-dashboards")),
+    ("kpi-dashboards", st.Page(kpi_dashboards.render, title="KPI Dashboards", icon=":material/insights:", url_path="kpi-dashboards", default=True)),
     ("report-builder", st.Page(report_builder.render, title="Report Builder", icon=":material/query_stats:", url_path="report-builder")),
     ("master-lists", st.Page(report_builder.render_master_lists, title="Master List Excel", icon=":material/table_chart:", url_path="master-lists")),
     ("system-settings", st.Page(system_settings.render, title="System Settings", icon=":material/tune:", url_path="system-settings")),
@@ -543,8 +543,8 @@ log_route_view(current_path, current_permission_module, nav.title)
 QUALITY_HEADER_MODULES = {"RMTC", "Inward", "OSP", "QC Calculation Tools", "Complaints", "Calibration & Validation", "Inspections", "Bend Test"}
 quality_active_module = current_module if current_module in QUALITY_HEADER_MODULES else "Inspections"
 HEADER_NAV = (
-    (PAGE_BY_PATH["dashboard"], "Home", "Dashboard"),
     (PAGE_BY_PATH["kpi-dashboards"], "KPIs", "KPI Dashboards"),
+    (PAGE_BY_PATH["dashboard"], "Home", "Dashboard"),
     (PAGE_BY_PATH["masters"], "Masters", "Masters"),
     (PAGE_BY_PATH["supply-chain-home"], "Supply", "Supply Chain"),
     (PAGE_BY_PATH["inspection-home"], "Quality", quality_active_module),
@@ -556,8 +556,8 @@ HEADER_NAV = (
 # page is None are group headings (rendered as small captions, not links).
 RAIL_NAV = (
     (None, "Overview", "", ""),
-    (PAGE_BY_PATH["dashboard"], "Dashboard", "Dashboard", ":material/home:"),
     (PAGE_BY_PATH["kpi-dashboards"], "KPI Dashboards", "KPI Dashboards", ":material/insights:"),
+    (PAGE_BY_PATH["dashboard"], "Dashboard", "Dashboard", ":material/home:"),
     (PAGE_BY_PATH["global-search"], "Search & AI", "Search", ":material/search:"),
     (None, "Communication", "", ""),
     (PAGE_BY_PATH["email-send"], "Email", "Email", ":material/mail:"),

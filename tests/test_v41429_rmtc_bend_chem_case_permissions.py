@@ -120,7 +120,7 @@ def test_conclusion_remark_and_color_font_highlighting_are_in_outputs():
     assert "def _quality_conclusion_table" in reporting
     assert "Helvetica-Bold" in reporting
     assert "Helvetica-Oblique" in reporting
-    assert 'colors.HexColor("#E0F2FE")' in reporting
+    assert "CONCLUSION_COLOR" in reporting and "REMARK_COLOR" in reporting  # R17 Design B: coloured text instead of fills
     assert 'colors.HexColor("#FFF7ED")' in reporting
     assert "PatternFill" in reporting
 

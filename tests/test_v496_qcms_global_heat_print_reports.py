@@ -43,7 +43,7 @@ def test_rmtc_global_heat_header_and_three_microstructure_contract():
     assert "GLOBAL HEAT QUANTITY BALANCE & RECORD LIST" in rmtc_page
     assert "HEAT NUMBER:" in reporting and "RMTC NUMBER:" in reporting
     assert reporting.index("HEAT NUMBER:") < reporting.index("RMTC NUMBER:")
-    assert "10.5 if portrait_page" in reporting and "7.0 if portrait_page" in reporting
+    assert "12.5 if portrait_page" in reporting and "8.6 if portrait_page" in reporting  # R17 Design B: heat number larger than RMTC number
     assert "range(1, 4)" in rmtc_page
     for n in range(1, 4):
         assert f"RMTC_MICROSTRUCTURE_{{slot}}" in rmtc_page or f"RMTC_MICROSTRUCTURE_{n}" in rmtc_page

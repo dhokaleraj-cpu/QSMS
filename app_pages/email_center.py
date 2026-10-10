@@ -42,90 +42,17 @@ def _groups(repo: Repository) -> list[dict]:
 
 # ----------------------------------------------------------------------------- My Email Settings
 def render_my_settings() -> None:
-    page_header("My Email Settings", "Connect your own Microsoft 365 mailbox. Only you can see this page's connection — not other users and not administrators.", "Private")
+    """R17: no Microsoft 365 sign-in. Emails go through the default email server (Admin → Email Settings)."""
+    page_header("My Email Settings", "Your emails are sent through the company's default email server. No Office 365 sign-in is needed.", "Email")
     repo = Repository(); profile, user_id, login_email = _user()
-    if not _tables_ready(repo):
-        st.error(SETUP_SQL_NOTE); return
-    config = ms.load_config(repo)
-    st.markdown(
-        "- QCMS uses **Sign in with Microsoft** (same as Outlook). Your Microsoft password is entered only on Microsoft's page — **QCMS never sees or stores it**.\n"
-        "- After sign-in QCMS keeps only an **encrypted, revocable** permission to send mail as you. The database lets **only you** read it; there is no administrator access.\n"
-        f"- You must sign in with your QCMS login email: **{login_email or 'not set'}**. Emails you send appear in your own Outlook **Sent Items**."
-    )
-    if not config.ready:
-        st.warning("Email sending is not set up yet. Missing: " + "; ".join(config.missing()))
-        return
-    store = ms.MailAccountStore(repo, config, user_id)
-    try:
-        account = store.get()
-    except Exception as exc:
-        st.error(f"Could not read your email connection: {exc}"); return
-
-    with stage_section("A", "MICROSOFT 365 CONNECTION", "Connect, test or disconnect your mailbox.", key="email_my_connection"):
-        if account:
-            c = st.columns(3, gap="small")
-            c[0].metric("Status", "Connected")
-            c[1].metric("Mailbox", str(account.get("mailbox_email") or ""))
-            c[2].metric("Connected on", str(account.get("connected_at") or "")[:10])
-            b1, b2 = st.columns(2, gap="small")
-            if b1.button("Test connection", width="stretch", key="email_test"):
-                try:
-                    token, _ = store.access_token()
-                    me = ms.graph_me(token)
-                    st.success(f"Connection OK — Microsoft 365 mailbox {ms.mailbox_address(me)} is ready to send.")
-                except Exception as exc:
-                    st.error(str(exc))
-            if b2.button("Disconnect my mailbox", width="stretch", key="email_disconnect"):
-                store.disconnect()
-                save_success_dialog("Mailbox disconnected", "Your Microsoft 365 connection was deleted from QCMS. You can also remove 'QCMS' under Microsoft My Account → App permissions.")
-                st.rerun()
-        flow = st.session_state.get("_qcms_ms365_device_flow")
-        if not flow:
-            if st.button(("Reconnect" if account else "Connect") + " Microsoft 365 (Sign in with Microsoft)", type="primary", width="stretch", key="email_connect"):
-                try:
-                    flow = ms.start_device_login(config)
-                    flow["_started"] = time.time()
-                    st.session_state["_qcms_ms365_device_flow"] = flow
-                    st.rerun()
-                except Exception as exc:
-                    st.error(str(exc))
-        else:
-            remaining = int(flow.get("expires_in", 900) - (time.time() - flow.get("_started", time.time())))
-            st.info("**Step 1** · Open the Microsoft sign-in page:")
-            st.link_button("Open microsoft.com/devicelogin", str(flow.get("verification_uri") or "https://microsoft.com/devicelogin"), width="stretch")
-            st.markdown(f"**Step 2** · Enter this code: <span style='font-size:28px;font-weight:800;letter-spacing:.12em;color:#0B6E70'>{flow.get('user_code')}</span>", unsafe_allow_html=True)
-            st.caption(f"Sign in with {login_email}. The code expires in about {max(remaining // 60, 0)} minutes.")
-            st.markdown("**Step 3** · After Microsoft says *You have signed in*, click Finish:")
-            f1, f2 = st.columns(2, gap="small")
-            if f1.button("Finish connection", type="primary", width="stretch", key="email_finish"):
-                result = {"status": "pending"}
-                with st.spinner("Waiting for Microsoft..."):
-                    for _ in range(6):
-                        result = ms.poll_device_login(config, str(flow.get("device_code")))
-                        if result["status"] != "pending":
-                            break
-                        time.sleep(max(int(flow.get("interval", 5)), 3))
-                if result["status"] == "ok":
-                    try:
-                        me = ms.graph_me(result["access_token"])
-                        mailbox = ms.assert_login_mailbox(me, login_email)
-                        store.save(mailbox=mailbox, display_name=str(me.get("displayName") or ""), refresh_token=str(result.get("refresh_token") or ""), scope=str(result.get("scope") or ""))
-                        st.session_state.pop("_qcms_ms365_device_flow", None)
-                        save_success_dialog("Mailbox connected", f"**{mailbox}** is connected. You can now send email from Email → Send Email.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.session_state.pop("_qcms_ms365_device_flow", None)
-                        st.error(str(exc))
-                elif result["status"] == "pending":
-                    st.warning("Microsoft has not confirmed the sign-in yet. Finish signing in on the Microsoft page, then click Finish again.")
-                else:
-                    st.session_state.pop("_qcms_ms365_device_flow", None)
-                    st.error({"expired": "The code expired. Click Connect again.", "declined": "Sign-in was cancelled."}.get(result["status"], str(result.get("message") or "Sign-in failed.")))
-            if f2.button("Cancel", width="stretch", key="email_cancel"):
-                st.session_state.pop("_qcms_ms365_device_flow", None); st.rerun()
-
+    sender_name, sender_email = _sender_identity(repo, profile, login_email)
+    with stage_section("A", "HOW MY EMAILS APPEAR", "Recipients see your name and email address; replies come to you.", key="email_my_identity"):
+        c1, c2 = st.columns(2, gap="small")
+        c1.text_input("From name", value=sender_name, disabled=True)
+        c2.text_input("From email", value=sender_email, disabled=True)
+        st.caption("Taken from Employee Master (or your QCMS login). Ask the administrator to correct your email in Employee Master if it is wrong.")
     with stage_section("B", "MY SIGNATURE", "Added at the end of emails you send from QCMS (stored only in this browser session).", key="email_my_signature"):
-        st.session_state["qcms_mail_signature"] = st.text_area("Signature", value=st.session_state.get("qcms_mail_signature", f"{profile.get('full_name') or ''}\nFour Star Industries Pvt. Ltd."), height=90)
+        st.session_state["qcms_mail_signature"] = st.text_area("Signature", value=st.session_state.get("qcms_mail_signature", f"{sender_name}\nFour Star Industries Pvt. Ltd."), height=90)
 
 
 # ----------------------------------------------------------------------------- Send Email
@@ -173,32 +100,17 @@ def render_send() -> None:
     repo = Repository(); profile, user_id, login_email = _user()
     tables_ready = _tables_ready(repo)
     if not tables_ready:
-        st.caption("Email Groups and My Microsoft 365 need the R14/R15 database step; Company mailbox sending works now.")
-    config = ms.load_config(repo) if tables_ready else ms.MailConfig("", "", "")
-    store = ms.MailAccountStore(repo, config, user_id) if config.ready else None
-    try:
-        account = store.get() if store else None
-    except Exception:
-        account = None
-    modes = [COMPANY_MODE] + ([PERSONAL_MODE] if config.ready else [])
-    mode = st.radio("Send using", modes, index=modes.index(PERSONAL_MODE) if account and PERSONAL_MODE in modes else 0, horizontal=True, key="mail_send_mode",
-                    help="Company mailbox: QCMS sends through the company email account set by the administrator — no personal sign-in needed, recipients see your name and email and replies come to you. My Microsoft 365: sent from your own Outlook (copy in your Sent Items).")
+        st.caption("Email Groups need the R14/R15 database step; sending works now.")
+    # R17: the Email module always uses the default email server (no Office 365 sign-in).
+    mode = COMPANY_MODE
+    store = None
     sender_name, sender_email = _sender_identity(repo, profile, login_email)
-    if mode == PERSONAL_MODE and not account:
-        st.info("Connect your Microsoft 365 mailbox first, or choose Company mailbox.")
-        pages = st.session_state.get("_qsms_pages", {})
-        if "email-my-settings" in pages:
-            st.page_link(pages["email-my-settings"], label="Open My Email Settings", icon=":material/settings:")
-        return
-    if mode == COMPANY_MODE:
-        account = {"mailbox_email": sender_email}
-        st.caption(f"From: **{sender_name} <{sender_email}>** · sent through the company mailbox · replies come to you")
+    account = {"mailbox_email": sender_email}
+    st.caption(f"From: **{sender_name} <{sender_email}>** · sent through the company email server · replies come to you")
     employees = _employees(repo); groups = _groups(repo)
     emp_label = {str(e["id"]): f"{ms.employee_name(e)} · {e.get('department') or '-'} · {ms.employee_email(e) or 'no email'}" for e in employees}
     departments = sorted({str(e.get("department") or "").strip() for e in employees if str(e.get("department") or "").strip()})
     group_label = {str(g["id"]): f"{g.get('group_name')} ({len(g.get('member_employee_ids') or []) + len(g.get('extra_emails') or [])})" for g in groups}
-    if mode == PERSONAL_MODE:
-        st.caption(f"From: **{account.get('mailbox_email')}**")
 
     with st.form("qcms_send_email_form", border=False):
         section_bar("TO", "Choose people, whole departments or saved groups. Typed addresses: separate with ; or ,")
@@ -214,7 +126,7 @@ def render_send() -> None:
         hide = st.checkbox("Send department / group recipients as BCC (recipients do not see each other)", value=True, key="mail_hide")
         subject = st.text_input("Subject", key="mail_subject")
         body = st.text_area("Message", height=220, key="mail_body")
-        files = st.file_uploader("Attachments (total: 10 MB company mailbox · 3 MB Microsoft 365)", accept_multiple_files=True, key="mail_files")
+        files = st.file_uploader("Attachments (max 10 MB in total)", accept_multiple_files=True, key="mail_files")
         importance = st.radio("Importance", ["normal", "high"], horizontal=True, format_func=str.title, key="mail_importance")
         preview = st.form_submit_button("Review recipients", type="primary", width="stretch")
 
@@ -340,7 +252,7 @@ def render_groups() -> None:
 
 # ----------------------------------------------------------------------------- Sent log
 def render_sent() -> None:
-    page_header("My Sent Emails", "Emails you sent from QCMS (visible only to you). Full copies are in your Outlook Sent Items.", "Private")
+    page_header("My Sent Emails", "Emails you sent from QCMS (visible only to you).", "Private")
     repo = Repository()
     if not _tables_ready(repo):
         st.error(SETUP_SQL_NOTE); return

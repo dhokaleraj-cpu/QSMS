@@ -31,6 +31,18 @@ TEXT = colors.HexColor("#17212B")
 MUTED = colors.HexColor("#617386")
 WHITE = colors.white
 
+# R17 print Design B ("Open Lines", approved 10-10-2026): white page, no background colour except
+# teal section headings, horizontal rules only, larger fonts/rows, coloured conclusion and remarks.
+TEAL = colors.HexColor("#0B6E70")
+RULE = colors.HexColor("#9AA5A5")
+INK = colors.HexColor("#111111")
+CONCLUSION_COLOR = colors.HexColor("#166534")   # dark green - Conclusion text
+REMARK_COLOR = colors.HexColor("#9A3412")       # burnt orange - Remarks / Conclusion remark
+STATUS_TEXT = {
+    "good": colors.HexColor("#166534"), "bad": colors.HexColor("#B91C1C"),
+    "hold": colors.HexColor("#B45309"), "pending": colors.HexColor("#1D4ED8"), "na": colors.HexColor("#555555"),
+}
+
 
 def safe_excel_sheet_name(name: object, *, used_names: set[str] | None = None, default: str = "Report") -> str:
     """Return an Excel-compatible worksheet title.
@@ -242,62 +254,53 @@ class _PageNumberCanvas(canvas.Canvas):
         header_width = width - (2 * edge)
         right_panel_width = 48 * mm if portrait_page else 63 * mm
 
-        # Header, report grids and footer use the same left/right printable edges.
-        self.setFillColor(NAVY)
-        self.roundRect(edge, header_y, header_width, header_height, 3.5 * mm, fill=1, stroke=0)
-        self.setFillColor(BLUE)
-        self.roundRect(width - edge - right_panel_width, header_y, right_panel_width, header_height, 3.5 * mm, fill=1, stroke=0)
-
+        # R17 Design B header: white, no fills - logo, company, centred title, document info, teal rule.
         logo = _logo_path()
-        logo_box_w = 22 * mm if portrait_page else 24 * mm
-        logo_box_h = 14 * mm
-        logo_x = edge + 4 * mm
-        logo_y = header_y + 3 * mm
+        logo_box_w = 26 * mm if portrait_page else 28 * mm
+        logo_box_h = 13 * mm
+        logo_x = edge
+        logo_y = header_y + 6 * mm
         if logo.exists():
-            self.setFillColor(WHITE)
-            self.roundRect(logo_x, logo_y, logo_box_w, logo_box_h, 2.0 * mm, fill=1, stroke=0)
             try:
-                self.drawImage(
-                    str(logo), logo_x + 1.5 * mm, logo_y + 1.5 * mm,
-                    logo_box_w - 3 * mm, logo_box_h - 3 * mm,
-                    preserveAspectRatio=True, mask='auto',
-                )
+                self.drawImage(str(logo), logo_x, logo_y, logo_box_w, logo_box_h, preserveAspectRatio=True, mask='auto')
             except Exception:
                 pass
+        # Company name sits under the logo so the report title gets the full centre width.
+        self.setFillColor(INK)
+        self.setFont('Helvetica-Bold', 6.6 if portrait_page else 7.2)
+        self.drawString(logo_x, header_y + 2.6 * mm, 'FOUR STAR INDUSTRIES')
 
-        brand_x = logo_x + logo_box_w + 4 * mm
-        self.setFillColor(WHITE)
-        self.setFont('Helvetica-Bold', 8.4 if portrait_page else 10)
-        self.drawString(brand_x, header_y + 12.0 * mm, 'FOUR STAR INDUSTRIES')
-        self.setFont('Helvetica', 5.7 if portrait_page else 6.8)
-        self.drawString(brand_x, header_y + 7.4 * mm, 'QUALITY CONTROL MONITORING SYSTEM')
-
-        center_left = edge + (72 * mm if portrait_page else 78 * mm)
+        center_left = edge + (36 * mm if portrait_page else 40 * mm)
         center_right = width - edge - right_panel_width - 3 * mm
         center_x = (center_left + center_right) / 2
+        self.setFillColor(INK)
         if self._heat_number:
-            # Heat Number is intentionally 50% larger than the RMTC/record number.
-            self.setFont('Helvetica-Bold', 10.5 if portrait_page else 13.5)
-            self.drawCentredString(center_x, header_y + 12.0 * mm, f'HEAT NUMBER: {self._heat_number}'[:42])
-            self.setFont('Helvetica-Bold', 7.0 if portrait_page else 9.0)
+            self.setFont('Helvetica-Bold', 12.5 if portrait_page else 14.5)
+            self.drawCentredString(center_x, header_y + 12.2 * mm, f'HEAT NUMBER: {self._heat_number}'[:40])
+            self.setFont('Helvetica-Bold', 8.6 if portrait_page else 10)
             secondary = f'RMTC NUMBER: {self._record_number}' if self._record_number else self._report_title
-            self.drawCentredString(center_x, header_y + 7.1 * mm, secondary[:55])
+            self.drawCentredString(center_x, header_y + 7.0 * mm, secondary[:50])
             if self._report_label:
-                self.setFont('Helvetica', 5.0 if portrait_page else 6.3)
-                self.drawCentredString(center_x, header_y + 3.6 * mm, self._report_label[:55])
+                self.setFillColor(colors.HexColor('#555555'))
+                self.setFont('Helvetica', 6.6 if portrait_page else 7.4)
+                self.drawCentredString(center_x, header_y + 3.2 * mm, self._report_label[:55])
         else:
             title_line_1, title_line_2 = self._split_report_title(self._report_title)
-            self.setFont('Helvetica-Bold', 8.4 if portrait_page else 13)
-            self.drawCentredString(center_x, header_y + (12.4 * mm if title_line_2 else 10.5 * mm), title_line_1[:48])
+            self.setFont('Helvetica-Bold', 11.2 if portrait_page else 14)
+            self.drawCentredString(center_x, header_y + (12.4 * mm if title_line_2 else 10.0 * mm), title_line_1[:44])
             if title_line_2:
-                self.setFont('Helvetica-Bold', 7.2 if portrait_page else 9.5)
-                self.drawCentredString(center_x, header_y + 7.4 * mm, title_line_2[:52])
+                self.setFont('Helvetica-Bold', 9.0 if portrait_page else 10.5)
+                self.drawCentredString(center_x, header_y + 7.0 * mm, title_line_2[:50])
 
-        self.setFont('Helvetica-Bold', 6.0 if portrait_page else 7)
-        self.drawRightString(width - edge - 4 * mm, header_y + 13.2 * mm, f'Plant: {settings.plant_code}')
-        self.setFont('Helvetica', 5.3 if portrait_page else 6.5)
-        self.drawRightString(width - edge - 4 * mm, header_y + 8.8 * mm, datetime.now().strftime('Printed: %d-%m-%Y %I:%M %p'))
-        self.drawRightString(width - edge - 4 * mm, header_y + 4.8 * mm, f'App Version: {settings.version}')
+        self.setFillColor(colors.HexColor('#333333'))
+        self.setFont('Helvetica-Bold', 7.4 if portrait_page else 8)
+        self.drawRightString(width - edge, header_y + 13.2 * mm, f'Plant: {settings.plant_code}')
+        self.setFont('Helvetica', 6.8 if portrait_page else 7.4)
+        self.drawRightString(width - edge, header_y + 9.0 * mm, datetime.now().strftime('Printed: %d-%m-%Y %I:%M %p'))
+        self.drawRightString(width - edge, header_y + 4.8 * mm, f'App Version: {settings.version}')
+        self.setStrokeColor(TEAL)
+        self.setLineWidth(1.6)
+        self.line(edge, header_y + 1.2 * mm, width - edge, header_y + 1.2 * mm)
 
         # Footer is printed on every PDF page and aligned to the same report edges.
         footer_y = 9.2 * mm
@@ -305,9 +308,9 @@ class _PageNumberCanvas(canvas.Canvas):
         self.setLineWidth(0.45)
         self.line(edge, footer_y, width - edge, footer_y)
         self.setFillColor(MUTED)
-        self.setFont('Helvetica', 5.1 if portrait_page else 6.2)
+        self.setFont('Helvetica', 6.4 if portrait_page else 7.0)
         # Historical regression token only: Copyrights to jrdhokale
-        footer_text = 'Developed by Rajesh Dhokale | dhokaleraj@icloud.com | Copyrights by STAWN'
+        footer_text = 'QUALITY CONTROL MONITORING SYSTEM | Developed by Rajesh Dhokale | dhokaleraj@icloud.com | Copyrights by STAWN'
         self.drawString(edge + 1 * mm, 5.6 * mm, footer_text)
         self.drawRightString(width - edge - 1 * mm, 5.6 * mm, f'Version {settings.version} | Page {self._pageNumber} of {page_count}')
 
@@ -467,6 +470,39 @@ def _table_status_color(value: object) -> colors.Color:
     return WHITE
 
 
+def _status_text_color(value: object) -> colors.Color:
+    key = str(value or "").strip().upper().replace(" ", "_")
+    if key in {"PASS", "APPROVED", "ACCEPTED", "RELEASED", "COMPLETED", "OK", "PASSED"}:
+        return STATUS_TEXT["good"]
+    if key in {"FAIL", "REJECTED", "LOCKED", "FAILED", "NOT_OK"}:
+        return STATUS_TEXT["bad"]
+    if key in {"ON_HOLD", "HOLD", "APPROVAL_PENDING", "ACCEPTED_UNDER_RESERVE", "PARTIALLY_APPROVED"}:
+        return STATUS_TEXT["hold"]
+    if key in {"PENDING", "DRAFT", "NOT_EVALUATED"}:
+        return STATUS_TEXT["pending"]
+    if key in {"NOT_APPLICABLE", "INACTIVE"}:
+        return STATUS_TEXT["na"]
+    return INK
+
+
+def _tone(style: ParagraphStyle, color: colors.Color, *, bold: bool | None = None, italic: bool = False) -> ParagraphStyle:
+    font = style.fontName
+    if bold:
+        font = "Helvetica-BoldOblique" if italic else "Helvetica-Bold"
+    elif italic:
+        font = "Helvetica-Oblique"
+    return ParagraphStyle(f"{style.name}_t{color.hexval()}{font}", parent=style, textColor=color, fontName=font)
+
+
+def _is_remark_label(text: object) -> bool:
+    return "REMARK" in str(text or "").upper()
+
+
+def _is_conclusion_label(text: object) -> bool:
+    upper = str(text or "").upper()
+    return "CONCLUSION" in upper and "REMARK" not in upper
+
+
 def _rmtc_grid(
     rows: list[list[object]],
     widths: list[float],
@@ -476,10 +512,25 @@ def _rmtc_grid(
     status_columns: tuple[int, ...] = (),
     header_rows: int = 1,
 ) -> Table:
+    head = _tone(header_style, INK, bold=True)
+    remark_cols = {i for i, v in enumerate(rows[0] if rows else []) if _is_remark_label(v)}
+    conclusion_cols = {i for i, v in enumerate(rows[0] if rows else []) if _is_conclusion_label(v)}
     prepared: list[list[Paragraph]] = []
     for row_index, row in enumerate(rows):
-        style = header_style if row_index < header_rows else cell_style
-        prepared.append([_paragraph(value, style) for value in row])
+        cells = []
+        for col_index, value in enumerate(row):
+            if row_index < header_rows:
+                style = head
+            elif col_index in status_columns:
+                style = _tone(cell_style, _status_text_color(value), bold=True)
+            elif col_index in remark_cols:
+                style = _tone(cell_style, REMARK_COLOR, italic=True)
+            elif col_index in conclusion_cols:
+                style = _tone(cell_style, CONCLUSION_COLOR, bold=True)
+            else:
+                style = cell_style
+            cells.append(_paragraph(value, style))
+        prepared.append(cells)
     table = Table(
         prepared,
         colWidths=widths,
@@ -488,37 +539,33 @@ def _rmtc_grid(
         splitByRow=1,
     )
     commands = [
-        ("BACKGROUND", (0, 0), (-1, header_rows - 1), NAVY),
-        ("TEXTCOLOR", (0, 0), (-1, header_rows - 1), WHITE),
-        ("GRID", (0, 0), (-1, -1), 0.42, colors.HexColor("#6E8294")),
+        ("LINEABOVE", (0, 0), (-1, 0), 1.0, INK),
+        ("LINEBELOW", (0, header_rows - 1), (-1, header_rows - 1), 1.0, INK),
+        ("LINEBELOW", (0, header_rows), (-1, -1), 0.4, RULE),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2.0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2.0),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.0),
-        ("ROWBACKGROUNDS", (0, header_rows), (-1, -1), [WHITE, LIGHT_BLUE]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2.6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2.6),
+        ("TOPPADDING", (0, 0), (-1, -1), 3.6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.6),
     ]
-    for row_index, row in enumerate(rows[header_rows:], start=header_rows):
-        for col_index in status_columns:
-            if col_index < len(row):
-                commands.append(("BACKGROUND", (col_index, row_index), (col_index, row_index), _table_status_color(row[col_index])))
     table.setStyle(TableStyle(commands))
     return table
 
 
 def _rmtc_section_bar(title: object, width: float, style: ParagraphStyle, *, light: bool = False) -> Table:
-    table = Table([[_paragraph(title, style)]], colWidths=[width], hAlign="LEFT")
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), LIGHT_BLUE if light else NAVY),
-        ("TEXTCOLOR", (0, 0), (-1, -1), NAVY if light else WHITE),
-        ("BOX", (0, 0), (-1, -1), 0.42, colors.HexColor("#6E8294")),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3.0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3.0),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.6 if light else 3.0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.6 if light else 3.0),
+    """Design B: main headings = teal band with white text; sub headings = teal text over a teal rule."""
+    text_style = _tone(style, TEAL if light else WHITE, bold=True)
+    table = Table([[_paragraph(str(title or "").upper() if not light else title, text_style)]], colWidths=[width], hAlign="LEFT")
+    commands = [
+        ("LEFTPADDING", (0, 0), (-1, -1), 5.0 if not light else 1.0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4.0),
+        ("TOPPADDING", (0, 0), (-1, -1), 4.2 if not light else 3.0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4.2 if not light else 2.4),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    return table
+    ]
+    commands.append(("LINEBELOW", (0, 0), (-1, -1), 0.9, TEAL) if light else ("BACKGROUND", (0, 0), (-1, -1), TEAL))
+    table.setStyle(TableStyle(commands))
+    return KeepTogether([Spacer(1, 2.2 * mm), table])
 
 
 def _rmtc_labeled_grid(
@@ -529,23 +576,34 @@ def _rmtc_labeled_grid(
     *,
     label_columns: tuple[int, ...] = (0, 2),
 ) -> Table:
+    label = _tone(label_style, colors.HexColor("#333333"), bold=True)
     prepared = []
     for row in rows:
         cells = []
         for index, value in enumerate(row):
-            cells.append(_paragraph(_display_value(value), label_style if index in label_columns else cell_style))
+            if index in label_columns:
+                style = label
+            else:
+                prev = row[index - 1] if index > 0 and (index - 1) in label_columns else ""
+                if _is_remark_label(prev):
+                    style = _tone(cell_style, REMARK_COLOR, italic=True)
+                elif _is_conclusion_label(prev):
+                    style = _tone(cell_style, CONCLUSION_COLOR, bold=True)
+                elif any(k in str(prev or "").upper() for k in ("DISPOSITION", "DECISION", "RESULT", "STATUS")) and "REASON" not in str(prev or "").upper():
+                    style = _tone(cell_style, _status_text_color(value), bold=True) if _status_text_color(value) is not INK else cell_style
+                else:
+                    style = cell_style
+            cells.append(_paragraph(_display_value(value), style))
         prepared.append(cells)
     table = Table(prepared, colWidths=widths, hAlign="LEFT", splitByRow=1)
     commands = [
-        ("GRID", (0, 0), (-1, -1), 0.42, colors.HexColor("#8295A6")),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.4, RULE),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2.2),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2.2),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2.6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2.6),
+        ("TOPPADDING", (0, 0), (-1, -1), 3.6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.6),
     ]
-    for label_col in label_columns:
-        commands.append(("BACKGROUND", (label_col, 0), (label_col, -1), colors.HexColor("#EDF4FA")))
     table.setStyle(TableStyle(commands))
     return table
 
@@ -634,42 +692,39 @@ def _quality_conclusion_table(
     content_width: float,
     styles: Mapping[str, ParagraphStyle],
 ) -> Table:
-    """High-visibility conclusion block used by MetLAB and inspection PDFs."""
+    """High-visibility conclusion block (Design B): coloured text, no background fills."""
     conclusion_style = ParagraphStyle(
         "QcConclusionValue", parent=styles["cell"], fontName="Helvetica-Bold",
-        fontSize=6.6, leading=8.0, textColor=NAVY,
+        fontSize=styles["cell"].fontSize + 1.4, leading=styles["cell"].leading + 1.8, textColor=CONCLUSION_COLOR,
     )
     remark_style = ParagraphStyle(
         "QcConclusionRemark", parent=styles["cell"], fontName="Helvetica-Oblique",
-        fontSize=5.8, leading=7.0, textColor=colors.HexColor("#7C2D12"),
+        fontSize=styles["cell"].fontSize + 0.6, leading=styles["cell"].leading + 1.0, textColor=REMARK_COLOR,
     )
     decision_style = ParagraphStyle(
         "QcFinalDecision", parent=styles["cell"], fontName="Helvetica-Bold",
-        fontSize=7.0, leading=8.2, textColor=TEXT,
+        fontSize=styles["cell"].fontSize + 1.4, leading=styles["cell"].leading + 1.8, textColor=_status_text_color(final_decision),
     )
-    rows: list[tuple[str, object, ParagraphStyle, colors.Color]] = [
-        ("Conclusion", conclusion, conclusion_style, colors.HexColor("#E0F2FE")),
-    ]
+    rows: list[tuple[str, object, ParagraphStyle]] = [("Conclusion", conclusion, conclusion_style)]
     if str(conclusion_remark or "").strip():
-        rows.append(("Conclusion Remark", conclusion_remark, remark_style, colors.HexColor("#FFF7ED")))
+        rows.append(("Conclusion Remark", conclusion_remark, remark_style))
     rows.extend([
-        ("Final Decision", final_decision, decision_style, _table_status_color(final_decision)),
-        ("Decision Reason", decision_reason, styles["cell"], colors.HexColor("#F8FAFC")),
+        ("Final Decision", final_decision, decision_style),
+        ("Decision Reason", decision_reason, _tone(styles["cell"], REMARK_COLOR, italic=True) if str(decision_reason or "").strip() else styles["cell"]),
     ])
-    prepared = [[_paragraph(label, styles["label"]), _paragraph(_display_value(value), value_style)] for label, value, value_style, _ in rows]
-    table = Table(prepared, colWidths=[36 * mm, content_width - 36 * mm], hAlign="LEFT", splitByRow=1)
-    commands = [
-        ("GRID", (0, 0), (-1, -1), 0.55, colors.HexColor("#64748B")),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#E2E8F0")),
+    label = _tone(styles["label"], colors.HexColor("#333333"), bold=True)
+    prepared = [[_paragraph(name, label), _paragraph(_display_value(value), value_style)] for name, value, value_style in rows]
+    table = Table(prepared, colWidths=[40 * mm, content_width - 40 * mm], hAlign="LEFT", splitByRow=1)
+    table.setStyle(TableStyle([
+        ("LINEABOVE", (0, 0), (-1, 0), 1.0, INK),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.4, RULE),
+        ("LINEBELOW", (0, -1), (-1, -1), 1.0, INK),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 3.0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 3.0),
-        ("TOPPADDING", (0, 0), (-1, -1), 3.0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.0),
-    ]
-    for index, (_, _, _, background) in enumerate(rows):
-        commands.append(("BACKGROUND", (1, index), (1, index), background))
-    table.setStyle(TableStyle(commands))
+        ("TOPPADDING", (0, 0), (-1, -1), 4.0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4.0),
+    ]))
     return table
 
 
@@ -703,7 +758,6 @@ def _microstructure_photo_table(items: list[Mapping[str, object]], content_width
                 ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F7FAFC')),
             ]))
             body = [placeholder, Spacer(1, 1 * mm), caption]
         else:
@@ -758,19 +812,19 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     styles = getSampleStyleSheet()
     section_text_style = ParagraphStyle(
         "RmtcSectionText", parent=styles["Normal"], fontName="Helvetica-Bold",
-        fontSize=7.1, leading=8.3, textColor=WHITE,
+        fontSize=10.2, leading=12.4, textColor=WHITE,
     )
     sub_text_style = ParagraphStyle(
         "RmtcSubText", parent=styles["Normal"], fontName="Helvetica-Bold",
-        fontSize=6.3, leading=7.4, textColor=NAVY,
+        fontSize=9.4, leading=11.4, textColor=TEAL,
     )
     header_style = ParagraphStyle(
         "RmtcHeaderCell", parent=styles["Normal"], fontName="Helvetica-Bold",
-        fontSize=4.9, leading=5.8, textColor=WHITE, alignment=TA_CENTER,
+        fontSize=7.6, leading=9.4, textColor=INK, alignment=TA_CENTER,
     )
     cell_style = ParagraphStyle(
         "RmtcCell", parent=styles["Normal"], fontName="Helvetica",
-        fontSize=5.0, leading=5.9, textColor=TEXT, alignment=TA_LEFT,
+        fontSize=8.0, leading=9.9, textColor=INK, alignment=TA_LEFT,
     )
     label_style = ParagraphStyle(
         "RmtcLabel", parent=cell_style, fontName="Helvetica-Bold", textColor=NAVY,
@@ -779,7 +833,7 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         "RmtcCenter", parent=cell_style, alignment=TA_CENTER,
     )
     small_style = ParagraphStyle(
-        "RmtcSmall", parent=cell_style, fontSize=4.6, leading=5.4,
+        "RmtcSmall", parent=cell_style, fontSize=7.6, leading=9.4,
     )
 
     story: list[object] = []
@@ -1036,7 +1090,6 @@ def _photo_grid_table(
                 ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F7FAFC")),
             ]))
             cell = [placeholder, Spacer(1, 1 * mm), caption]
         else:
@@ -1065,15 +1118,16 @@ def _photo_grid_table(
 
 
 def _controlled_styles() -> dict[str, ParagraphStyle]:
+    """Design B type scale: body 8.6 pt (was 5.4 pt), headings 10.5 pt."""
     styles = getSampleStyleSheet()
-    cell = ParagraphStyle("QcCell", parent=styles["Normal"], fontName="Helvetica", fontSize=5.4, leading=6.4, textColor=TEXT)
+    cell = ParagraphStyle("QcCell", parent=styles["Normal"], fontName="Helvetica", fontSize=8.6, leading=10.6, textColor=INK)
     return {
-        "section": ParagraphStyle("QcSection", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=7.2, leading=8.4, textColor=WHITE),
-        "sub": ParagraphStyle("QcSub", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=6.5, leading=7.6, textColor=NAVY),
-        "header": ParagraphStyle("QcHeader", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=5.2, leading=6.1, textColor=WHITE, alignment=TA_CENTER),
+        "section": ParagraphStyle("QcSection", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=10.5, leading=12.6, textColor=WHITE),
+        "sub": ParagraphStyle("QcSub", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9.6, leading=11.6, textColor=TEAL),
+        "header": ParagraphStyle("QcHeader", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8.2, leading=10.0, textColor=INK, alignment=TA_CENTER),
         "cell": cell,
-        "small": ParagraphStyle("QcSmall", parent=cell, fontSize=4.8, leading=5.6),
-        "label": ParagraphStyle("QcLabel", parent=cell, fontName="Helvetica-Bold", textColor=NAVY),
+        "small": ParagraphStyle("QcSmall", parent=cell, fontSize=8.2, leading=10.2),
+        "label": ParagraphStyle("QcLabel", parent=cell, fontName="Helvetica-Bold", textColor=colors.HexColor("#333333")),
         "center": ParagraphStyle("QcCenter", parent=cell, alignment=TA_CENTER),
     }
 
@@ -1198,12 +1252,12 @@ def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     base = getSampleStyleSheet()["Normal"]
     lab = ParagraphStyle("BtLabel", parent=base, fontName="Helvetica-Bold", fontSize=8.6, leading=10.4, textColor=colors.black)
     val = ParagraphStyle("BtVal", parent=base, fontName="Helvetica", fontSize=8.6, leading=10.4)
-    bar = ParagraphStyle("BtBar", parent=base, fontName="Helvetica-Bold", fontSize=10, leading=12, alignment=TA_CENTER)
+    bar = ParagraphStyle("BtBar", parent=base, fontName="Helvetica-Bold", fontSize=10.5, leading=12.6, alignment=TA_LEFT, textColor=WHITE)
     cen = ParagraphStyle("BtCen", parent=val, alignment=TA_CENTER)
     big = ParagraphStyle("BtBig", parent=base, fontName="Helvetica", fontSize=20, leading=24, alignment=TA_CENTER)
     small = ParagraphStyle("BtSmall", parent=val, fontSize=7.4, leading=9)
-    passed = ParagraphStyle("BtPass", parent=val, fontName="Helvetica-Bold", textColor=colors.HexColor("#1F5FA8"))
-    grey = colors.HexColor("#D9D9D9")
+    passed = ParagraphStyle("BtPass", parent=val, fontName="Helvetica-Bold", textColor=CONCLUSION_COLOR)
+    grey = TEAL  # Design B: section headings are the only shaded element
 
     def esc(v):
         return str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
@@ -1215,8 +1269,8 @@ def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
 
     def bar_row(text):
         t = Table([[P(text, bar)]], colWidths=[W])
-        t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), grey), ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
-        return t
+        t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), grey), ("LEFTPADDING", (0, 0), (-1, -1), 5), ("TOPPADDING", (0, 0), (-1, -1), 3.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5)]))
+        return KeepTogether([Spacer(1, 2 * mm), t])
 
     story: list[object] = [bar_row(title)]
     batch = details.get("fsi_batch_no") or record.get("batch_number")
@@ -1229,7 +1283,7 @@ def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         ["FSI Batch No.", batch, "HT Batch No.", details.get("ht_batch_no") or osp_job.get("vendor_batch_number")],
     ]
     t = Table([[P(a, lab), P(b), P(c, lab), P(d)] for a, b, c, d in info], colWidths=[W * .19, W * .31, W * .19, W * .31])
-    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]))
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, -1), 0.4, RULE), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
     story.append(t)
 
     temp = _bend_find_row(rows, units=("°c", "c", "deg c", "degc"), words=("°c", "baking temp"))
@@ -1241,7 +1295,7 @@ def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         [P("Specification", lab), P(details.get("baking_temp_spec") or _bend_spec(temp)), P(details.get("baking_time_spec") or _bend_spec(btime)), P(details.get("hardness_spec") or _bend_spec(hard))],
         [P("Actual", lab), P(details.get("baking_temp_actual") or (_bend_actual(temp) + ("°C" if _bend_actual(temp) and "°" not in _bend_actual(temp) else ""))), P(details.get("baking_time_actual") or ((_bend_actual(btime) + " Minutes") if _bend_actual(btime) else "")), P(details.get("hardness_actual") or ((_bend_actual(hard) + " " + str(hard.get("unit") or "")).strip()))],
     ], colWidths=[W * .19, W * .22, W * .24, W * .35])
-    bk.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]))
+    bk.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, 0), 1.0, INK), ("LINEBELOW", (0, 1), (-1, -1), 0.4, RULE), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
     story.append(bk)
 
     load = _bend_find_row(rows, units=("kn",), words=("load",))
@@ -1260,12 +1314,13 @@ def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         [P("Load Vs CHT", lab), P("CHT (mm)", lab), P("Bend Angle (Degree)", lab), P("Bend Test Status", lab)],
         [P(details.get("load_kn") or _bend_actual(load)), P(details.get("cht_mm") or _bend_actual(cht)), P(f"Including angle&nbsp;&nbsp;&nbsp;{esc(angle_text)}" if angle_text != "-" else "-", val, raw=True), P(status_text, passed if str(status_text).lower().startswith("pass") else val)],
     ], colWidths=[W * .25, W * .25, W * .25, W * .25])
-    rs.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]))
+    rs.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, 0), 1.0, INK), ("LINEBELOW", (0, 1), (-1, -1), 0.4, RULE), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
     story.append(rs)
 
     half = W / 2
     hdr = Table([[P("Load Vs CHT", bar), P("Bend Test Part", bar)]], colWidths=[half, half])
-    hdr.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), grey), ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+    hdr.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), grey), ("LEFTPADDING", (0, 0), (-1, -1), 5), ("TOPPADDING", (0, 0), (-1, -1), 3.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5)]))
+    story.append(Spacer(1, 2 * mm))
     story.append(hdr)
 
     def img(slot, w, h):
@@ -1282,7 +1337,7 @@ def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     if (images.get(4) or {}).get("bytes"):
         right += [Spacer(1, 2 * mm), img(4, half - 6 * mm, 30 * mm)]
     surface = details.get("surface_remark") or _bend_actual(_bend_find_row(rows, words=("peeling", "flaking", "plating"), text_only=True)) or _bend_spec(_bend_find_row(rows, words=("peeling", "flaking", "plating"), text_only=True))
-    right += [Spacer(1, 2 * mm), P(f"<b>{esc(surface)}</b>" if surface else "", cen, raw=True)]
+    right += [Spacer(1, 2 * mm), P(f"<b>{esc(surface)}</b>" if surface else "", ParagraphStyle("BtRemark", parent=cen, textColor=REMARK_COLOR, fontName="Helvetica-Oblique"), raw=True)]
     ph = Table([[left, right]], colWidths=[half, half])
     ph.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("TOPPADDING", (0, 0), (-1, -1), 3)]))
     story.append(ph)
@@ -1291,8 +1346,8 @@ def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
 
     conclusion = str(results.get("conclusion_remark") or record.get("remarks") or "").strip()
     story.append(Spacer(1, 3 * mm))
-    cl = Table([[P("Conclusion:-", ParagraphStyle("BtC", parent=lab, fontSize=10)), P(f"<b>{esc(conclusion)}</b>" if conclusion else "-", val, raw=True)]], colWidths=[W * .2, W * .8])
-    cl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    cl = Table([[P("Conclusion:-", ParagraphStyle("BtC", parent=lab, fontSize=10)), P(f"<b>{esc(conclusion)}</b>" if conclusion else "-", ParagraphStyle("BtConcl", parent=val, fontSize=9.6, leading=12, textColor=CONCLUSION_COLOR), raw=True)]], colWidths=[W * .2, W * .8])
+    cl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEABOVE", (0, 0), (-1, 0), 1.0, INK), ("LINEBELOW", (0, 0), (-1, 0), 1.0, INK), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
     story.append(cl)
     prepared = _employee_name(employees.get(str(record.get("prepared_by_employee_id"))))
     approved = _employee_name(employees.get(str(record.get("approved_by_employee_id")))) or _employee_name(employees.get(str(record.get("validated_by_employee_id"))))
@@ -1311,7 +1366,7 @@ def bend_test_report_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         story.append(bar_row("Layout Parameters"))
         grid = [["Parameter / Specification", "Actual", "Unit", "Result"]] + [[r.get("specification") or r.get("parameter") or r.get("characteristic"), _bend_actual(r), r.get("unit") or "", r.get("result") or ""] for r in unmapped]
         gt = Table([[P(c, small) for c in row] for row in grid], colWidths=[W * .55, W * .2, W * .1, W * .15])
-        gt.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.3, BORDER), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEF2F5"))]))
+        gt.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, 0), 1.0, INK), ("LINEBELOW", (0, 0), (-1, 0), 1.0, INK), ("LINEBELOW", (0, 1), (-1, -1), 0.4, RULE)]))
         story.append(gt)
     doc.build(story, canvasmaker=lambda *args, **kwargs: _PageNumberCanvas(*args, report_title="METALLURGICAL LABORATORY - BEND TEST REPORT", **kwargs))
     return buffer.getvalue()

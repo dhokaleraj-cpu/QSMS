@@ -8,8 +8,10 @@ def test_dashboard_and_material_inward_pages_are_registered():
     assert 'url_path="dashboard"' in app
     assert 'url_path="inward-entry"' in app
     assert 'url_path="inward-records"' in app
-    dashboard_decl = app[app.index('st.Page(dashboard.render'):app.index('st.Page(master_home.render')]
-    assert 'default=True' in dashboard_decl
+    # R17: KPI Dashboards is the first (default) page after login.
+    kpi_decl = app[app.index('st.Page(kpi_dashboards.render'):app.index('\n', app.index('st.Page(kpi_dashboards.render'))]
+    assert 'default=True' in kpi_decl
+    assert app.count('default=True') == 1
 
 
 def test_rmtc_workflow_has_controlled_dispositions():
