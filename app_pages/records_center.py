@@ -446,6 +446,25 @@ def render_transaction_delete_center(repo: Repository) -> None:
     )
 
 
+def render_record_history_center(repo: Repository) -> None:
+    """R20 status window: who created / edited any transaction or master and what changed."""
+    from core.record_history import record_history_panel
+
+    section_bar("RECORD STATUS WINDOW", "Created by, edited by and every field change for transactions and masters.")
+    catalogue = {**TRANSACTION_DELETE_TABLES, **MASTER_DELETE_TABLES}
+    c1, c2 = st.columns([1, 2])
+    selection = c1.selectbox("Record Type", list(catalogue), key="record_history_type")
+    table, _module = catalogue[selection]
+    rows = annotate_transaction_rows(repo, _rows(repo, table, order_by="created_at", desc=True))
+    if not rows:
+        st.info("No records found.")
+        return
+    labels = {str(r.get("id")): f"{_generic_record_label(r)} · {r.get('Data Entry Status')} · {r.get('Created By User')}" for r in rows if r.get("id")}
+    selected = c2.selectbox("Record", list(labels), format_func=lambda v: labels[v], key="record_history_row")
+    row = next((r for r in rows if str(r.get("id")) == selected), None)
+    record_history_panel(repo, table, row, key=f"record_history_{table}", expanded=True)
+
+
 def render() -> None:
     subpage_navigation(
         ("dashboard", "Dashboard", ":material/arrow_back:"),
@@ -463,7 +482,7 @@ def render() -> None:
     part_name_map = _map(parts, "id", "part_name")
     party_map = _map(parties, "id", "party_name")
 
-    tabs = st.tabs(["RMTC", "Material Inward", "OSP Transactions", "Dimensional", "MetLAB", "Layouts", "Masters", "Heat Steel Ledger", "Universal PDFs", "Delete Transactions"])
+    tabs = st.tabs(["RMTC", "Material Inward", "OSP Transactions", "Dimensional", "MetLAB", "Layouts", "Masters", "Heat Steel Ledger", "Universal PDFs", "Delete Transactions", "Record History"])
 
     with tabs[0]:
         rows = _rows(repo, "rmtc_approvals", order_by="created_at", desc=True)
@@ -612,4 +631,7 @@ def render() -> None:
 
     with tabs[9]:
         render_transaction_delete_center(repo)
+
+    with tabs[10]:
+        render_record_history_center(repo)
 

@@ -26,9 +26,11 @@ def rm_service(flow='FSI_RM_DIRECT_PRODUCTION'):
 def test_rm_po_allows_both_rm_flows_and_multiple_parts(flow):
     svc=rm_service(flow)
     saved=svc.create_purchase_order({**po_payload(),'po_type':'RAW_MATERIAL','customer_order_ids':['one','two'],'allocations':{'one':70,'two':160}})
-    assert len(saved['items'])==2 and len(saved['stages'])==2
+    # R20: both Parts need the same steel (grade · section · size) so they are clubbed into ONE
+    # RM PO line; each Customer Order keeps its own source allocation and RM stage.
+    assert len(saved['items'])==1 and len(saved['stages'])==2
     assert {r['customer_order_id']:r['allocated_qty'] for r in svc.repo.tables['supply_purchase_order_sources']}=={'one':70,'two':160}
-    assert {r['part_id'] for r in saved['items']}=={'finished','second'}
+    assert set(saved['items'][0]['linked_finished_parts_snapshot'])=={'FIRST','SECOND'}
     assert sum(r['quantity'] for r in saved['items'])==230
     assert len(svc.repo.tables['supply_purchase_orders'])==1
 

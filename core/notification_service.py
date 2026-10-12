@@ -134,6 +134,33 @@ class NotificationService:
                     values.append(email)
         return values
 
+    def supplier_recipients(self, enriched: Mapping[str, Any]) -> tuple[list[str], str]:
+        """R20: supplier email(s) for a supplier notification (first one becomes To)."""
+        emails: list[str] = []
+        name = str(enriched.get("supplier_name") or "").strip()
+        supplier_id = str(enriched.get("supplier_id") or "").strip()
+        if supplier_id:
+            supplier = self.repo.get("parties", supplier_id) or {}
+            emails.extend(self._party_notification_emails(supplier))
+            name = name or str(supplier.get("party_name") or "").strip()
+        elif str(enriched.get("supplier_email") or "").strip():
+            emails.extend(self._party_notification_emails({"email": enriched.get("supplier_email")}))
+        party_email = str(enriched.get("party_email") or "").strip()
+        if party_email and "@" in party_email and party_email.casefold() not in {v.casefold() for v in emails}:
+            emails.append(party_email)
+        return emails, name
+
+    @staticmethod
+    def supplier_first(email: str, name: str, cc: Sequence[str], supplier_emails: Sequence[str], supplier_name: str = "") -> tuple[str, str, list[str]]:
+        """Supplier notification rule: To = supplier email, everyone else (route owner,
+        department, other supplier contacts) in CC."""
+        supplier_emails = [str(v).strip() for v in supplier_emails if str(v).strip()]
+        if not supplier_emails:
+            return email, name, list(cc)
+        to_email = supplier_emails[0]
+        others = [email] if email else []
+        return to_email, supplier_name or name, [*others, *cc, *supplier_emails[1:]]
+
     def recipient_for_route(self, route: Mapping[str, Any]) -> tuple[str, str]:
         employee = self._employee(route.get("employee_id"))
         email, name = self._employee_email(employee)
@@ -432,22 +459,21 @@ class NotificationService:
         if route and include_supplier is None:
             supplier_flag = supplier_flag or bool(route.get("send_to_supplier"))
         if supplier_flag:
-            supplier_id = str(enriched.get("supplier_id") or "").strip()
-            if supplier_id:
-                supplier = self.repo.get("parties", supplier_id) or {}
-                cc.extend(self._party_notification_emails(supplier))
-            elif str(enriched.get("supplier_email") or "").strip():
-                cc.append(str(enriched.get("supplier_email") or "").strip())
-            party_email = str(enriched.get("party_email") or "").strip()
-            if party_email and "@" in party_email:
-                cc.append(party_email)
+            supplier_emails, supplier_name = self.supplier_recipients(enriched)
+            email, name, cc = self.supplier_first(email, name, cc, supplier_emails, supplier_name)
         final_cc: list[str] = []
         for value in cc:
             value = str(value or "").strip()
             if value and value.casefold() != email.casefold() and value.casefold() not in {x.casefold() for x in final_cc}:
                 final_cc.append(value)
         subject_template = (template or {}).get("subject_template") or (route or {}).get("subject_template")
+        body_template = (template or {}).get("body_template")
+        body_preview = _template_text(body_template, enriched) if body_template else (
+            f"QCMS workflow notification\nDocument: {enriched.get('document_no') or enriched.get('po_number') or '-'}\nNext stage: {enriched.get('next_stage') or '-'}")
         return {
+            "body_text": body_preview,
+            "include_generated_pdf": bool((template or {}).get("include_generated_pdf", True)),
+            "include_record_attachments": bool((template or {}).get("include_record_attachments", True)),
             "event_key": event,
             "enabled": bool(route),
             "recipient_email": email,
@@ -495,6 +521,7 @@ class NotificationService:
         enriched.setdefault("department", str((route or {}).get("department") or ""))
 
         email, name = (recipient_email or "").strip(), (recipient_name or "").strip()
+        explicit_recipient = bool(email)
         if not email and route:
             email, name = self.recipient_for_route(route)
         if not email:
@@ -514,15 +541,13 @@ class NotificationService:
         if route and include_supplier is None:
             supplier_flag = supplier_flag or bool(route.get("send_to_supplier"))
         if supplier_flag:
-            supplier_id = str(enriched.get("supplier_id") or "").strip()
-            if supplier_id:
-                supplier = self.repo.get("parties", supplier_id) or {}
-                cc.extend(self._party_notification_emails(supplier))
-            elif str(enriched.get("supplier_email") or "").strip():
-                cc.append(str(enriched.get("supplier_email")).strip())
-            party_email = str(enriched.get("party_email") or "").strip()
-            if party_email and "@" in party_email:
-                cc.append(party_email)
+            supplier_emails, supplier_name = self.supplier_recipients(enriched)
+            if explicit_recipient:
+                # The user confirmed To/CC on screen (preview already put the supplier first);
+                # only add supplier contacts that are missing.
+                cc.extend(supplier_emails)
+            else:
+                email, name, cc = self.supplier_first(email, name, cc, supplier_emails, supplier_name)
         # Do not duplicate the primary recipient in CC.
         final_cc: list[str] = []
         for value in cc:

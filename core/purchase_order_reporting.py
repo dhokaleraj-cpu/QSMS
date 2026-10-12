@@ -31,6 +31,38 @@ LIGHT_GREY = HexColor("#E4E5E7")
 YELLOW = HexColor("#FFF700")
 TEXT = HexColor("#202124")
 
+# R20 · Purchase Order print themes (Design B family). "B1" is the approved default:
+# teal section headings only, white body, thin grey rules, coloured remarks.
+PO_DESIGNS: dict[str, dict[str, Any]] = {
+    "B1": {"name": "B1 · Open Lines Teal (recommended)", "accent": "#0B6E70", "bar": "fill", "rule": "#C9D6D6", "head_fill": None, "label_fill": None, "remark": "#9A3412", "remark_fill": None, "note_fill": None, "tech_fill": None},
+    "B2": {"name": "B2 · Teal Underline", "accent": "#0B6E70", "bar": "underline", "rule": "#C9D6D6", "head_fill": None, "label_fill": None, "remark": "#9A3412", "remark_fill": None, "note_fill": None, "tech_fill": None},
+    "B3": {"name": "B3 · Teal Outline", "accent": "#0B6E70", "bar": "outline", "rule": "#C9D6D6", "head_fill": None, "label_fill": None, "remark": "#9A3412", "remark_fill": None, "note_fill": None, "tech_fill": None},
+    "B4": {"name": "B4 · Graphite & Teal", "accent": "#334155", "bar": "fill", "rule": "#CBD5E1", "head_fill": None, "label_fill": "#F1F5F9", "remark": "#0B6E70", "remark_fill": None, "note_fill": None, "tech_fill": None},
+    "B5": {"name": "B5 · Teal Bands (soft label cells)", "accent": "#0B6E70", "bar": "fill", "rule": "#C9D6D6", "head_fill": "#EAF4F4", "label_fill": "#F3F8F8", "remark": "#9A3412", "remark_fill": "#FFF7ED", "note_fill": None, "tech_fill": None},
+}
+DEFAULT_PO_DESIGN = "B1"
+_ACTIVE: dict[str, Any] = dict(PO_DESIGNS[DEFAULT_PO_DESIGN])
+
+
+def _accent():
+    return HexColor(_ACTIVE.get("accent") or "#0B6E70")
+
+
+def _rules(c: canvas.Canvas) -> None:
+    c.setStrokeColor(HexColor(_ACTIVE.get("rule") or "#C9D6D6")); c.setLineWidth(0.5)
+
+
+def _fill_or_white(key: str):
+    value = _ACTIVE.get(key)
+    return HexColor(value) if value else white
+
+
+def set_po_design(code: str | None) -> dict[str, Any]:
+    """Select the Purchase Order print theme for the next render (default B1)."""
+    global _ACTIVE
+    _ACTIVE = dict(PO_DESIGNS.get(str(code or DEFAULT_PO_DESIGN).upper(), PO_DESIGNS[DEFAULT_PO_DESIGN]))
+    return _ACTIVE
+
 PLANT = {
     "name": "Four Star Industries Private Limited D9",
     "address1": "Plot No.D9, Chakan MIDC PH II",
@@ -161,10 +193,31 @@ def _wrap(c: canvas.Canvas, x: float, y: float, text: Any, width: float, *, size
     return y - len(lines) * leading
 
 
+def _special_lines(c: canvas.Canvas, x: float, y: float, text: Any, width: float, *, bottom: float = 100) -> float:
+    """R20: keep each numbered instruction on its own line (wrapping long ones)."""
+    for line in [v.strip() for v in str(text or "").splitlines() if v.strip()]:
+        if y < bottom:
+            break
+        y = _wrap(c, x, y, line, width, size=6.2, leading=9.6, max_lines=2)
+    return y
+
+
 def _bar(c: canvas.Canvas, x: float, y: float, width: float, title: str, *, height: float = 13) -> None:
-    c.setFillColor(NAVY)
-    c.rect(x, y - height, width, height, stroke=0, fill=1)
-    _draw_text(c, x + 4, y - height + 3.1, title, size=7.2, bold=True, color=white)
+    _rules(c)
+    style = _ACTIVE.get("bar") or "fill"
+    accent = _accent()
+    if style == "underline":
+        c.setFillColor(white); c.rect(x, y - height, width, height, stroke=0, fill=1)
+        c.setStrokeColor(accent); c.setLineWidth(1.1); c.line(x, y - height, x + width, y - height); _rules(c)
+        _draw_text(c, x + 3, y - height + 3.1, title, size=7.2, bold=True, color=accent)
+    elif style == "outline":
+        c.setFillColor(white); c.setStrokeColor(accent); c.setLineWidth(0.8)
+        c.rect(x, y - height, width, height, stroke=1, fill=1); _rules(c)
+        _draw_text(c, x + 4, y - height + 3.1, title, size=7.2, bold=True, color=accent)
+    else:
+        c.setFillColor(accent)
+        c.rect(x, y - height, width, height, stroke=0, fill=1)
+        _draw_text(c, x + 4, y - height + 3.1, title, size=7.2, bold=True, color=white)
 
 
 def _party_lines(snapshot: Mapping[str, Any]) -> list[str]:
@@ -312,7 +365,7 @@ def _draw_customer_reference(c: canvas.Canvas, item: Mapping[str, Any], *, top: 
     titles = ["CUSTOMER PO NO.", "POS", "PART DESCRIPTION", "QTY", "UOM"]
     x = left
     for sw, title in zip(widths, titles):
-        c.setFillColor(HexColor("#E5E7EB")); c.rect(x, y-14, sw, 14, stroke=1, fill=1)
+        _rules(c); c.setFillColor(_fill_or_white("head_fill")); c.rect(x, y-14, sw, 14, stroke=1, fill=1)
         _draw_text(c, x+3, y-9.8, title, size=5.0, bold=True, color=HexColor("#111827"), max_width=sw-6)
         x += sw
     y -= 14
@@ -333,7 +386,7 @@ def _draw_customer_reference(c: canvas.Canvas, item: Mapping[str, Any], *, top: 
                 x += sw
             y -= 14
         if len(rows) > len(shown):
-            _draw_text(c, left+4, bottom+3, f"+ {len(rows)-len(shown)} additional linked source(s) retained in QCMS genealogy.", size=5.0, bold=True, color=NAVY, max_width=total_w-8)
+            _draw_text(c, left+4, bottom+3, f"+ {len(rows)-len(shown)} additional linked source(s) retained in QCMS genealogy.", size=5.0, bold=True, color=_accent(), max_width=total_w-8)
     return bottom
 
 
@@ -346,7 +399,7 @@ def _draw_item_row(c: canvas.Canvas, item: Mapping[str, Any], *, y_top: float, l
         _bar(c, x, y_top, sw, title, height=14); x += sw
     row_top = y_top - 14
     row_bottom = row_top - 42
-    c.setFillColor(white); c.rect(left, row_bottom, page_width-left-right, 42, stroke=1, fill=1)
+    _rules(c); c.setFillColor(white); c.rect(left, row_bottom, page_width-left-right, 42, stroke=1, fill=1)
     item_display = " ".join(v for v in (_s(item.get("item_no") or item.get("fsi_part_number_snapshot")), _s(item.get("item_description"))) if v)
     vals = [item_display, f"{_n(item.get('quantity')):,.2f}".rstrip("0").rstrip("."), _money(item.get("unit_price")), item.get("uom"), f"{_n(item.get('gst_percent')):g}%", _money(item.get("gst_amount")), _money(item.get("line_total"))]
     x = left
@@ -369,7 +422,7 @@ def _draw_technical(c: canvas.Canvas, item: Mapping[str, Any], *, po_type: str, 
     total_w = page_width-left-right
     is_rm = _s(po_type).upper() == "RAW_MATERIAL"
     title = "RAW MATERIAL DETAILS & SUPPLIER TECHNICAL DATA" if is_rm else "RAW MATERIAL / FORGING PARAMETERS & SUPPLIER TECHNICAL DATA"
-    c.setFillColor(HexColor("#F8FAFC")); c.rect(left, bottom, total_w, max(top-bottom, 0), stroke=1, fill=1)
+    _rules(c); c.setFillColor(_fill_or_white("tech_fill")); c.rect(left, bottom, total_w, max(top-bottom, 0), stroke=1, fill=1)
     _bar(c, left, top, total_w, title, height=15)
     pairs = _technical_pairs(item, po_type=po_type, limit=12)
     if not pairs:
@@ -396,7 +449,7 @@ def _draw_technical(c: canvas.Canvas, item: Mapping[str, Any], *, po_type: str, 
                 c.setFillColor(white); c.rect(px, y_bottom, pair_w, row_h, stroke=1, fill=1)
                 continue
             heading, value = pairs[pair_index]
-            c.setFillColor(HexColor("#E9EDF1")); c.rect(px, y_bottom, label_w, row_h, stroke=1, fill=1)
+            c.setFillColor(_fill_or_white("label_fill")); c.rect(px, y_bottom, label_w, row_h, stroke=1, fill=1)
             c.setFillColor(white); c.rect(px+label_w, y_bottom, pair_w-label_w, row_h, stroke=1, fill=1)
             _draw_text(c, px+3, y_bottom+4.1, heading, size=5.2, bold=True, color=HexColor("#30363B"), max_width=label_w-6)
             _draw_text(c, px+label_w+3, y_bottom+4.1, value, size=5.2, color=HexColor("#202124"), max_width=pair_w-label_w-6)
@@ -415,7 +468,7 @@ def _draw_price_history(c: canvas.Canvas, item: Mapping[str, Any], history: Sequ
     headers = ["START DATE", "END DATE", "PRICE", "REMARK"]
     x = left
     for sw, title in zip(widths, headers):
-        c.setFillColor(HexColor("#E5E7EB"))
+        _rules(c); c.setFillColor(_fill_or_white("head_fill"))
         c.rect(x, y-15, sw, 15, stroke=1, fill=1)
         _draw_text(c, x+3, y-10.4, title, size=5.4, bold=True, color=HexColor("#111827"), max_width=sw-6)
         x += sw
@@ -441,7 +494,7 @@ def _draw_price_history(c: canvas.Canvas, item: Mapping[str, Any], history: Sequ
         y -= 15
     remaining = len(history) - count
     if remaining > 0 and y-12 >= bottom:
-        _draw_text(c, left+4, y-9, f"Continued on next controlled item page · {remaining} more revision(s)", size=5.6, bold=True, color=NAVY, max_width=total_w-8)
+        _draw_text(c, left+4, y-9, f"Continued on next controlled item page · {remaining} more revision(s)", size=5.6, bold=True, color=_accent(), max_width=total_w-8)
     return count
 
 
@@ -451,7 +504,7 @@ def _draw_continuation_header(c: canvas.Canvas, header: Mapping[str, Any], *, ti
     if logo_path.exists():
         try: c.drawImage(str(logo_path), left, h-58, width=105, height=39, preserveAspectRatio=True, mask="auto")
         except Exception: pass
-    c.setFillColor(black); c.setFont("Helvetica-Bold", 16.5); c.drawRightString(w-right, h-33, title)
+    c.setFillColor(_accent()); c.setFont("Helvetica-Bold", 16.5); c.drawRightString(w-right, h-33, title); _rules(c)
     _draw_text(c, w-176, h-51, f"PO # {_s(header.get('po_number'))}", size=7.2, bold=True)
     _draw_text(c, w-176, h-64, f"DATE {_date(header.get('order_date'))}", size=7.2)
     return w, h, left, right
@@ -461,7 +514,7 @@ def _history_continuation_pages(c: canvas.Canvas, header: Mapping[str, Any], ite
     remaining = list(history)
     while remaining:
         w, h, left, right = _draw_continuation_header(c, header, title="PURCHASE ORDER · PRICE HISTORY CONTINUED")
-        _draw_text(c, left, h-88, f"FSI PART: {_s(item.get('item_no') or item.get('fsi_part_number_snapshot'))} · {_s(item.get('item_description'))}", size=7.2, bold=True, color=NAVY, max_width=w-left-right)
+        _draw_text(c, left, h-88, f"FSI PART: {_s(item.get('item_no') or item.get('fsi_part_number_snapshot'))} · {_s(item.get('item_description'))}", size=7.2, bold=True, color=_accent(), max_width=w-left-right)
         rendered = _draw_price_history(c, item, remaining, top=h-102, bottom=50, left=left, right=right, page_width=w, max_rows=HISTORY_ONLY_ROWS)
         if rendered <= 0:
             break
@@ -471,13 +524,13 @@ def _history_continuation_pages(c: canvas.Canvas, header: Mapping[str, Any], ite
 
 
 def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, Any]]) -> bytes:
-    out = BytesIO(); c = canvas.Canvas(out, pagesize=A4); w, h = A4; left, right = 28, 28
+    out = BytesIO(); c = canvas.Canvas(out, pagesize=A4); w, h = A4; left, right = 28, 28; _rules(c)
     logo_path = Path(__file__).resolve().parent.parent / "assets" / "fsi_logo.png"
     if logo_path.exists():
         try: c.drawImage(str(logo_path), left, h-58, width=105, height=39, preserveAspectRatio=True, mask="auto")
         except Exception: pass
 
-    c.setFillColor(black); c.setFont("Helvetica-Bold", 24); c.drawRightString(w-right, h-34, "PURCHASE ORDER")
+    c.setFillColor(_accent()); c.setFont("Helvetica-Bold", 24); c.drawRightString(w-right, h-34, "PURCHASE ORDER"); _rules(c)
     _draw_text(c, w-137, h-51, "DATE", size=7.4); c.rect(w-91, h-58, 62, 12, stroke=1, fill=0); _draw_text(c, w-86, h-55, _date(header.get("order_date")), size=7.2)
     _draw_text(c, w-137, h-65, "PO #", size=7.4); c.rect(w-91, h-72, 62, 12, stroke=1, fill=0); _draw_text(c, w-86, h-69, header.get("po_number"), size=7.2)
 
@@ -509,8 +562,9 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     history = _price_history_rows(item)
     _draw_price_history(c, item, history, top=tech_bottom-4, bottom=245, left=left, right=right, page_width=w, max_rows=FIRST_HISTORY_ROWS)
 
-    _draw_text(c,left+2,236,"Remarks:",size=7.6,bold=True); c.setFillColor(YELLOW); c.rect(left,211,386,21,stroke=0,fill=1); _draw_text(c,left+4,220,header.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.",size=7.0,bold=True,max_width=378)
-    c.setFillColor(LIGHT_GREY); c.rect(left,192,386,14,stroke=0,fill=1); _draw_text(c,left+3,196,"Comments or Special Instructions",size=6.8,bold=True); _wrap(c,left+2,181,header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,374,size=6.2,leading=11.3,max_lines=7)
+    remark_color = HexColor(_ACTIVE.get("remark") or "#9A3412")
+    _draw_text(c,left+2,236,"Remarks:",size=7.6,bold=True,color=_accent()); _rules(c); c.setFillColor(_fill_or_white("remark_fill")); c.rect(left,211,386,21,stroke=1,fill=1); _draw_text(c,left+4,220,header.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.",size=7.4,bold=True,color=remark_color,max_width=378)
+    _bar(c,left,206,386,"COMMENTS OR SPECIAL INSTRUCTIONS",height=14); _special_lines(c,left+2,181,header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,374)
     total_x=417; ytot=205
     for label,val in [("SUBTOTAL",header.get("subtotal")),("CGST 9%",header.get("cgst_amount")),("SGST 9%",header.get("sgst_amount")),("IGST",header.get("igst_amount")),("OTHER",header.get("other_amount"))]:
         _draw_text(c,total_x,ytot,label,size=6.9); c.rect(total_x+55,ytot-5,95,13,stroke=1,fill=0); _draw_text(c,total_x+61,ytot-1,_money(val),size=6.8); ytot -= 16
@@ -920,7 +974,7 @@ def purchase_order_excel_bytes(header: Mapping[str, Any], items: Mapping[str, An
     out=BytesIO(); wb.save(out); return out.getvalue()
 
 
-def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any] | Sequence[Mapping[str, Any]], *, terms_path: str | Path | None = None) -> bytes:
+def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any] | Sequence[Mapping[str, Any]], *, terms_path: str | Path | None = None, design: str | None = None) -> bytes:
     """Return the controlled FSI Purchase Order PDF.
 
     Page 1 prints one supplier-facing item line plus a supplier-safe source reference
@@ -936,6 +990,14 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
     normalized = [dict(items)] if isinstance(items, Mapping) else [dict(v) for v in items]
     if not normalized:
         raise ValueError("At least one Purchase Order line is required.")
+    set_po_design(design)
+    try:
+        return _purchase_order_pdf(header, normalized, terms_path=terms_path)
+    finally:
+        set_po_design(None)
+
+
+def _purchase_order_pdf(header: Mapping[str, Any], normalized: list[dict], *, terms_path: str | Path | None = None) -> bytes:
     first = _first_page_bytes(header, normalized)
     writer = PdfWriter(); writer.add_page(PdfReader(BytesIO(first)).pages[0])
     first_history = _price_history_rows(normalized[0])

@@ -32,30 +32,37 @@ def _period(choice: str, today: date) -> tuple[date | None, date | None]:
 
 
 def _css() -> None:
+    # R20: number-first tiles - big value, short label, status dot; descriptive text removed.
     st.markdown(
         """<style>
         .kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:6px 0 14px}
         .kpi-overview{grid-template-columns:repeat(5,minmax(0,1fr))}
-        .kpi-tile{background:#fff;border:1px solid #D5E4E4;border-radius:16px;padding:14px 16px;box-shadow:0 1px 3px rgba(23,50,51,.06);min-width:0}
-        .kpi-tile .l{font-size:12px;font-weight:700;color:#5C7778;text-transform:uppercase;letter-spacing:.03em}
-        .kpi-tile .v{font-size:26px;font-weight:800;color:#173233;margin:4px 0 2px;font-variant-numeric:tabular-nums;line-height:1.15;overflow-wrap:anywhere}
-        .kpi-tile .f{font-size:12px;color:#5C7778}
-        .kpi-tile .s{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;margin-top:6px;color:#173233}
-        .kpi-tile .s i{font-style:normal;width:16px;height:16px;border-radius:50%;display:inline-grid;place-items:center;color:#fff;font-size:10px}
-        .kpi-tile.ov .t{font-size:11.5px;font-weight:800;color:#0B6E70;margin-bottom:2px}
-        .kpi-q{color:#5C7778;font-size:13px;margin:-4px 0 8px}
+        .kpi-tile{position:relative;background:#fff;border:1px solid #D5E4E4;border-radius:14px;padding:12px 14px 12px 16px;min-width:0;border-left:5px solid var(--kc,#8AA3A4)}
+        .kpi-tile .l{font-size:11.5px;font-weight:700;color:#5C7778;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .kpi-tile .v{font-size:34px;font-weight:800;color:#173233;margin:2px 0 0;font-variant-numeric:tabular-nums;line-height:1.1;overflow-wrap:anywhere}
+        .kpi-tile .f{font-size:11.5px;color:#7A9091;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .kpi-tile .d{position:absolute;top:12px;right:12px;width:10px;height:10px;border-radius:50%}
+        .kpi-tile.ov .t{font-size:11px;font-weight:800;color:#0B6E70;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .kpi-tile.ov .v{font-size:30px}
         @media(max-width:1100px){.kpi-grid,.kpi-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
         </style>""",
         unsafe_allow_html=True,
     )
 
 
+def _short(text: str, limit: int = 34) -> str:
+    text = str(text or "").strip()
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def _tile_html(label: str, value: str, foot: str, status: str, title: str = "") -> str:
     color = STATUS.get(status, STATUS["neutral"])
     word = STATUS_WORD.get(status, "")
-    badge = f'<div class="s"><i style="background:{color}">{STATUS_ICON.get(status, "•")}</i>{escape(word)}</div>' if word else ""
+    dot = f'<span class="d" style="background:{color}" title="{escape(word)}"></span>' if word else ""
     head = f'<div class="t">{escape(title)}</div>' if title else ""
-    return f'<div class="kpi-tile{" ov" if title else ""}">{head}<div class="l">{escape(label)}</div><div class="v">{escape(value)}</div><div class="f">{escape(foot)}</div>{badge}</div>'
+    return (f'<div class="kpi-tile{" ov" if title else ""}" style="--kc:{color}">{dot}{head}'
+            f'<div class="l">{escape(label)}</div><div class="v">{escape(value)}</div>'
+            f'<div class="f">{escape(_short(foot))}</div></div>')
 
 
 def _figure(chart: Chart):
@@ -115,7 +122,7 @@ def _load(repo: Repository, tables: set[str]) -> dict[str, list[dict]]:
 
 
 def render() -> None:
-    page_header("KPI Dashboards", "Top-10 management dashboards across supply chain, quality, OSP, calibration and NPD. Every number is calculated live from QCMS records.", "Insights")
+    page_header("KPI Dashboards", "Live numbers", "Insights")
     _css()
     repo = Repository(); profile = current_profile() or {}
     cache: dict[str, bool] = {}
@@ -133,7 +140,7 @@ def render() -> None:
     period = c1.selectbox("Period", list(PERIODS), index=1, key="kpi_period")
     today = date.today()
     start, end = _period(period, today)
-    c2.caption(f"Period: {start or 'beginning'} → {end or today}. Open items (overdue, backlog, at vendor) always show the current position.")
+    c2.caption(f"{start.strftime('%d-%b-%Y') if start else 'Start'} → {(end or today).strftime('%d-%b-%Y')}")
 
     tables = {t for d in allowed for t in d[3]} | {"parties", "parts"}
     with st.spinner("Calculating KPIs..."):
@@ -148,34 +155,34 @@ def render() -> None:
         except Exception as exc:  # one broken dashboard must not hide the others
             boards.append(Dashboard(key, title, module_key, f"Could not be calculated: {exc}", empty=True))
 
-    section_bar("KPI OVERVIEW", "Headline KPI of each dashboard. Choose a dashboard below for detail.")
+    section_bar("KPI OVERVIEW")
     cards = "".join(_tile_html(b.tiles[0].label, b.tiles[0].value, b.tiles[0].foot, b.tiles[0].status, b.title) if b.tiles else "" for b in boards)
     st.markdown(f'<div class="kpi-grid kpi-overview">{cards}</div>', unsafe_allow_html=True)
 
     titles = [b.title for b in boards]
     chosen = st.pills("Dashboard", titles, selection_mode="single", default=titles[0], key="kpi_dashboard_choice", label_visibility="collapsed") or titles[0]
     board = next(b for b in boards if b.title == chosen)
-    section_bar(board.title.upper(), board.question)
+    section_bar(board.title.upper())
     st.markdown(f'<div class="kpi-grid">{"".join(_tile_html(t.label, t.value, t.foot, t.status) for t in board.tiles)}</div>', unsafe_allow_html=True)
     if board.empty:
-        st.info("No records in this period yet for this dashboard. Change the period or start recording transactions in the module.")
+        st.info("No records in this period.")
         return
     for start_index in range(0, len(board.charts), 2):
         cols = st.columns(2, gap="medium")
         for col, chart in zip(cols, board.charts[start_index:start_index + 2]):
             with col:
-                st.markdown(f"**{chart.title}**" + (f"  ·  <span style='color:#5C7778;font-size:12px'>{escape(chart.note)}</span>" if chart.note else ""), unsafe_allow_html=True)
+                st.markdown(f"**{chart.title}**")
                 fig = _figure(chart)
                 if fig is None:
-                    st.caption("No data for this chart in the selected period.")
+                    st.caption("No data")
                 else:
                     st.plotly_chart(fig, width="stretch", key=f"kpi_{board.key}_{start_index}_{chart.title}", config={"displayModeBar": False})
-                with st.expander("Data table", expanded=False):
+                with st.expander("Data", expanded=False):
                     portal_table(chart.frame, hide_index=True, width="stretch")
     for title, frame in board.tables:
-        st.markdown(f"**{title}**")
-        if frame.empty:
-            st.caption("Nothing to show — all clear.")
-        else:
-            portal_table(frame, hide_index=True, width="stretch", height=min(420, 40 + 35 * len(frame)))
-    st.download_button("Download this dashboard (Excel)", data=lambda: _excel(board), file_name=f"QCMS_KPI_{board.key}_{today.isoformat()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"kpi_xlsx_{board.key}", on_click="ignore")
+        with st.expander(f"{title} · {len(frame):,}", expanded=False):
+            if frame.empty:
+                st.caption("0")
+            else:
+                portal_table(frame, hide_index=True, width="stretch", height=min(420, 40 + 35 * len(frame)))
+    st.download_button("Excel", icon=":material/download:", data=lambda: _excel(board), file_name=f"QCMS_KPI_{board.key}_{today.isoformat()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"kpi_xlsx_{board.key}", on_click="ignore")

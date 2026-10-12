@@ -27,7 +27,7 @@ def test_v4134_deterministic_enterprise_grid_and_priority_css():
 
 def test_v4134_company_login_image_is_cropped_reference_ratio():
     auth = text("core/auth.py")
-    assert "Welcome to Four Star Industries" in auth
+    assert "FOUR STAR INDUSTRIES PRIVATE LIMITED" in auth  # R20 legal company name
     assert "height:410px!important" in auth
     image = ROOT / "assets" / "login_factory.jpeg"
     assert image.exists() and image.stat().st_size > 10_000

@@ -611,6 +611,9 @@ def logout() -> None:
 
 # Legacy shell marker retained for regression compatibility: 4111-ZOHO-VISIBLE-SHELL
 # Legacy v4.12.6 login background token retained for regression only: #EFEFEF
+COMPANY_LEGAL_NAME = "FOUR STAR INDUSTRIES PRIVATE LIMITED"
+
+
 def render_login() -> None:
     """Render the v4.13.4 reference-matched isolated login.
 
@@ -704,6 +707,9 @@ def render_login() -> None:
         html body div[data-testid="stForm"] .stFormSubmitButton>button:hover{background:#0B6E70!important;border-color:#095A5C!important;}
         html body div[data-testid="stForm"],html body div.st-key-qcms_login_image_card{border-radius:16px!important;border-color:#D5E4E4!important;}
         html body div[data-testid="stForm"] div[data-baseweb="input"]{border-radius:10px!important;}
+        html body .qcms-login-welcome{font-size:24px!important;letter-spacing:.02em!important;margin:2px 0 2px 2px!important;color:#0B6E70!important;}
+        html body .qcms-login-sub{margin:0 0 16px 2px;color:#5C7778;font:700 12px Arial,sans-serif;letter-spacing:.14em;text-transform:uppercase;}
+        html body .qcms-login-company{margin:0 0 6px;color:#0B6E70;font:800 11.5px Arial,sans-serif;letter-spacing:.08em;}
         </style>""",
         unsafe_allow_html=True,
     )
@@ -712,12 +718,13 @@ def render_login() -> None:
         image_col, form_col = st.columns([1.85, 1.0], gap="medium", vertical_alignment="top")
         with image_col:
             with st.container(border=True, key="qcms_login_image_card"):
-                st.markdown('<div class="qcms-login-welcome">Welcome to Four Star Industries</div>', unsafe_allow_html=True)
+                # R20: legal company name on the login page.
+                st.markdown(f'<div class="qcms-login-welcome">{COMPANY_LEGAL_NAME}</div><div class="qcms-login-sub">Quality Control Monitoring System</div>', unsafe_allow_html=True)
                 if factory_image.exists():
                     st.image(str(factory_image), width="stretch")
         with form_col:
             with st.form("phase1_login_form"):
-                st.markdown('<div class="qcms-login-form-title">IDENTIFICATION</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="qcms-login-company">{COMPANY_LEGAL_NAME}</div><div class="qcms-login-form-title">IDENTIFICATION</div>', unsafe_allow_html=True)
                 email = st.text_input("Login *", placeholder="name@company.com")
                 password = st.text_input("Password *", type="password", placeholder="Enter password")
                 submitted = st.form_submit_button("Login", width="stretch")

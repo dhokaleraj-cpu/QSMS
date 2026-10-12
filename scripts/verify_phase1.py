@@ -536,7 +536,7 @@ if "4134-PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT" not in ui_text or "4134-P
 for token in ("def portal_table", "qcms-enterprise-table", "FINAL PRIORITY UI CONTRACT", "--qcms-field:#FFFDF0", "text-transform:uppercase!important"):
     if token not in ui_text:
         errors.append(f"QCMS 4.13.4 priority UI token missing: {token}")
-if "Welcome to Four Star Industries" not in auth_text or "height:410px!important" not in auth_text:
+if "FOUR STAR INDUSTRIES PRIVATE LIMITED" not in auth_text or "height:410px!important" not in auth_text:
     errors.append("QCMS 4.13.4 cropped company-image login contract is missing")
 for token in ("Reusable Production", "RMTC Balance", "Available Production from RMTC Balance"):
     if token not in material_inward_text:
@@ -1489,7 +1489,7 @@ report = {
     "v4135_kpi_icon_column": "padding:13px 14px 12px 62px!important" in ui_text,
     "priority_ui_contract": "FINAL PRIORITY UI CONTRACT" in ui_text,
     "deterministic_enterprise_tables": "def portal_table" in ui_text and "qcms-enterprise-table" in ui_text,
-    "cropped_company_login": "Welcome to Four Star Industries" in auth_text and (ROOT / "assets" / "login_factory.jpeg").exists(),
+    "cropped_company_login": "FOUR STAR INDUSTRIES PRIVATE LIMITED" in auth_text and (ROOT / "assets" / "login_factory.jpeg").exists(),
     "rmtc_reuse_by_global_balance": "global rmtc certificate quantity is the only cumulative consumption ceiling" in rmtc_reuse_sql.casefold(),
     "duplicate_safe_imports": all(("duplicate/existing row(s) skipped" in master_import_text, "SKIP_DUPLICATE" in supply_service_text_v4134, "never update existing records" in reference_import_text_v4134)),
     "customer_order_duplicate_skip_only": "SKIP_DUPLICATE" in supply_service_text_v4134,

@@ -9,6 +9,12 @@ from core.config import is_preview_session
 from core.repository import Repository
 from core.ui import delete_success_popup
 
+# R20: tables with a dedicated delete RPC that removes the record's OWN child rows
+# (e.g. a PO with its lines, sources and stages) and blocks only on real genealogy.
+DEDICATED_DELETE_RPCS = {
+    "supply_purchase_orders": ("qcms_delete_purchase_order", "p_purchase_order_id"),
+}
+
 
 # Root transaction tables use the controlled transaction-delete RPC.
 # Child/master rows that are not in this list continue through the master-row RPC.
@@ -33,10 +39,58 @@ def secure_delete(repo: Repository, table: str, record_id: str, password: str) -
     if is_preview_session():
         raise PermissionError("Deletion is disabled in controlled preview mode.")
     verify_current_password(password)
+    run_delete(repo, table, record_id)
+
+
+def _rpc_missing(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "pgrst202" in text or "could not find the function" in text or ("function" in text and "does not exist" in text)
+
+
+def run_delete(repo: Repository, table: str, record_id: str) -> None:
+    """Server-side delete: dedicated RPC first (R20), then the generic transaction/master RPC."""
+    dedicated = DEDICATED_DELETE_RPCS.get(table)
+    if dedicated:
+        try:
+            repo.rpc(dedicated[0], {dedicated[1]: record_id})
+            return
+        except Exception as exc:
+            if not _rpc_missing(exc):
+                raise
     if table in TRANSACTION_DELETE_TABLES:
         repo.rpc("qcms_delete_transaction_row", {"p_table_name": table, "p_record_id": record_id})
     else:
         repo.rpc("qsms_delete_master_row", {"p_table_name": table, "p_record_id": record_id})
+
+
+def show_delete_blocked(repo: Repository, table: str, record_id: str, exc: Exception) -> None:
+    """Explain a blocked delete and list the dependent transactions that hold the record."""
+    import pandas as pd
+    from core.record_history import linked_records
+
+    st.error(f"Deletion blocked: {exc}")
+    try:
+        linked = linked_records(repo, table, record_id)
+    except Exception:
+        linked = []
+    if linked:
+        st.markdown(f"**Linked records holding this entry ({len(linked)})** — handle or delete these first:")
+        st.dataframe(pd.DataFrame(linked), hide_index=True, width="stretch")
+    else:
+        st.caption("No linked rows are visible to your role. Ask an administrator to check the linked transactions.")
+
+
+def linked_records_button(repo: Repository, table: str, record_id: str, key: str) -> None:
+    """Optional pre-check: show what is linked to the selected record before deleting it."""
+    import pandas as pd
+    from core.record_history import linked_records
+
+    if record_id and st.button("Check linked records", key=f"{key}_linked", icon=":material/account_tree:"):
+        linked = linked_records(repo, table, record_id)
+        if linked:
+            st.dataframe(pd.DataFrame(linked), hide_index=True, width="stretch")
+        else:
+            st.success("No linked transactions found.")
 
 
 def password_delete_panel(
@@ -63,6 +117,7 @@ def password_delete_panel(
             key=f"{key}_row",
             disabled=not can_delete,
         )
+        linked_records_button(repo, table, selected, key)
         password = st.text_input(
             "Current QCMS password",
             type="password",
@@ -84,7 +139,7 @@ def password_delete_panel(
             try:
                 secure_delete(repo, table, selected, password)
             except Exception as exc:
-                st.error(f"Deletion blocked: {exc}")
+                show_delete_blocked(repo, table, selected, exc)
                 return False
             delete_success_popup("Selected row deleted successfully.", queue_for_rerun=True)
             return True
@@ -159,6 +214,7 @@ def password_transaction_delete_panel(
             "Selected transaction", list(labels), format_func=lambda value: labels[value],
             key=f"{key}_row", disabled=not can_delete,
         )
+        linked_records_button(repo, table, selected, key)
         password = st.text_input(
             "Current QCMS password", type="password", key=f"{key}_password", disabled=not can_delete,
         )
@@ -174,9 +230,9 @@ def password_transaction_delete_panel(
                 raise PermissionError("Deletion is disabled in controlled preview mode.")
             try:
                 verify_current_password(password)
-                repo.rpc("qcms_delete_transaction_row", {"p_table_name": table, "p_record_id": selected})
+                run_delete(repo, table, selected)
             except Exception as exc:
-                st.error(f"Deletion blocked: {exc}")
+                show_delete_blocked(repo, table, selected, exc)
                 return False
             delete_success_popup("Selected transaction deleted successfully. The action is recorded in QCMS audit history.", queue_for_rerun=True)
             return True

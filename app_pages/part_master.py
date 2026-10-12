@@ -590,6 +590,9 @@ def render_entry() -> None:
     repo = Repository(); catalog = LearnedValueCatalog(repo); perms = current_permissions("PART_MASTER")
     force_new = consume_master_blank_request("part-entry", edit_keys=("edit_part_id",), widget_keys=("part_master_record_selector",))
     existing, selected_record = _selected_part(repo, force_new=force_new); writable = perms["can_edit"] if existing else perms["can_create"]
+    if existing:
+        from core.record_history import record_history_panel
+        record_history_panel(repo, "parts", existing, key=f"part_history_{existing.get('id')}")
     header_scope = record_widget_token("part-entry", existing, selected=selected_record)
 
     customers = repo.select("parties", contains={"party_types": ["CUSTOMER"]}, eq={"status": "ACTIVE"}, order_by="party_name", limit=1000)

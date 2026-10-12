@@ -21,14 +21,34 @@ def _confirm_signature(to_email: str, cc_emails: Sequence[str], event_key: str) 
     return "|".join([str(event_key).upper(), to_email.casefold(), *(email.casefold() for email in cc_emails)])
 
 
-def _confirmation_dialog(*, title: str, to_email: str, cc_emails: Sequence[str], subject: str, on_confirm) -> None:
-    @st.dialog(title)
+def _attachment_note(preview: Mapping[str, Any] | None) -> str:
+    pv = dict(preview or {})
+    parts = []
+    if pv.get("include_generated_pdf", True):
+        parts.append("Generated QCMS PDF")
+    if pv.get("include_record_attachments", True):
+        parts.append("controlled record documents")
+    return " + ".join(parts) or "None"
+
+
+def email_preview_block(*, to_email: str, cc_emails: Sequence[str], subject: str, body: str = "", attachments: str = "") -> None:
+    """R20: show exactly what will be sent (To / CC / Subject / Body / Attachments)."""
+    st.markdown(
+        f"**To:** {to_email or 'NOT CONFIGURED'}  \n"
+        f"**CC:** {', '.join(cc_emails) if cc_emails else '—'}  \n"
+        f"**Subject:** {subject or 'QCMS Notification'}"
+        + (f"  \n**Attachments:** {attachments}" if attachments else "")
+    )
+    if body:
+        st.caption("Email body preview")
+        with st.container(border=True, height=220):
+            st.text(body)
+
+
+def _confirmation_dialog(*, title: str, to_email: str, cc_emails: Sequence[str], subject: str, on_confirm, body: str = "", attachments: str = "") -> None:
+    @st.dialog(title, width="large")
     def _dialog() -> None:
-        st.markdown(
-            f"**To:** {to_email or 'NOT CONFIGURED'}  \n"
-            f"**CC:** {', '.join(cc_emails) if cc_emails else '—'}  \n"
-            f"**Subject:** {subject or 'QCMS Notification'}"
-        )
+        email_preview_block(to_email=to_email, cc_emails=cc_emails, subject=subject, body=body, attachments=attachments)
         st.warning("Confirm the recipients before QCMS releases this email notification.")
         c1, c2 = st.columns(2, gap="small")
         if c1.button("Confirm Email", type="primary", width="stretch"):
@@ -107,6 +127,8 @@ def notification_confirmation(
                 cc_emails=cc_emails,
                 subject=subject,
                 on_confirm=_mark_confirmed,
+                body=str(preview.get("body_text") or ""),
+                attachments=_attachment_note(preview),
             )
 
     return {
@@ -186,6 +208,8 @@ def record_email_sender(
                 st.session_state[f"{key}_record_send_message"] = str(exc)
             st.rerun()
 
+        with st.popover("Preview email", icon=":material/preview:", width="stretch"):
+            email_preview_block(to_email=to_email, cc_emails=cc_emails, subject=subject, body=str(preview.get("body_text") or ""), attachments=_attachment_note(preview))
         if st.button("Review & Send Email", type="primary", width="stretch", key=f"{key}_record_review", disabled=not to_email or "@" not in to_email):
             _confirmation_dialog(
                 title="Confirm Record Email",
@@ -193,6 +217,8 @@ def record_email_sender(
                 cc_emails=cc_emails,
                 subject=subject,
                 on_confirm=_send,
+                body=str(preview.get("body_text") or ""),
+                attachments=_attachment_note(preview),
             )
         message = str(st.session_state.pop(f"{key}_record_send_message", "") or "")
         if message:

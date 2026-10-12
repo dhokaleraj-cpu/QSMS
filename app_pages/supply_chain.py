@@ -1064,6 +1064,14 @@ def render_purchase_orders() -> None:
                 row["rm_ordered_kg"]=number(pending.get("rm_ordered_kg"))
                 row["rm_balance_kg"]=number(pending.get("rm_balance_kg") or max(number(row.get("required_rm_kg"))-number(pending.get("rm_ordered_kg")),0.0))
             labels={str(r["id"]):f"{r.get('master_reference_no')} · Customer PO {r.get('customer_order_no') or r.get('master_reference_no') or '-'} · Pos {r.get('order_position') or '-'} · Customer {(parties.get(str(r.get('customer_id'))) or {}).get('party_name') or '-'} · Part {(parts.get(str(r.get('part_id'))) or {}).get('part_number') or '-'} · Order Qty {number(r.get('order_qty_pcs')):,.0f} pcs · FSI {(parts.get(str(r.get('part_id'))) or {}).get('fsi_part_number') or 'ENTER AT PO'} · RM Balance {number(r.get('rm_balance_kg')):,.3f} kg · Due {r.get('customer_delivery_date') or '-'}" for r in eligible_orders}
+            # R20: club Customer Orders of different Parts that need the same steel (grade · section · size).
+            section_of={str(r["id"]):service.rm_section_label(str(r.get("part_id") or "")) for r in eligible_orders}
+            section_choices=sorted(set(section_of.values()))
+            if len(section_choices)>1:
+                section_filter=st.selectbox("Club by Raw Material Section",["All RM sections",*section_choices],key="supply_po_rm_section_filter",help="Shows only Customer Orders whose Part needs this steel grade · section · size, so several Parts can be ordered on one RM PO line. Raw forging / casting data is ignored for RM POs.")
+                if section_filter!="All RM sections":
+                    labels={k:v for k,v in labels.items() if section_of.get(k)==section_filter}
+            labels={k:f"[{section_of.get(k)}] {v}" for k,v in labels.items()}
             pre=str(st.session_state.pop("supply_po_source_order_id","") or "")
             reissue_defaults=[str(v) for v in (st.session_state.pop("supply_po_reissue_source_ids",[]) or []) if str(v) in labels]
             defaults=reissue_defaults or ([pre] if pre in labels else [])
@@ -1358,6 +1366,8 @@ def render_purchase_orders() -> None:
             service.sync_purchase_order_status(selected_po); header=service.purchase_order(selected_po) or {}; items=service.purchase_order_items_for_print(selected_po); c=st.columns(2,gap="small")
             try: c[0].download_button("Download / Print Selected PO",purchase_order_pdf_bytes(header,items),file_name=f"{header.get('po_number')}.pdf",mime="application/pdf",width="stretch",key=f"selected_po_pdf_{selected_po}")
             except Exception as exc: c[0].error(str(exc))
+            from core.record_history import record_history_panel
+            record_history_panel(service.repo, "supply_purchase_orders", header, key=f"po_history_{selected_po}")
             po_record_event = "RM_PO_CREATED" if str(header.get("po_type")) == "RAW_MATERIAL" else "FORGING_PO_CREATED"
             record_email_sender(
                 NotificationService(service.repo), po_record_event,
@@ -1613,36 +1623,53 @@ def _batch_po_email_rows(service: SupplyChainService, purchase_order_ids: Sequen
 def _batch_po_email_dialog(service: SupplyChainService, purchase_order_ids: Sequence[str]) -> None:
     rows, blockers = _batch_po_email_rows(service, purchase_order_ids)
 
-    @st.dialog("Confirm Batch Purchase Order Emails")
+    @st.dialog("Confirm Batch Purchase Order Emails", width="large")
     def _dialog() -> None:
         st.markdown("Each selected Purchase Order will be sent as a **separate controlled email to its own Supplier**, with that PO PDF attached.")
-        if rows:
-            portal_table(pd.DataFrame(rows).drop(columns=["_po_id"], errors="ignore"), hide_index=True, width="stretch", height=min(360, 90 + len(rows) * 38))
+        notifier = NotificationService(service.repo)
+        plans: list[dict] = []
+        for row in rows:
+            po_id = str(row.get("_po_id") or "")
+            header = service.purchase_order(po_id) or {}
+            supplier = service.repo.get("parties", str(header.get("supplier_id") or "")) or {}
+            event = "RM_PO_CREATED" if str(header.get("po_type") or "").upper() == "RAW_MATERIAL" else "FORGING_PO_CREATED"
+            context = {
+                "po_number": header.get("po_number"),
+                "supplier_id": str(header.get("supplier_id") or ""),
+                "supplier_name": supplier.get("party_name"),
+                "delivery_date": header.get("delivery_date"),
+                "next_stage": "Raw Material Receipt" if event == "RM_PO_CREATED" else "Forging Receipt",
+            }
+            # R20: To = supplier email; route owner / department / other contacts in CC.
+            preview = notifier.preview(event, context=context, include_supplier=True)
+            to_email = str(preview.get("recipient_email") or supplier.get("email") or "").strip()
+            plans.append({"po_id": po_id, "header": header, "supplier": supplier, "event": event, "context": context, "preview": preview, "to": to_email, "cc": list(preview.get("cc_emails") or [])})
+        if plans:
+            portal_table(pd.DataFrame([{"PO Number": p["header"].get("po_number"), "Supplier": p["supplier"].get("party_name"), "To (Supplier)": p["to"], "CC": "; ".join(p["cc"]) or "—", "Subject": p["preview"].get("subject")} for p in plans]), hide_index=True, width="stretch", height=min(360, 90 + len(plans) * 38))
+            st.caption("Preview each email and its PO PDF before sending.")
+            for plan in plans:
+                with st.expander(f"Preview · {plan['header'].get('po_number')}", expanded=len(plans) == 1):
+                    from core.notification_ui import email_preview_block
+                    email_preview_block(to_email=plan["to"], cc_emails=plan["cc"], subject=str(plan["preview"].get("subject") or ""), body=str(plan["preview"].get("body_text") or ""), attachments=f"{plan['header'].get('po_number')}.pdf")
+                    try:
+                        st.download_button("Open PO PDF preview", purchase_order_pdf_bytes(plan["header"], service.purchase_order_items_for_print(plan["po_id"])), file_name=f"{plan['header'].get('po_number')}.pdf", mime="application/pdf", key=f"po_batch_pdf_preview_{plan['po_id']}", width="stretch")
+                    except Exception as exc:
+                        st.caption(f"PDF preview unavailable: {exc}")
         if blockers:
             st.error("Batch email is blocked until all selected Purchase Orders are approved and have a valid Supplier email.\n\n" + "\n".join(f"- {item}" for item in blockers))
         c1, c2 = st.columns(2, gap="small")
         if c1.button("Confirm & Send Selected POs", type="primary", width="stretch", disabled=bool(blockers) or not rows, key="po_batch_email_confirm"):
-            notifier = NotificationService(service.repo)
             queued: list[dict] = []
-            for row in rows:
-                po_id = str(row.get("_po_id") or "")
-                header = service.purchase_order(po_id) or {}
-                supplier = service.repo.get("parties", str(header.get("supplier_id") or "")) or {}
-                event = "RM_PO_CREATED" if str(header.get("po_type") or "").upper() == "RAW_MATERIAL" else "FORGING_PO_CREATED"
+            for plan in plans:
                 queued_row = notifier.enqueue(
-                    event,
+                    plan["event"],
                     related_table="supply_purchase_orders",
-                    related_id=po_id,
-                    recipient_email=str(supplier.get("email") or "").strip(),
-                    recipient_name=str(supplier.get("party_name") or "").strip() or None,
+                    related_id=plan["po_id"],
+                    recipient_email=plan["to"],
+                    recipient_name=str(plan["supplier"].get("party_name") or "").strip() or None,
+                    cc_emails=plan["cc"],
                     include_supplier=False,
-                    context={
-                        "po_number": header.get("po_number"),
-                        "supplier_id": str(header.get("supplier_id") or ""),
-                        "supplier_name": supplier.get("party_name"),
-                        "delivery_date": header.get("delivery_date"),
-                        "next_stage": "Raw Material Receipt" if event == "RM_PO_CREATED" else "Forging Receipt",
-                    },
+                    context=plan["context"],
                 )
                 if queued_row:
                     queued.append(queued_row)
