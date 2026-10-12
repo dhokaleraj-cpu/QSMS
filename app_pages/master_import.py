@@ -78,7 +78,7 @@ COMMON_SYNONYMS = {
     "test method": "test_method", "supplier": "supplier_id", "steel mill": "steel_mill_id",
     "supplier part number": "supplier_part_number", "approval reference": "approval_reference",
     "valid from": "valid_from", "valid to": "valid_to", "approved": "approved",
-    "asset code": "asset_code", "asset name": "asset_name", "asset type": "asset_type",
+    "asset code": "asset_code", "asset number": "asset_number", "asset no": "asset_number", "asset no.": "asset_number", "asset name": "asset_name", "asset type": "asset_type",
     "calibration frequency days": "calibration_frequency_days", "last calibration date": "last_calibration_date", "next due date": "next_due_date",
     "inspection plan": "inspection_plan_id", "plan number": "plan_number", "inspection stage": "inspection_stage_id",
     "characteristic number": "characteristic_no", "parameter": "characteristic", "characteristic": "characteristic",
@@ -168,7 +168,7 @@ def _lookup_candidates(service: MasterService, lookup: str) -> list[tuple[str, s
             keys = [row.get("stage_code"), row.get("stage_name")]
             label = f"{row.get('stage_code') or ''} · {row.get('stage_name') or ''}".strip(" ·")
         elif lookup == "quality_assets":
-            keys = [row.get("asset_code"), row.get("asset_name"), row.get("serial_number")]
+            keys = [row.get("asset_code"), row.get("asset_number"), row.get("asset_name"), row.get("serial_number")]
             label = f"{row.get('asset_code') or ''} · {row.get('asset_name') or ''}".strip(" ·")
         elif lookup == "inspection_plans":
             keys = [row.get("plan_number"), f"{row.get('plan_number') or ''} Rev {row.get('revision') or ''}"]

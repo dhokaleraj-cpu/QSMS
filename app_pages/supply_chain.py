@@ -1364,7 +1364,9 @@ def render_purchase_orders() -> None:
         selected_po=st.selectbox("Purchase Order for PDF / Status",list(labels),format_func=lambda v:labels[v],key="supply_po_register_select") if labels else None
         if selected_po:
             service.sync_purchase_order_status(selected_po); header=service.purchase_order(selected_po) or {}; items=service.purchase_order_items_for_print(selected_po); c=st.columns(2,gap="small")
-            try: c[0].download_button("Download / Print Selected PO",purchase_order_pdf_bytes(header,items),file_name=f"{header.get('po_number')}.pdf",mime="application/pdf",width="stretch",key=f"selected_po_pdf_{selected_po}")
+            from core.print_designer import PRESET_NAMES as _po_preset_names
+            design_choice=c[1].selectbox("Print design",["SAVED",*_po_preset_names],format_func=lambda v:"Saved layout (Print Layout Designer)" if v=="SAVED" else _po_preset_names[v],key=f"selected_po_design_{selected_po}")
+            try: c[0].download_button("Download / Print Selected PO",purchase_order_pdf_bytes(header,items,design=None if design_choice=="SAVED" else design_choice),file_name=f"{header.get('po_number')}.pdf",mime="application/pdf",width="stretch",key=f"selected_po_pdf_{selected_po}")
             except Exception as exc: c[0].error(str(exc))
             from core.record_history import record_history_panel
             record_history_panel(service.repo, "supply_purchase_orders", header, key=f"po_history_{selected_po}")

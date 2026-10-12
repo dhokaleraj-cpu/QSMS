@@ -50,6 +50,7 @@ from app_pages import (
     inspection_home,
     inspection_layouts,
     kpi_dashboards,
+    print_designer,
     report_builder,
     master_home,
     master_import,
@@ -252,6 +253,7 @@ PAGE_ITEMS = (
     ("report-builder", st.Page(report_builder.render, title="Report Builder", icon=":material/query_stats:", url_path="report-builder")),
     ("master-lists", st.Page(report_builder.render_master_lists, title="Master List Excel", icon=":material/table_chart:", url_path="master-lists")),
     ("system-settings", st.Page(system_settings.render, title="System Settings", icon=":material/tune:", url_path="system-settings")),
+    ("print-designer", st.Page(print_designer.render, title="Print Layout Designer", icon=":material/design_services:", url_path="print-designer")),
     ("email-send", st.Page(email_center.render_send, title="Send Email", icon=":material/send:", url_path="email-send")),
     ("email-groups", st.Page(email_center.render_groups, title="Email Groups", icon=":material/groups:", url_path="email-groups")),
     ("email-my-settings", st.Page(email_center.render_my_settings, title="My Email Settings", icon=":material/manage_accounts:", url_path="email-my-settings")),
@@ -300,6 +302,7 @@ MODULE_SUBMENUS = {
         ("user-access", "Users & Access", ":material/admin_panel_settings:"),
         ("email-settings", "Email Server & Notifications", ":material/forward_to_inbox:"),
         ("system-settings", "System Settings", ":material/tune:"),
+        ("print-designer", "Print Layout Designer", ":material/design_services:"),
         ("deployment-diagnostics", "Deployment Diagnostics", ":material/verified:"),
     ),
     "RMTC": (
@@ -431,7 +434,7 @@ RECORD_ROUTES = {
     "grade-records", "reference-records", "employee-records", "standards-records",
 }
 ROUTE_MODULE = {
-    "dashboard": "Dashboard", "my-account": "Dashboard", "kpi-dashboards": "KPI Dashboards", "system-settings": "Admin", "email-send": "Email", "email-groups": "Email", "email-my-settings": "Email", "email-sent": "Email",
+    "dashboard": "Dashboard", "my-account": "Dashboard", "kpi-dashboards": "KPI Dashboards", "system-settings": "Admin", "print-designer": "Admin", "email-send": "Email", "email-groups": "Email", "email-my-settings": "Email", "email-sent": "Email",
     "masters": "Masters", "company-branch-entry": "Masters", "company-branch-records": "Masters", "part-entry": "Masters", "process-entry": "Masters",
     "grade-entry": "Masters", "reference-entry": "Masters", "employee-entry": "Masters",
     "user-access": "Admin", "email-settings": "Admin", "deployment-diagnostics": "Admin", "master-import": "Masters", "standards-entry": "Masters",
@@ -482,7 +485,7 @@ PAGE_TITLE_TO_PATH = {
     "MetLAB Report": "metlab-entry", "MetLAB Records": "metlab-records",
     "Bend Test Report": "bend-test-entry", "Bend Test Records": "bend-test-records", "Bend Test Reports": "bend-test-report", "Bend Test Layout Master": "bend-layout-entry",
     "Global Search": "global-search",
-    "KPI Dashboards": "kpi-dashboards", "System Settings": "system-settings",
+    "KPI Dashboards": "kpi-dashboards", "System Settings": "system-settings", "Print Layout Designer": "print-designer",
     "Report Builder": "report-builder", "Master List Excel": "master-lists",
     "Send Email": "email-send", "Email Groups": "email-groups", "My Email Settings": "email-my-settings", "My Sent Emails": "email-sent",
 }
@@ -510,7 +513,7 @@ ROUTE_PERMISSION_MODULE = {
     "npd-process-flow":"NPD_APQP","npd-status":"NPD_APQP","apqp":"NPD_APQP","qc-tools":"QC_CALCULATION_TOOLS","qc-calculation-records":"QC_CALCULATION_TOOLS",
     "complaints-home":"COMPLAINT_MANAGEMENT","customer-complaint":"COMPLAINT_MANAGEMENT","supplier-complaint":"COMPLAINT_MANAGEMENT","customer-complaint-register":"COMPLAINT_MANAGEMENT","supplier-complaint-register":"COMPLAINT_MANAGEMENT","complaint-email-settings":"COMPLAINT_MANAGEMENT","complaint-analysis":"COMPLAINT_MANAGEMENT","complaint-records":"COMPLAINT_MANAGEMENT",
     "calibration-validation":"CALIBRATION_VALIDATION","standard-room-inspection":"CALIBRATION_VALIDATION",
-    "user-access":"USER_ACCESS","email-settings":"USER_ACCESS","deployment-diagnostics":"USER_ACCESS","system-settings":"USER_ACCESS",
+    "user-access":"USER_ACCESS","email-settings":"USER_ACCESS","deployment-diagnostics":"USER_ACCESS","system-settings":"USER_ACCESS","print-designer":"USER_ACCESS",
 }
 # Android stable-navigation mode uses Streamlit's own page router and sidebar.
 # The sidebar is collapsed by default on phones and page changes remain inside

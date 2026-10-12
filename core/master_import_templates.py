@@ -82,7 +82,7 @@ def controlled_master_reference_sets(repo: Any) -> list[tuple[str, list[str], li
 
     asset_rows = [[
         " · ".join(v for v in (_text(r.get("asset_code")), _text(r.get("asset_name"))) if v),
-        _text(r.get("asset_code")), _text(r.get("asset_name")), _text(r.get("asset_type")), _text(r.get("serial_number")), _text(r.get("status")),
+        _text(r.get("asset_code")), _text(r.get("asset_number")), _text(r.get("asset_name")), _text(r.get("asset_type")), _text(r.get("serial_number")), _text(r.get("status")),
     ] for r in assets]
 
     employee_rows = []
@@ -104,7 +104,7 @@ def controlled_master_reference_sets(repo: Any) -> list[tuple[str, list[str], li
         ("MASTER_MATERIAL_GRADES", ["Import Value (Exact)", "Material Number", "Material Grade", "Standard", "Status"], grade_rows),
         ("MASTER_PROCESSES", ["Import Value (Exact)", "Process Code", "Process Name", "Process Type", "Status"], process_rows),
         ("MASTER_INSPECTION_STAGES", ["Import Value (Exact)", "Stage Code", "Stage Name", "Sequence", "Status"], stage_rows),
-        ("MASTER_QUALITY_ASSETS", ["Import Value (Exact)", "Asset Code", "Asset Name", "Asset Type", "Serial Number", "Status"], asset_rows),
+        ("MASTER_QUALITY_ASSETS", ["Import Value (Exact)", "Asset Code", "Asset Number", "Asset Name", "Asset Type", "Serial Number", "Status"], asset_rows),
         ("MASTER_EMPLOYEES", ["Import Value (Exact)", "Employee Code", "Employee Name", "Email", "Department", "Designation", "Plant", "Status"], employee_rows),
         ("MASTER_CUSTOMER_STANDARDS", ["Import Value (Exact)", "Standard Code", "Standard Name", "Revision", "Issuing Authority", "Status"], standard_rows),
     ]

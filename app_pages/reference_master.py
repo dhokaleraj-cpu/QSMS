@@ -140,7 +140,12 @@ def render_entry() -> None:
             st.session_state.pop(code_session_key, None)
             save_success_popup(f"{definition.label} {result} successfully.", queue_for_rerun=True); st.rerun()
         except Exception as exc:
-            st.error(str(exc))
+            if "asset_number" in str(exc):
+                st.error("Asset Number needs the R21 database step: ask the administrator to run QCMS_R21_RUN_IN_SUPABASE.sql once in Supabase SQL Editor.")
+            elif "uq_quality_assets_asset_number" in str(exc):
+                st.error("This Asset Number is already used by another Quality Asset.")
+            else:
+                st.error(str(exc))
     if record and definition.status_field:
         c1, c2 = st.columns(2, gap="small")
         with c1:

@@ -127,11 +127,11 @@ def test_kpi_number_first_and_login_company_name():
 
 def test_po_print_five_designs_render():
     from core import purchase_order_reporting as por
-    assert list(por.PO_DESIGNS) == ["B1", "B2", "B3", "B4", "B5"] and por.DEFAULT_PO_DESIGN == "B1"
+    assert list(por.PO_DESIGNS) == ["B1", "B2", "B3", "B4", "B5"] and por.DEFAULT_PO_DESIGN == "B5"  # R21 approved
     header = {"po_number": "PD1", "order_date": "2026-10-12", "subtotal": 100, "grand_total": 118}
     item = {"item_no": "RM-1", "item_description": "Round Bar", "quantity": 1, "uom": "KGS", "unit_price": 100, "gst_percent": 18, "line_total": 100}
     for code in por.PO_DESIGNS:
         pdf = por.purchase_order_pdf_bytes(header, [item], terms_path="/__none__.pdf", design=code)
         text = PdfReader(BytesIO(pdf)).pages[0].extract_text()
         assert "PURCHASE ORDER" in text and "COMMENTS OR SPECIAL INSTRUCTIONS" in text
-    assert por._ACTIVE["name"].startswith("B1")
+    assert por._ACTIVE["name"].startswith("B5")

@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R20",
+  "release_revision": "R21",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -486,5 +486,14 @@
     "login_company_legal_name",
     "po_print_design_b1_plus_five_options"
   ],
-  "r20_sql": "QCMS_R20_RUN_IN_SUPABASE.sql"
+  "r21_changes": [
+    "po_print_b5_default",
+    "login_l1_company_name",
+    "print_layout_designer_page",
+    "print_design_selector_on_po",
+    "report_layouts_runtime_theme_labels_fonts",
+    "quality_asset_number",
+    "calibration_asset_number"
+  ],
+  "r21_sql": "QCMS_R21_RUN_IN_SUPABASE.sql"
 }

@@ -38,6 +38,12 @@ RULE = colors.HexColor("#9AA5A5")
 INK = colors.HexColor("#111111")
 CONCLUSION_COLOR = colors.HexColor("#166534")   # dark green - Conclusion text
 REMARK_COLOR = colors.HexColor("#9A3412")       # burnt orange - Remarks / Conclusion remark
+# R21 Print Layout Designer: runtime-adjustable type scale, header company text, footer and headings.
+BODY_PT = 8.6
+HEADING_PT = 10.5
+COMPANY_HEADER = 'FOUR STAR INDUSTRIES'
+FOOTER_OVERRIDE = ''
+_LAYOUT: dict = {}
 STATUS_TEXT = {
     "good": colors.HexColor("#166534"), "bad": colors.HexColor("#B91C1C"),
     "hold": colors.HexColor("#B45309"), "pending": colors.HexColor("#1D4ED8"), "na": colors.HexColor("#555555"),
@@ -268,7 +274,7 @@ class _PageNumberCanvas(canvas.Canvas):
         # Company name sits under the logo so the report title gets the full centre width.
         self.setFillColor(INK)
         self.setFont('Helvetica-Bold', 6.6 if portrait_page else 7.2)
-        self.drawString(logo_x, header_y + 2.6 * mm, 'FOUR STAR INDUSTRIES')
+        self.drawString(logo_x, header_y + 2.6 * mm, COMPANY_HEADER or 'FOUR STAR INDUSTRIES')
 
         center_left = edge + (36 * mm if portrait_page else 40 * mm)
         center_right = width - edge - right_panel_width - 3 * mm
@@ -311,6 +317,8 @@ class _PageNumberCanvas(canvas.Canvas):
         self.setFont('Helvetica', 6.4 if portrait_page else 7.0)
         # Historical regression token only: Copyrights to jrdhokale
         footer_text = 'QUALITY CONTROL MONITORING SYSTEM | Developed by Rajesh Dhokale | dhokaleraj@icloud.com | Copyrights by STAWN'
+        if FOOTER_OVERRIDE:
+            footer_text = FOOTER_OVERRIDE
         self.drawString(edge + 1 * mm, 5.6 * mm, footer_text)
         self.drawRightString(width - edge - 1 * mm, 5.6 * mm, f'Version {settings.version} | Page {self._pageNumber} of {page_count}')
 
@@ -588,7 +596,13 @@ def _rmtc_grid(
 
 def _rmtc_section_bar(title: object, width: float, style: ParagraphStyle, *, light: bool = False) -> Table:
     """Design B: main headings = teal band with white text; sub headings = teal text over a teal rule."""
-    text_style = _tone(style, TEAL if light else WHITE, bold=True)
+    from core.print_designer import relabel
+    title = relabel(_LAYOUT, str(title or ""))
+    bar_style = str(_LAYOUT.get("bar") or "fill")
+    outline = (not light) and bar_style == "outline"
+    if (not light) and bar_style == "underline":
+        light = True; title = str(title).upper()
+    text_style = _tone(style, TEAL if (light or outline) else WHITE, bold=True)
     table = Table([[_paragraph(str(title or "").upper() if not light else title, text_style)]], colWidths=[width], hAlign="LEFT")
     commands = [
         ("LEFTPADDING", (0, 0), (-1, -1), 5.0 if not light else 1.0),
@@ -597,7 +611,7 @@ def _rmtc_section_bar(title: object, width: float, style: ParagraphStyle, *, lig
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4.2 if not light else 2.4),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]
-    commands.append(("LINEBELOW", (0, 0), (-1, -1), 0.9, TEAL) if light else ("BACKGROUND", (0, 0), (-1, -1), TEAL))
+    commands.append(("LINEBELOW", (0, 0), (-1, -1), 0.9, TEAL) if light else (("BOX", (0, 0), (-1, -1), 0.9, TEAL) if outline else ("BACKGROUND", (0, 0), (-1, -1), TEAL)))
     table.setStyle(TableStyle(commands))
     return KeepTogether([Spacer(1, 2.2 * mm), table])
 
@@ -1154,9 +1168,9 @@ def _photo_grid_table(
 def _controlled_styles() -> dict[str, ParagraphStyle]:
     """Design B type scale: body 8.6 pt (was 5.4 pt), headings 10.5 pt."""
     styles = getSampleStyleSheet()
-    cell = ParagraphStyle("QcCell", parent=styles["Normal"], fontName="Helvetica", fontSize=8.6, leading=10.6, textColor=INK)
+    cell = ParagraphStyle("QcCell", parent=styles["Normal"], fontName="Helvetica", fontSize=BODY_PT, leading=BODY_PT + 2.0, textColor=INK)
     return {
-        "section": ParagraphStyle("QcSection", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=10.5, leading=12.6, textColor=WHITE),
+        "section": ParagraphStyle("QcSection", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=HEADING_PT, leading=HEADING_PT + 2.1, textColor=WHITE),
         "sub": ParagraphStyle("QcSub", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9.6, leading=11.6, textColor=TEAL),
         "header": ParagraphStyle("QcHeader", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8.2, leading=10.0, textColor=INK, alignment=TA_CENTER),
         "cell": cell,
@@ -1958,12 +1972,58 @@ def qc_calculation_pdf_bytes(payload: Mapping[str, object]) -> bytes:
 # R12 performance: reuse identical export bytes across Streamlit reruns.
 from core.export_cache import session_memo_bytes as _session_memo_bytes
 quality_record_excel_bytes = _session_memo_bytes(quality_record_excel_bytes)
-report_pdf_bytes = _session_memo_bytes(report_pdf_bytes)
-rmtc_record_pdf_bytes = _session_memo_bytes(rmtc_record_pdf_bytes)
-metlab_record_pdf_bytes = _session_memo_bytes(metlab_record_pdf_bytes)
-bend_test_report_pdf_bytes = _session_memo_bytes(bend_test_report_pdf_bytes)
-dimensional_record_pdf_bytes = _session_memo_bytes(dimensional_record_pdf_bytes)
-material_inward_record_pdf_bytes = _session_memo_bytes(material_inward_record_pdf_bytes)
-controlled_record_pdf_bytes = _session_memo_bytes(controlled_record_pdf_bytes)
+
+
+# R21 Print Layout Designer: every controlled report applies the saved layout of its
+# document family. The layout is part of the export-cache key, so a saved change shows at once.
+from contextlib import contextmanager as _contextmanager
+import functools as _functools
+
+
+@_contextmanager
+def applied_print_layout(layout: Mapping[str, object] | None):
+    global TEAL, RULE, CONCLUSION_COLOR, REMARK_COLOR, BODY_PT, HEADING_PT, COMPANY_HEADER, FOOTER_OVERRIDE, _LAYOUT
+    saved = (TEAL, RULE, CONCLUSION_COLOR, REMARK_COLOR, BODY_PT, HEADING_PT, COMPANY_HEADER, FOOTER_OVERRIDE, _LAYOUT)
+    data = dict(layout or {})
+    try:
+        if data:
+            TEAL = colors.HexColor(str(data.get("accent") or "#0B6E70"))
+            RULE = colors.HexColor(str(data.get("rule") or "#9AA5A5"))
+            CONCLUSION_COLOR = colors.HexColor(str(data.get("conclusion") or "#166534"))
+            REMARK_COLOR = colors.HexColor(str(data.get("remark") or "#9A3412"))
+            BODY_PT = float(data.get("body_pt") or 8.6)
+            HEADING_PT = float(data.get("heading_pt") or 10.5)
+            COMPANY_HEADER = str(data.get("company_name") or "FOUR STAR INDUSTRIES")
+            FOOTER_OVERRIDE = str(data.get("footer_text") or "")
+            _LAYOUT = data
+        yield
+    finally:
+        TEAL, RULE, CONCLUSION_COLOR, REMARK_COLOR, BODY_PT, HEADING_PT, COMPANY_HEADER, FOOTER_OVERRIDE, _LAYOUT = saved
+
+
+def _layout_aware(fn, doc: str):
+    def inner(*args, _layout=None, **kwargs):
+        with applied_print_layout(_layout):
+            return fn(*args, **kwargs)
+    inner.__name__ = inner.__qualname__ = f"{fn.__name__}_layout"
+    cached = _session_memo_bytes(inner)
+
+    @_functools.wraps(fn)
+    def outer(*args, layout=None, **kwargs):
+        if layout is None:
+            from core.print_designer import saved_layout
+            layout = saved_layout(doc)
+        return cached(*args, _layout=dict(layout or {}), **kwargs)
+    outer.__wrapped_uncached__ = fn  # type: ignore[attr-defined]
+    return outer
+
+
+report_pdf_bytes = _layout_aware(report_pdf_bytes, "QUALITY_RECORD")
+rmtc_record_pdf_bytes = _layout_aware(rmtc_record_pdf_bytes, "RMTC")
+metlab_record_pdf_bytes = _layout_aware(metlab_record_pdf_bytes, "METLAB")
+bend_test_report_pdf_bytes = _layout_aware(bend_test_report_pdf_bytes, "BEND_TEST")
+dimensional_record_pdf_bytes = _layout_aware(dimensional_record_pdf_bytes, "DIMENSIONAL")
+material_inward_record_pdf_bytes = _layout_aware(material_inward_record_pdf_bytes, "MATERIAL_INWARD")
+controlled_record_pdf_bytes = _layout_aware(controlled_record_pdf_bytes, "QUALITY_RECORD")
 npd_pending_status_pdf_bytes = _session_memo_bytes(npd_pending_status_pdf_bytes)
 qc_calculation_pdf_bytes = _session_memo_bytes(qc_calculation_pdf_bytes)

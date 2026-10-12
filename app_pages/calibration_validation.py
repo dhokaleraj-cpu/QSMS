@@ -59,7 +59,7 @@ def _calibration_pdf(
     process: Mapping[str, Any] | None = None, employee: Mapping[str, Any] | None = None,
 ) -> bytes:
     header = {
-        "Asset Code": asset.get("asset_code"), "Asset": asset.get("asset_name"), "Asset Type": asset.get("asset_type"),
+        "Asset Code": asset.get("asset_code"), "Asset Number": asset.get("asset_number"), "Asset": asset.get("asset_name"), "Asset Type": asset.get("asset_type"),
         "Part Number": (part or {}).get("part_number"), "Process": (process or {}).get("process_name"),
         "Record Type": record.get("record_type"), "Service Date": record.get("service_date"),
         "Next Due Date": record.get("next_due_date"), "Result": record.get("result"), "Status": record.get("status"),
@@ -90,7 +90,7 @@ def _standard_room_pdf(
     header = {
         "Inspection Date": record.get("inspection_date"), "Report Number": record.get("report_number"),
         "Instrument": (asset or {}).get("asset_name") or record.get("instrument_type"),
-        "Instrument Code": (asset or {}).get("asset_code"), "Part Number": (part or {}).get("part_number"),
+        "Instrument Code": (asset or {}).get("asset_code"), "Asset Number": (asset or {}).get("asset_number"), "Part Number": (part or {}).get("part_number"),
         "Part Name": (part or {}).get("part_name"), "Process": (process or {}).get("process_name"),
         "Heat Number": record.get("heat_number"), "Batch Code": record.get("batch_code"),
         "Status": record.get("inspection_status"),
@@ -140,7 +140,7 @@ def render_calibration_validation() -> None:
         a1,a2,a3 = st.columns(3, gap="small")
         asset_ids = list(asset_map); part_ids = list(part_map); process_ids = [""] + list(process_map)
         asset_default = str((existing or {}).get("asset_id") or ""); part_default = str((existing or {}).get("part_id") or ""); process_default = str((existing or {}).get("process_id") or "")
-        asset_id = a1.selectbox("Gauge / Fixture / Instrument", asset_ids, index=asset_ids.index(asset_default) if asset_default in asset_ids else 0, format_func=lambda v: _label(asset_map[v],"asset_code","asset_name","asset_type"), disabled=not perms["can_edit"] if existing else not perms["can_create"], key=f"{token}_asset") if asset_ids else ""
+        asset_id = a1.selectbox("Gauge / Fixture / Instrument", asset_ids, index=asset_ids.index(asset_default) if asset_default in asset_ids else 0, format_func=lambda v: _label(asset_map[v],"asset_code","asset_number","asset_name","asset_type"), disabled=not perms["can_edit"] if existing else not perms["can_create"], key=f"{token}_asset") if asset_ids else ""
         part_id = a2.selectbox("Part Number", part_ids, index=part_ids.index(part_default) if part_default in part_ids else 0, format_func=lambda v: _label(part_map[v],"part_number","fsi_part_number","part_name"), disabled=not perms["can_edit"] if existing else not perms["can_create"], key=f"{token}_part") if part_ids else ""
         process_id = a3.selectbox("Process", process_ids, index=process_ids.index(process_default) if process_default in process_ids else 0, format_func=lambda v: "General / All Processes" if not v else _label(process_map[v],"process_code","process_name"), disabled=not perms["can_edit"] if existing else not perms["can_create"], key=f"{token}_process")
         b1,b2,b3,b4 = st.columns(4, gap="small")
@@ -176,15 +176,17 @@ def render_calibration_validation() -> None:
     with stage_section("B", "CALIBRATION / VALIDATION ENTRY", "Complete a service record. The next due date is calculated from the controlled frequency and the daily reminder stops automatically when the new valid record updates the link.", key="calibration_service"):
         current_links = repo.select("quality_asset_part_process_links", eq={"status":"ACTIVE"}, order_by="next_due_date", limit=10000)
         link_map = {str(r["id"]): r for r in current_links}
-        link_labels = {lid: f"{_label(asset_map.get(str(r.get('asset_id'))) or {},'asset_code','asset_name')} · {_label(part_map.get(str(r.get('part_id'))) or {},'part_number','part_name')} · {_label(process_map.get(str(r.get('process_id'))) or {},'process_code','process_name')} · Due {r.get('next_due_date') or '-'}" for lid,r in link_map.items()}
+        link_labels = {lid: f"{_label(asset_map.get(str(r.get('asset_id'))) or {},'asset_code','asset_number','asset_name')} · {_label(part_map.get(str(r.get('part_id'))) or {},'part_number','part_name')} · {_label(process_map.get(str(r.get('process_id'))) or {},'process_code','process_name')} · Due {r.get('next_due_date') or '-'}" for lid,r in link_map.items()}
         records = repo.select("quality_asset_calibration_records", order_by="service_date", desc=True, limit=10000)
-        record_labels = {str(r["id"]): f"{r.get('record_type')} · {r.get('report_number') or r.get('certificate_number') or str(r.get('id'))[:8]} · {r.get('service_date')}" for r in records}
+        record_labels = {str(r["id"]): f"{(asset_map.get(str(r.get('asset_id'))) or {}).get('asset_number') or (asset_map.get(str(r.get('asset_id'))) or {}).get('asset_code') or '-'} · {r.get('record_type')} · {r.get('report_number') or r.get('certificate_number') or str(r.get('id'))[:8]} · {r.get('service_date')}" for r in records}
         rec_choice = st.selectbox("New / Edit Calibration-Validation Record", [""]+list(record_labels), format_func=lambda v: "＋ New Calibration / Validation Record" if not v else record_labels[v], key="cal_rec_choice")
         existing_rec = next((r for r in records if str(r.get("id")) == rec_choice), None)
         rec_token = record_widget_token(existing_rec,prefix="cal_rec") if existing_rec else "cal_rec_new"
         link_ids=list(link_map); link_default=str((existing_rec or {}).get("link_id") or "")
         selected_link=st.selectbox("Part / Process Gauge-Fixture Link",link_ids,index=link_ids.index(link_default) if link_default in link_ids else 0,format_func=lambda v:link_labels[v],key=f"{rec_token}_link") if link_ids else ""
         link=link_map.get(selected_link) or {}; frequency=int(link.get("frequency_days") or 365); asset=asset_map.get(str(link.get("asset_id"))) or {}
+        if asset:
+            st.markdown(f"**Asset Number:** {asset.get('asset_number') or '— (add it in Quality Asset Master)'}  ·  **Asset Code:** {asset.get('asset_code') or '-'}  ·  **Serial No.:** {asset.get('serial_number') or '-'}  ·  **Location:** {asset.get('location') or '-'}")
         r1,r2,r3,r4=st.columns(4,gap="small")
         record_type=r1.selectbox("Record Type",["CALIBRATION","VALIDATION"],index=["CALIBRATION","VALIDATION"].index(str((existing_rec or {}).get("record_type") or ("VALIDATION" if str(link.get("service_type"))=="VALIDATION" else "CALIBRATION"))),key=f"{rec_token}_type")
         service_date=r2.date_input("Service Date",value=_date_value((existing_rec or {}).get("service_date"),today) or today,key=f"{rec_token}_date")
@@ -218,7 +220,7 @@ def render_calibration_validation() -> None:
             selected_link_row=link_map.get(str(selected_rec.get("link_id"))) or {}; a=asset_map.get(str(selected_rec.get("asset_id"))) or {}; p=part_map.get(str(selected_link_row.get("part_id"))) or {}; pr=process_map.get(str(selected_link_row.get("process_id"))) or {}; e=employee_map.get(str(selected_rec.get("performed_by_employee_id"))) or {}
             x1,x2=st.columns(2,gap="small")
             x1.download_button("Download Calibration / Validation PDF",_calibration_pdf(selected_rec,asset=a,part=p,process=pr,employee=e),file_name=f"{selected_rec.get('report_number') or selected_rec.get('certificate_number') or selected_rec.get('id')}.pdf",mime="application/pdf",width="stretch",key=f"cal_pdf_{selected_rec['id']}")
-            x2.download_button("Download Calibration / Validation Excel",_excel_bytes("Calibration Record",[selected_rec]),file_name=f"{selected_rec.get('report_number') or selected_rec.get('id')}.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",width="stretch",key=f"cal_xlsx_{selected_rec['id']}")
+            x2.download_button("Download Calibration / Validation Excel",_excel_bytes("Calibration Record",[{"asset_number":a.get("asset_number"),"asset_code":a.get("asset_code"),**selected_rec}]),file_name=f"{selected_rec.get('report_number') or selected_rec.get('id')}.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",width="stretch",key=f"cal_xlsx_{selected_rec['id']}")
             if password_delete_panel(repo=repo,table="quality_asset_calibration_records",rows=[selected_rec],labeler=lambda r:record_labels.get(str(r.get("id")),str(r.get("id"))),key=f"cal_delete_{selected_rec['id']}",can_delete=perms["can_archive"],title="Delete Calibration / Validation Record",help_text="Permanent deletion requires your current QCMS password. Linked genealogy blocks unsafe deletion."):
                 st.rerun()
 
@@ -226,7 +228,7 @@ def render_calibration_validation() -> None:
         link_rows=[]
         for row in annotate_transaction_rows(repo,repo.select("quality_asset_part_process_links",order_by="next_due_date",limit=10000)):
             due_date=_date_value(row.get("next_due_date")); due_state="OVERDUE" if due_date and due_date<today else ("DUE <= 30 DAYS" if due_date and due_date<=due30 else "VALID")
-            link_rows.append({"Asset":_label(asset_map.get(str(row.get("asset_id"))) or {},"asset_code","asset_name"),"Part":_label(part_map.get(str(row.get("part_id"))) or {},"part_number","fsi_part_number"),"Process":_label(process_map.get(str(row.get("process_id"))) or {},"process_code","process_name"),"Control":row.get("service_type"),"Frequency Days":row.get("frequency_days"),"Last Service":row.get("last_service_date"),"Next Due":row.get("next_due_date"),"Due Status":due_state,"Responsible":_label(employee_map.get(str(row.get("responsible_employee_id"))) or {},"first_name","last_name"),"Created By User":row.get("Created By User"),"Last Modified By User":row.get("Last Modified By User"),"Data Entry Status":row.get("Data Entry Status")})
+            link_rows.append({"Asset":_label(asset_map.get(str(row.get("asset_id"))) or {},"asset_code","asset_name"),"Asset Number":(asset_map.get(str(row.get("asset_id"))) or {}).get("asset_number") or "-","Part":_label(part_map.get(str(row.get("part_id"))) or {},"part_number","fsi_part_number"),"Process":_label(process_map.get(str(row.get("process_id"))) or {},"process_code","process_name"),"Control":row.get("service_type"),"Frequency Days":row.get("frequency_days"),"Last Service":row.get("last_service_date"),"Next Due":row.get("next_due_date"),"Due Status":due_state,"Responsible":_label(employee_map.get(str(row.get("responsible_employee_id"))) or {},"first_name","last_name"),"Created By User":row.get("Created By User"),"Last Modified By User":row.get("Last Modified By User"),"Data Entry Status":row.get("Data Entry Status")})
         if link_rows:
             portal_table(pd.DataFrame(link_rows),hide_index=True,width="stretch",height=360)
             st.download_button("Download Calibration / Validation Due Register Excel",_excel_bytes("Calibration Due Register",link_rows),file_name=f"QCMS_Calibration_Validation_Due_Register_{today}.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",width="stretch")
@@ -246,7 +248,7 @@ def render_standard_room() -> None:
         inspect_date=c1.date_input("Inspection Date",value=_date_value((existing or {}).get("inspection_date"),date.today()) or date.today(),key=f"{token}_date")
         report_no=c2.text_input("Report Number",value=str((existing or {}).get("report_number") or ""),key=f"{token}_report")
         asset_ids=[""]+list(asset_map); asset_default=str((existing or {}).get("instrument_asset_id") or "")
-        asset_id=c3.selectbox("Standard Room Instrument",asset_ids,index=asset_ids.index(asset_default) if asset_default in asset_ids else 0,format_func=lambda v:"Manual / Other Instrument" if not v else _label(asset_map[v],"asset_code","asset_name","asset_type"),key=f"{token}_asset")
+        asset_id=c3.selectbox("Standard Room Instrument",asset_ids,index=asset_ids.index(asset_default) if asset_default in asset_ids else 0,format_func=lambda v:"Manual / Other Instrument" if not v else _label(asset_map[v],"asset_code","asset_number","asset_name","asset_type"),key=f"{token}_asset")
         instrument_type=c4.selectbox("Instrument Type",list(STANDARD_ROOM_INSTRUMENTS),index=list(STANDARD_ROOM_INSTRUMENTS).index(str((existing or {}).get("instrument_type") or "CMM")) if str((existing or {}).get("instrument_type") or "CMM") in STANDARD_ROOM_INSTRUMENTS else 0,key=f"{token}_itype")
         d1,d2,d3=st.columns(3,gap="small")
         part_ids=list(part_map); part_default=str((existing or {}).get("part_id") or "")
@@ -285,7 +287,7 @@ def render_standard_room() -> None:
     with stage_section("C","STANDARD ROOM INSPECTION REGISTER","All Part inspections remain searchable by date, Heat, Batch, instrument and status.",key="std_room_register"):
         display=[]
         for r in annotate_transaction_rows(repo,rows):
-            display.append({"Date":r.get("inspection_date"),"Report":r.get("report_number"),"Instrument":_label(asset_map.get(str(r.get("instrument_asset_id"))) or {},"asset_code","asset_name") or r.get("instrument_type"),"Type":r.get("instrument_type"),"Part":_label(part_map.get(str(r.get("part_id"))) or {},"part_number","fsi_part_number"),"Process":_label(process_map.get(str(r.get("process_id"))) or {},"process_code","process_name"),"Heat":r.get("heat_number"),"Batch":r.get("batch_code"),"Qty":r.get("quantity_inspected"),"Inspection Status":r.get("inspection_status"),"User":r.get("Last Modified By User"),"Data Entry Status":r.get("Data Entry Status")})
+            display.append({"Date":r.get("inspection_date"),"Report":r.get("report_number"),"Instrument":_label(asset_map.get(str(r.get("instrument_asset_id"))) or {},"asset_code","asset_number","asset_name") or r.get("instrument_type"),"Type":r.get("instrument_type"),"Part":_label(part_map.get(str(r.get("part_id"))) or {},"part_number","fsi_part_number"),"Process":_label(process_map.get(str(r.get("process_id"))) or {},"process_code","process_name"),"Heat":r.get("heat_number"),"Batch":r.get("batch_code"),"Qty":r.get("quantity_inspected"),"Inspection Status":r.get("inspection_status"),"User":r.get("Last Modified By User"),"Data Entry Status":r.get("Data Entry Status")})
         if display:
             portal_table(pd.DataFrame(display),hide_index=True,width="stretch",height=420)
             st.download_button("Download Standard Room Register Excel",_excel_bytes("Standard Room Register",display),file_name=f"QCMS_Standard_Room_Inspection_Register_{date.today()}.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",width="stretch")

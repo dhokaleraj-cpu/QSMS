@@ -59,7 +59,7 @@ def inspection_stage_label(row: Mapping[str, Any]) -> str:
 
 
 def quality_asset_label(row: Mapping[str, Any]) -> str:
-    return _join(row.get("asset_code"), row.get("asset_name"), row.get("asset_type"), row.get("serial_number"), row.get("location"))
+    return _join(row.get("asset_code"), row.get("asset_number"), row.get("asset_name"), row.get("asset_type"), row.get("serial_number"), row.get("location"))
 
 
 def inspection_plan_label(row: Mapping[str, Any]) -> str:

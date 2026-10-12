@@ -223,6 +223,7 @@ DEFINITIONS = (
         description="Instruments, equipment, gauges, fixtures, jigs, masters and reference standards.",
         fields=(
             FieldDef("asset_code", "Master code", required=True, placeholder="Auto-generated; editable"),
+            FieldDef("asset_number", "Asset number", placeholder="Company asset register number (e.g. FSI-QA-0001)"),
             FieldDef("asset_name", "Asset name", required=True),
             FieldDef("asset_type", "Asset type", kind="select", options=("INSTRUMENT", "EQUIPMENT", "GAUGE", "FIXTURE", "JIG", "MASTER", "REFERENCE_STANDARD"), default="GAUGE", required=True),
             FieldDef("manufacturer", "Manufacturer"),
@@ -241,8 +242,8 @@ DEFINITIONS = (
             FieldDef("status", "Record status", kind="select", options=("ACTIVE", "INACTIVE", "BLOCKED"), default="ACTIVE", required=True),
             FieldDef("remarks", "Remarks", kind="textarea"),
         ),
-        columns=("asset_code", "asset_name", "asset_type", "service_type", "location", "next_due_date", "next_validation_due_date", "status"),
-        search_fields=("asset_code", "asset_name", "asset_type", "manufacturer", "serial_number", "location"),
+        columns=("asset_code", "asset_number", "asset_name", "asset_type", "service_type", "location", "next_due_date", "next_validation_due_date", "status"),
+        search_fields=("asset_code", "asset_number", "asset_name", "asset_type", "manufacturer", "serial_number", "location"),
         natural_key=("asset_code",), order_by="asset_code", auto_code_field="asset_code",
     ),
     MasterDef(

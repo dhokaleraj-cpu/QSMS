@@ -31,17 +31,13 @@ LIGHT_GREY = HexColor("#E4E5E7")
 YELLOW = HexColor("#FFF700")
 TEXT = HexColor("#202124")
 
-# R20 · Purchase Order print themes (Design B family). "B1" is the approved default:
-# teal section headings only, white body, thin grey rules, coloured remarks.
-PO_DESIGNS: dict[str, dict[str, Any]] = {
-    "B1": {"name": "B1 · Open Lines Teal (recommended)", "accent": "#0B6E70", "bar": "fill", "rule": "#C9D6D6", "head_fill": None, "label_fill": None, "remark": "#9A3412", "remark_fill": None, "note_fill": None, "tech_fill": None},
-    "B2": {"name": "B2 · Teal Underline", "accent": "#0B6E70", "bar": "underline", "rule": "#C9D6D6", "head_fill": None, "label_fill": None, "remark": "#9A3412", "remark_fill": None, "note_fill": None, "tech_fill": None},
-    "B3": {"name": "B3 · Teal Outline", "accent": "#0B6E70", "bar": "outline", "rule": "#C9D6D6", "head_fill": None, "label_fill": None, "remark": "#9A3412", "remark_fill": None, "note_fill": None, "tech_fill": None},
-    "B4": {"name": "B4 · Graphite & Teal", "accent": "#334155", "bar": "fill", "rule": "#CBD5E1", "head_fill": None, "label_fill": "#F1F5F9", "remark": "#0B6E70", "remark_fill": None, "note_fill": None, "tech_fill": None},
-    "B5": {"name": "B5 · Teal Bands (soft label cells)", "accent": "#0B6E70", "bar": "fill", "rule": "#C9D6D6", "head_fill": "#EAF4F4", "label_fill": "#F3F8F8", "remark": "#9A3412", "remark_fill": "#FFF7ED", "note_fill": None, "tech_fill": None},
-}
-DEFAULT_PO_DESIGN = "B1"
-_ACTIVE: dict[str, Any] = dict(PO_DESIGNS[DEFAULT_PO_DESIGN])
+# R20/R21 · Purchase Order print themes (Design B family) driven by core.print_designer.
+# B5 "Teal Bands" is the approved default (R21); the Print Layout Designer can change the
+# preset, colours, section visibility, headings, title, signatory company and footer.
+from core.print_designer import PRESETS as _PRESETS, PRESET_NAMES as _PRESET_NAMES, DEFAULT_PRESET as DEFAULT_PO_DESIGN, normalize_layout as _normalize_layout, relabel as _relabel, saved_layout as _saved_layout
+
+PO_DESIGNS: dict[str, dict[str, Any]] = {code: {"name": _PRESET_NAMES[code], **cfg} for code, cfg in _PRESETS.items()}
+_ACTIVE: dict[str, Any] = {"name": _PRESET_NAMES[DEFAULT_PO_DESIGN], **_normalize_layout("PURCHASE_ORDER", {})}
 
 
 def _accent():
@@ -57,11 +53,22 @@ def _fill_or_white(key: str):
     return HexColor(value) if value else white
 
 
-def set_po_design(code: str | None) -> dict[str, Any]:
-    """Select the Purchase Order print theme for the next render (default B1)."""
+def _show(flag: str) -> bool:
+    return bool(_ACTIVE.get(flag, True))
+
+
+def set_po_design(code: str | None = None, layout: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Select the PO print theme: an explicit preset code wins, else the saved layout, else B5."""
     global _ACTIVE
-    _ACTIVE = dict(PO_DESIGNS.get(str(code or DEFAULT_PO_DESIGN).upper(), PO_DESIGNS[DEFAULT_PO_DESIGN]))
+    data = dict(layout or {})
+    if code:
+        data = {**data, "preset": str(code).upper()}
+        for key in ("accent", "bar", "rule", "head_fill", "label_fill", "remark", "remark_fill"):
+            data.pop(key, None)
+    clean = _normalize_layout("PURCHASE_ORDER", data)
+    _ACTIVE = {"name": _PRESET_NAMES.get(clean["preset"], clean["preset"]), **clean}
     return _ACTIVE
+
 
 PLANT = {
     "name": "Four Star Industries Private Limited D9",
@@ -203,6 +210,7 @@ def _special_lines(c: canvas.Canvas, x: float, y: float, text: Any, width: float
 
 
 def _bar(c: canvas.Canvas, x: float, y: float, width: float, title: str, *, height: float = 13) -> None:
+    title = _relabel(_ACTIVE, title)
     _rules(c)
     style = _ACTIVE.get("bar") or "fill"
     accent = _accent()
@@ -530,18 +538,24 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
         try: c.drawImage(str(logo_path), left, h-58, width=105, height=39, preserveAspectRatio=True, mask="auto")
         except Exception: pass
 
-    c.setFillColor(_accent()); c.setFont("Helvetica-Bold", 24); c.drawRightString(w-right, h-34, "PURCHASE ORDER"); _rules(c)
+    c.setFillColor(_accent()); c.setFont("Helvetica-Bold", 24); c.drawRightString(w-right, h-34, _ACTIVE.get("title") or "PURCHASE ORDER"); _rules(c)
     _draw_text(c, w-137, h-51, "DATE", size=7.4); c.rect(w-91, h-58, 62, 12, stroke=1, fill=0); _draw_text(c, w-86, h-55, _date(header.get("order_date")), size=7.2)
     _draw_text(c, w-137, h-65, "PO #", size=7.4); c.rect(w-91, h-72, 62, 12, stroke=1, fill=0); _draw_text(c, w-86, h-69, header.get("po_number"), size=7.2)
 
     col_w = 230; left_x = left; right_x = w-right-184; y0 = h-62
     plant = dict(header.get("plant_snapshot") or PLANT)
-    _block(c, left_x, y0, col_w, "PLANT / COMPANY BRANCH", [plant.get("name") or plant.get("branch_name"), plant.get("address1"), plant.get("address2"), plant.get("address3"), plant.get("tax_identifier") or plant.get("gstin"), plant.get("phone"), plant.get("email")])
-    vendor = dict(header.get("vendor_snapshot") or {}); _block(c, left_x, h-154, col_w, "VENDOR", _party_lines(vendor), max_lines=7)
-    _block(c, right_x, h-86, 184, "REFERENCE DETAILS", [f"QUOTATION DATE: {_date(header.get('quotation_date'))}", _s(header.get("quotation_reference"))], max_lines=3)
-    _block(c, right_x, h-136, 184, "OLD PO DETAILS", [_s(header.get("old_po_reference"))], max_lines=2)
+    if _show("show_plant"):
+        _block(c, left_x, y0, col_w, "PLANT / COMPANY BRANCH", [plant.get("name") or plant.get("branch_name"), plant.get("address1"), plant.get("address2"), plant.get("address3"), plant.get("tax_identifier") or plant.get("gstin"), plant.get("phone"), plant.get("email")])
+    vendor = dict(header.get("vendor_snapshot") or {})
+    if _show("show_vendor"):
+        _block(c, left_x, h-154, col_w, "VENDOR", _party_lines(vendor), max_lines=7)
+    if _show("show_reference"):
+        _block(c, right_x, h-86, 184, "REFERENCE DETAILS", [f"QUOTATION DATE: {_date(header.get('quotation_date'))}", _s(header.get("quotation_reference"))], max_lines=3)
+    if _show("show_old_po"):
+        _block(c, right_x, h-136, 184, "OLD PO DETAILS", [_s(header.get("old_po_reference"))], max_lines=2)
     ship = dict(header.get("ship_to_snapshot") or PLANT)
-    _block(c, right_x, h-174, 184, "SHIP TO", _party_lines(ship), max_lines=7)
+    if _show("show_ship_to"):
+        _block(c, right_x, h-174, 184, "SHIP TO", _party_lines(ship), max_lines=7)
 
     y_strip = h-284; strip_widths = [78,106,82,93,w-left-right-359]
     strip_titles = ["REQUISITIONER","SHIP VIA","INCOTERM","DELIVERY DATE","PAYMENT TERM"]
@@ -555,28 +569,40 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     item = dict(items[0])
     y_item_top = y_strip-45
     row_bottom = _draw_item_row(c, item, y_top=y_item_top, left=left, right=right, page_width=w)
-    source_bottom = _draw_customer_reference(c, item, top=row_bottom, left=left, right=right, page_width=w)
-    po_type = _s(header.get("po_type") or "FORGING").upper()
-    tech_bottom = source_bottom-_technical_height(item, po_type=po_type)
-    _draw_technical(c, item, po_type=po_type, top=source_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
-    history = _price_history_rows(item)
-    _draw_price_history(c, item, history, top=tech_bottom-4, bottom=245, left=left, right=right, page_width=w, max_rows=FIRST_HISTORY_ROWS)
+    _item_sections(c, header, item, top=row_bottom, left=left, right=right, w=w, history_gap=4, history_bottom=245, max_rows=FIRST_HISTORY_ROWS)
 
     remark_color = HexColor(_ACTIVE.get("remark") or "#9A3412")
     _draw_text(c,left+2,236,"Remarks:",size=7.6,bold=True,color=_accent()); _rules(c); c.setFillColor(_fill_or_white("remark_fill")); c.rect(left,211,386,21,stroke=1,fill=1); _draw_text(c,left+4,220,header.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.",size=7.4,bold=True,color=remark_color,max_width=378)
-    _bar(c,left,206,386,"COMMENTS OR SPECIAL INSTRUCTIONS",height=14); _special_lines(c,left+2,181,header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,374)
+    if _show("show_special_instructions"):
+        _bar(c,left,206,386,"COMMENTS OR SPECIAL INSTRUCTIONS",height=14); _special_lines(c,left+2,181,header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,374)
     total_x=417; ytot=205
     for label,val in [("SUBTOTAL",header.get("subtotal")),("CGST 9%",header.get("cgst_amount")),("SGST 9%",header.get("sgst_amount")),("IGST",header.get("igst_amount")),("OTHER",header.get("other_amount"))]:
         _draw_text(c,total_x,ytot,label,size=6.9); c.rect(total_x+55,ytot-5,95,13,stroke=1,fill=0); _draw_text(c,total_x+61,ytot-1,_money(val),size=6.8); ytot -= 16
     c.setFont("Helvetica-Bold",8.0); c.drawString(total_x,ytot,"TOTAL"); c.drawString(total_x+61,ytot,f"INR {_money(header.get('grand_total'))}")
-    if _s(header.get("approval_status")).upper() == "APPROVED":
+    signatory_company = _ACTIVE.get("company_name") or plant.get("name") or plant.get("branch_name") or PLANT["name"]
+    if _s(header.get("approval_status")).upper() == "APPROVED" and _show("show_approval_stamp"):
         _draw_approver_stamp(c, header, page_width=w)
     else:
-        _draw_text(c,w-143,81,"Authorised Signatory",size=7.0,bold=True); _draw_text(c,w-174,67,plant.get("name") or plant.get("branch_name") or PLANT["name"],size=6.2)
+        _draw_text(c,w-143,81,"Authorised Signatory",size=7.0,bold=True); _draw_text(c,w-174,67,signatory_company,size=6.2)
     c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",6.0)
     c.drawCentredString(w/2,47,"If you have any questions about this purchase order, please contact")
-    c.drawCentredString(w/2,36,"FSI · connect@fourstarindustries.com")
+    c.drawCentredString(w/2,36,_ACTIVE.get("footer_text") or "FSI · connect@fourstarindustries.com")
     c.showPage(); c.save(); return out.getvalue()
+
+
+def _item_sections(c: canvas.Canvas, header: Mapping[str, Any], item: Mapping[str, Any], *, top: float, left: float, right: float, w: float, history_gap: float, history_bottom: float, max_rows: int) -> tuple[list, int]:
+    """Source reference, technical data and price history, each optional (Print Layout Designer)."""
+    y = top
+    if _show("show_source_reference"):
+        y = _draw_customer_reference(c, item, top=y, left=left, right=right, page_width=w)
+    po_type = _s(header.get("po_type") or "FORGING").upper()
+    if _show("show_technical"):
+        bottom = y-_technical_height(item, po_type=po_type)
+        _draw_technical(c, item, po_type=po_type, top=y, bottom=bottom, left=left, right=right, page_width=w)
+        y = bottom
+    history = _price_history_rows(item) if _show("show_price_history") else []
+    rendered = _draw_price_history(c, item, history, top=y-history_gap, bottom=history_bottom, left=left, right=right, page_width=w, max_rows=max_rows) if _show("show_price_history") else 0
+    return history, rendered
 
 
 def _continuation_items_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, Any]]) -> bytes:
@@ -586,12 +612,7 @@ def _continuation_items_bytes(header: Mapping[str, Any], items: Sequence[Mapping
         item = dict(item_src)
         w,h,left,right = _draw_continuation_header(c, header, title="PURCHASE ORDER · ITEM CONTINUED")
         row_bottom = _draw_item_row(c, item, y_top=h-92, left=left, right=right, page_width=w)
-        source_bottom = _draw_customer_reference(c, item, top=row_bottom, left=left, right=right, page_width=w)
-        po_type = _s(header.get("po_type") or "FORGING").upper()
-        tech_bottom = source_bottom-_technical_height(item, po_type=po_type)
-        _draw_technical(c, item, po_type=po_type, top=source_bottom, bottom=tech_bottom, left=left, right=right, page_width=w)
-        history = _price_history_rows(item)
-        rendered = _draw_price_history(c, item, history, top=tech_bottom-6, bottom=50, left=left, right=right, page_width=w, max_rows=CONT_HISTORY_ROWS)
+        history, rendered = _item_sections(c, header, item, top=row_bottom, left=left, right=right, w=w, history_gap=6, history_bottom=50, max_rows=CONT_HISTORY_ROWS)
         c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",5.8); c.drawCentredString(w/2,27,"QCMS controlled continuation · Technical data and Price Revision History are item-specific and supplier-specific.")
         c.showPage()
         if rendered < len(history):
@@ -974,7 +995,7 @@ def purchase_order_excel_bytes(header: Mapping[str, Any], items: Mapping[str, An
     out=BytesIO(); wb.save(out); return out.getvalue()
 
 
-def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any] | Sequence[Mapping[str, Any]], *, terms_path: str | Path | None = None, design: str | None = None) -> bytes:
+def _purchase_order_pdf_impl(header: Mapping[str, Any], items: Mapping[str, Any] | Sequence[Mapping[str, Any]], *, terms_path: str | Path | None = None, design: str | None = None, layout: Mapping[str, Any] | None = None) -> bytes:
     """Return the controlled FSI Purchase Order PDF.
 
     Page 1 prints one supplier-facing item line plus a supplier-safe source reference
@@ -990,7 +1011,7 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
     normalized = [dict(items)] if isinstance(items, Mapping) else [dict(v) for v in items]
     if not normalized:
         raise ValueError("At least one Purchase Order line is required.")
-    set_po_design(design)
+    set_po_design(design, layout)
     try:
         return _purchase_order_pdf(header, normalized, terms_path=terms_path)
     finally:
@@ -1020,6 +1041,13 @@ def _purchase_order_pdf(header: Mapping[str, Any], normalized: list[dict], *, te
 
 # R12 performance: reuse identical export bytes across Streamlit reruns.
 from core.export_cache import session_memo_bytes as _session_memo_bytes
-purchase_order_pdf_bytes = _session_memo_bytes(purchase_order_pdf_bytes)
+_purchase_order_pdf_cached = _session_memo_bytes(_purchase_order_pdf_impl)
+
+
+def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any] | Sequence[Mapping[str, Any]], *, terms_path: str | Path | None = None, design: str | None = None, layout: Mapping[str, Any] | None = None) -> bytes:
+    """Return the controlled FSI Purchase Order PDF using the saved Print Layout (R21)."""
+    if layout is None and not design:
+        layout = _saved_layout("PURCHASE_ORDER")
+    return _purchase_order_pdf_cached(header, items, terms_path=terms_path, design=design, layout=dict(layout or {}))
 purchase_order_excel_bytes = _session_memo_bytes(purchase_order_excel_bytes)
 batch_purchase_order_pdf_bytes = _session_memo_bytes(batch_purchase_order_pdf_bytes)

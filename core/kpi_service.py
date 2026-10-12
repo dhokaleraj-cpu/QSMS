@@ -446,7 +446,7 @@ def calibration(data: Mapping[str, list[dict]], ctx: KPIContext) -> Dashboard:
     types = types.groupby("type").agg(assets=("ok", "size"), ok=("ok", "sum")).reset_index()
     types["compliance_pct"] = (100 * types["ok"] / types["assets"]).round(1)
     board.charts = [Chart("Calibrations falling due — next 6 months", "bar", due, "month", "assets"), Chart("Compliance % by asset type", "hbar", types.sort_values("compliance_pct"), "compliance_pct", "type")]
-    board.tables = [("Overdue gauges", _frame(({"Asset": r.get("asset_code"), "Name": r.get("asset_name"), "Type": r.get("asset_type"), "Location": r.get("location"), "Due date": str(_d(r.get("next_due_date"))), "Days overdue": (ctx.today - _d(r.get("next_due_date"))).days} for r in sorted(overdue, key=lambda r: _d(r.get("next_due_date")))), ["Asset", "Name", "Type", "Location", "Due date", "Days overdue"]))]
+    board.tables = [("Overdue gauges", _frame(({"Asset": r.get("asset_code"), "Asset No.": r.get("asset_number"), "Name": r.get("asset_name"), "Type": r.get("asset_type"), "Location": r.get("location"), "Due date": str(_d(r.get("next_due_date"))), "Days overdue": (ctx.today - _d(r.get("next_due_date"))).days} for r in sorted(overdue, key=lambda r: _d(r.get("next_due_date")))), ["Asset", "Asset No.", "Name", "Type", "Location", "Due date", "Days overdue"]))]
     return board
 
 
