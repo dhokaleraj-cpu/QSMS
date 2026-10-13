@@ -9,6 +9,7 @@ from core.ui import portal_table
 from core.access import current_permissions
 from core.delete_service import password_delete_panel, password_transaction_delete_panel
 from core.repository import Repository
+from core.db_errors import db_message
 from core.record_audit import annotate_transaction_rows
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
 from core.ui import disposition_cards, page_header, section_bar, style_status_dataframe, subpage_navigation
@@ -454,6 +455,97 @@ def render_transaction_delete_center(repo: Repository) -> None:
     )
 
 
+def render_deletion_requests(repo: Repository) -> None:
+    """R25: approved records are deleted only after the Admin approves a request."""
+    from core.auth import current_profile
+    from core.delete_approval import decide, requests, deleted_summary  # noqa: F401
+    from core.permissions import is_admin
+    from core.record_history import table_label
+    from core.record_audit import _profile_labels
+
+    section_bar("DELETION REQUESTS · ADMIN APPROVAL", "Approved / released transactions are deleted only when the Admin approves the request.")
+    admin = is_admin(current_profile() or {})
+    rows = requests(repo)
+    names = _profile_labels(repo, [str(r.get("requested_by") or "") for r in rows] + [str(r.get("decided_by") or "") for r in rows])
+    pending = [r for r in rows if str(r.get("status")) in {"PENDING", "FAILED"}]
+    disposition_cards([
+        {"label": "Waiting for Admin", "value": sum(str(r.get("status")) == "PENDING" for r in rows)},
+        {"label": "Failed", "value": sum(str(r.get("status")) == "FAILED" for r in rows)},
+        {"label": "Executed", "value": sum(str(r.get("status")) == "EXECUTED" for r in rows)},
+        {"label": "Rejected", "value": sum(str(r.get("status")) == "REJECTED" for r in rows)},
+    ])
+    if not admin:
+        st.caption("You see your own requests. Only the QCMS Administrator can approve or reject.")
+    for req in pending:
+        with st.container(border=True):
+            st.markdown(f"**{table_label(str(req.get('table_name')))} · {req.get('record_label') or str(req.get('record_id'))[:8]}** · "
+                        f"[{req.get('status')}] · requested by {names.get(str(req.get('requested_by')), '-')} on {str(req.get('requested_at') or '')[:16].replace('T', ' ')}")
+            st.markdown(f"Reason: _{req.get('reason')}_" + (f"  \nLast error: :red[{req.get('error_text')}]" if req.get("error_text") else ""))
+            snapshot = req.get("record_snapshot") or {}
+            with st.expander("Record data"):
+                st.json(snapshot, expanded=False)
+            if admin:
+                note = st.text_input("Admin note", key=f"del_req_note_{req['id']}")
+                c1, c2 = st.columns(2, gap="small")
+                if c1.button("Approve & delete", type="primary", width="stretch", key=f"del_req_ok_{req['id']}", icon=":material/check_circle:"):
+                    try:
+                        result = decide(repo, str(req["id"]), True, note)
+                        if str(result.get("status")) == "EXECUTED":
+                            st.success("Deleted. The record is kept in Deleted Records.")
+                        else:
+                            st.error(f"Deletion failed: {result.get('error')}. Handle the linked transactions, then approve again.")
+                    except Exception as exc:
+                        st.error(db_message(exc))
+                if c2.button("Reject", width="stretch", key=f"del_req_no_{req['id']}", icon=":material/cancel:"):
+                    try:
+                        decide(repo, str(req["id"]), False, note); st.success("Request rejected; the record stays.")
+                    except Exception as exc:
+                        st.error(db_message(exc))
+    history = [{"Requested": str(r.get("requested_at") or "")[:16].replace("T", " "), "Record Type": table_label(str(r.get("table_name"))),
+                "Reference": r.get("record_label"), "Reason": r.get("reason"), "Status": r.get("status"),
+                "Requested By": names.get(str(r.get("requested_by")), "-"), "Decided By": names.get(str(r.get("decided_by")), "-"),
+                "Decided": str(r.get("decided_at") or "")[:16].replace("T", " "), "Admin Note": r.get("decision_note")} for r in rows]
+    _table(pd.DataFrame(history), pdf_title="Deletion Requests", pdf_key="QCMS_Deletion_Requests")
+
+
+def render_deleted_records(repo: Repository) -> None:
+    """R25: every deleted record with its data at deletion, who deleted / approved it and why - view & print."""
+    from datetime import date, timedelta
+    from core.delete_approval import deleted_record_pdf, deleted_records, deleted_register_pdf, deleted_summary
+    from core.record_history import table_label
+
+    section_bar("DELETED RECORDS ARCHIVE", "Data of every deleted record is kept for audit. View, print one record or the register as PDF.")
+    catalogue = {**TRANSACTION_DELETE_TABLES, **MASTER_DELETE_TABLES}
+    c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+    kind = c1.selectbox("Record type", ["All record types", *catalogue], key="deleted_kind")
+    date_from = c2.date_input("From", value=date.today() - timedelta(days=90), format="DD-MM-YYYY", key="deleted_from")
+    date_to = c3.date_input("To", value=date.today(), format="DD-MM-YYYY", key="deleted_to")
+    main_only = c4.toggle("Main records only", value=True, key="deleted_main_only", help="Hide child rows deleted together with a main record (PO lines, sources, stages).")
+    table = None if kind == "All record types" else catalogue[kind][0]
+    rows = deleted_records(repo, table=table, date_from=date_from, date_to=date_to)
+    if main_only and table is None:
+        main_tables = {t for t, _m in catalogue.values()}
+        rows = [r for r in rows if str(r.get("table_name")) in main_tables]
+    if not rows:
+        st.info("No deleted records in this selection.")
+        return
+    frame = pd.DataFrame([deleted_summary(r) for r in rows])
+    disposition_cards([{"label": "Deleted records", "value": len(rows)}, {"label": "With Admin approval", "value": int((frame["Approved By"] != "-").sum())},
+                       {"label": "Record types", "value": frame["Record Type"].nunique()}, {"label": "Users", "value": frame["Deleted By"].nunique()}])
+    _table(frame, pdf_title="Deleted Records", pdf_key="QCMS_Deleted_Records")
+    st.download_button("Print deleted-records register (PDF)", deleted_register_pdf(rows), file_name="QCMS_Deleted_Records_Register.pdf",
+                       mime="application/pdf", icon=":material/picture_as_pdf:", width="stretch", key="deleted_register_pdf")
+    labels = {str(i): f"{s['Deleted At']} · {s['Record Type']} · {s['Reference']} · by {s['Deleted By']}" for i, s in enumerate(frame.to_dict("records"))}
+    choice = st.selectbox("View one deleted record", list(labels), format_func=lambda v: labels[v], key="deleted_one")
+    row = rows[int(choice)]
+    data = dict(row.get("old_data") or {})
+    from core.record_history import field_label
+    portal_table(pd.DataFrame([{"Field": field_label(k), "Value at deletion": v if not isinstance(v, (dict, list)) else str(v)} for k, v in data.items() if k != "tenant_id"]),
+                 hide_index=True, width="stretch", height=min(520, 60 + 32 * max(len(data), 1)))
+    st.download_button("Print this deleted record (PDF)", deleted_record_pdf(row), file_name=f"QCMS_Deleted_{table_label(str(row.get('table_name')))}_{deleted_summary(row)['Reference']}.pdf".replace(" ", "_").replace("/", "-"),
+                       mime="application/pdf", icon=":material/picture_as_pdf:", width="stretch", key=f"deleted_one_pdf_{choice}")
+
+
 def render_record_history_center(repo: Repository) -> None:
     """R20 status window: who created / edited any transaction or master and what changed."""
     from core.record_history import record_history_panel
@@ -490,7 +582,7 @@ def render() -> None:
     part_name_map = _map(parts, "id", "part_name")
     party_map = _map(parties, "id", "party_name")
 
-    tabs = st.tabs(["RMTC", "Material Inward", "OSP Transactions", "Dimensional", "MetLAB", "Layouts", "Masters", "Heat Steel Ledger", "Universal PDFs", "Delete Transactions", "Record History"])
+    tabs = st.tabs(["RMTC", "Material Inward", "OSP Transactions", "Dimensional", "MetLAB", "Layouts", "Masters", "Heat Steel Ledger", "Universal PDFs", "Delete Transactions", "Deletion Requests", "Deleted Records", "Record History"])
 
     with tabs[0]:
         rows = _rows(repo, "rmtc_approvals", order_by="created_at", desc=True)
@@ -641,5 +733,11 @@ def render() -> None:
         render_transaction_delete_center(repo)
 
     with tabs[10]:
+        render_deletion_requests(repo)
+
+    with tabs[11]:
+        render_deleted_records(repo)
+
+    with tabs[12]:
         render_record_history_center(repo)
 

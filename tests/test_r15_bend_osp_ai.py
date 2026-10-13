@@ -100,7 +100,7 @@ def test_ai_key_script_offers_free_engines():
 def test_android_app_1_1_0_camera_progress_offline():
     java = (ROOT / "mobile/android_first_app/app/src/main/java/com/fourstar/qcms/MainActivity.java").read_text()
     gradle = (ROOT / "mobile/android_first_app/app/build.gradle").read_text()
-    assert "versionName '1.1.0'" in gradle and "versionCode 19" in gradle
+    assert "versionName '1.2.0'" in gradle and "versionCode 20" in gradle  # R25 new APK version
     for token in ("MediaStore.ACTION_IMAGE_CAPTURE", "onProgressChanged", "onReceivedError", "Clear cache & reload", "QCMSClassicShell/1.0.2"):
         assert token in java
     assert "__qcmsNativeNavigate" not in java

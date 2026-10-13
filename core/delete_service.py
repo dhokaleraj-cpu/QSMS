@@ -9,6 +9,7 @@ from core.config import is_preview_session
 from core.repository import Repository
 from core.ui import delete_success_popup
 from core.selection_labels import with_status
+from core.delete_approval import approved_delete_controls, is_approved
 
 # R20: tables with a dedicated delete RPC that removes the record's OWN child rows
 # (e.g. a PO with its lines, sources and stages) and blocks only on real genealogy.
@@ -74,6 +75,9 @@ def show_delete_blocked(repo: Repository, table: str, record_id: str, exc: Excep
     message = db_message(exc)
     if "downstream linked records" in message:
         message = "This record is still used by other transactions (listed below)."
+    if "APPROVED_DELETE_BLOCKED" in message:
+        st.error("This record is approved / released. Delete it through a deletion request - the Admin must approve it (Records → Deletion Requests).")
+        return
     st.error(f"Deletion blocked: {message}")
     try:
         linked = linked_records(repo, table, record_id)
@@ -125,6 +129,10 @@ def password_delete_panel(
             disabled=not can_delete,
         )
         linked_records_button(repo, table, selected, key)
+        selected_row = next((r for r in rows if str(r.get("id")) == str(selected)), {})
+        if is_approved(selected_row):
+            approved_delete_controls(repo, table, selected_row, labels.get(str(selected), str(selected)), key=key, can_delete=can_delete)
+            return False
         password = st.text_input(
             "Current QCMS password",
             type="password",
@@ -223,6 +231,10 @@ def password_transaction_delete_panel(
             key=f"{key}_row", disabled=not can_delete,
         )
         linked_records_button(repo, table, selected, key)
+        selected_row = next((r for r in rows if str(r.get("id")) == str(selected)), {})
+        if is_approved(selected_row):
+            approved_delete_controls(repo, table, selected_row, labels.get(str(selected), str(selected)), key=key, can_delete=can_delete)
+            return False
         password = st.text_input(
             "Current QCMS password", type="password", key=f"{key}_password", disabled=not can_delete,
         )

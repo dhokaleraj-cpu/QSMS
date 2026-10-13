@@ -53,7 +53,7 @@ public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 701;
     private static final String PREFS = "qcms_mobile";
     private static final String PREF_URL = "qcms_url";
-    private static final String CLASSIC_UA = "QCMSClassicShell/1.0.2 QCMSApp/1.1.0";
+    private static final String CLASSIC_UA = "QCMSClassicShell/1.0.2 QCMSApp/1.2.0";
 
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;

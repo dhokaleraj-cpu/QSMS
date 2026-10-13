@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R24",
+  "release_revision": "R25",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -519,5 +519,13 @@
     "po_sections_batch_print",
     "po_sections_every_po_email",
     "designer_short_section_labels"
-  ]
+  ],
+  "r25_changes": [
+    "approved_delete_requires_admin_approval",
+    "deletion_requests_admin_page",
+    "db_guard_trigger_on_approved_rows",
+    "deleted_records_archive_view_pdf",
+    "android_first_app_1_2_0"
+  ],
+  "r25_sql": "QCMS_R25_RUN_IN_SUPABASE.sql"
 }
