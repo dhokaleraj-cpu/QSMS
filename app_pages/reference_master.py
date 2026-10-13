@@ -15,6 +15,7 @@ from core.master_service import MasterService
 from core.selection_labels import reference_record_label
 from core.reporting import controlled_record_pdf_bytes
 from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.db_errors import db_message
 
 REFERENCE_KEYS = (
     "customers", "suppliers", "steel_mills", "osp_vendors",
@@ -145,13 +146,13 @@ def render_entry() -> None:
             elif "uq_quality_assets_asset_number" in str(exc):
                 st.error("This Asset Number is already used by another Quality Asset.")
             else:
-                st.error(str(exc))
+                st.error(db_message(exc))
     if record and definition.status_field:
         c1, c2 = st.columns(2, gap="small")
         with c1:
             if st.button("Deactivate selected record", disabled=not perms["can_archive"], width="stretch"):
                 try: service.deactivate(definition, str(record["id"])); save_success_popup("Record deactivated successfully.", queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
         with c2:
             if password_delete_panel(repo=service.repo, table=definition.table, rows=[record], labeler=lambda r: _row_label(definition, r, lookup_maps), key=f"delete_ref_entry_{key}_{record.get('id')}", can_delete=perms["can_archive"], title="Delete selected record", help_text="Permanent deletion requires your current password. Linked records may prevent deletion; use Deactivate in that case."):
                 st.rerun()

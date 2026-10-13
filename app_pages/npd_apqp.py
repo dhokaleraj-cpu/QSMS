@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from math import ceil
-from typing import Any
+import re
+from typing import Any, Mapping
 
 import pandas as pd
 import streamlit as st
@@ -11,11 +12,12 @@ from core.ui import portal_table
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
 from core.reporting import controlled_record_pdf_bytes, npd_pending_status_pdf_bytes
-from core.selection_labels import employee_label, part_label, party_label, process_label
+from core.selection_labels import employee_label, part_label, party_label, process_label, with_status
 from core.ui import safe
 from core.repository import Repository
 from core.record_audit import annotate_transaction_rows
 from core.ui import kpi_grid, page_header, record_widget_token, save_success_popup, section_bar, stage_section, status_chip
+from core.db_errors import db_message
 
 
 ORDER_STATUSES = ["OPEN", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"]
@@ -145,7 +147,7 @@ def _render_process_cards(steps: list[dict], point_progress: dict[str, tuple[int
             completed_points, total_points = point_progress.get(str(row.get("id")), (0, 0))
             checkpoint_line = f'<div class="npd-process-date">Checkpoints {completed_points}/{total_points}</div>' if total_points else ''
             remarks = str(row.get("remarks") or "").strip(); remark_line = f'<div class="npd-process-remarks">{remarks}</div>' if remarks else ''
-            cards.append(f'<div class="npd-process-card npd-{state}"><div class="npd-op">OP {operation_no}</div><div class="npd-process-name">{process_name}</div><div class="npd-process-status">{status}</div><div class="npd-process-date">{detail}</div>{checkpoint_line}{remark_line}</div>')
+            cards.append(f'<div class="npd-process-card npd-{state}"><div class="npd-op">OP {operation_no}{(" · " + str(row.get("part_designation"))) if row.get("part_designation") else ""}</div><div class="npd-process-name">{process_name}</div><div class="npd-process-status">{status}</div><div class="npd-process-date">{detail}</div>{checkpoint_line}{remark_line}</div>')
         st.markdown(f'<div class="npd-process-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
         return
     # Clickable process cards: the whole Streamlit button is the card surface.
@@ -156,13 +158,43 @@ def _render_process_cards(steps: list[dict], point_progress: dict[str, tuple[int
             state, detail = _step_realtime_state(row); step_id = str(row.get("id")); process_name = str(row.get("process_name") or "Process")
             status = str(row.get("status") or "PENDING").replace("_", " ").title(); remarks = str(row.get("remarks") or "").strip()
             done,total = point_progress.get(step_id,(0,0)); checkpoint = f" · Points {done}/{total}" if total else ""
-            label = f"OP {row.get('operation_no')} · {process_name}\n{status} · {detail}{checkpoint}"
+            label = f"OP {row.get('operation_no')}{(' · ' + str(row.get('part_designation'))) if row.get('part_designation') else ''} · {process_name}\n{status} · {detail}{checkpoint}"
             if remarks: label += f"\nRemarks: {remarks}"
             with col:
                 with st.container(key=f"npd_click_card_{state}_{step_id}"):
                     if st.button(label, key=f"{key_prefix}_card_{step_id}", width="stretch"):
                         st.session_state["npd_selected_step_id"] = step_id
 
+
+
+def part_designation_base(part: Mapping[str, Any] | None) -> str:
+    """FSI Part Number without spaces (K 4404 -> K4404); falls back to the Part Number."""
+    part = part or {}
+    raw = str(part.get("fsi_part_number") or "").strip() or str(part.get("part_number") or "").strip()
+    return re.sub(r"\s+", "", raw).upper()
+
+
+def _is_primary_process(process: Mapping[str, Any] | None) -> bool:
+    text = " ".join(str((process or {}).get(k) or "") for k in ("process_code", "process_name", "process_type")).casefold()
+    return any(word in text for word in ("forg", "cast"))
+
+
+def auto_operation_numbers(rows: list[dict], process_by_label: Mapping[str, Mapping[str, Any]]) -> list[dict]:
+    """Forging / casting = OP 0; every other process 10, 20, 30 ... in row order."""
+    out: list[dict] = []
+    next_no = 10
+    zero_used = False
+    for row in rows:
+        row = dict(row)
+        label = str(row.get("Process") or "").strip()
+        if not label:
+            out.append(row); continue
+        if not zero_used and _is_primary_process(process_by_label.get(label)):
+            row["Operation No."] = 0; zero_used = True
+        else:
+            row["Operation No."] = next_no; next_no += 10
+        out.append(row)
+    return out
 
 
 def render_process_flow() -> None:
@@ -176,7 +208,7 @@ def render_process_flow() -> None:
         st.info("Create Process Master records before defining a Process Flow.")
         return
 
-    part_labels = {str(row["id"]): part_label(row) for row in parts}
+    part_labels = {str(row["id"]): with_status(part_label(row), row) for row in parts}
     part_id = st.selectbox("Select Part Number", list(part_labels), format_func=lambda value: part_labels[value], key="npd_flow_part")
     part = next(row for row in parts if str(row["id"]) == part_id)
     flow = _flow_for_part(repo, part_id)
@@ -213,11 +245,21 @@ def render_process_flow() -> None:
             })
         if not initial:
             initial = [{"Operation No.": 0, "Process": next(iter(process_label_to_id)), "Target Lead Days": 0, "Responsible Employee": "— Not assigned —", "Remarks": ""}]
+        # R22: Part Designation = <FSI Part No>-<Operation No> (e.g. K4404-0 forging, K4404-10, K4404-20 ...).
+        designation_base = part_designation_base(part)
+        for row in initial:
+            row["Part Designation"] = f"{designation_base}-{int(row.get('Operation No.') or 0)}" if designation_base else ""
+        auto_number = st.toggle(
+            "Auto-number operations and Part Designations (Forging / Casting = 0, then 10, 20, 30 … in row order)",
+            value=True, key=f"npd_flow_auto_{part_id}", disabled=not perms["can_edit"],
+            help=f"Part Designation is generated automatically from the FSI Part Number ({designation_base or 'not set'}) as soon as processes are added.",
+        )
         edited = st.data_editor(
-            pd.DataFrame(initial), num_rows="dynamic", hide_index=True, width="stretch", height=390,
+            pd.DataFrame(initial, columns=["Operation No.", "Part Designation", "Process", "Target Lead Days", "Responsible Employee", "Remarks"]), num_rows="dynamic", hide_index=True, width="stretch", height=390,
             key=f"npd_flow_grid_{part_id}", disabled=not perms["can_edit"],
             column_config={
-                "Operation No.": st.column_config.NumberColumn(min_value=0, step=10, required=True, width="small"),
+                "Operation No.": st.column_config.NumberColumn(min_value=0, step=10, required=False, width="small", help="Leave blank when auto-numbering is on."),
+                "Part Designation": st.column_config.TextColumn(disabled=True, width="medium", help="Generated automatically: FSI Part No - Operation No."),
                 "Process": st.column_config.SelectboxColumn(options=list(process_label_to_id), required=True, width="large"),
                 "Target Lead Days": st.column_config.NumberColumn(min_value=0, step=1, help="Optional default lead-time allocation for this process."),
                 "Responsible Employee": st.column_config.SelectboxColumn(options=employee_options, width="large"),
@@ -225,9 +267,17 @@ def render_process_flow() -> None:
             },
         )
 
+        planned_rows = edited.fillna("").to_dict("records")
+        if auto_number:
+            planned_rows = auto_operation_numbers(planned_rows, {label: process_by_id[pid] for label, pid in process_label_to_id.items()})
+        preview = [{"Operation No.": r.get("Operation No."), "Part Designation": f"{designation_base}-{int(float(r.get('Operation No.') or 0))}" if designation_base else "Set FSI Part Number in Part Master", "Process": r.get("Process")} for r in planned_rows if str(r.get("Process") or "").strip()]
+        if preview:
+            st.markdown("**Part Designations (generated automatically)**")
+            portal_table(pd.DataFrame(preview), hide_index=True, width="stretch", height=min(360, 80 + 34 * len(preview)))
+
         if st.button("Save Process Flow", type="primary", width="stretch", disabled=not (perms["can_edit"] or perms["can_create"])):
             try:
-                rows = edited.fillna("").to_dict("records")
+                rows = planned_rows
                 clean = []
                 seen = set()
                 for row in rows:
@@ -249,8 +299,25 @@ def render_process_flow() -> None:
                 saved = repo.update("npd_process_flows", str(flow["id"]), payload) if flow else repo.insert("npd_process_flows", payload)
                 old_steps = _flow_steps(repo, str(saved["id"]))
                 old_by_op = {int(row.get("operation_no") or 0): row for row in old_steps}
-                retained_ids: set[str] = set()
+                # R22: match each planned operation to an existing step (same OP + process, else same process)
+                # so renumbering keeps the step and its checkpoints.
+                used: set[str] = set(); plan = []
                 for operation_no, process_id, process, source in clean:
+                    match = old_by_op.get(operation_no)
+                    if not match or str(match.get("process_id")) != str(process_id) or str(match["id"]) in used:
+                        match = next((r for r in old_steps if str(r.get("process_id")) == str(process_id) and str(r["id"]) not in used), None)
+                    if match is None and old_by_op.get(operation_no) and str(old_by_op[operation_no]["id"]) not in used:
+                        match = old_by_op[operation_no]
+                    if match is not None:
+                        used.add(str(match["id"]))
+                    plan.append((operation_no, process_id, process, source, match))
+                for old_step in old_steps:
+                    if str(old_step["id"]) not in used:
+                        repo.delete("npd_process_flow_steps", str(old_step["id"]))
+                for index, (operation_no, _pid, _proc, _src, match) in enumerate(plan):
+                    if match is not None and int(match.get("operation_no") or 0) != operation_no:
+                        repo.update("npd_process_flow_steps", str(match["id"]), {"operation_no": 900000 + index})
+                for operation_no, process_id, process, source, existing_step in plan:
                     responsible_option = str(source.get("Responsible Employee") or "— Not assigned —")
                     employee_id = employee_option_to_id.get(responsible_option)
                     snapshot = employee_labels.get(str(employee_id)) if employee_id else (responsible_option.removeprefix("Legacy · ").strip() if responsible_option.startswith("Legacy · ") else None)
@@ -262,20 +329,14 @@ def render_process_flow() -> None:
                         "responsible": snapshot,
                         "remarks": str(source.get("Remarks") or "").strip() or None,
                     }
-                    existing_step = old_by_op.get(operation_no)
-                    if existing_step:
+                    if existing_step is not None:
                         repo.update("npd_process_flow_steps", str(existing_step["id"]), step_payload)
-                        retained_ids.add(str(existing_step["id"]))
                     else:
-                        created = repo.insert("npd_process_flow_steps", step_payload)
-                        retained_ids.add(str(created["id"]))
-                for old_step in old_steps:
-                    if str(old_step["id"]) not in retained_ids:
-                        repo.delete("npd_process_flow_steps", str(old_step["id"]))
+                        repo.insert("npd_process_flow_steps", step_payload)
                 save_success_popup("Part Process Flow saved in operational sequence.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
         if not flow:
             st.info("Save the Process Flow first. Checkpoints / bullet points can then be added under each process.")
@@ -345,7 +406,7 @@ def render_process_flow() -> None:
                         save_success_popup(f"Checkpoints saved for OP {step.get('operation_no')}.", queue_for_rerun=True)
                         st.rerun()
                     except Exception as exc:
-                        st.error(str(exc))
+                        st.error(db_message(exc))
 
         if existing_steps:
             st.markdown("**Current Process Flow**")
@@ -482,7 +543,7 @@ def render_npd_status() -> None:
         st.info("Active Part Master and Customer Master records are required for NPD order tracking.")
         return
     part_by_id = {str(row["id"]): row for row in parts}; customer_by_id = {str(row["id"]): row for row in customers}
-    part_labels = {str(row["id"]): part_label(row) for row in parts}; customer_labels = {str(row["id"]): party_label(row) for row in customers}
+    part_labels = {str(row["id"]): with_status(part_label(row), row) for row in parts}; customer_labels = {str(row["id"]): party_label(row) for row in customers}
     employee_labels = _employee_labels(employees)
     employee_options, employee_option_to_id = _employee_option_maps(employees)
     employee_id_to_option = {employee_id: label for label, employee_id in employee_option_to_id.items() if employee_id}
@@ -551,7 +612,7 @@ def render_npd_status() -> None:
                     save_success_popup("NPD Order saved and process/checkpoint status cards created from the Part Process Flow.", queue_for_rerun=True)
                     st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))
 
             if existing:
                 if password_delete_panel(
@@ -579,7 +640,7 @@ def render_npd_status() -> None:
         with stage_section("A", "PENDING ORDER PROCESS STATUS", key="npd_status_detail_a"):
             _render_pending_order_matrix(repo, orders, part_by_id, customer_by_id)
         with stage_section("B", "SELECTED ORDER DETAIL", "Open one order below to review the current process status and target dates.", key="npd_status_detail_b"):
-            order_labels = {str(row["id"]): _order_label(row, part_by_id, customer_by_id) for row in orders}
+            order_labels = {str(row["id"]): with_status(_order_label(row, part_by_id, customer_by_id), row) for row in orders}
             order_id = st.selectbox("Open Order Status", list(order_labels), format_func=lambda value: order_labels[value], key="npd_status_order")
             order = next(row for row in orders if str(row["id"]) == order_id)
             steps = repo.select("npd_order_steps", eq={"npd_order_id": order_id}, order_by="operation_no", limit=500)
@@ -627,7 +688,7 @@ def render_npd_status() -> None:
                         repo.update("npd_order_steps", selected_step_id, {"status":card_status, "completed_date":card_completed.isoformat() if card_status=="COMPLETED" else None, "remarks":card_remarks.strip() or None})
                         refreshed=repo.select("npd_order_steps",eq={"npd_order_id":order_id},order_by="operation_no",limit=500);_sync_order_overall_status(repo,order,refreshed)
                         save_success_popup("NPD process card updated.",queue_for_rerun=True);st.rerun()
-                    except Exception as exc: st.error(str(exc))
+                    except Exception as exc: st.error(db_message(exc))
 
         with stage_section("D", "UPDATE PROCESS TARGETS & STATUS", key="npd_status_detail_d"):
             legacy_values = [str(row.get("responsible") or "") for row in steps if not row.get("responsible_employee_id")]
@@ -672,7 +733,7 @@ def render_npd_status() -> None:
                     save_success_popup("Process target dates and real-time status updated.", queue_for_rerun=True)
                     st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))
 
         with stage_section("E", "PROCESS CHECKPOINTS / BULLET POINTS", "Update each point as Pending, In Progress, Completed, On Hold or Not Applicable, with responsible employee and remarks.", key="npd_status_detail_e"):
             for step in steps:
@@ -725,7 +786,7 @@ def render_npd_status() -> None:
                             save_success_popup(f"Checkpoint status updated for OP {step.get('operation_no')}.", queue_for_rerun=True)
                             st.rerun()
                         except Exception as exc:
-                            st.error(str(exc))
+                            st.error(db_message(exc))
 
             part = part_by_id.get(str(order.get("part_id"))) or {}
             customer = customer_by_id.get(str(order.get("customer_id"))) or {}
@@ -781,10 +842,10 @@ def render_apqp() -> None:
     if not parts or not customers:
         st.info("Active Part and Customer records are required for APQP project tracking.")
         return
-    part_labels = {str(row["id"]): part_label(row) for row in parts}; customer_labels = {str(row["id"]): party_label(row) for row in customers}
+    part_labels = {str(row["id"]): with_status(part_label(row), row) for row in parts}; customer_labels = {str(row["id"]): party_label(row) for row in customers}
     projects = repo.select("ppap_projects", order_by="target_submission_date", limit=2000)
     project_options = [""] + [str(row["id"]) for row in projects]
-    project_labels = {str(row["id"]): f"{row.get('project_code')} · {part_labels.get(str(row.get('part_id')), '')}" for row in projects}
+    project_labels = {str(row["id"]): with_status(f"{row.get('project_code')} · {part_labels.get(str(row.get('part_id')), '')}", row) for row in projects}
     requested_project = str(st.session_state.pop("apqp_project_edit_request_id", "") or "")
     if requested_project in project_options:
         st.session_state["apqp_project_selector"] = requested_project
@@ -831,7 +892,7 @@ def render_apqp() -> None:
                 st.session_state["apqp_selected_project"] = str(saved["id"])
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
         project_id = str((existing or {}).get("id") or st.session_state.get("apqp_selected_project") or "")
         if not project_id:
@@ -912,7 +973,7 @@ def render_apqp() -> None:
                     save_success_popup("APQP gates updated successfully.", queue_for_rerun=True)
                     st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))
 
         project = repo.get("ppap_projects", project_id) or project or {}
         part_row = next((row for row in parts if str(row.get("id")) == str(project.get("part_id"))), {})

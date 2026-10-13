@@ -13,6 +13,7 @@ from core.repository import Repository
 from core.reporting import controlled_record_pdf_bytes
 from core.selection_labels import material_grade_label
 from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
+from core.db_errors import db_message
 
 DEFAULT_ELEMENTS = ["C", "Si", "Mn", "P", "S", "Cr", "Mo", "Ni"]
 
@@ -84,7 +85,7 @@ def render_entry() -> None:
                 st.session_state.pop(material_number_key, None)
                 st.session_state["edit_grade_id"] = str(saved["id"]); save_success_popup(f"Material Grade {saved.get('grade_code')} saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
         if not existing:
             st.info("Save the Material Grade header first. Chemical Composition will then become available on this same page.")
@@ -123,7 +124,7 @@ def render_entry() -> None:
                     catalog.remember_many("material.element", [element]); catalog.remember_many("material.test_method", [row.get("Test Method")])
                 save_success_popup("Chemical Composition saved inside the Material Grade Master.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
 
 def render_records() -> None:

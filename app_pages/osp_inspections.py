@@ -15,6 +15,7 @@ from core.delete_service import password_delete_panel
 from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
 from core.osp_service import OSPService
 from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation
+from core.db_errors import db_message
 
 
 def _employee_map(service: InspectionService) -> dict[str, str]:
@@ -332,7 +333,7 @@ def _render(report_type: str) -> None:
                     if is_dimensional: inspection.finalize_dimensional(report_id, disposition, reason, validator, approver)
                     else: inspection.finalize_metlab(report_id, disposition, reason, validator, approver)
                     save_success_popup("OSP inspection decision finalized and the OSP quality gate was refreshed.", queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
 
             delete_table = "inspection_reports" if is_dimensional else "lab_tests"
             if password_delete_panel(

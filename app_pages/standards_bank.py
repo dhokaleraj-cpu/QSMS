@@ -12,8 +12,9 @@ from core.delete_service import password_delete_panel
 from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
 from core.reporting import controlled_record_pdf_bytes
-from core.selection_labels import customer_standard_label, party_label, process_label
+from core.selection_labels import customer_standard_label, party_label, process_label, with_status
 from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.db_errors import db_message
 
 STANDARD_SLOT = AttachmentSlot(
     "STANDARD_DOCUMENT",
@@ -73,7 +74,7 @@ def render_entry() -> None:
     perms = current_permissions("REFERENCE_MASTERS")
     _, _, customer_map, process_map = _maps(service)
     rows = service.list_records(definition, status="All")
-    labels = {str(r["id"]): _label(r, customer_map, process_map) for r in rows}
+    labels = {str(r["id"]): with_status(_label(r, customer_map, process_map), r) for r in rows}
     force_new = consume_master_blank_request("standards-entry", edit_keys=("edit_customer_standard_id",), widget_keys=("customer_standard_record_selector",))
     requested = str(st.session_state.pop("edit_customer_standard_id", "") or "")
     options = ["__new__"] + list(labels); selector_key="customer_standard_record_selector"
@@ -185,7 +186,7 @@ def render_entry() -> None:
             save_success_popup(message, queue_for_rerun=True)
             st.rerun()
         except Exception as exc:
-            st.error(str(exc))
+            st.error(db_message(exc))
 
     if not existing:
         st.info("You may attach the controlled Standard file during the first save above. After saving, the Attachment Manager below supports download, replacement and password-protected deletion.")
@@ -241,7 +242,7 @@ def render_records() -> None:
         rows = [r for r in rows if str(r.get("status")) == "SUPERSEDED"]
 
     if rows:
-        labels = {str(r["id"]): _label(r, customer_map, process_map) for r in rows}
+        labels = {str(r["id"]): with_status(_label(r, customer_map, process_map), r) for r in rows}
         selected_id = st.selectbox("Select Customer Standard / Specification", list(labels), format_func=lambda value: labels[value])
         selected = next(r for r in rows if str(r["id"]) == selected_id)
         st.session_state["edit_customer_standard_id"] = selected_id

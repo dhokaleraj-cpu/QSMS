@@ -17,7 +17,8 @@ from core.inspection_layout_metadata import (
 )
 from core.reporting import controlled_record_pdf_bytes
 from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, subpage_navigation, template_download_row
-from core.selection_labels import part_label
+from core.selection_labels import part_label, with_status
+from core.db_errors import db_message
 
 
 def _maps(service: InspectionService):
@@ -91,7 +92,7 @@ def render_entry(bend_mode: bool = False) -> None:
     else:
         layout_type = st.selectbox("Layout Type", ["DIMENSIONAL", "METLAB"], index=0 if not existing or existing.get("layout_type") == "DIMENSIONAL" else 1, key=type_key)
         all_plans = service.plans(layout_type)
-    labels = {str(row["id"]): f"{row.get('plan_number')} Rev {row.get('revision')} · {part_map.get(str(row.get('part_id')), 'Part')}" for row in all_plans}
+    labels = {str(row["id"]): with_status(f"{row.get('plan_number')} Rev {row.get('revision')} · {part_map.get(str(row.get('part_id')), 'Part')}", row) for row in all_plans}
     options = ["__new__"] + list(labels); selector_key="bend_layout_selector" if bend_mode else "inspection_layout_selector"
     if force_new: st.session_state[selector_key]="__new__"
     elif requested in options: st.session_state[selector_key]=requested
@@ -172,7 +173,7 @@ def render_entry(bend_mode: bool = False) -> None:
                 st.session_state["inspection_layout_import"] = imported
                 st.success(f"Imported {len(imported['characteristics'])} characteristics from {upload.name}.")
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
     imported = imported or st.session_state.get("inspection_layout_import")
 
     source_rows = service.plan_characteristics(str((existing or {}).get("id"))) if existing else []
@@ -315,7 +316,7 @@ def render_entry(bend_mode: bool = False) -> None:
             save_success_popup("Inspection layout saved successfully.")
             st.rerun()
         except Exception as exc:
-            st.error(str(exc))
+            st.error(db_message(exc))
 
 
 def render_records() -> None:
@@ -334,7 +335,7 @@ def render_records() -> None:
         if not search or search.casefold() in text.casefold(): filtered.append(row)
 
     if filtered:
-        labels = {str(row["id"]): f"{row.get('plan_number')} Rev {row.get('revision')} · {(parts.get(str(row.get('part_id'))) or {}).get('part_number')} · {row.get('layout_type')}" for row in filtered}
+        labels = {str(row["id"]): with_status(f"{row.get('plan_number')} Rev {row.get('revision')} · {(parts.get(str(row.get('part_id'))) or {}).get('part_number')} · {row.get('layout_type')}", row) for row in filtered}
         selected = st.selectbox("Select Layout Record", list(labels), format_func=lambda value: labels[value])
         selected_row = next(row for row in filtered if str(row["id"]) == selected)
         st.session_state["edit_inspection_layout_id"] = selected

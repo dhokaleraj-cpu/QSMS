@@ -15,8 +15,9 @@ from core.notification_service import NotificationService
 from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes, dimensional_record_pdf_bytes, metlab_record_pdf_bytes
-from core.selection_labels import party_label, process_label
+from core.selection_labels import party_label, process_label, with_status
 from core.ui import kpi_grid, page_header, record_widget_token, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, workflow_progress
+from core.db_errors import db_message
 
 
 def _label(row: dict) -> str:
@@ -35,7 +36,7 @@ def _job_selector(rows: list[dict], label: str, key: str) -> dict | None:
     if not rows:
         st.info("No eligible OSP transaction is available for this step.")
         return None
-    labels = {str(row["id"]): _label(row) for row in rows}
+    labels = {str(row["id"]): with_status(_label(row), row) for row in rows}
     selected = st.selectbox(label, list(labels), format_func=lambda value: labels[value], key=key)
     return next(row for row in rows if str(row["id"]) == selected)
 
@@ -72,7 +73,7 @@ def render_material_out() -> None:
     with stage_section("B", "EDIT / DELETE MATERIAL OUT", "Controlled changes are allowed only while downstream OSP receipt/inspection genealogy permits them.", key="osp_material_out_manage"):
         managed = [r for r in service.register() if not r.get("material_out_id")]
         if managed:
-            mlabels = {str(r["id"]): _label(r) for r in managed}
+            mlabels = {str(r["id"]): with_status(_label(r), r) for r in managed}
             mid = st.selectbox("Existing Material Out", list(mlabels), format_func=lambda value: mlabels[value], key="osp_material_out_manage_id")
             mrow = next(r for r in managed if str(r["id"]) == mid)
             portal_table(pd.DataFrame([{
@@ -96,7 +97,7 @@ def render_material_out() -> None:
                 try:
                     service.update_material_out({"osp_job_id":mid,"dispatch_date":mdate.isoformat(),"dispatch_challan":mch,"quantity_dispatched":mqty,"expected_return_date":mexpected.isoformat(),"remarks":mremarks})
                     save_success_popup("OSP Material Out updated successfully.", queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
             if password_rpc_delete_panel(repo=service.repo, rpc_name="qcms_delete_osp_transaction", rpc_param="p_osp_job_id", rows=[mrow], labeler=lambda row:_label(row), key=f"osp_material_out_delete_{mid}", can_delete=perms["can_archive"], title="Delete Material Out", help_text="Requires current password and OSP Delete/Archive permission. Downstream records block unsafe deletion.", success_message="OSP Material Out deleted and source allocation restored."):
                 st.rerun()
         else:
@@ -134,7 +135,7 @@ def _render_material_out_entry(service, perms):
         st.warning("Maintain an ACTIVE OSP Process Specification and approved OSP Vendor before dispatch.")
         return
     specs={str(r["id"]):f"{process_label(processes.get(str(r.get('process_id'))) or {})} · {r.get('process_specification') or '-'}" for r in specifications}
-    vendor_labels={str(r["id"]):party_label(r,include_type=True) for r in vendors}
+    vendor_labels={str(r["id"]):with_status(party_label(r,include_type=True), r) for r in vendors}
     spec_id=st.selectbox("OSP Process / Specification",list(specs),format_func=lambda v:specs[v])
     spec=next(r for r in specifications if str(r["id"])==spec_id)
     scope=hashlib.sha256((part_id+spec_id+"|".join(sorted(selected_keys))).encode()).hexdigest()[:20]
@@ -161,7 +162,7 @@ def _render_material_out_entry(service, perms):
             saved=service.create_material_out({"vendor_id":vendor_id,"process_id":spec["process_id"],"process_specification_id":spec_id,"dispatch_date":dispatch_date.isoformat(),"dispatch_challan":challan,"expected_return_date":expected_date.isoformat(),"remarks":remarks},lines,st.session_state[request_key])
             st.session_state[request_key]=str(uuid4())
             save_success_popup(f"Material Out {saved['material_out_number']} saved · {len(saved['lines'])} separately traceable heat batches.",queue_for_rerun=True); st.rerun()
-        except Exception as exc: st.error(str(exc))
+        except Exception as exc: st.error(db_message(exc))
 
 
 def _render_grouped_material_outs(service, perms):
@@ -188,7 +189,7 @@ def _render_grouped_material_outs(service, perms):
             try:
                 service.update_material_out_group(selected,{"dispatch_date":d.isoformat(),"expected_return_date":e.isoformat(),"dispatch_challan":ch,"remarks":remarks},[{"id":r["id"],"quantity_dispatched":r["Out Qty pcs"]} for r in edit.to_dict("records")])
                 save_success_popup("Material Out document updated.",queue_for_rerun=True); st.rerun()
-            except Exception as exc: st.error(str(exc))
+            except Exception as exc: st.error(db_message(exc))
         if password_rpc_delete_panel(repo=service.repo,rpc_name="qcms_delete_osp_material_out_group",rpc_param="p_material_out_id",rows=[doc],labeler=lambda r:labels[r["id"]],key=f"osp_group_delete_{selected}",can_delete=perms["can_archive"],title="Delete Material Out document",help_text="Deletes all heat lines together only when existing downstream genealogy checks permit it; restores each source balance.",success_message="Material Out deleted and heat balances restored."):
             st.rerun()
 
@@ -235,7 +236,7 @@ def render_sample_receipt() -> None:
                 **notification_overrides(osp_notify_pref),
             )
             save_success_popup("OSP sample receipt saved successfully. Required OSP inspection queues are now available.", queue_for_rerun=True); st.rerun()
-        except Exception as exc: st.error(str(exc))
+        except Exception as exc: st.error(db_message(exc))
     if job.get("sample_received_date"):
         st.session_state["osp_inspection_job_id"] = str(job["id"]); st.session_state["osp_inspection_scope"] = "OSP_SAMPLE"
         c1, c2 = st.columns(2, gap="small")
@@ -281,7 +282,7 @@ def render_inward() -> None:
         try:
             saved = service.receive_batch({"osp_job_id": job["id"], "receipt_date": receipt_date.isoformat(), "receipt_challan": receipt_challan, "vendor_invoice_number": vendor_invoice, "vendor_invoice_date": vendor_invoice_date.isoformat(), "tc_number": tc_number, "tc_date": tc_date.isoformat(), "vendor_batch_number": vendor_batch, "quantity_received": quantity, "remarks": remarks})
             save_success_popup(f"OSP Inward {saved.get('receipt_number')} saved successfully. Post-receipt inspections are now pending.", queue_for_rerun=True); st.rerun()
-        except Exception as exc: st.error(str(exc))
+        except Exception as exc: st.error(db_message(exc))
 
     with stage_section("B", "EDIT / DELETE OSP INWARD RECEIPTS", key="osp_inward_manage"):
         receipt_pairs=[]
@@ -289,7 +290,7 @@ def render_inward() -> None:
             for rec in service.receipts(str(tx.get("id"))):
                 item=dict(rec); item["_job_label"]=_label(tx); receipt_pairs.append(item)
         if receipt_pairs:
-            rlabels={str(r["id"]):f"{r.get('receipt_number')} · {r.get('_job_label')} · {float(r.get('quantity_received') or 0):,.0f} pcs" for r in receipt_pairs}
+            rlabels={str(r["id"]):with_status(f"{r.get('receipt_number')} · {r.get('_job_label')} · {float(r.get('quantity_received') or 0):,.0f} pcs", r) for r in receipt_pairs}
             rid=st.selectbox("OSP Inward Receipt", list(rlabels), format_func=lambda value:rlabels[value], key="osp_inward_manage_id")
             rec=next(r for r in receipt_pairs if str(r["id"])==rid)
             receipt_scope = record_widget_token("osp-inward-edit", rec, selected=rid)
@@ -310,7 +311,7 @@ def render_inward() -> None:
                 try:
                     service.update_receipt({"receipt_id":rid,"receipt_date":rdate.isoformat(),"receipt_challan":rchallan,"vendor_invoice_number":rinvoice,"vendor_invoice_date":rinvoice_date.isoformat(),"tc_number":rtc,"tc_date":rtc_date.isoformat(),"vendor_batch_number":rvbatch,"quantity_received":rqty,"remarks":rremarks})
                     save_success_popup("OSP Inward receipt updated successfully.", queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
             if password_rpc_delete_panel(repo=service.repo, rpc_name="qcms_delete_osp_receipt", rpc_param="p_receipt_id", rows=[rec], labeler=lambda row:rlabels[str(row['id'])], key=f"osp_inward_delete_{rid}", can_delete=perms["can_archive"], title="Delete OSP Inward Receipt", help_text="Requires current password and OSP Delete/Archive permission. Receipt inspection records block unsafe deletion.", success_message="OSP Inward receipt deleted and quantity/status recalculated."):
                 st.rerun()
         else:
@@ -338,7 +339,7 @@ def render_records() -> None:
     service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS"); rows = service.register(); search = st.text_input("Search OSP Job, Heat, Part, Vendor, Process or Vendor Batch")
     filtered = [r for r in rows if not search or search.casefold() in " ".join(str(r.get(k) or "") for k in ("material_out_number","rmtc_number","supplier_rmtc_number","osp_job_number","receipt_number","heat_number","part_number","fsi_part_number","osp_batch_code","vendor_name","process_name","vendor_batch_number","vendor_invoice_number","tc_number","dispatch_remarks")).casefold()]
     if filtered:
-        labels = {str(r["id"]): _label(r) for r in filtered}
+        labels = {str(r["id"]): with_status(_label(r), r) for r in filtered}
         selected = st.selectbox("Select OSP record for controlled reports", list(labels), format_func=lambda value: labels[value], key="osp_record_print_selection")
         selected_row = next(r for r in filtered if str(r["id"]) == selected)
         inspection = InspectionService()

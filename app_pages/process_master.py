@@ -10,8 +10,9 @@ from core.master_definitions import MASTER_BY_KEY
 from core.master_service import MasterService
 from core.reporting import controlled_record_pdf_bytes
 from core.attachments import AttachmentService
-from core.selection_labels import customer_standard_label, party_label, process_label
+from core.selection_labels import customer_standard_label, party_label, process_label, with_status
 from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, stage_section, template_download_row
+from core.db_errors import db_message
 
 
 def _label(row: dict) -> str:
@@ -70,7 +71,7 @@ def render_entry() -> None:
     definition = MASTER_BY_KEY["processes"]
     perms = current_permissions("REFERENCE_MASTERS")
     rows = service.list_records(definition, status="All")
-    labels = {str(row["id"]): _label(row) for row in rows}
+    labels = {str(row["id"]): with_status(_label(row), row) for row in rows}
     force_new = consume_master_blank_request("process-entry", edit_keys=("edit_process_id",), widget_keys=("process_master_record_selector",))
     requested = str(st.session_state.pop("edit_process_id", "") or "")
     options = ["__new__"] + list(labels); selector_key="process_master_record_selector"
@@ -145,7 +146,7 @@ def render_entry() -> None:
                 save_success_popup("Process Master saved successfully.")
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
     if existing:
         with stage_section("B", "RELATED CUSTOMER STANDARDS & SPECIFICATIONS", "Standards linked to this Process Master. Attachments can be downloaded directly.", key="process_master_render_entry_b"):
@@ -175,7 +176,7 @@ def render_records() -> None:
     rows = service.list_records(definition, search=search, status=status)
 
     if rows:
-        labels = {str(row["id"]): _label(row) for row in rows}
+        labels = {str(row["id"]): with_status(_label(row), row) for row in rows}
         selected = st.selectbox("Select Process", list(labels), format_func=lambda value: labels[value])
         selected_row = next(row for row in rows if str(row.get("id")) == selected)
         st.session_state["edit_process_id"] = selected

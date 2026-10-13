@@ -11,6 +11,7 @@ from core.auth import current_profile
 from core.repository import Repository
 from core.ui import page_header, portal_table, save_success_dialog, section_bar, stage_section
 from core import report_builder as rb
+from core.db_errors import db_message
 
 ROW_LIMIT = 10000
 
@@ -116,7 +117,7 @@ def render() -> None:
     try:
         result = rb.build_report(frame, spec)
     except Exception as exc:
-        st.error(str(exc))
+        st.error(db_message(exc))
         return
 
     section_bar("RESULT", f"{len(result):,} row(s)")
@@ -148,12 +149,12 @@ def render() -> None:
             save_success_dialog("Report saved", f"**{name}** is saved. Anyone who can view {by_table[dataset]['record_type']} can open it from Saved Reports.")
             st.rerun()
         except Exception as exc:
-            st.error(str(exc))
+            st.error(db_message(exc))
     if base and st.button("Delete this saved report", key=f"rb_del_{token}"):
         try:
             rb.delete_report(repo, str(base["id"])); st.session_state.pop("rb_pick", None); st.rerun()
         except Exception as exc:
-            st.error(str(exc))
+            st.error(db_message(exc))
 
 
 # ----------------------------------------------------------------------------- Master List Excel

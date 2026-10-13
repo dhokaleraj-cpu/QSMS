@@ -14,6 +14,7 @@ from core.record_audit import annotate_transaction_rows
 from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
 from core.repository import Repository
 from core.ui import kpi_grid, page_header, portal_table, record_widget_token, save_success_popup, section_bar, stage_section
+from core.selection_labels import with_status
 
 
 FREQUENCIES = {
@@ -133,7 +134,7 @@ def render_calibration_validation() -> None:
     ])
 
     with stage_section("A", "PART / PROCESS → GAUGE / FIXTURE CONTROL", "Link each controlled Quality Asset to the exact Part and Process. The frequency drives the reminder and next service due date.", key="calibration_links"):
-        link_labels = {str(r["id"]): f"{(asset_map.get(str(r.get('asset_id'))) or {}).get('asset_code') or '-'} · {(part_map.get(str(r.get('part_id'))) or {}).get('part_number') or '-'} · {(process_map.get(str(r.get('process_id'))) or {}).get('process_name') or 'General'}" for r in links}
+        link_labels = {str(r["id"]): with_status(f"{(asset_map.get(str(r.get('asset_id'))) or {}).get('asset_code') or '-'} · {(part_map.get(str(r.get('part_id'))) or {}).get('part_number') or '-'} · {(process_map.get(str(r.get('process_id'))) or {}).get('process_name') or 'General'}", r) for r in links}
         choice = st.selectbox("Create New / Edit Existing Link", [""] + list(link_labels), format_func=lambda v: "＋ New Part / Process Gauge-Fixture Link" if not v else link_labels[v], key="cal_link_choice")
         existing = next((r for r in links if str(r.get("id")) == choice), None)
         token = record_widget_token(existing, prefix="cal_link") if existing else "cal_link_new"
@@ -178,7 +179,7 @@ def render_calibration_validation() -> None:
         link_map = {str(r["id"]): r for r in current_links}
         link_labels = {lid: f"{_label(asset_map.get(str(r.get('asset_id'))) or {},'asset_code','asset_number','asset_name')} · {_label(part_map.get(str(r.get('part_id'))) or {},'part_number','part_name')} · {_label(process_map.get(str(r.get('process_id'))) or {},'process_code','process_name')} · Due {r.get('next_due_date') or '-'}" for lid,r in link_map.items()}
         records = repo.select("quality_asset_calibration_records", order_by="service_date", desc=True, limit=10000)
-        record_labels = {str(r["id"]): f"{(asset_map.get(str(r.get('asset_id'))) or {}).get('asset_number') or (asset_map.get(str(r.get('asset_id'))) or {}).get('asset_code') or '-'} · {r.get('record_type')} · {r.get('report_number') or r.get('certificate_number') or str(r.get('id'))[:8]} · {r.get('service_date')}" for r in records}
+        record_labels = {str(r["id"]): with_status(f"{(asset_map.get(str(r.get('asset_id'))) or {}).get('asset_number') or (asset_map.get(str(r.get('asset_id'))) or {}).get('asset_code') or '-'} · {r.get('record_type')} · {r.get('report_number') or r.get('certificate_number') or str(r.get('id'))[:8]} · {r.get('service_date')}", r) for r in records}
         rec_choice = st.selectbox("New / Edit Calibration-Validation Record", [""]+list(record_labels), format_func=lambda v: "＋ New Calibration / Validation Record" if not v else record_labels[v], key="cal_rec_choice")
         existing_rec = next((r for r in records if str(r.get("id")) == rec_choice), None)
         rec_token = record_widget_token(existing_rec,prefix="cal_rec") if existing_rec else "cal_rec_new"
@@ -240,7 +241,7 @@ def render_standard_room() -> None:
     assets=repo.select("quality_assets",eq={"status":"ACTIVE"},order_by="asset_code",limit=5000); parts=repo.select("parts",eq={"status":"ACTIVE"},order_by="part_number",limit=5000); processes=repo.select("processes",eq={"status":"ACTIVE"},order_by="process_code",limit=5000); employees=repo.select("employees",eq={"status":"ACTIVE"},order_by="first_name",limit=5000)
     asset_map={str(r["id"]):r for r in assets}; part_map={str(r["id"]):r for r in parts}; process_map={str(r["id"]):r for r in processes}; employee_map={str(r["id"]):r for r in employees}
     rows=repo.select("standard_room_inspection_records",order_by="inspection_date",desc=True,limit=10000)
-    labels={str(r["id"]):f"{r.get('report_number') or str(r.get('id'))[:8]} · {r.get('inspection_date')} · {(part_map.get(str(r.get('part_id'))) or {}).get('part_number') or '-'} · {r.get('inspection_status')}" for r in rows}
+    labels={str(r["id"]):with_status(f"{r.get('report_number') or str(r.get('id'))[:8]} · {r.get('inspection_date')} · {(part_map.get(str(r.get('part_id'))) or {}).get('part_number') or '-'} · {r.get('inspection_status')}", r) for r in rows}
     choice=st.selectbox("Create New / Edit Standard Room Inspection",[""]+list(labels),format_func=lambda v:"＋ New Standard Room Inspection" if not v else labels[v],key="std_room_choice")
     existing=next((r for r in rows if str(r.get("id"))==choice),None); token=record_widget_token(existing,prefix="std_room") if existing else "std_room_new"
     with stage_section("A","STANDARD ROOM INSPECTION ENTRY","Select the controlled instrument and Part. Heat/Batch provide traceability to the inspected production lot.",key="std_room_entry"):

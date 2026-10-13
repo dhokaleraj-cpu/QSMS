@@ -19,8 +19,9 @@ from core.reporting import controlled_record_pdf_bytes, safe_excel_sheet_name
 from core.purchase_order_reporting import purchase_order_pdf_bytes, purchase_order_excel_bytes, purchase_order_pdf_files, purchase_order_files_zip_bytes, DEFAULT_SPECIAL_INSTRUCTIONS
 from core.notification_service import NotificationService
 from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
-from core.selection_labels import part_label, party_label
+from core.selection_labels import part_label, party_label, with_status
 from core.supply_chain_service import (
+    OPENING_STOCK_LOCATIONS,
     FLOW_DIRECT_FORGING,
     FLOW_FSI_RM,
     FLOW_FSI_RM_DIRECT_PRODUCTION,
@@ -42,6 +43,7 @@ from core.ui import (
     stage_section,
     workflow_progress,
 )
+from core.db_errors import db_message
 
 def _quantity_text(value: Any) -> str:
     """Compact human-readable quantity text used by PO approval worklists."""
@@ -351,7 +353,7 @@ def _edit_delete_panel(
     with stage_section(stage,title,"Edit controlled fields or permanently delete with current QCMS password.",key=f"{key}_controls"):
         if not rows:
             st.info("No entries are available for edit/delete."); return
-        labels={str(r["id"]):labeler(r) for r in rows if r.get("id")}
+        labels={str(r["id"]):with_status(labeler(r), r) for r in rows if r.get("id")}
         selected=st.selectbox("Select Entry",list(labels),format_func=lambda v:labels[v],key=f"{key}_edit_select")
         row=next(r for r in rows if str(r.get("id"))==selected)
         scope=record_widget_token(f"transaction-{table}",row,selected=selected)
@@ -373,7 +375,7 @@ def _edit_delete_panel(
                 order_id=str((service.repo.get(table,selected) or {}).get("customer_order_id") or (selected if table=="supply_customer_orders" else ""))
                 if order_id: service.sync_order_status(order_id)
                 save_success_popup("Supply Chain entry updated successfully.",queue_for_rerun=True); st.rerun()
-            except Exception as exc: st.error(str(exc))
+            except Exception as exc: st.error(db_message(exc))
         _exports(pd.DataFrame([{k:v for k,v in row.items() if not str(k).startswith("_")}]),f"Selected {title}",f"{key}_{selected}")
         if password_delete_panel(repo=service.repo,table=table,rows=[row],labeler=labeler,key=f"{key}_delete_{selected}",can_delete=perms.get("can_archive",False),title="Delete Selected Entry",help_text="Permanent deletion requires your current QCMS password. Linked downstream records will block deletion."):
             st.rerun()
@@ -418,7 +420,7 @@ def render_home() -> None:
         _order_cards(filtered,key="supply_home_cards")
     with stage_section("B","SELECTED ORDER FLOW","Select one open order to see the complete linked stage flow.",key="supply_home_flow"):
         if active:
-            parts,parties,_=_maps(service); labels={str(r["id"]):service.order_label(r,parts,parties) for r in active}
+            parts,parties,_=_maps(service); labels={str(r["id"]):with_status(service.order_label(r,parts,parties), r) for r in active}
             selected=st.selectbox("Customer Order Master Reference",list(labels),format_func=lambda v:labels[v],key="supply_home_order")
             order=next(r for r in active if str(r["id"])==selected); workflow_progress(_order_progress(service,order))
             balances=pd.DataFrame(service.supplier_balances(selected));
@@ -443,7 +445,7 @@ def render_home() -> None:
                     for _,row in cfg_edit.iterrows():
                         service.repo.upsert_by("supply_stage_responsibilities",{"stage_key":row["Stage Key"],"stage_label":row["Stage"],"department":str(row.get("Department") or "").strip() or None,"employee_id":str(row.get("Employee ID") or "").strip() or None,"notify_supplier":bool(row.get("Notify Supplier")),"enabled":bool(row.get("Enabled"))},natural_key={"stage_key":row["Stage Key"]})
                     save_success_popup("Supply Chain stage responsibilities saved.",queue_for_rerun=True);st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
 
         responsibility_rows=[]
         for order in active:
@@ -502,7 +504,7 @@ def render_customer_orders() -> None:
         raw_id=st.selectbox("Part Master Raw Material / Forging Source",list(raw_labels),format_func=lambda v:raw_labels[v]) if raw_labels else None
         selected_raw=next((r for r in raw_rows if str(r["id"])==str(raw_id)),{}) if raw_id else {}; gross=number(selected_raw.get("gross_weight_kg") or selected_raw.get("input_weight_kg") or selected_raw.get("forging_weight_kg"))
         employees=service.repo.select("employees",eq={"status":"ACTIVE"},order_by="first_name",limit=5000)
-        employee_labels={str(e["id"]):f"{e.get('employee_code') or '-'} · {e.get('first_name') or ''} {e.get('last_name') or ''} · {e.get('department') or '-'}" for e in employees}
+        employee_labels={str(e["id"]):with_status(f"{e.get('employee_code') or '-'} · {e.get('first_name') or ''} {e.get('last_name') or ''} · {e.get('department') or '-'}", e) for e in employees}
         responsible_employee_id=st.selectbox("Responsible Employee",[""]+list(employee_labels),format_func=lambda v:employee_labels.get(v,"— Select responsible employee —"),key=f"customer_order_responsible_{order_type}") if employee_labels else ""
         if part_id: _show_order_context(service,str(next((r.get("id") for r in service.customer_orders() if False),"")),key="dummy") if False else None
         if not raw_labels: st.warning("Part Master E - Raw Material Details requires an active raw material / forging source and gross/input weight.")
@@ -552,7 +554,7 @@ def render_customer_orders() -> None:
                         )
                     st.session_state["last_supply_customer_order_id"] = str(saved_order.get("id") or "")
                     save_success_popup(f"Customer Order {order_no} / Pos {position} created.",queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
         else:
             c=st.columns(3,gap="small"); start_month=c[0].selectbox("Start Month",list(MONTHS),format_func=lambda v:MONTHS[v],index=date.today().month-1); start_year=c[1].selectbox("Start Year",list(range(date.today().year-1,date.today().year+7)),index=1); receipt_date=c[2].date_input("Schedule Receipt Date",value=date.today(),format="DD-MM-YYYY")
             st.caption("Six-month schedule entry · all six months are visible at once")
@@ -611,7 +613,7 @@ def render_customer_orders() -> None:
                         )
                     if created_ids: st.session_state["last_supply_customer_order_id"] = created_ids[-1]
                     save_success_popup(f"{len(created)} monthly schedule record(s) created.",queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
     with stage_section("B","CUSTOMER ORDER IMPORT · COLUMNS A TO F","Reads rows after the detected header. Existing Item / Order No. / PosNr combinations are skipped; only database-missing orders are imported.",key="supply_customer_import"):
         c_import=st.columns(2,gap="small")
         import_customer=c_import[0].selectbox("Import Customer",list(customer_map),format_func=lambda v:customer_map[v],key="supply_import_customer") if customer_map else None
@@ -630,13 +632,13 @@ def render_customer_orders() -> None:
                     st.info(f"{duplicate_count} existing Order No. + PosNr row(s) will be skipped. Import never changes existing database orders.")
                 if st.button("Import New Orders Only",type="primary",width="stretch",disabled=not perms["can_create"] or any(str(r.get("Action"))=="ERROR" for r in preview)):
                     result=service.apply_customer_order_import(str(import_customer),preview,confirm_updates=False,supply_flow=import_flow); save_success_popup(f"Import complete · New {result['created']} · Duplicates skipped {result['skipped']}",queue_for_rerun=True); st.rerun()
-            except Exception as exc: st.error(str(exc))
+            except Exception as exc: st.error(db_message(exc))
     with stage_section("C","CUSTOMER ORDER REGISTER","Global search covers all displayed fields.",key="supply_customer_order_register"):
         rows=service.customer_orders(); frame=_order_display_rows(service,rows); _searchable_grid(frame.drop(columns=["_id"],errors="ignore"),title="Customer Order Register",key="supply_customer_order_register_grid",height=520); _order_cards(frame,key="customer_register_cards")
     with stage_section("D","CUSTOMER ORDER ATTACHMENT","Attach the customer PO, schedule, amendment or other supporting document to any saved Customer Order / Schedule.",key="supply_customer_order_attachment"):
         attachment_rows=service.customer_orders()
         if attachment_rows:
-            attachment_labels={str(r["id"]):f"{r.get('master_reference_no')} · Pos {r.get('order_position') or '-'} · {r.get('customer_delivery_date') or '-'}" for r in attachment_rows}
+            attachment_labels={str(r["id"]):with_status(service.order_label(r,extra=f"Due {r.get('customer_delivery_date') or '-'}"), r) for r in attachment_rows}
             last_order_id=str(st.session_state.get("last_supply_customer_order_id") or "")
             attachment_ids=list(attachment_labels)
             attachment_index=attachment_ids.index(last_order_id) if last_order_id in attachment_ids else 0
@@ -647,13 +649,14 @@ def render_customer_orders() -> None:
                 key_prefix=f"supply_customer_order_{attachment_order_id}",can_add_or_replace=perms["can_edit"] or perms["can_create"],can_delete=perms["can_archive"],title="ATTACHMENT FILE",
             )
         else: st.info("Create a Customer Order / Schedule before adding an attachment.")
-    _edit_delete_panel(service,table="supply_customer_orders",rows=service.customer_orders(),title="CUSTOMER ORDER EDIT / DELETE",stage="E",key="supply_customer_order",labeler=lambda r:f"{r.get('master_reference_no')} · Pos {r.get('order_position') or '-'}",fields=(("supply_flow","Supply Chain Flow","select",(FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION,FLOW_DIRECT_FORGING)),("customer_order_no","Customer Order No.","text"),("order_position","PosNr / Position","text"),("order_date","Order Date","date"),("customer_delivery_date","Delivery Date","date"),("order_qty_pcs","Order Qty pcs","number"),("status","Status","select",("OPEN","IN_PROGRESS","COMPLETED","CANCELLED")),("remarks","Remarks","text")),perms=perms)
+    _edit_delete_panel(service,table="supply_customer_orders",rows=service.customer_orders(),title="CUSTOMER ORDER EDIT / DELETE",stage="E",key="supply_customer_order",labeler=lambda r:service.order_label(r),fields=(("supply_flow","Supply Chain Flow","select",(FLOW_FSI_RM,FLOW_FSI_RM_DIRECT_PRODUCTION,FLOW_DIRECT_FORGING)),("customer_order_no","Customer Order No.","text"),("order_position","PosNr / Position","text"),("order_date","Order Date","date"),("customer_delivery_date","Delivery Date","date"),("order_qty_pcs","Order Qty pcs","number"),("status","Status","select",("OPEN","IN_PROGRESS","COMPLETED","CANCELLED")),("remarks","Remarks","text")),perms=perms)
 
 
 
 OPENING_STOCK_STAGES = {
     "RAW_MATERIAL": "Raw Material",
     "FORGING": "Forging",
+    "CASTING": "Casting",
     "MACHINING": "Machining / WIP",
     "OSP_READY": "OSP Ready",
     "AT_OSP": "At OSP",
@@ -680,7 +683,7 @@ def render_opening_stock() -> None:
             primary_grade=str((parts.get(part_id) or {}).get("material_grade_id") or "")
             if primary_grade and primary_grade in grade_labels and primary_grade not in grade_ids: grade_ids.insert(0,primary_grade)
             raw_rows=service.raw_material_options(part_id)
-            raw_labels={str(r["id"]):f"{r.get('material_section_name') or 'Raw Material'} · Grade {grade_labels.get(str(r.get('material_grade_id')),'-')} · {supplier_labels.get(str(r.get('supplier_id')),'Supplier')} · {r.get('section_size') or '-'}" + (f" · Source {(parts.get(str(r.get('source_part_id') or '')) or {}).get('part_number') or (parts.get(str(r.get('source_part_id') or '')) or {}).get('fsi_part_number')}" if r.get('source_part_id') else "") for r in raw_rows}
+            raw_labels={str(r["id"]):with_status(f"{r.get('material_section_name') or 'Raw Material'} · Grade {grade_labels.get(str(r.get('material_grade_id')),'-')} · {supplier_labels.get(str(r.get('supplier_id')),'Supplier')} · {r.get('section_size') or '-'}" + (f" · Source {(parts.get(str(r.get('source_part_id') or '')) or {}).get('part_number') or (parts.get(str(r.get('source_part_id') or '')) or {}).get('fsi_part_number')}" if r.get('source_part_id') else ""), r) for r in raw_rows}
             with st.form("supply_opening_stock_form"):
                 c=st.columns(4,gap="small")
                 stage=c[0].selectbox("Supply Chain Stage",list(OPENING_STOCK_STAGES),format_func=lambda v:OPENING_STOCK_STAGES[v])
@@ -688,6 +691,10 @@ def render_opening_stock() -> None:
                 raw_id=c[2].selectbox("Raw Material / Supplier Section",[""]+list(raw_labels),format_func=lambda v:"Not Linked" if not v else raw_labels[v])
                 supplier_id=str((next((r for r in raw_rows if str(r.get("id"))==str(raw_id)),{}) or {}).get("supplier_id") or "") if raw_id else ""
                 c[3].text_input("Supplier",value=supplier_labels.get(supplier_id,"-"),disabled=True)
+                c=st.columns(2,gap="small")
+                stock_location=c[0].selectbox("Stock Location",list(OPENING_STOCK_LOCATIONS),format_func=lambda v:OPENING_STOCK_LOCATIONS[v],key="opening_stock_location",help="Where the stock is physically lying: at FSI, at a Supplier, or at a Vendor (forger / caster / OSP).")
+                location_options=[""]+[pid for pid,row in parties.items() if not {str(t).upper() for t in (row.get("party_types") or [])} or ({str(t).upper() for t in (row.get("party_types") or [])}-{"CUSTOMER"})]
+                location_party_id=c[1].selectbox("Supplier / Vendor holding the stock",location_options,format_func=lambda v:"— Not applicable (stock at FSI) —" if not v else with_status(party_label(parties[v],include_type=True),parties[v]),key="opening_stock_location_party",help="Mandatory when the stock is at a Supplier or Vendor.")
                 c=st.columns(4,gap="small")
                 lot_reference=c[0].text_input("Opening Lot / Reference")
                 heat_number=c[1].text_input("Heat Number")
@@ -706,9 +713,10 @@ def render_opening_stock() -> None:
                         "part_id":part_id,"stage":stage,"material_grade_id":selected_grade,"raw_material_detail_id":raw_id or None,"supplier_id":supplier_id or None,
                         "lot_reference":lot_reference.strip() or None,"heat_number":heat_number.strip() or None,"heat_code":heat_code.strip() or None,
                         "quantity_pcs":qty_pcs,"available_quantity_pcs":available_pcs,"quantity_kg":qty_kg,"remarks":remarks.strip() or None,"status":"ACTIVE",
+                        "stock_location":stock_location,"location_party_id":location_party_id or None,
                     })
                     save_success_popup("Opening Stock added successfully and is now available to the relevant Supply Chain / OSP stage.",queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
 
     rows=service.opening_stock()
     def display_rows():
@@ -718,7 +726,10 @@ def render_opening_stock() -> None:
             raw=next((x for x in service.raw_material_options(str(r.get("part_id"))) if str(x.get("id"))==str(r.get("raw_material_detail_id"))),{}) if r.get("raw_material_detail_id") else {}
             data.append({
                 "Part Number":part.get("part_number"),"FSI Part Number":part.get("fsi_part_number"),"Part Description":part.get("part_name"),
-                "Stage":OPENING_STOCK_STAGES.get(str(r.get("stage")),str(r.get("stage"))),"Material Grade":grade_labels.get(str(r.get("material_grade_id")),"-"),
+                "Stage":OPENING_STOCK_STAGES.get(str(r.get("stage")),str(r.get("stage"))),
+                "Stock Location":OPENING_STOCK_LOCATIONS.get(str(r.get("stock_location") or "FSI"),"At FSI (own plant)"),
+                "Lying At":(parties.get(str(r.get("location_party_id") or "")) or {}).get("party_name") or ("FSI" if str(r.get("stock_location") or "FSI")=="FSI" else "-"),
+                "Material Grade":grade_labels.get(str(r.get("material_grade_id")),"-"),
                 "Raw Material Type":raw.get("material_section_name") or "-","Supplier":supplier_labels.get(str(r.get("supplier_id")),"-"),
                 "Opening Reference":r.get("lot_reference"),"Heat Number":r.get("heat_number"),"Heat Code":r.get("heat_code"),
                 "Opening Qty pcs":r.get("quantity_pcs"),"Available Qty pcs":r.get("available_quantity_pcs"),"Opening Qty kg":r.get("quantity_kg"),
@@ -729,7 +740,7 @@ def render_opening_stock() -> None:
 
     with stage_section("B","OPENING STOCK IMPORT / EXPORT UTILITY","Download a controlled template, preview the import, skip exact duplicate Opening References, and export the complete current register.",key="supply_opening_stock_import_export"):
         template=pd.DataFrame([{
-            "Part Number":"","FSI Part Number":"","Stage":"FINISHED_GOODS","Material Grade":"","Supplier Code":"",
+            "Part Number":"","FSI Part Number":"","Stage":"FINISHED_GOODS","Stock Location":"FSI","Location Party Code":"","Material Grade":"","Supplier Code":"",
             "Raw Material Type":"","Section Size":"","Opening Reference":"OPEN-001","Heat Number":"","Heat Code":"",
             "Opening Qty pcs":0,"Available Qty pcs":0,"Opening Qty kg":0,"Remarks":"",
         }])
@@ -747,7 +758,7 @@ def render_opening_stock() -> None:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/table_view:", width="stretch",
             key="opening_stock_register_export",
         )
-        st.caption("Import Stage values: RAW_MATERIAL, FORGING, MACHINING, OSP_READY, AT_OSP, FINAL_INSPECTION, FINISHED_GOODS. Opening Reference is mandatory for duplicate-safe import.")
+        st.caption("Import Stage values: RAW_MATERIAL, FORGING, CASTING, MACHINING, OSP_READY, AT_OSP, FINAL_INSPECTION, FINISHED_GOODS. Stock Location: FSI, SUPPLIER or VENDOR (then Location Party Code is mandatory). Opening Reference is mandatory for duplicate-safe import.")
         uploaded=st.file_uploader("Opening Stock Excel Import",type=["xlsx","xlsm","xls"],key="opening_stock_import_file")
         if uploaded is not None:
             try:
@@ -762,16 +773,20 @@ def render_opening_stock() -> None:
                     result=service.apply_opening_stock_import(preview)
                     save_success_popup(f"Opening Stock import complete · New {result['created']} · Duplicates skipped {result['skipped']}",queue_for_rerun=True); st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
     with stage_section("C","OPENING STOCK REGISTER","Stage-wise opening stock remains traceable. Only Finished Goods is included in customer-order available stock; eligible WIP stages are available to OSP.",key="supply_opening_stock_register"):
+        if not frame.empty and "Lying At" in frame.columns:
+            summary=frame[frame["Status"].astype(str)=="ACTIVE"].groupby(["Stock Location","Lying At","Stage"],dropna=False).agg(**{"Records":("Part Number","count"),"Available pcs":("Available Qty pcs","sum"),"Opening kg":("Opening Qty kg","sum")}).reset_index()
+            st.markdown("**Stock location summary (ACTIVE)**")
+            portal_table(summary,hide_index=True,width="stretch",height=min(320,80+34*max(len(summary),1)))
         _searchable_grid(frame.drop(columns=["_id"],errors="ignore"),title="Opening Stock Register",key="supply_opening_stock_register_grid",height=520)
 
     with stage_section("D","OPENING STOCK EDIT / DELETE","Edit quantities/stage with Supply Chain edit rights. Permanent deletion additionally requires the current QCMS password.",key="supply_opening_stock_edit"):
         if not rows:
             st.info("No Opening Stock records are available.")
         else:
-            labels={str(r["id"]):f"{part_labels.get(str(r.get('part_id')),'Part')} · {OPENING_STOCK_STAGES.get(str(r.get('stage')),r.get('stage'))} · {number(r.get('available_quantity_pcs')):,.0f} pcs" for r in rows}
+            labels={str(r["id"]):with_status(f"{part_labels.get(str(r.get('part_id')),'Part')} · {OPENING_STOCK_STAGES.get(str(r.get('stage')),r.get('stage'))} · {number(r.get('available_quantity_pcs')):,.0f} pcs", r) for r in rows}
             selected_id=st.selectbox("Opening Stock Record",list(labels),format_func=lambda v:labels[v],key="opening_stock_edit_select")
             record=next(r for r in rows if str(r.get("id"))==selected_id)
             opening_scope=record_widget_token("supply-opening-stock-edit",record,selected=selected_id)
@@ -792,11 +807,12 @@ def render_opening_stock() -> None:
                 try:
                     service.save_opening_stock({
                         "part_id":record.get("part_id"),"stage":e_stage,"material_grade_id":record.get("material_grade_id"),"raw_material_detail_id":record.get("raw_material_detail_id"),"supplier_id":record.get("supplier_id"),
+                        "stock_location":record.get("stock_location") or "FSI","location_party_id":record.get("location_party_id"),
                         "lot_reference":e_lot.strip() or None,"heat_number":e_heat.strip() or None,"heat_code":e_heat_code.strip() or None,
                         "quantity_pcs":e_qty,"available_quantity_pcs":e_available,"quantity_kg":e_kg,"remarks":e_remarks.strip() or None,"status":e_status,
                     },record_id=selected_id)
                     save_success_popup("Opening Stock updated successfully.",queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
             if password_delete_panel(repo=service.repo,table="supply_opening_stock",rows=[record],labeler=lambda r:labels[str(r["id"])],key=f"delete_opening_stock_{selected_id}",can_delete=perms["can_edit"],title="Delete Opening Stock Record",help_text="Permanent deletion requires your current QCMS password. Delete is blocked if the record has already been used for OSP genealogy."):
                 st.rerun()
 
@@ -805,7 +821,7 @@ def render_rm_procurement() -> None:
     service=SupplyChainService(); perms=current_permissions("SUPPLY_CHAIN"); supplier_map={str(r["id"]):party_label(r) for r in service.suppliers()}; pending=service.pending_customer_orders_for_rm()
     with stage_section("A","CUSTOMER ORDERS PENDING RM PROCUREMENT","Only Customer Orders still requiring Raw Material are shown; upcoming delivery dates are first.",key="supply_rm_pending_orders"):
         frame=_order_display_rows(service,pending); filtered=_searchable_grid(frame.drop(columns=["_id"],errors="ignore"),title="Pending RM Procurement",key="supply_rm_pending",height=420); _order_cards(filtered,key="rm_pending_cards")
-        ids={str(r["id"]):r for r in pending}; labels={rid:f"{r.get('master_reference_no')} · Due {r.get('customer_delivery_date')} · Balance {number(r.get('rm_balance_kg')):,.3f} kg" for rid,r in ids.items()}; selected=st.selectbox("Select Pending Customer Order",list(labels),format_func=lambda v:labels[v],key="supply_rm_pending_select") if labels else None
+        ids={str(r["id"]):r for r in pending}; labels={rid:service.order_label(r,extra=f"Due {r.get('customer_delivery_date')} · RM Balance {number(r.get('rm_balance_kg')):,.3f} kg") for rid,r in ids.items()}; selected=st.selectbox("Select Pending Customer Order",list(labels),format_func=lambda v:labels[v],key="supply_rm_pending_select") if labels else None
     with stage_section("B","CONTROLLED PURCHASE ORDER","Create the RM Purchase Order in the controlled PO module. The PO is linked back to this Customer Order and Material Inward will be tracked against it.",key="supply_rm_procurement_entry"):
         if not selected:
             st.info("No pending Customer Order requires RM Procurement.")
@@ -858,7 +874,8 @@ def _purchase_order_selector_labels(service: SupplyChainService, headers: Mappin
             source_text += f" · +{extra} source(s)"
         labels[str(po_id)] = (
             f"{header.get('po_number') or '-'} · {supplier_labels.get(str(header.get('supplier_id') or ''), 'Supplier')}"
-            f" · {source_text or 'No source details'} · {header.get('approval_status') or header.get('status') or '-'}"
+            f" · {source_text or 'No source details'} [{str(header.get('status') or '-').replace('_', ' ')}]"
+            + (f" · Approval {str(header.get('approval_status')).replace('_', ' ')}" if header.get('approval_status') and header.get('approval_status') != header.get('status') else "")
         )
     return labels
 
@@ -1021,7 +1038,7 @@ def _render_purchase_order_edit(
             else:
                 st.rerun()
         except Exception as exc:
-            st.error(str(exc))
+            st.error(db_message(exc))
 
 
 def render_purchase_orders() -> None:
@@ -1037,7 +1054,7 @@ def render_purchase_orders() -> None:
     po_commercial_perm=section_permissions(st.session_state.get("profile") or {},"SUPPLY_CHAIN","PO_COMMERCIAL",service.repo)
     po_reports_perm=section_permissions(st.session_state.get("profile") or {},"SUPPLY_CHAIN","PO_REPORTS",service.repo)
     parts,parties,grades=_maps(service)
-    supplier_rows=service.suppliers(); supplier_labels={str(r["id"]):party_label(r) for r in supplier_rows}
+    supplier_rows=service.suppliers(); supplier_labels={str(r["id"]):with_status(party_label(r), r) for r in supplier_rows}
     pre_type=str(st.session_state.pop("supply_po_type", "RAW_MATERIAL") or "RAW_MATERIAL")
     po_type=st.radio("Purchase Order Type",["RAW_MATERIAL","FORGING"],index=0 if pre_type=="RAW_MATERIAL" else 1,horizontal=True,format_func=lambda v:"Raw Material Purchase Order" if v=="RAW_MATERIAL" else "Forging Purchase Order",key="supply_controlled_po_type")
 
@@ -1063,7 +1080,7 @@ def render_purchase_orders() -> None:
                 pending=pending_by_id.get(str(row.get("id"))) or {}
                 row["rm_ordered_kg"]=number(pending.get("rm_ordered_kg"))
                 row["rm_balance_kg"]=number(pending.get("rm_balance_kg") or max(number(row.get("required_rm_kg"))-number(pending.get("rm_ordered_kg")),0.0))
-            labels={str(r["id"]):f"{r.get('master_reference_no')} · Customer PO {r.get('customer_order_no') or r.get('master_reference_no') or '-'} · Pos {r.get('order_position') or '-'} · Customer {(parties.get(str(r.get('customer_id'))) or {}).get('party_name') or '-'} · Part {(parts.get(str(r.get('part_id'))) or {}).get('part_number') or '-'} · Order Qty {number(r.get('order_qty_pcs')):,.0f} pcs · FSI {(parts.get(str(r.get('part_id'))) or {}).get('fsi_part_number') or 'ENTER AT PO'} · RM Balance {number(r.get('rm_balance_kg')):,.3f} kg · Due {r.get('customer_delivery_date') or '-'}" for r in eligible_orders}
+            labels={str(r["id"]):with_status(service.order_label(r,parts,parties,extra=f"RM Balance {number(r.get('rm_balance_kg')):,.3f} kg · Due {r.get('customer_delivery_date') or '-'}"), r) for r in eligible_orders}
             # R20: club Customer Orders of different Parts that need the same steel (grade · section · size).
             section_of={str(r["id"]):service.rm_section_label(str(r.get("part_id") or "")) for r in eligible_orders}
             section_choices=sorted(set(section_of.values()))
@@ -1103,7 +1120,7 @@ def render_purchase_orders() -> None:
                 src_order=service.order(str(r.get('_customer_order_id') or '')) or {}
                 src_part=parts.get(str(src_order.get('part_id'))) or {}
                 src_customer=parties.get(str(src_order.get('customer_id'))) or {}
-                labels[str(i)]=f"{src_order.get('master_reference_no')} · Customer PO {src_order.get('customer_order_no') or src_order.get('master_reference_no') or '-'} · Pos {src_order.get('order_position') or '-'} · Customer {src_customer.get('party_name') or '-'} · Part {src_part.get('part_number') or '-'} · Order Qty {number(src_order.get('order_qty_pcs')):,.0f} pcs · {r.get('_source_type')} · Balance {number(r.get('_balance_pcs')):,.0f} pcs"
+                labels[str(i)]=service.order_label(src_order,parts,parties,extra=f"{r.get('_source_type')} · Balance {number(r.get('_balance_pcs')):,.0f} pcs")
             chosen=st.multiselect("Select ELIGIBLE Forging PO Source(s)",list(labels),format_func=lambda v:labels[v],key="supply_po_forging_sources",help="Select multiple sources only when they use the same Supplier Forging Part No. in Part Master. QCMS consolidates the supplier item but retains each finished-Part allocation.") if labels else []
             if chosen:
                 selected_forging_sources=[pending[int(value)] for value in chosen]
@@ -1285,7 +1302,7 @@ def render_purchase_orders() -> None:
                             if raw.get("source_part_id"):
                                 common_code=str(source_part.get("part_number") or source_raw.get("supplier_forging_part_number") or "")
                         except ValueError as exc:
-                            st.error(str(exc)); all_lines_valid=False
+                            st.error(db_message(exc)); all_lines_valid=False
                             continue
                         forging_rows.append({"Order ID":oid,"Customer Order":order.get("master_reference_no"),"Customer":customer.get("party_name"),"Finished Part":part.get("part_number"),"FSI Part":part.get("fsi_part_number"),"Supplier Forging Part No.":common_code,"Available pcs":balance,"PO Qty pcs":balance,"Current Price":current_price,"HSN / SAC":hsn,"_source":src,"_raw":raw,"_part":part})
                     if forging_rows:
@@ -1342,7 +1359,7 @@ def render_purchase_orders() -> None:
                     target_stage=str(approval_target.get("level_name") or "Manager Approval").strip()
                     NotificationService(service.repo).notify("PO_APPROVAL_PENDING",related_table="supply_purchase_orders",related_id=str(header_result.get("id") or ""),recipient_email=target_email or None,recipient_name=target_name or None,context={"po_number":header_result.get("po_number"),"requisitioner":requisitioner_name,"supplier_name":supplier_labels.get(str(supplier_id),"Supplier"),"supplier_id":str(supplier_id or ""),"next_stage":target_stage})
                     save_success_popup(f"Purchase Order {header_result.get('po_number')} created and submitted for approval. You may edit it at any time before approval from the Edit Purchase Order tab; Supplier Confirmation is not required for editing.",queue_for_rerun=True); st.session_state["supply_po_edit_request_id"] = str(header_result.get("id") or ""); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
 
             last_id=str(st.session_state.get("last_supply_purchase_order_id") or "")
             if last_id:
@@ -1367,7 +1384,7 @@ def render_purchase_orders() -> None:
             from core.print_designer import PRESET_NAMES as _po_preset_names
             design_choice=c[1].selectbox("Print design",["SAVED",*_po_preset_names],format_func=lambda v:"Saved layout (Print Layout Designer)" if v=="SAVED" else _po_preset_names[v],key=f"selected_po_design_{selected_po}")
             try: c[0].download_button("Download / Print Selected PO",purchase_order_pdf_bytes(header,items,design=None if design_choice=="SAVED" else design_choice),file_name=f"{header.get('po_number')}.pdf",mime="application/pdf",width="stretch",key=f"selected_po_pdf_{selected_po}")
-            except Exception as exc: c[0].error(str(exc))
+            except Exception as exc: c[0].error(db_message(exc))
             from core.record_history import record_history_panel
             record_history_panel(service.repo, "supply_purchase_orders", header, key=f"po_history_{selected_po}")
             po_record_event = "RM_PO_CREATED" if str(header.get("po_type")) == "RAW_MATERIAL" else "FORGING_PO_CREATED"
@@ -1428,7 +1445,7 @@ def render_purchase_orders() -> None:
                         )
                         confirmation=service.ensure_purchase_order_confirmation(selected_po)
                         save_success_popup("Purchase Order approved and released to the Supplier with the controlled PO PDF/supporting documents. Daily priority confirmation reminders will continue until the signed Supplier confirmation is received.",queue_for_rerun=True);st.rerun()
-                    except Exception as exc: st.error(str(exc))
+                    except Exception as exc: st.error(db_message(exc))
             # v4.14.19 supplier PO confirmation is a controlled Supply Chain stage after approval.
             if str(header.get("approval_status") or "").upper()=="APPROVED" and str(header.get("status") or "").upper()!="CANCELLED":
                 section_bar("SUPPLIER PURCHASE ORDER CONFIRMATION", "Upload the supplier acknowledgement / confirmation. QCMS sends a high-priority reminder every day until this stage is confirmed.")
@@ -1463,14 +1480,14 @@ def render_purchase_orders() -> None:
                                 supplier=service.repo.get("parties",str(header.get("supplier_id") or "")) or {}
                                 NotificationService(service.repo).notify("PO_CONFIRMATION_RECEIVED",related_table="supply_po_confirmations",related_id=str(saved_confirmation.get("id") or confirmation.get("id")),context={"po_number":header.get("po_number"),"supplier_id":str(header.get("supplier_id") or ""),"supplier_name":supplier.get("party_name"),"confirmation_reference":confirmation_reference,"next_stage":"Raw Material / Forging receipt execution"})
                                 save_success_popup("Supplier PO confirmation saved with attachment. Daily reminders are stopped for this PO.",queue_for_rerun=True);st.rerun()
-                            except Exception as exc: st.error(str(exc))
+                            except Exception as exc: st.error(db_message(exc))
                         if caction[1].button("Send Priority Reminder Now",width="stretch",disabled=not perms.get("can_edit",False),key=f"po_confirmation_reminder_{selected_po}"):
                             try:
                                 supplier=service.repo.get("parties",str(header.get("supplier_id") or "")) or {}
                                 NotificationService(service.repo).notify("PO_CONFIRMATION_REQUIRED",related_table="supply_po_confirmations",related_id=str(confirmation.get("id")),recipient_email=str(supplier.get("email") or "").strip() or None,recipient_name=str(supplier.get("party_name") or "").strip() or None,include_supplier=True,context={"po_number":header.get("po_number"),"supplier_id":str(header.get("supplier_id") or ""),"supplier_name":supplier.get("party_name"),"next_stage":"Supplier PO Confirmation"})
                                 service.repo.update("supply_po_confirmations",str(confirmation.get("id")),{"last_reminder_at":datetime.now(timezone.utc).isoformat(),"reminder_count":int(confirmation.get("reminder_count") or 0)+1})
                                 save_success_popup("High-priority supplier confirmation reminder queued.",queue_for_rerun=True);st.rerun()
-                            except Exception as exc: st.error(str(exc))
+                            except Exception as exc: st.error(db_message(exc))
                     else:
                         st.success(f"Supplier confirmed this PO · Reference: {confirmation.get('confirmation_reference') or '-'} · Confirmed delivery: {confirmation.get('confirmed_delivery_date') or '-'}")
                     render_attachment_manager(
@@ -1485,7 +1502,7 @@ def render_purchase_orders() -> None:
                 try:
                     service.cancel_purchase_order(selected_po,cancel_reason)
                     save_success_popup("Purchase Order cancelled. Original source allocations are released for reissue.",queue_for_rerun=True);st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
             if cancel_cols[1].button("Cancel & Reissue with New Supplier",width="stretch",disabled=not perms["can_edit"] or str(header.get("status"))=="CLOSED",key=f"reissue_po_{selected_po}"):
                 try:
                     if str(header.get("status"))!="CANCELLED": service.cancel_purchase_order(selected_po,cancel_reason)
@@ -1496,7 +1513,7 @@ def render_purchase_orders() -> None:
                         st.session_state["supply_po_replaces_id"]=selected_po
                         st.session_state["supply_po_type"]="RAW_MATERIAL" if str(header.get("po_type"))=="RAW_MATERIAL" else "FORGING"
                     save_success_popup("PO cancelled. Select the replacement Supplier in Purchase Order Entry and create the new controlled PO.",queue_for_rerun=True);st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
 
     rows=service.purchase_order_rows(); all_frame=pd.DataFrame(rows)
     with stage_section("D","PURCHASE ORDER REPORTS","Pending Purchase Orders, RM Orders, RM Section Orders, Supplier Orders and RM-for-Part-Number Orders.",key="supply_po_reports"):
@@ -1519,7 +1536,7 @@ def render_purchase_order_list() -> None:
     _purchase_order_subnav()
     service = SupplyChainService(); perms = current_permissions("SUPPLY_CHAIN")
     parts, parties, grades = _maps(service)
-    supplier_labels = {str(r["id"]): party_label(r) for r in service.suppliers()}
+    supplier_labels = {str(r["id"]): with_status(party_label(r), r) for r in service.suppliers()}
     rows = service.purchase_order_rows()
     frame = pd.DataFrame(rows)
     with stage_section("A", "PURCHASE ORDER LIST", "Search or filter the PO register. Key source fields are shown directly in the list.", key="po_dedicated_order_list"):
@@ -1571,7 +1588,7 @@ def render_purchase_order_edit_page() -> None:
     service = SupplyChainService(); perms = current_permissions("SUPPLY_CHAIN")
     login_employee_id = current_employee_id(refresh=True)
     parts, parties, grades = _maps(service)
-    supplier_labels = {str(r["id"]): party_label(r) for r in service.suppliers()}
+    supplier_labels = {str(r["id"]): with_status(party_label(r), r) for r in service.suppliers()}
     headers = {str(r.get("id")): r for r in service.purchase_orders() if str(r.get("status") or "").upper() != "CANCELLED"}
     labels = _purchase_order_selector_labels(service, headers, supplier_labels)
     if not labels:
@@ -1690,7 +1707,7 @@ def render_purchase_order_pdf_page() -> None:
     page_header("Purchase Order · PDF / Batch Print", "Review one PO or print/email multiple controlled Purchase Orders at once. Standard Terms remain portrait A4.", "Supply Chain")
     _purchase_order_subnav()
     service = SupplyChainService(); perms = current_permissions("SUPPLY_CHAIN")
-    supplier_labels = {str(r["id"]): party_label(r) for r in service.suppliers()}
+    supplier_labels = {str(r["id"]): with_status(party_label(r), r) for r in service.suppliers()}
     headers = {str(r.get("id")): r for r in service.purchase_orders()}
     labels = _purchase_order_selector_labels(service, headers, supplier_labels)
     if not labels:
@@ -1835,7 +1852,7 @@ def _render_supplier_confirmation_stage(service: SupplyChainService, *, selected
                 )
                 save_success_popup("Supplier PO Confirmation saved. Editing remains available independently from the Edit Purchase Order tab.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
         if caction[1].button("Send Priority Reminder Now", width="stretch", disabled=not perms.get("can_edit", False), key=f"po_ded_conf_reminder_{selected_po}"):
             try:
                 supplier = service.repo.get("parties", str(header.get("supplier_id") or "")) or {}
@@ -1847,7 +1864,7 @@ def _render_supplier_confirmation_stage(service: SupplyChainService, *, selected
                 service.repo.update("supply_po_confirmations", str(confirmation.get("id")), {"last_reminder_at": datetime.now(timezone.utc).isoformat(), "reminder_count": int(confirmation.get("reminder_count") or 0) + 1})
                 save_success_popup("Supplier Confirmation reminder queued.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
     else:
         st.success(f"Supplier confirmed this PO · Reference: {confirmation.get('confirmation_reference') or '-'} · Confirmed delivery: {confirmation.get('confirmed_delivery_date') or '-'}")
     render_attachment_manager(
@@ -1966,7 +1983,7 @@ def render_purchase_order_approval_page() -> None:
     service = SupplyChainService(); perms = current_permissions("SUPPLY_CHAIN")
     profile = current_profile() or {}
     login_employee_id = current_employee_id(refresh=True)
-    supplier_labels = {str(r["id"]): party_label(r) for r in service.suppliers()}
+    supplier_labels = {str(r["id"]): with_status(party_label(r), r) for r in service.suppliers()}
     headers = {str(r.get("id")): r for r in service.purchase_orders()}
     labels = _purchase_order_selector_labels(service, headers, supplier_labels)
     if not labels:
@@ -2032,7 +2049,7 @@ def render_purchase_order_approval_page() -> None:
                 service.ensure_purchase_order_confirmation(selected)
                 save_success_popup("Purchase Order approved and released. Supplier Confirmation is now open as a separate downstream stage.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
         if st.button("Open Edit Purchase Order", width="stretch", disabled=not perms.get("can_edit", False), key=f"po_approval_open_edit_{selected}"):
             st.session_state["supply_po_edit_request_id"] = selected
             st.switch_page(st.session_state["_qsms_pages"]["supply-po-edit"])
@@ -2051,7 +2068,7 @@ def render_rm_receipt() -> None:
         for po in pending:
             ctx=service.order_context(orders.get(str(po.get("customer_order_id"))) or {}); data.append({**ctx,"RM Supplier":supplier_map.get(str(po.get("rm_supplier_id")),str(po.get("rm_supplier_id"))),"RM PO":po.get("supplier_order_no"),"Ordered kg":po.get("ordered_qty_kg"),"Received kg":po.get("received_qty_kg"),"Balance kg":po.get("balance_qty_kg"),"Expected":po.get("expected_date"),"Display Status":_due_status(po.get("status"),po.get("expected_date")),"_id":str(po.get("id"))})
         frame=pd.DataFrame(data); filtered=_searchable_grid(frame.drop(columns=["_id"],errors="ignore"),title="Pending RM Procurement for Material Inward",key="supply_rm_receipt_pending_grid",height=420)
-        labels={str(po["id"]):f"{po.get('supplier_order_no')} · Expected {po.get('expected_date')} · Balance {number(po.get('balance_qty_kg')):,.3f} kg" for po in pending}; po_id=st.selectbox("Select Pending RM Procurement",list(labels),format_func=lambda v:labels[v],key="supply_rm_receipt_po") if labels else None
+        labels={str(po["id"]):with_status(f"{po.get('supplier_order_no')} · Expected {po.get('expected_date')} · Balance {number(po.get('balance_qty_kg')):,.3f} kg", po) for po in pending}; po_id=st.selectbox("Select Pending RM Procurement",list(labels),format_func=lambda v:labels[v],key="supply_rm_receipt_po") if labels else None
     with stage_section("B","LINK MATERIAL INWARD TO RM PROCUREMENT","Use the existing Material Inward module. Heat, Heat Code, RMTC Number, RMTC Date and RMTC Quantity are inherited from that record.",key="supply_rm_receipt_link"):
         if not po_id: st.info("No pending RM Procurement is waiting for Material Inward.")
         else:
@@ -2065,7 +2082,7 @@ def render_rm_receipt() -> None:
                 "Inward Qty kg":r.get("steel_quantity_kg") or r.get("quantity_received"),"Status":r.get("status")
             } for r in eligible])
             _searchable_grid(eligible_frame,title="Eligible Material Inward Records",key="supply_eligible_inwards",height=300,header={"RM Procurement":po.get("supplier_order_no")})
-            inward_labels={str(r["id"]):f"{r.get('inward_number')} · {r.get('part_number')} · Heat {r.get('heat_number')} · {number(r.get('steel_quantity_kg') or r.get('quantity_received')):,.3f} kg · RMTC {r.get('rmtc_number') or '-'}" for r in eligible}
+            inward_labels={str(r["id"]):with_status(f"{r.get('inward_number')} · {r.get('part_number')} · Heat {r.get('heat_number')} · {number(r.get('steel_quantity_kg') or r.get('quantity_received')):,.3f} kg · RMTC {r.get('rmtc_number') or '-'}", r) for r in eligible}
             c1,c2=st.columns([3,1],gap="small"); inward_id=c1.selectbox("Existing Material Inward",[""]+list(inward_labels),format_func=lambda v:inward_labels.get(v,"— Select existing Material Inward —"),key="supply_link_inward")
             if c2.button("Open New Material Inward",icon=":material/input:",width="stretch"):
                 st.session_state["supply_rm_po_link_id"]=po_id; st.session_state["supply_customer_order_link_id"]=order_id; st.session_state.pop("edit_inward_id",None); st.switch_page(st.session_state["_qsms_pages"]["inward-entry"])
@@ -2073,7 +2090,7 @@ def render_rm_receipt() -> None:
                 selected_inward=next(r for r in eligible if str(r["id"])==inward_id); detail=pd.DataFrame([{k:selected_inward.get(k) for k in ("inward_number","inward_date","grn_number","supplier_name","part_number","material_grade","heat_number","heat_code","rmtc_number","rmtc_date","rmtc_steel_quantity_kg","steel_quantity_kg","quality_disposition","status") if k in selected_inward}]); portal_table(_style_supply_dataframe(detail.rename(columns={"rmtc_date":"RMTC Date","rmtc_steel_quantity_kg":"RMTC Qty kg"})),hide_index=True,width="stretch")
                 if st.button("Link Selected Material Inward to RM Procurement",type="primary",width="stretch",disabled=not perms["can_edit"]):
                     try: service.link_inward_to_rm_po(po_id,inward_id); save_success_popup("Material Inward linked to RM Procurement; RM Receipt genealogy updated.",queue_for_rerun=True); st.rerun()
-                    except Exception as exc: st.error(str(exc))
+                    except Exception as exc: st.error(db_message(exc))
     with stage_section("C","RAW MATERIAL RECEIPT / MATERIAL INWARD REGISTER","Linked receipt view includes Heat and RMTC details; global search covers every displayed field.",key="supply_rm_receipt_register"):
         rows=service.rm_receipts(); data=[]
         for r in rows:
@@ -2093,7 +2110,7 @@ def render_rm_dispatch() -> None:
         for r in pending:
             ctx=service.order_context(orders.get(str(r.get("customer_order_id"))) or {}); data.append({**ctx,"Material Inward":r.get("receipt_number"),"Heat Number":r.get("heat_number"),"Heat Code":r.get("heat_code"),"RMTC Number":r.get("rmtc_number"),"Received kg":r.get("received_qty_kg"),"Dispatched kg":r.get("dispatched_qty_kg"),"Balance kg":r.get("balance_qty_kg"),"Status":"PENDING","_id":str(r.get("id"))})
         frame=pd.DataFrame(data); _searchable_grid(frame.drop(columns=["_id"],errors="ignore"),title="RM Receipt Pending Dispatch",key="supply_rm_dispatch_pending_grid",height=420)
-        labels={str(r["id"]):f"{r.get('receipt_number')} · Heat {r.get('heat_number')} · Balance {number(r.get('balance_qty_kg')):,.3f} kg" for r in pending}; rec_id=st.selectbox("Select RM Receipt / Material Inward",list(labels),format_func=lambda v:labels[v],key="supply_rm_dispatch_receipt") if labels else None
+        labels={str(r["id"]):with_status(f"{r.get('receipt_number')} · Heat {r.get('heat_number')} · Balance {number(r.get('balance_qty_kg')):,.3f} kg", r) for r in pending}; rec_id=st.selectbox("Select RM Receipt / Material Inward",list(labels),format_func=lambda v:labels[v],key="supply_rm_dispatch_receipt") if labels else None
     with stage_section("B","RM DISPATCH TO FORGING SUPPLIER","Customer, Part, forging supplier, Heat and RMTC context are inherited; only dispatch-specific data is entered.",key="supply_rm_dispatch_entry"):
         if not rec_id: st.info("No RM Receipt balance is pending dispatch.")
         else:
@@ -2102,7 +2119,7 @@ def render_rm_dispatch() -> None:
             vehicle=st.text_input("Vehicle No."); remarks=st.text_input("Dispatch Remarks")
             if st.button("Post RM Dispatch to Forging",type="primary",width="stretch",disabled=not perms["can_create"] or not dispatch.strip()):
                 try: service.save_transaction("supply_rm_dispatches",{"customer_order_id":order_id,"rm_receipt_id":rec_id,"inward_lot_id":rec.get("inward_lot_id"),"forging_supplier_id":supplier_id,"dispatch_number":dispatch.strip(),"dispatch_date":d.isoformat(),"heat_number":rec.get("heat_number"),"heat_code":rec.get("heat_code"),"qty_kg":qty,"challan_number":challan.strip() or None,"vehicle_number":vehicle.strip() or None,"remarks":remarks.strip() or None}); service.sync_order_status(order_id); save_success_popup("RM dispatched with inherited Heat traceability.",queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
     with stage_section("C","RM TO FORGING REGISTER","Global searchable and exportable genealogy register.",key="supply_rm_dispatch_register"):
         rows=service.rm_dispatches(); data=[]
         for r in rows:
@@ -2134,7 +2151,7 @@ def render_forging() -> None:
             if not labels: st.info("No Flow 1 RM dispatch is waiting for a Forging Order.")
         else:
             frame=_order_display_rows(service,pending_direct); filtered=_searchable_grid(frame.drop(columns=["_id"],errors="ignore"),title="Flow 2 · Customer Orders Pending Forging Order",key="supply_forging_pending_direct",height=380); _order_cards(filtered,key="supply_forging_direct_cards")
-            labels={str(r["id"]):f"{r.get('master_reference_no')} · {r.get('order_position') or '-'} · Balance {number(r.get('forging_balance_pcs')):,.0f} pcs · Due {r.get('customer_delivery_date') or '-'}" for r in pending_direct}
+            labels={str(r["id"]):with_status(service.order_label(r,extra=f"Forging Balance {number(r.get('forging_balance_pcs')):,.0f} pcs · Due {r.get('customer_delivery_date') or '-'}"), r) for r in pending_direct}
             direct_order_id=st.selectbox("Select Customer Order for Forging Order",list(labels),format_func=lambda v:labels[v],key="supply_forging_direct_order") if labels else None
             if not labels: st.info("No Flow 2 Customer Order is waiting for a Forging Order.")
 
@@ -2158,7 +2175,7 @@ def render_forging() -> None:
             if st.button("Create Forging Supplier Order",type="primary",width="stretch",disabled=not perms["can_create"] or not supplier_order.strip()):
                 try:
                     service.save_transaction("supply_forging_orders",{"customer_order_id":order_id,"rm_dispatch_id":rm_dispatch_id,"inward_lot_id":inward_lot_id,"forging_supplier_id":sid,"supplier_order_no":supplier_order.strip(),"order_date":od.isoformat(),"order_qty_pcs":qty,"required_rm_kg":qty*gross,"expected_date":expected.isoformat(),"heat_number":heat_number.strip() or None,"heat_code":heat_code.strip() or None,"status":"OPEN","remarks":remarks.strip() or None}); service.sync_order_status(order_id); save_success_popup("Forging Order created and linked to the selected Supply Chain flow.",queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
         else:
             st.info("Select a pending Flow 1 RM Dispatch or Flow 2 Customer Order above.")
 
@@ -2167,7 +2184,7 @@ def render_forging() -> None:
         data=[]
         for fo in pending_fo:
             order=orders.get(str(fo.get("customer_order_id"))) or {}; ctx=service.order_context(order); data.append({**ctx,"Forging Order":fo.get("supplier_order_no"),"Heat Number":fo.get("heat_number"),"Heat Code":fo.get("heat_code"),"Ordered pcs":fo.get("order_qty_pcs"),"Received pcs":fo.get("received_qty_pcs"),"Balance pcs":fo.get("balance_qty_pcs"),"Expected":fo.get("expected_date"),"Display Status":_due_status(fo.get("status"),fo.get("expected_date")),"_id":str(fo.get("id"))})
-        _searchable_grid(pd.DataFrame(data).drop(columns=["_id"],errors="ignore"),title="Forging Orders Pending Receipt",key="supply_forging_pending_receipt",height=380); labels={str(r["id"]):f"{r.get('supplier_order_no')} · Heat {r.get('heat_number') or '-'} · Balance {number(r.get('balance_qty_pcs')):,.0f} pcs" for r in pending_fo}; fo_id=st.selectbox("Select Forging Order",list(labels),format_func=lambda v:labels[v],key="supply_forging_receipt_order") if labels else None
+        _searchable_grid(pd.DataFrame(data).drop(columns=["_id"],errors="ignore"),title="Forging Orders Pending Receipt",key="supply_forging_pending_receipt",height=380); labels={str(r["id"]):with_status(f"{r.get('supplier_order_no')} · Heat {r.get('heat_number') or '-'} · Balance {number(r.get('balance_qty_pcs')):,.0f} pcs", r) for r in pending_fo}; fo_id=st.selectbox("Select Forging Order",list(labels),format_func=lambda v:labels[v],key="supply_forging_receipt_order") if labels else None
         if fo_id:
             fo=next(r for r in pending_fo if str(r["id"])==fo_id); order=orders.get(str(fo.get("customer_order_id"))) or {}; gross=number(order.get("gross_weight_kg_snapshot")); direct=service.flow_for_order(order)==FLOW_DIRECT_FORGING
             c=st.columns(4,gap="small"); receipt=c[0].text_input("Forging Receipt No."); rd=c[1].date_input("Receipt Date",value=date.today(),format="DD-MM-YYYY"); qty=c[2].number_input("Received Forging Qty pcs",min_value=1.0,max_value=float(max(number(fo.get("balance_qty_pcs")),1)),step=1.0); rej=c[3].number_input("Rejected Qty pcs",min_value=0.0,step=1.0)
@@ -2178,7 +2195,7 @@ def render_forging() -> None:
                     if direct and (receipt_heat.strip()!=str(fo.get("heat_number") or "").strip() or receipt_code.strip()!=str(fo.get("heat_code") or "").strip()):
                         service.save_transaction("supply_forging_orders",{"heat_number":receipt_heat.strip() or None,"heat_code":receipt_code.strip() or None},record_id=fo_id); fo=service.repo.get("supply_forging_orders",fo_id) or fo
                     service.save_transaction("supply_forging_receipts",{"customer_order_id":fo.get("customer_order_id"),"forging_order_id":fo_id,"rm_dispatch_id":fo.get("rm_dispatch_id"),"inward_lot_id":fo.get("inward_lot_id"),"forging_supplier_id":fo.get("forging_supplier_id"),"receipt_number":receipt.strip(),"receipt_date":rd.isoformat(),"received_qty_pcs":qty,"rejected_qty_pcs":rej,"actual_rm_consumed_kg":actual if actual>0 else None,"gross_weight_kg_snapshot":gross,"heat_number":fo.get("heat_number"),"heat_code":fo.get("heat_code"),"remarks":remarks.strip() or None}); service.sync_order_status(str(fo.get("customer_order_id"))); service.sync_purchase_order_status(str(fo.get("purchase_order_id") or "")); save_success_popup("Forging Receipt posted with linked genealogy.",queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
 
     with stage_section("D","FORGING REGISTER / EXPORT","All forging orders and receipts with global search; Supply Flow is shown for every record.",key="supply_forging_register"):
         order_frame=pd.DataFrame([{**service.order_context(orders.get(str(r.get("customer_order_id"))) or {}),"Record Type":"FORGING ORDER","Reference":r.get("supplier_order_no"),"Date":r.get("order_date"),"Expected":r.get("expected_date"),"Heat Number":r.get("heat_number"),"Heat Code":r.get("heat_code"),"Qty pcs":r.get("order_qty_pcs"),"Status":r.get("status")} for r in service.forging_orders()]); receipt_frame=pd.DataFrame([{**service.order_context(orders.get(str(r.get("customer_order_id"))) or {}),"Record Type":"FORGING RECEIPT","Reference":r.get("receipt_number"),"Date":r.get("receipt_date"),"Expected":None,"Heat Number":r.get("heat_number"),"Heat Code":r.get("heat_code"),"Qty pcs":r.get("received_qty_pcs"),"Status":"RECEIVED"} for r in service.forging_receipts()]); _searchable_grid(pd.concat([order_frame,receipt_frame],ignore_index=True),title="Forging Order and Receipt Register",key="supply_forging_register_grid",height=520)
@@ -2210,7 +2227,7 @@ def render_downstream() -> None:
                     else: payload["source_forging_receipt_id"]=source_id
                 else: payload["source_event_id"]=source_id
                 try: service.save_transaction("supply_downstream_events",payload); service.sync_order_status(order_id); save_success_popup(f"{title.title()} linked to previous stage with Heat traceability.",queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
     with stage_section("D","DOWNSTREAM EVENT REGISTER","All Machining / Finished Goods / Customer Dispatch records are globally searchable and exportable.",key="supply_downstream_register"):
         rows=service.downstream_events(); frame=pd.DataFrame([{**service.order_context(orders.get(str(r.get("customer_order_id"))) or {}),"Stage":str(r.get("event_type") or "").replace("_"," ").title(),"Reference":r.get("reference_no"),"Date":r.get("event_date"),"Heat Number":r.get("heat_number"),"Heat Code":r.get("heat_code"),"Qty pcs":r.get("qty_pcs"),"Rejected pcs":r.get("rejected_qty_pcs"),"Invoice":r.get("invoice_no"),"Invoice Date":r.get("invoice_date"),"ASN":r.get("asn_no"),"Status":"POSTED"} for r in rows]); _searchable_grid(frame,title="Supply Downstream Event Register",key="supply_downstream_register_grid",height=560)
     _edit_delete_panel(service,table="supply_downstream_events",rows=service.downstream_events(),title="DOWNSTREAM ENTRY EDIT / DELETE",stage="E",key="supply_downstream_edit",labeler=lambda r:f"{str(r.get('event_type')).replace('_',' ').title()} · {r.get('reference_no')} · Heat {r.get('heat_number') or '-'}",fields=(("reference_no","Reference No.","text"),("event_date","Date","date"),("qty_pcs","Qty pcs","number"),("rejected_qty_pcs","Rejected pcs","number"),("invoice_no","Invoice No.","text"),("asn_no","ASN No.","text"),("remarks","Remarks","text")),perms=perms)
@@ -2229,7 +2246,7 @@ def render_traceability() -> None:
         if not search or search.casefold() in blob.casefold(): matches.append(order)
     with stage_section("A","GLOBAL ORDER SEARCH RESULTS","Matching orders are shown as colour status cards.",key="supply_trace_search"):
         frame=_order_display_rows(service,matches); _order_cards(frame,key="trace_cards"); _exports(frame.drop(columns=["_id"],errors="ignore"),"Supply Chain Global Search Results","supply_trace_search_results") if not frame.empty else st.info("No matching Supply Chain record found.")
-        parts,parties,_=_maps(service); labels={str(r["id"]):service.order_label(r,parts,parties) for r in matches}; selected=st.selectbox("Matched Customer Order",list(labels),format_func=lambda v:labels[v],key="supply_trace_selected") if labels else None
+        parts,parties,_=_maps(service); labels={str(r["id"]):with_status(service.order_label(r,parts,parties), r) for r in matches}; selected=st.selectbox("Matched Customer Order",list(labels),format_func=lambda v:labels[v],key="supply_trace_selected") if labels else None
         if selected: order=next(r for r in matches if str(r["id"])==selected); workflow_progress(_order_progress(service,order))
     if selected:
         with stage_section("B","COMPLETE SUPPLY CHAIN HISTORY","Heat and references remain visible from RM receipt through final customer dispatch.",key="supply_trace_history"):

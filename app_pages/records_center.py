@@ -351,7 +351,8 @@ def _generic_record_label(row: dict) -> str:
     )
     values = [str(row.get(key) or "").strip() for key in candidates if str(row.get(key) or "").strip()]
     label = " · ".join(values[:3])
-    return label or str(row.get("id") or "Record")
+    from core.selection_labels import with_status
+    return with_status(label or str(row.get("id") or "Record"), row)
 
 
 def _pdf_safe_value(value: object) -> object:
@@ -435,8 +436,15 @@ def render_transaction_delete_center(repo: Repository) -> None:
     table, module_key = TRANSACTION_DELETE_TABLES[selection]
     rows = _rows(repo, table, order_by="created_at", desc=True)
     perms = current_permissions(module_key)
+    labeler = _generic_record_label
+    if table == "supply_customer_orders":
+        from core.supply_chain_service import SupplyChainService
+        _svc = SupplyChainService(repo)
+        labeler = lambda row: _svc.order_label(row)  # noqa: E731 - Customer PO · Pos · Part · Ref [STATUS]
+    elif table == "supply_purchase_orders":
+        labeler = lambda row: f"{row.get('po_number') or '-'} · {str(row.get('po_type') or '').replace('_', ' ').title()} · {row.get('order_date') or '-'} [{str(row.get('status') or '-').replace('_', ' ')}]"  # noqa: E731
     password_transaction_delete_panel(
-        repo=repo, table=table, rows=rows, labeler=_generic_record_label,
+        repo=repo, table=table, rows=rows, labeler=labeler,
         key=f"records_center_transaction_delete_{table}", can_delete=bool(perms.get("can_archive")),
         title=f"Delete {selection}",
         help_text=(

@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 from core.ui import portal_table
-from core.selection_labels import part_label
+from core.selection_labels import part_label, with_status
 
 from core.access import current_permissions
 from core.catalog import LearnedValueCatalog
@@ -22,6 +22,7 @@ from core.inspection_service import FINAL_DISPOSITIONS, RESULT_OPTIONS, Inspecti
 from core.reporting import metlab_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
 from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
+from core.db_errors import db_message
 
 
 BEND_PHOTO_LABELS = {
@@ -728,7 +729,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                     st.session_state.pop(f"standalone_metlab_notify_{existing_id or 'new'}_confirmed_signature", None)
                 st.session_state["edit_metlab_id"] = str(saved["id"]); save_success_popup(f"Standalone MetLAB Report {final_number} saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
         if existing:
             disposition_cards([
@@ -747,7 +748,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
                     save_success_popup("Standalone MetLAB conclusion and final decision completed successfully.", queue_for_rerun=True)
                     st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))
             section_bar("PDF / EXCEL / PRINT EXPORT")
             _report_exports(service, existing_id, str(existing.get("report_number") or "MetLAB_Report"), key=f"met_standalone_export_{existing_id}")
 
@@ -998,7 +999,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
                 save_success_popup(f"Raw Material MetLAB Report {final_number} saved successfully.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
         if existing:
             disposition_cards([{"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")}, {"label": "Final Decision", "value": existing.get("disposition")}, {"label": "Layout", "value": existing.get("layout_name_snapshot") or layout_name}])
@@ -1011,7 +1012,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
                     save_success_popup("MetLAB decision finalized successfully.", queue_for_rerun=True)
                     st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))
             section_bar("PDF / EXCEL / PRINT EXPORT")
             _report_exports(service, str(existing["id"]), str(existing.get("report_number") or "MetLAB_Report"), key=f"met_linked_export_{existing.get('id')}")
             if password_delete_panel(
@@ -1045,7 +1046,7 @@ def _render_records(required_inspection_method: str | None = None) -> None:
     search = st.text_input("Search Bend Test Report, Part, Heat or Batch" if bend_mode else "Search Report, Part, Heat or Inward", key="bend_test_records_search" if bend_mode else "metlab_records_search")
     filtered = [row for row in rows if not search or search.casefold() in " ".join(str(row.get(key) or "") for key in ("report_number", "heat_number", "heat_code", "batch_number", "vendor_batch_number_snapshot", "supplier_reference_number", "sample_reference", "remarks", "layout_name_snapshot")).casefold()]
     if filtered:
-        labels = {str(row["id"]): f"{row.get('report_number')} · Heat {row.get('heat_number')} · {row.get('layout_name_snapshot') or 'Layout'} · {disposition_label(row.get('disposition'))}" for row in filtered}
+        labels = {str(row["id"]): with_status(f"{row.get('report_number')} · Heat {row.get('heat_number')} · {row.get('layout_name_snapshot') or 'Layout'} · {disposition_label(row.get('disposition'))}", row) for row in filtered}
         selected = st.selectbox("Select Bend Test Report" if bend_mode else "Select MetLAB Report", list(labels), format_func=lambda value: labels[value]); selected_row = next(row for row in filtered if str(row["id"]) == selected); st.session_state["edit_metlab_id"] = selected
         c1, c2, c3, c4 = st.columns(4, gap="small")
         with c1: st.page_link(st.session_state["_qsms_pages"][entry_route], label="Open / Edit Selected Bend Test Report" if bend_mode else "Open / Edit Selected MetLAB Report", icon=":material/edit:", width="stretch")

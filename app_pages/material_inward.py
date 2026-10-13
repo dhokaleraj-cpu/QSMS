@@ -14,6 +14,8 @@ from core.inward_service import InwardService
 from core.reporting import material_inward_record_pdf_bytes
 from core.supply_chain_service import SupplyChainService
 from core.ui import disposition_cards, disposition_label, page_header, record_widget_token, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
+from core.db_errors import db_message
+from core.selection_labels import with_status
 
 DISPOSITIONS = ["PENDING", "ON_HOLD", "ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"]
 
@@ -344,7 +346,7 @@ def render_entry() -> None:
                 save_success_popup(f"Material Inward {saved.get('inward_number')} saved successfully.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
         if existing:
             st.session_state["inspection_inward_id"] = str(existing.get("id"))
@@ -377,7 +379,7 @@ def render_records() -> None:
     filtered = [row for row in rows if not search or search.casefold() in " ".join(str(row.get(key) or "") for key in ("inward_number", "grn_number", "heat_number", "heat_code", "invoice_number")).casefold()]
 
     if filtered:
-        labels = {str(row["id"]): f"{row.get('inward_number')} · {row.get('supplier_name') or '-'} · {row.get('part_number') or '-'} · Heat {row.get('heat_number')} · {disposition_label(row.get('status'))}" for row in filtered}
+        labels = {str(row["id"]): with_status(f"{row.get('inward_number')} · {row.get('supplier_name') or '-'} · {row.get('part_number') or '-'} · Heat {row.get('heat_number')} · {disposition_label(row.get('status'))}", row) for row in filtered}
         selected = st.selectbox("Select Material Inward record", list(labels), format_func=lambda value: labels[value])
         st.session_state["edit_inward_id"] = selected; st.session_state["inspection_inward_id"] = selected
         selected_row = next(row for row in filtered if str(row.get("id")) == selected)

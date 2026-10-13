@@ -13,6 +13,7 @@ from core.auth import verify_current_password
 from core.database import get_session_client
 from core.repository import Repository
 from core.ui import section_bar
+from core.db_errors import db_message
 
 
 MICROSTRUCTURE_IMAGE_TYPES = ["png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp", "gif"]
@@ -325,7 +326,7 @@ def render_attachment_manager(
                                 st.success("Attachment replaced successfully.")
                                 st.rerun()
                             except Exception as exc:
-                                st.error(str(exc))
+                                st.error(db_message(exc))
 
                         st.divider()
                         delete_password = st.text_input(
@@ -356,7 +357,7 @@ def render_attachment_manager(
                                 st.success("Attachment deleted successfully.")
                                 st.rerun()
                             except Exception as exc:
-                                st.error(str(exc))
+                                st.error(db_message(exc))
                 else:
                     st.caption("No file attached")
                     new_file = st.file_uploader(
@@ -382,4 +383,4 @@ def render_attachment_manager(
                             st.success("Attachment uploaded successfully.")
                             st.rerun()
                         except Exception as exc:
-                            st.error(str(exc))
+                            st.error(db_message(exc))

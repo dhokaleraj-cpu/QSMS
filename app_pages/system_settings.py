@@ -8,6 +8,7 @@ from core.permissions import is_admin
 from core.repository import Repository
 from core.system_settings import AI_MODES, ai_mode_record, get_ai_mode, set_ai_mode, set_system_value
 from core.ui import page_header, save_success_dialog, section_bar, stage_section
+from core.db_errors import db_message
 
 
 def render() -> None:
@@ -42,7 +43,7 @@ def render() -> None:
                 save_success_dialog("AI Assistant setting saved", f"AI Assistant is now: **{AI_MODES[choice]}**.\n\nUsers see the change on their next page refresh (within about a minute).")
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
         if not key_ready:
             st.info("To use the AI Assistant, set an API key once: on the Mac run `bash /Users/dhokaleraj/QSMS/scripts/set_ai_key.sh` and pick **Google Gemini (FREE)** or Groq (FREE), Claude or OpenAI (paid); for the online app paste the printed lines in Streamlit Cloud → Settings → Secrets.")
         st.caption("Free tiers (Gemini, Groq) are rate-limited and the provider may use free-tier prompts to improve its services. Only rows the user is allowed to see are sent, but for strictly confidential data use a paid key.")
@@ -67,7 +68,7 @@ def render() -> None:
                 save_success_dialog("Email From setting saved", EMAIL_FROM_MODES[from_mode])
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
         st.markdown(
             "- **Company mailbox (recommended, default):** Microsoft 365 always delivers it. Recipients see *User Name via QCMS* and **Reply goes to the user's own email**.\n"
             "- **User's own email:** only after the Microsoft 365 admin gives the company mailbox **Send As** permission on every user mailbox "

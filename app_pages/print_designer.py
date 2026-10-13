@@ -14,6 +14,7 @@ from core.print_designer import (
 )
 from core.repository import Repository
 from core.ui import page_header, section_bar
+from core.db_errors import db_message
 
 REPORT_HEADINGS = {
     "RMTC": ["RMTC HEADER & TRACEABILITY", "GLOBAL HEAT QUANTITY BALANCE & RECORD LIST", "COVERED PART WORKSHEET REGISTER", "SUPPLIER RMTC MECHANICAL PROPERTIES", "Chemical Composition", "Jominy Results", "DI / Hardenability", "Mechanical Properties"],
@@ -157,4 +158,4 @@ def render() -> None:
                         st.session_state.pop(k, None)
                     st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))

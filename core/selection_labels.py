@@ -11,11 +11,24 @@ def _join(*values: Any) -> str:
     return " · ".join(value for value in (_clean(v) for v in values) if value)
 
 
+def status_tag(row: Mapping[str, Any]) -> str:
+    """R22: every selection list shows the record status, e.g. [ACTIVE] / [INACTIVE]."""
+    value = _clean(row.get("status") or row.get("record_status"))
+    return f"[{value.replace('_', ' ').upper()}]" if value else ""
+
+
+def with_status(label: str, row: Mapping[str, Any]) -> str:
+    tag = status_tag(row)
+    if not tag or tag in label:
+        return label
+    return f"{label} {tag}" if label else tag
+
+
 def party_label(row: Mapping[str, Any], *, include_type: bool = False) -> str:
     location = ", ".join(value for value in (_clean(row.get("city")), _clean(row.get("state")), _clean(row.get("country"))) if value)
     approval = _clean(row.get("approval_status"))
     party_types = ", ".join(str(v) for v in (row.get("party_types") or [])) if include_type else ""
-    return _join(row.get("party_code"), row.get("party_name"), location, approval, party_types)
+    return with_status(_join(row.get("party_code"), row.get("party_name"), location, approval, party_types), row)
 
 
 def customer_label(row: Mapping[str, Any]) -> str:
@@ -34,32 +47,32 @@ def process_label(row: Mapping[str, Any]) -> str:
     process_type = _clean(row.get("process_type")).replace("_", " ").title()
     special = "Special Process" if bool(row.get("special_process")) else ""
     cqi = _clean(row.get("cqi_standard"))
-    return _join(row.get("process_code"), row.get("process_name"), process_type, special, cqi)
+    return with_status(_join(row.get("process_code"), row.get("process_name"), process_type, special, cqi), row)
 
 
 def part_label(row: Mapping[str, Any], *, customer_name: str = "", grade_code: str = "") -> str:
     drawing = _join(row.get("drawing_number"), f"Rev {_clean(row.get('drawing_revision'))}" if _clean(row.get("drawing_revision")) else "")
     fsi = _clean(row.get("fsi_part_number"))
     fsi_piece = f"FSI {fsi}" if fsi else ""
-    return _join(row.get("part_number"), fsi_piece, row.get("part_name"), customer_name, grade_code, drawing)
+    return with_status(_join(row.get("part_number"), fsi_piece, row.get("part_name"), customer_name, grade_code, drawing), row)
 
 
 def material_grade_label(row: Mapping[str, Any]) -> str:
     revision = f"Rev {_clean(row.get('revision'))}" if _clean(row.get("revision")) else ""
-    return _join(row.get("material_number"), row.get("grade_code"), row.get("standard"), revision)
+    return with_status(_join(row.get("material_number"), row.get("grade_code"), row.get("standard"), revision), row)
 
 
 def employee_label(row: Mapping[str, Any]) -> str:
     name = " ".join(value for value in (_clean(row.get("first_name")), _clean(row.get("last_name"))) if value)
-    return _join(row.get("employee_code"), name, row.get("designation"), row.get("department"), row.get("plant"))
+    return with_status(_join(row.get("employee_code"), name, row.get("designation"), row.get("department"), row.get("plant")), row)
 
 
 def inspection_stage_label(row: Mapping[str, Any]) -> str:
-    return _join(row.get("stage_code"), row.get("stage_name"), f"Seq {row.get('sequence_no')}" if row.get("sequence_no") is not None else "")
+    return with_status(_join(row.get("stage_code"), row.get("stage_name"), f"Seq {row.get('sequence_no')}" if row.get("sequence_no") is not None else ""), row)
 
 
 def quality_asset_label(row: Mapping[str, Any]) -> str:
-    return _join(row.get("asset_code"), row.get("asset_number"), row.get("asset_name"), row.get("asset_type"), row.get("serial_number"), row.get("location"))
+    return with_status(_join(row.get("asset_code"), row.get("asset_number"), row.get("asset_name"), row.get("asset_type"), row.get("serial_number"), row.get("location")), row)
 
 
 def inspection_plan_label(row: Mapping[str, Any]) -> str:
@@ -74,7 +87,7 @@ def customer_standard_label(
     process_name: str = "",
 ) -> str:
     revision = f"Rev {_clean(row.get('revision_number'))}" if _clean(row.get("revision_number")) else ""
-    return _join(row.get("standard_code"), row.get("standard_name"), revision, process_name, customer_name)
+    return with_status(_join(row.get("standard_code"), row.get("standard_name"), revision, process_name, customer_name), row)
 
 
 def reference_record_label(definition: Any, row: Mapping[str, Any], lookup_maps: Mapping[str, Mapping[str, str]] | None = None) -> str:
@@ -132,4 +145,18 @@ def reference_record_label(definition: Any, row: Mapping[str, Any], lookup_maps:
         pieces.append(piece)
         if len(pieces) >= 7:
             break
-    return " · ".join(pieces) or str(row.get("id"))
+    return with_status(" · ".join(pieces) or str(row.get("id")), row)
+
+
+def customer_order_label(order: Mapping[str, Any], part: Mapping[str, Any] | None = None, customer: Mapping[str, Any] | None = None, *, extra: str = "") -> str:
+    """R22 standard Customer Order label: Customer PO · Pos · Part · FSI · Ref · Customer [STATUS]."""
+    part = part or {}; customer = customer or {}
+    po_no = _clean(order.get("customer_order_no")) or _clean(order.get("master_reference_no")) or "-"
+    fsi = _clean(part.get("fsi_part_number"))
+    pieces = [
+        f"Customer PO {po_no}", f"Pos {_clean(order.get('order_position')) or '-'}",
+        f"Part {_clean(part.get('part_number')) or '-'}", f"FSI {fsi}" if fsi else "",
+        f"Ref {_clean(order.get('master_reference_no'))}" if _clean(order.get("master_reference_no")) and _clean(order.get("master_reference_no")) != po_no else "",
+        _clean(customer.get("party_name")), extra,
+    ]
+    return with_status(_join(*pieces), order)

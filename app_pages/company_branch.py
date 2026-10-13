@@ -9,6 +9,8 @@ from core.access import current_permissions
 from core.branch_context import branch_label
 from core.repository import Repository
 from core.ui import consume_master_blank_request, page_header, portal_table, record_widget_token, save_success_popup, section_bar, subpage_navigation
+from core.db_errors import db_message
+from core.selection_labels import with_status
 
 
 def _norm(value: object) -> str:
@@ -35,7 +37,7 @@ def render_entry() -> None:
     page_header("Company Branch Master", context="Reusable company / plant / address identity")
     repo = Repository(); perms = current_permissions("REFERENCE_MASTERS")
     rows = _rows(repo)
-    labels = {str(r["id"]): branch_label(r) for r in rows}
+    labels = {str(r["id"]): with_status(branch_label(r), r) for r in rows}
     options = [""] + list(labels)
     force_new = consume_master_blank_request("company-branch-entry", widget_keys=("company_branch_edit_select",))
     if force_new or st.session_state.get("company_branch_edit_select") not in options:
@@ -92,7 +94,7 @@ def render_entry() -> None:
             save_success_popup("Company Branch saved successfully.", queue_for_rerun=True)
             st.rerun()
         except Exception as exc:
-            st.error(str(exc))
+            st.error(db_message(exc))
 
 
 def render_records() -> None:
@@ -113,7 +115,7 @@ def render_records() -> None:
     } for r in filtered])
     portal_table(frame, hide_index=True, width="stretch", height=min(580, 100 + len(frame) * 36))
     if rows:
-        labels = {str(r["id"]): branch_label(r) for r in rows}
+        labels = {str(r["id"]): with_status(branch_label(r), r) for r in rows}
         selected = st.selectbox("Select Branch to Edit", list(labels), format_func=lambda v: labels[v])
         if st.button("Edit Selected Company Branch", type="primary", width="stretch"):
             st.session_state["company_branch_edit_select"] = selected

@@ -14,6 +14,7 @@ from core.employee_service import AUTHORITIES, EmployeeService
 from core.reporting import controlled_record_pdf_bytes
 from core.selection_labels import employee_label
 from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, subpage_navigation, template_download_row
+from core.db_errors import db_message
 
 
 DEPARTMENT_OPTIONS = ["Quality", "Production", "Stores", "MetLAB", "Engineering", "Supply Chain", "Management", "Business Development", "Procurement", "HR", "Accounts"]
@@ -87,14 +88,14 @@ def render_entry()->None:
             saved=svc.save(payload,None if selected=='__new__' else selected)
             catalog.remember_many('employee.department',[department]);catalog.remember_many('employee.designation',[designation]);catalog.remember_many('employee.plant',[plant])
             st.session_state['edit_employee_id']=str(saved['id']);save_success_popup(f"Employee saved with code {saved.get('employee_code')}.", queue_for_rerun=True);st.rerun()
-        except Exception as exc:st.error(str(exc))
+        except Exception as exc:st.error(db_message(exc))
     if existing and photo is not None and writable:
         if st.button('Upload Employee Photo',type='primary',width='stretch'):
             try:
                 client=get_session_client(); ext=photo.name.rsplit('.',1)[-1].lower(); path=f"{repo.tenant_id}/employees/{existing['id']}/photo_{existing['id']}.{ext}"
                 client.storage.from_('quality-documents').upload(path,photo.getvalue(),{'content-type':photo.type,'upsert':'true'})
                 repo.update('employees',str(existing['id']),{'photo_storage_path':path});save_success_popup('Employee photo uploaded successfully.', queue_for_rerun=True);st.rerun()
-            except Exception as exc:st.error(str(exc))
+            except Exception as exc:st.error(db_message(exc))
     if existing:
         if password_delete_panel(
             repo=svc.repo, table='employees', rows=[existing],

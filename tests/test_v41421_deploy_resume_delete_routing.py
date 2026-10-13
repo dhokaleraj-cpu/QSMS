@@ -26,7 +26,7 @@ def test_delete_service_routes_transactions_not_master_rpc():
     assert '"osp_jobs"' in delete_service
     assert 'repo.rpc("qcms_delete_transaction_row"' in delete_service
     assert 'repo.rpc("qsms_delete_master_row"' in delete_service
-    assert 'st.error(f"Deletion blocked: {exc}")' in delete_service
+    assert "Deletion blocked:" in delete_service and "db_message(exc)" in delete_service  # R22 clean message
 
 
 def test_schema_guard_can_verify_without_management_token():

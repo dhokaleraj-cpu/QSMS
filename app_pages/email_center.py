@@ -12,6 +12,7 @@ from core.permissions import is_admin
 from core.repository import Repository
 from core.ui import page_header, portal_table, save_success_dialog, section_bar, stage_section
 from core import mail_service as ms
+from core.db_errors import db_message
 
 SETUP_SQL_NOTE = "The Email module's secure tables are not installed yet. Ask the System Administrator to run supabase/migrations/20261009100000_qcms_r14_personal_mail.sql in Supabase → SQL Editor."
 
@@ -60,7 +61,7 @@ def render_my_settings() -> None:
                 save_success_dialog("From details saved", f"Your emails will show **{new_name.strip()}** and replies will go to **{new_email.strip()}**.")
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
         company = _company_mailbox(repo)
         if mode == "USER":
             st.caption(f"Recipients see **{sender_name} <{sender_email}>** as the sender (company server sends as you).")

@@ -8,6 +8,7 @@ from core.notification_ui import template_test_sender
 from core.permissions import is_admin
 from core.repository import Repository
 from core.ui import page_header, portal_table, save_success_popup, stage_section, subpage_navigation
+from core.db_errors import db_message
 
 EVENTS = (
     ("RMTC_APPROVAL_PENDING", "RMTC approval pending", "RMTC_ENTRY"),
@@ -156,7 +157,7 @@ def render() -> None:
             try:
                 saved, _ = repo.upsert_by("qcms_email_settings", payload, natural_key={"tenant_id": repo.tenant_id}); existing = saved
                 save_success_popup("Email server settings saved.", queue_for_rerun=True); st.rerun()
-            except Exception as exc: st.error(str(exc))
+            except Exception as exc: st.error(db_message(exc))
 
     with stage_section("B", "NEXT-STAGE RESPONSIBILITY ROUTING", "Each event can target one responsible employee, a responsible department, CC the department and optionally copy the linked Supplier / OSP Vendor. Supplier email is taken from Party Master Primary Email + Notification Email(s).", key="email_settings_routes"):
         routes = {str(r.get("event_key")): r for r in repo.select("qcms_notification_routes", limit=500)}
@@ -180,7 +181,7 @@ def render() -> None:
             try:
                 repo.upsert_by("qcms_notification_routes", payload, natural_key={"tenant_id": repo.tenant_id, "event_key": event})
                 save_success_popup("Next-stage notification route saved.", queue_for_rerun=True); st.rerun()
-            except Exception as exc: st.error(str(exc))
+            except Exception as exc: st.error(db_message(exc))
         route_frame = []
         for key, label, module in EVENTS:
             r = routes.get(key) or {}; emp = next((e for e in employees if str(e.get("id")) == str(r.get("employee_id"))), {})
@@ -223,7 +224,7 @@ def render() -> None:
             try:
                 repo.upsert_by("qcms_email_templates", {"template_key": template_event, "module_key": EVENT_MODULE.get(template_event,"QCMS"), "template_name": template_name.strip() or EVENT_LABEL.get(template_event,template_event), "subject_template": subject_template.strip(), "body_template": body_template.strip(), "include_generated_pdf": include_pdf, "include_record_attachments": include_docs, "include_supplier": include_supplier, "enabled": template_enabled}, natural_key={"tenant_id": repo.tenant_id, "template_key": template_event})
                 save_success_popup("Email template saved.", queue_for_rerun=True); st.rerun()
-            except Exception as exc: st.error(str(exc))
+            except Exception as exc: st.error(db_message(exc))
 
     with stage_section("D", "TEST EMAIL TEMPLATE", "Select the template above, enter any manual To / CC recipient and send a controlled test. QCMS shows the confirmation popup before releasing the email.", key="email_template_test"):
         st.info(f"Testing template: {EVENT_LABEL.get(template_event, template_event)} · {EVENT_MODULE.get(template_event,'')}")
@@ -275,7 +276,7 @@ def render() -> None:
                 try:
                     repo.update("qcms_notification_schedules", sid, {"enabled": schedule_enabled, "hour_local": int(hour), "run_every_days": int(run_every_days), "days_ahead": int(days_ahead), "include_suppliers": include_suppliers, "timezone": tz.strip() or "Asia/Kolkata", "recipient_department": recipient_department or None, "recipient_departments": recipient_departments, "employee_id": responsible_employee or None, "template_key": template_key, "export_format": export_format, "include_overdue": include_overdue, "include_open": include_open, **escalation_values})
                     save_success_popup("Automatic email schedule saved.", queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
             portal_table(pd.DataFrame([{ "Schedule": r.get("schedule_label"), "Module": r.get("module_key"), "Hour": r.get("hour_local"), "Every Days": r.get("run_every_days") or 1, "Time Zone": r.get("timezone"), "Days Ahead": r.get("days_ahead"), "Departments": ", ".join(r.get("recipient_departments") or []) or r.get("recipient_department"), "Export": r.get("export_format") or "PDF", "Supplier Copy": bool(r.get("include_suppliers")), "Enabled": bool(r.get("enabled")), "Last Run": r.get("last_run_at") } for r in schedules]), hide_index=True, width="stretch", height=300)
         else:
             st.warning("Automatic notification schedules are not available. Apply the QCMS v4.14.7 database migration.")
@@ -289,7 +290,7 @@ def render() -> None:
                 result = notifier.dispatch([row] if row else [])
                 if result.get("error"): st.warning(f"Test queued but delivery returned: {result.get('error')}")
                 else: save_success_popup("Test email queued/delivery requested.", queue_for_rerun=True); st.rerun()
-            except Exception as exc: st.error(str(exc))
+            except Exception as exc: st.error(db_message(exc))
         if c[1].button("Retry Pending / Failed Email", width="stretch"):
             result = notifier.retry_pending(limit=50)
             if result.get("error"): st.warning(str(result.get("error")))

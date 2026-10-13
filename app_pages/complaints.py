@@ -22,8 +22,9 @@ from core.permissions import is_admin
 from core.reporting import controlled_record_pdf_bytes
 from core.repository import Repository
 from core.record_audit import annotate_transaction_rows
-from core.selection_labels import employee_label, part_label, party_label, process_label
+from core.selection_labels import employee_label, part_label, party_label, process_label, with_status
 from core.ui import kpi_grid, page_header, record_widget_token, safe, save_success_popup, section_bar, stage_section, workflow_progress
+from core.db_errors import db_message
 
 
 STATUSES = ["OPEN", "CONTAINMENT", "ROOT_CAUSE", "CORRECTIVE_ACTION", "VERIFICATION", "CLOSED", "CANCELLED"]
@@ -394,7 +395,7 @@ def _render_media_delete(
                 save_success_popup("Complaint file deleted successfully.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
 
 def _render_complaint_media(
@@ -570,7 +571,7 @@ def _render_complaint_media(
                         key=f"complaint_attachment_download_{row.get('id')}",
                     )
                 except Exception as exc:
-                    c3.error(str(exc))
+                    c3.error(db_message(exc))
                 _render_media_delete(service, row, complaint_id, can_delete=bool(perms.get("can_archive")), key_prefix="delete_complaint_attachment")
 
 
@@ -892,9 +893,9 @@ def _render_entry(complaint_type: str) -> None:
     page_header(f"{party_word} Complaint", f"Controlled {party_word.lower()} complaint entry, evidence, action and follow-up.", "Complaints")
     repo = Repository(); perms = current_permissions("COMPLAINT_MANAGEMENT")
     parties = _party_rows(repo, complaint_type); parts = _parts(repo); employees = _employees(repo)
-    party_labels = {str(row["id"]): party_label(row, include_type=True) for row in parties}
-    part_labels = {"": "— Not linked to a Part —", **{str(row["id"]): part_label(row) for row in parts}}
-    employee_labels = {str(row["id"]): employee_label(row) for row in employees}
+    party_labels = {str(row["id"]): with_status(party_label(row, include_type=True), row) for row in parties}
+    part_labels = {"": "— Not linked to a Part —", **{str(row["id"]): with_status(part_label(row), row) for row in parts}}
+    employee_labels = {str(row["id"]): with_status(employee_label(row), row) for row in employees}
 
     pending_error_key = f"{complaint_type}_media_upload_error"
     pending_info_key = f"{complaint_type}_media_upload_info"
@@ -908,7 +909,7 @@ def _render_entry(complaint_type: str) -> None:
         st.info(email_notice)
 
     records = annotate_transaction_rows(repo, repo.select("quality_complaints", eq={"complaint_type": complaint_type}, order_by="created_at", desc=True, limit=5000))
-    record_labels = {"": "＋ New Complaint", **{str(row["id"]): _complaint_label(row, {str(p["id"]): p for p in parties}) for row in records}}
+    record_labels = {"": "＋ New Complaint", **{str(row["id"]): with_status(_complaint_label(row, {str(p["id"]): p for p in parties}), row) for row in records}}
     preferred = str(st.session_state.get(f"selected_{complaint_type.lower()}_complaint") or "")
     if preferred not in record_labels: preferred = ""
     selected_id = st.selectbox("Open Complaint Record", list(record_labels), index=list(record_labels).index(preferred), format_func=lambda value: record_labels[value], key=f"{complaint_type}_complaint_selector")
@@ -1175,11 +1176,11 @@ def render_analysis() -> None:
     parties = {str(row["id"]): row for row in repo.select("parties", limit=5000)}
     parts = {str(row["id"]): row for row in repo.select("parts", limit=5000)}
     processes = repo.select("processes", eq={"status": "ACTIVE"}, order_by="process_name", limit=5000)
-    process_labels = {"": "— Process not linked —", **{str(row["id"]): process_label(row) for row in processes}}
+    process_labels = {"": "— Process not linked —", **{str(row["id"]): with_status(process_label(row), row) for row in processes}}
     employees = _employees(repo)
-    employee_labels = {str(row["id"]): employee_label(row) for row in employees}
+    employee_labels = {str(row["id"]): with_status(employee_label(row), row) for row in employees}
     emp_map = {str(row["id"]): row for row in employees}
-    labels = {str(row["id"]): _complaint_label(row, parties) for row in complaints}
+    labels = {str(row["id"]): with_status(_complaint_label(row, parties), row) for row in complaints}
     preferred = str(st.session_state.get("complaint_analysis_id") or "")
     if preferred not in labels: preferred = next(iter(labels))
     complaint_id = st.selectbox(
@@ -1310,7 +1311,7 @@ def render_analysis() -> None:
 
     with stage_section("F", 'CORRECTIVE / PREVENTIVE ACTION PLAN & RESPONSIBILITY', 'Each action has an accountable owner, target date, completion status, evidence and effectiveness result.', key="complaints_render_analysis_f"):
         actions = repo.select("quality_complaint_actions", eq={"complaint_id": complaint_id}, order_by="action_no", limit=5000)
-        action_labels = {"": "＋ New Action", **{str(row["id"]): f"A{int(row.get('action_no') or 0):02d} · {str(row.get('action_type') or '').replace('_',' ').title()} · {str(row.get('action_description') or '')[:70]}" for row in actions}}
+        action_labels = {"": "＋ New Action", **{str(row["id"]): with_status(f"A{int(row.get('action_no') or 0):02d} · {str(row.get('action_type') or '').replace('_',' ').title()} · {str(row.get('action_description') or '')[:70]}", row) for row in actions}}
         selected_action_id = st.selectbox("Action Plan Item", list(action_labels), format_func=lambda value: action_labels[value], key=f"analysis_action_select_{complaint_id}")
         selected_action = next((row for row in actions if str(row.get("id")) == selected_action_id), None)
         next_action_no = max([int(row.get("action_no") or 0) for row in actions] or [0]) + 1
@@ -1431,7 +1432,7 @@ def render_records() -> None:
     if not filtered:
         st.info("No Complaint records match the selected filters.")
         return
-    labels = {str(row["id"]): _complaint_label(row, parties) for row in filtered}
+    labels = {str(row["id"]): with_status(_complaint_label(row, parties), row) for row in filtered}
     selected_id = st.selectbox("Select Complaint Record", list(labels), format_func=lambda value: labels[value])
     selected = next(row for row in filtered if str(row.get("id")) == selected_id)
     p1, p2, p3, p4 = st.columns(4, gap="small")
@@ -1549,7 +1550,7 @@ def _render_register(complaint_type: str) -> None:
     ])
     portal_table(frame, hide_index=True, width="stretch", height=min(620, 80 + 34 * len(frame)))
 
-    labels = {str(row["id"]): _complaint_label(row, parties) for row in filtered}
+    labels = {str(row["id"]): with_status(_complaint_label(row, parties), row) for row in filtered}
     selected_id = st.selectbox("Selected Complaint", list(labels), format_func=lambda value: labels[value], key=f"{complaint_type}_register_selected")
     selected = next(row for row in filtered if str(row.get("id")) == selected_id)
     c1, c2, c3, c4 = st.columns(4, gap="small")

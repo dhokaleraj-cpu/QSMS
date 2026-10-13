@@ -20,9 +20,10 @@ from core.rmtc_service import RMTCService
 from core.notification_service import NotificationService
 from core.notification_ui import notification_confirmation, notification_overrides, record_email_sender
 from core.reporting import rmtc_record_pdf_bytes
-from core.selection_labels import employee_label, part_label, party_label
+from core.selection_labels import employee_label, part_label, party_label, with_status
 from core.steel_balance import remaining_planned_steel
 from core.ui import (DISPOSITION_EDITOR_OPTIONS, disposition_cards, disposition_label, normalize_disposition, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row, workflow_progress)
+from core.db_errors import db_message
 
 STATUS_OPTIONS=['PASS','FAIL','NOT_EVALUATED','NOT_APPLICABLE']
 
@@ -458,7 +459,7 @@ def render_entry()->None:
                 st.session_state['part_rmtc_id']=str(saved['id'])
                 st.session_state['rmtc_flash_success']=f"RMTC {saved.get('rmtc_number')} saved successfully. Internal Heat Code: {final_heat_code}."
                 st.switch_page(st.session_state['_qsms_pages']['rmtc-part'])
-            except Exception as exc: st.error(str(exc))
+            except Exception as exc: st.error(db_message(exc))
         if existing:
             st.session_state['part_rmtc_id']=str(existing['id'])
             render_attachment_manager(
@@ -500,7 +501,7 @@ def render_entry()->None:
                             **notification_overrides(rmtc_entry_notify_pref),
                         )
                         save_success_popup('RMTC moved to Approval Pending.', queue_for_rerun=True);st.rerun()
-                    except Exception as exc:st.error(str(exc))
+                    except Exception as exc:st.error(db_message(exc))
             else:
                 w4.page_link(st.session_state['_qsms_pages']['rmtc-approval'],label='Open Approval',icon=':material/approval:',width='stretch')
             n1,n2=st.columns(2,gap='small')
@@ -545,7 +546,7 @@ def render_entry()->None:
                         st.session_state['part_rmtc_id']=str(existing['id']); st.session_state['rmtc_part_choice']=add_part_id
                         save_success_popup('Part Number added to the approved RMTC. Complete the new Part Worksheet and validation; previously accepted Parts remain released.',queue_for_rerun=True)
                         st.switch_page(st.session_state['_qsms_pages']['rmtc-part'])
-                    except Exception as exc: st.error(str(exc))
+                    except Exception as exc: st.error(db_message(exc))
             else:
                 st.info('No additional active Part with the same Material Grade is available to add to this RMTC.')
 
@@ -557,7 +558,7 @@ def render_approved_part_worksheet()->None:
     svc=RMTCService(); perms=current_permissions('RMTC_ENTRY')
     parts={str(p['id']):p for p in svc.parts()}
     records=[r for r in svc.list() if str(r.get('status') or '') in ('APPROVED','PARTIALLY_APPROVED') and str(r.get('disposition') or '') in ('ACCEPTED','ACCEPTED_UNDER_RESERVE')]
-    labels={str(r['id']):f"{r.get('rmtc_number')} · Heat {r.get('heat_number')} · {r.get('certificate_quantity') or 0} kg · {str(r.get('disposition') or '').replace('_',' ').title()}" for r in records}
+    labels={str(r['id']):with_status(f"{r.get('rmtc_number')} · Heat {r.get('heat_number')} · {r.get('certificate_quantity') or 0} kg · {str(r.get('disposition') or '').replace('_',' ').title()}", r) for r in records}
     if not labels:
         st.info('No Accepted / Accepted Under Reserve RMTC is available to extend to another Part Number.'); return
     rid=st.selectbox('Approved RMTC',list(labels),format_func=lambda v:labels[v],key='approved_rmtc_worksheet_header')
@@ -591,7 +592,7 @@ def render_approved_part_worksheet()->None:
                     st.session_state['part_rmtc_id']=rid; st.session_state['rmtc_part_choice']=part_id
                     save_success_popup('New Part Worksheet added to the approved RMTC. Existing accepted Parts remain released. Complete the new worksheet and validation for this Part.',queue_for_rerun=True)
                     st.switch_page(st.session_state['_qsms_pages']['rmtc-part'])
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
 
     # v4.14.0: added Parts can be validated and decided without reopening/resetting
     # the already accepted Parts on the same RMTC.
@@ -615,7 +616,7 @@ def render_approved_part_worksheet()->None:
                 try:
                     result=svc.validate_added_part(rid,validate_part_id)
                     save_success_popup(f"Added Part validation completed · Recommendation {result.get('approval_status') or result.get('recommendation') or 'updated'}.",queue_for_rerun=True);st.rerun()
-                except Exception as exc:st.error(str(exc))
+                except Exception as exc:st.error(db_message(exc))
             if c[1].button('Open Part Worksheet',width='stretch'):
                 st.session_state['part_rmtc_id']=rid;st.session_state['rmtc_part_choice']=validate_part_id;st.switch_page(st.session_state['_qsms_pages']['rmtc-part'])
 
@@ -631,7 +632,7 @@ def render_approved_part_worksheet()->None:
                 try:
                     svc.decide_added_part(rid,validate_part_id,disposition,reason.strip() or None,approver)
                     save_success_popup('Added Part final decision saved. Existing accepted Part releases were not changed.',queue_for_rerun=True);st.rerun()
-                except Exception as exc:st.error(str(exc))
+                except Exception as exc:st.error(db_message(exc))
 
 
 def render_part()->None:
@@ -642,7 +643,7 @@ def render_part()->None:
     svc=RMTCService();repo=svc.repo;perms=current_permissions('RMTC_ENTRY')
     rid=_valid_uuid(st.session_state.get('part_rmtc_id') or st.session_state.get('edit_rmtc_id'))
     if not rid:
-        records=svc.list();labels={str(r['id']):f"{r.get('rmtc_number')} · {r.get('heat_number')}" for r in records}
+        records=svc.list();labels={str(r['id']):with_status(f"{r.get('rmtc_number')} · {r.get('heat_number')}", r) for r in records}
         if not labels:st.info('Create an RMTC Header first.');return
         rid=st.selectbox('RMTC',list(labels),format_func=lambda x:labels[x]);st.session_state['part_rmtc_id']=rid
     header=svc.get(rid)
@@ -741,7 +742,7 @@ def render_part()->None:
                     st.rerun()
                 st.session_state['rmtc_flash_success']=f"All Part Worksheets are saved. Calculated DI: {result['di'].get('value')}."
                 st.switch_page(st.session_state['_qsms_pages']['rmtc-approval'])
-            except Exception as exc:st.error(str(exc))
+            except Exception as exc:st.error(db_message(exc))
         st.page_link(st.session_state['_qsms_pages']['rmtc-records'],label='Open RMTC Records',icon=':material/table_view:',width='stretch')
 
 
@@ -761,7 +762,7 @@ def render_records()->None:
 
     selected=''
     if filtered:
-        labels={str(r['id']):f"{r.get('rmtc_number')} · {r.get('heat_number')} · {str(r.get('disposition') or 'PENDING').replace('_',' ').title()}" for r in filtered}
+        labels={str(r['id']):with_status(f"{r.get('rmtc_number')} · {r.get('heat_number')} · {str(r.get('disposition') or 'PENDING').replace('_',' ').title()}", r) for r in filtered}
         selected=st.selectbox('Select RMTC record',list(labels),format_func=lambda x:labels[x])
         selected_row=next(r for r in filtered if str(r.get('id'))==selected)
         st.session_state['edit_rmtc_id']=selected;st.session_state['part_rmtc_id']=selected
@@ -827,7 +828,7 @@ def render_approval()->None:
     )
     page_header('RMTC · Validation & Decision','Submit, validate, then select Pending, On Hold, Accepted, Accepted Under Reserve or Rejected.','Controlled workflow')
     svc=RMTCService();repo=svc.repo;role=normalized_role(st.session_state.get('profile'));perms=current_permissions('RMTC_ENTRY')
-    rows=svc.list();labels={str(r['id']):f"{r.get('rmtc_number')} · {r.get('heat_number')} · {str(r.get('status') or '').replace('_',' ').title()}" for r in rows}
+    rows=svc.list();labels={str(r['id']):with_status(f"{r.get('rmtc_number')} · {r.get('heat_number')} · {str(r.get('status') or '').replace('_',' ').title()}", r) for r in rows}
     if not labels:st.info('No RMTC records available.');return
     default=str(st.session_state.get('part_rmtc_id') or '')
     rid=st.selectbox('RMTC for Review',list(labels),index=list(labels).index(default) if default in labels else 0,format_func=lambda x:labels[x])
@@ -876,7 +877,7 @@ def render_approval()->None:
                 try:
                     repo.rpc('qsms_admin_reopen_rmtc',{'p_rmtc_id':rid,'p_reason':reopen_reason.strip()})
                     save_success_popup('RMTC reopened to Approval Pending. The administrator may now change and save the decisions.', queue_for_rerun=True);st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
             if revisions:
                 portal_table(pd.DataFrame([{
                     'Reopened At':r.get('reopened_at'),'Reason':r.get('reason'),
@@ -928,14 +929,14 @@ def render_approval()->None:
                     repo.update('rmtc_approvals',rid,{'validated_by_employee_id':added_validator,'approved_by_employee_id':added_approver or None})
                     svc.validate_added_part(rid,added_part_id)
                     save_success_popup('Added Part validation completed. Existing accepted Part releases were not changed.',queue_for_rerun=True);st.rerun()
-                except Exception as exc:st.error(str(exc))
+                except Exception as exc:st.error(db_message(exc))
             added_disposition=b2.selectbox('2 · Added Part Final Decision',['PENDING','ACCEPTED','ACCEPTED_UNDER_RESERVE','ON_HOLD','REJECTED'],format_func=lambda v:disposition_label(v),key=f'incremental_disposition_{rid}_{added_part_id}')
             added_reason=st.text_area('Added Part Decision / Reserve / Hold / Rejection Reason',height=70,key=f'incremental_reason_{rid}_{added_part_id}')
             if st.button('3 · Save Added Part Final Decision',type='primary',width='stretch',disabled=not can_approve or not worksheet_done or not added_approver or added_disposition=='PENDING',key=f'incremental_decide_{rid}_{added_part_id}'):
                 try:
                     svc.decide_added_part(rid,added_part_id,added_disposition,added_reason.strip() or None,added_approver)
                     save_success_popup('Added Part final decision saved. Existing accepted Parts remain released.',queue_for_rerun=True);st.rerun()
-                except Exception as exc:st.error(str(exc))
+                except Exception as exc:st.error(db_message(exc))
 
         approval_notify_pref = notification_confirmation(NotificationService(repo), 'RMTC_APPROVAL_PENDING', key=f"rmtc_approval_notify_{rid}", context={'rmtc_id':rid,'next_task':'RMTC Approval'}, default_send=record.get('status')=='DRAFT') if record.get('status')=='DRAFT' else {'send':False,'confirmed':True,'preview':{}}
         workflow=st.columns(3,gap='small')
@@ -956,7 +957,7 @@ def render_approval()->None:
                     **notification_overrides(approval_notify_pref),
                 )
                 save_success_popup('RMTC submitted and moved to Approval Pending.', queue_for_rerun=True);st.rerun()
-            except Exception as exc:st.error(str(exc))
+            except Exception as exc:st.error(db_message(exc))
 
         validate_disabled=record.get('status')!='APPROVAL_PENDING' or not validated or finalized
         if workflow[1].button('2 · Validate Against Masters',disabled=validate_disabled,width='stretch'):
@@ -964,7 +965,7 @@ def render_approval()->None:
                 repo.update('rmtc_approvals',rid,{'validated_by_employee_id':validated,'approved_by_employee_id':approved or None})
                 repo.rpc('qsms_validate_rmtc',{'p_rmtc_id':rid})
                 save_success_popup('RMTC validation completed. Select the final decision for every Part Number.', queue_for_rerun=True);st.rerun()
-            except Exception as exc:st.error(str(exc))
+            except Exception as exc:st.error(db_message(exc))
 
         all_decided=all(normalize_disposition(row.get('Final Decision')) in ('PENDING','ON_HOLD','ACCEPTED','ACCEPTED_UNDER_RESERVE','REJECTED') for _,row in decision_grid.iterrows())
         decision_disabled=(
@@ -985,7 +986,7 @@ def render_approval()->None:
                     decisions.append({'part_id':str(row.get('_part_id')),'disposition':disposition,'reason':reason or None})
                 result=repo.rpc('qsms_decide_rmtc',{'p_rmtc_id':rid,'p_decisions':decisions,'p_approved_by_employee_id':approved})
                 save_success_popup(f"RMTC decision saved as {str((result or {}).get('disposition') or '').replace('_',' ').title()}.", queue_for_rerun=True);st.rerun()
-            except Exception as exc:st.error(str(exc))
+            except Exception as exc:st.error(db_message(exc))
 
         if finalized:
             st.success(f"Final disposition: {str(record.get('disposition') or '').replace('_',' ').title()}")

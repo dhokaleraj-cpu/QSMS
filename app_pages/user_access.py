@@ -12,6 +12,7 @@ from core.permissions import is_admin
 from core.reporting import controlled_record_pdf_bytes
 from core.repository import Repository
 from core.ui import page_header, portal_table, save_success_popup, stage_section, subpage_navigation
+from core.db_errors import db_message
 
 # Compatibility stage key retained for controlled verification: user_access_access_c
 ROLES = [
@@ -237,7 +238,7 @@ def render() -> None:
                     save_success_popup(result.get("message", "User created successfully."), queue_for_rerun=True)
                     st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))
 
     # Load and normalize once for all remaining user-specific controls.
     try:
@@ -314,7 +315,7 @@ def render() -> None:
                         save_success_popup("User role, status, Department and Employee link updated successfully.", queue_for_rerun=True)
                         st.rerun()
                     except Exception as exc:
-                        st.error(str(exc))
+                        st.error(db_message(exc))
 
             with stage_section("B", "EXPLICIT USER MODULE PERMISSIONS", "An enabled Override is authoritative. If Override is off, the user inherits Role → Department → legacy defaults. This same effective permission is enforced by the database/RLS and the UI.", key="user_access_user_module"):
                 effective_profile = {
@@ -344,7 +345,7 @@ def render() -> None:
                         save_success_popup("User permission overrides saved. Effective module authorization is synchronized with database workflows.", queue_for_rerun=True)
                         st.rerun()
                     except Exception as exc:
-                        st.error(str(exc))
+                        st.error(db_message(exc))
                 if c2.button("Clear All User Overrides", width="stretch", key=f"clear_user_module_{uid}"):
                     try:
                         for configured in existing.values():
@@ -352,7 +353,7 @@ def render() -> None:
                         save_success_popup("User overrides cleared. Role / Department defaults now apply.", queue_for_rerun=True)
                         st.rerun()
                     except Exception as exc:
-                        st.error(str(exc))
+                        st.error(db_message(exc))
 
             with stage_section("C", "SECTION VIEW / CREATE / EDIT", "Default: all sections remain visible according to module View permission. Create an Override only when you need to hide or restrict a section such as Part Master Price History.", key="user_access_sections_v41418"):
                 existing_sections = {
@@ -391,7 +392,7 @@ def render() -> None:
                         save_success_popup("Section overrides saved. Sections without overrides remain visible by default.", queue_for_rerun=True)
                         st.rerun()
                     except Exception as exc:
-                        st.error(str(exc))
+                        st.error(db_message(exc))
                 if c2.button("Reset Sections to Default Visible", width="stretch", key=f"reset_sections_{uid}"):
                     try:
                         for configured in existing_sections.values():
@@ -399,7 +400,7 @@ def render() -> None:
                         save_success_popup("All section overrides removed. Module-level default visibility applies.", queue_for_rerun=True)
                         st.rerun()
                     except Exception as exc:
-                        st.error(str(exc))
+                        st.error(db_message(exc))
 
             with stage_section("D", "RESET SELECTED USER PASSWORD", key="user_access_reset_password"):
                 temp = st.text_input("New Temporary Password", type="password", key=f"reset_password_{uid}")
@@ -408,7 +409,7 @@ def render() -> None:
                         _invoke({"action": "reset_password", "user_id": uid, "password": temp})
                         save_success_popup("Temporary password updated successfully.")
                     except Exception as exc:
-                        st.error(str(exc))
+                        st.error(db_message(exc))
 
     with defaults_tab:
         with stage_section("A", "ROLE → MODULE DEFAULTS", "Assign permissions once to a Role. Users inherit these rights unless an explicit User override exists.", key="role_defaults_v41418"):
@@ -433,7 +434,7 @@ def render() -> None:
                             _delete_override(repo, "role_module_defaults", configured)
                     save_success_popup("Role module defaults saved.", queue_for_rerun=True); st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))
 
         with stage_section("B", "DEPARTMENT → MODULE DEFAULTS", "Department permissions apply when no explicit User or Role permission row exists.", key="department_defaults_v41418"):
             dep = st.selectbox("Department", departments, key="permission_department_scope")
@@ -457,7 +458,7 @@ def render() -> None:
                             _delete_override(repo, "department_module_defaults", configured)
                     save_success_popup("Department module defaults saved.", queue_for_rerun=True); st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))
 
         with stage_section("C", "MODULE APPROVAL ROUTES", "Configured employee route first → Reports-To manager → controlled Approve-permission fallback.", key="approval_routes_v41418"):
             module_labels = {key: label for key, label in MODULES}
@@ -484,7 +485,7 @@ def render() -> None:
                     }, natural_key={"module_key": route_module, "department": department_value, "level_no": int(route_level)})
                     save_success_popup("Approval route saved successfully.", queue_for_rerun=True); st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))
             routes = repo.select("qcms_module_approval_routes", order_by="module_key", limit=500)
             route_rows = [{
                 "Module": module_labels.get(str(r.get("module_key")), r.get("module_key")),
@@ -501,7 +502,7 @@ def render() -> None:
                         repo.update("qcms_module_approval_routes", selected_route, {"status": "INACTIVE"})
                         save_success_popup("Approval route deactivated.", queue_for_rerun=True); st.rerun()
                     except Exception as exc:
-                        st.error(str(exc))
+                        st.error(db_message(exc))
             else:
                 st.info("No configured approval routes. QCMS will use Reports-To manager and then controlled approval-permission fallback.")
 
@@ -510,7 +511,7 @@ def render() -> None:
             try:
                 activities = repo.select("qcms_user_activity_log", order_by="occurred_at", desc=True, limit=2000)
             except Exception as exc:
-                st.error(str(exc)); activities = []
+                st.error(db_message(exc)); activities = []
             action_filter = st.text_input("Activity search", placeholder="user, module, section, action, record", key="activity_search")
             activity_rows = [{
                 "Date / Time": r.get("occurred_at"), "User": r.get("user_email_snapshot"), "Role": r.get("role_snapshot"),
@@ -531,7 +532,7 @@ def render() -> None:
             try:
                 audits = repo.select("audit_log", order_by="changed_at", desc=True, limit=3000)
             except Exception as exc:
-                st.error(str(exc)); audits = []
+                st.error(db_message(exc)); audits = []
             profiles = {str(p.get("id")): p for p in repo.select("profiles", limit=2000)}
             audit_search = st.text_input("Audit search", placeholder="table, operation, user, record", key="audit_search")
             audit_rows = []
@@ -566,4 +567,4 @@ def render() -> None:
                         get_session_client().auth.update_user({"password": p1})
                         save_success_popup("Password changed successfully.")
                     except Exception as exc:
-                        st.error(str(exc))
+                        st.error(db_message(exc))

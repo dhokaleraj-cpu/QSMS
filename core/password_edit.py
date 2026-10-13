@@ -7,6 +7,7 @@ import streamlit as st
 from core.auth import verify_current_password
 from core.repository import Repository
 from core.ui import save_success_popup
+from core.db_errors import db_message
 
 
 def password_reopen_for_edit(
@@ -74,5 +75,5 @@ def password_reopen_for_edit(
                 save_success_popup("Record unlocked for controlled editing. Re-validation / approval is required after saving.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
     return False

@@ -47,12 +47,43 @@ def children_of(table: str) -> list[tuple[str, str]]:
     return [(child, column) for child, column, parent in FOREIGN_KEYS if parent == table]
 
 
-def linked_records(repo: Repository, table: str, record_id: str, *, per_table: int = 50) -> list[dict[str, Any]]:
-    """List every row that points at the record, with reference, status and user."""
+# R22: rows a dedicated delete function removes together with the record itself.
+OWNED_CHILDREN = {
+    "supply_purchase_orders": {"supply_purchase_order_items", "supply_purchase_order_sources", "supply_rm_purchase_orders", "supply_forging_orders", "supply_po_confirmations"},
+}
+AUTO_HANDLED = {"part_supplier_price_history"}
+RELEASED_BY_CANCEL = {"supply_purchase_order_sources", "supply_purchase_order_items", "supply_rm_purchase_orders", "supply_forging_orders"}
+
+FIX_HINTS = {
+    "supply_purchase_order_sources": "Cancel or delete Purchase Order {po} first (Purchase Orders → Cancel, or Records → Delete Transactions → Purchase Order).",
+    "supply_purchase_order_items": "Cancel or delete Purchase Order {po} first.",
+    "supply_rm_purchase_orders": "Cancel or delete Purchase Order {po} first.",
+    "supply_forging_orders": "Cancel or delete Purchase Order {po} first.",
+    "supply_po_confirmations": "Removed automatically with Purchase Order {po}.",
+    "supply_rm_receipts": "Delete RM Receipt {ref} first (Records → Delete Transactions → RM Receipt).",
+    "inward_lots": "Delete Material Inward {ref} first (Records → Delete Transactions → Material Inward).",
+    "supply_rm_dispatches": "Delete RM Dispatch {ref} first (Records → Delete Transactions → RM Dispatch to Forging).",
+    "supply_forging_receipts": "Delete Forging Receipt {ref} first (Records → Delete Transactions → Forging Receipt).",
+    "supply_downstream_events": "Delete Supply Chain Event {ref} first (Records → Delete Transactions → Supply Chain Event).",
+    "supply_purchase_orders": "Cancel or delete replacement Purchase Order {ref} first.",
+}
+
+
+def _po_lookup(repo: Repository, ids: Iterable[str]) -> dict[str, dict[str, Any]]:
+    wanted = sorted({str(i) for i in ids if i})
+    if not wanted:
+        return {}
+    try:
+        return {str(r["id"]): r for r in repo.select("supply_purchase_orders", in_={"id": wanted}, limit=len(wanted) + 5)}
+    except Exception:
+        return {}
+
+
+def _collect(repo: Repository, table: str, record_id: str, per_table: int, skip: set[str]) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
-    if not record_id:
-        return found
     for child, column in children_of(table):
+        if child in skip or child in AUTO_HANDLED:
+            continue
         try:
             rows = repo.select(child, eq={column: record_id}, limit=per_table)
         except Exception:
@@ -61,17 +92,50 @@ def linked_records(repo: Repository, table: str, record_id: str, *, per_table: i
             if child == table and str(row.get("id")) == str(record_id):
                 continue
             found.append({"_table": child, "_column": column, **dict(row)})
+    return found
+
+
+def linked_records(repo: Repository, table: str, record_id: str, *, per_table: int = 50) -> list[dict[str, Any]]:
+    """Rows that really block deleting the record, with the parent document and how to fix it.
+
+    For tables with a dedicated delete function (Purchase Order) the record's own rows
+    (lines, sources, stages, confirmations) are removed automatically, so QCMS looks one
+    level deeper (receipts, inwards, forging receipts) to report the real blockers."""
+    if not record_id:
+        return []
+    owned = OWNED_CHILDREN.get(table, set())
+    found = _collect(repo, table, record_id, per_table, owned)
+    for child, column in children_of(table):
+        if child not in owned:
+            continue
+        try:
+            own_rows = repo.select(child, eq={column: record_id}, limit=500)
+        except Exception:
+            own_rows = []
+        for own in own_rows:
+            found.extend(_collect(repo, child, str(own.get("id")), per_table, owned | {table}))
+    pos = _po_lookup(repo, [str(r.get("purchase_order_id") or "") for r in found] + ([record_id] if table == "supply_purchase_orders" else []))
     labels = _profile_labels(repo, [str(r.get("created_by") or "") for r in found])
     out = []
     for row in found:
         creator = str(row.get("created_by") or "")
+        po = pos.get(str(row.get("purchase_order_id") or "")) or {}
+        if table == "supply_customer_orders" and row["_table"] in RELEASED_BY_CANCEL and (
+                str(po.get("status") or "").upper() == "CANCELLED" or (not po and str(row.get("status") or "").upper() == "CANCELLED")):
+            continue  # released automatically by qcms_delete_customer_order
+        belongs = f"PO {po.get('po_number')} [{str(po.get('status') or '').replace('_', ' ')}]" if po else ""
+        reference = record_reference(row)
+        if row["_table"] in {"supply_purchase_order_sources", "supply_purchase_order_items", "supply_po_confirmations"} and po:
+            reference = str(po.get("po_number") or reference)
+        hint = FIX_HINTS.get(row["_table"], "Delete or reverse {ref} first.").format(po=po.get("po_number") or "-", ref=reference)
         out.append({
             "Linked Transaction": table_label(row["_table"]),
-            "Reference": record_reference(row),
+            "Reference": reference,
+            "Belongs To": belongs or "-",
             "Status": data_entry_status(row),
             "Created By": labels.get(creator, creator or "System / Legacy"),
             "Created At": _short_time(row.get("created_at")),
-            "Link Field": row["_column"],
+            "How to fix": hint,
         })
     return out
 

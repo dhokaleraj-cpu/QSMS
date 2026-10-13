@@ -16,6 +16,7 @@ from core.selection_labels import employee_label, part_label
 from core.repository import Repository
 from core.record_audit import annotate_transaction_rows
 from core.ui import page_header, save_success_popup, section_bar
+from core.db_errors import db_message
 
 
 def _employee_rows(repo: Repository) -> list[dict]:
@@ -141,7 +142,7 @@ def render_tools() -> None:
                 st.session_state["qct_hard_result"] = convert_hardness(float(source_value), source_scale, target_scale)
             except Exception as exc:
                 st.session_state.pop("qct_hard_result", None)
-                st.error(str(exc))
+                st.error(db_message(exc))
         result = st.session_state.get("qct_hard_result")
         if result:
             st.metric("Converted Hardness", f"{float(result.get('target_value')):.3f} {result.get('target_scale')}")

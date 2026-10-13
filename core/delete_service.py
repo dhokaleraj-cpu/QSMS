@@ -8,11 +8,13 @@ from core.auth import verify_current_password
 from core.config import is_preview_session
 from core.repository import Repository
 from core.ui import delete_success_popup
+from core.selection_labels import with_status
 
 # R20: tables with a dedicated delete RPC that removes the record's OWN child rows
 # (e.g. a PO with its lines, sources and stages) and blocks only on real genealogy.
 DEDICATED_DELETE_RPCS = {
     "supply_purchase_orders": ("qcms_delete_purchase_order", "p_purchase_order_id"),
+    "supply_customer_orders": ("qcms_delete_customer_order", "p_customer_order_id"),
 }
 
 
@@ -68,13 +70,17 @@ def show_delete_blocked(repo: Repository, table: str, record_id: str, exc: Excep
     import pandas as pd
     from core.record_history import linked_records
 
-    st.error(f"Deletion blocked: {exc}")
+    from core.db_errors import db_message
+    message = db_message(exc)
+    if "downstream linked records" in message:
+        message = "This record is still used by other transactions (listed below)."
+    st.error(f"Deletion blocked: {message}")
     try:
         linked = linked_records(repo, table, record_id)
     except Exception:
         linked = []
     if linked:
-        st.markdown(f"**Linked records holding this entry ({len(linked)})** — handle or delete these first:")
+        st.markdown(f"**Why it cannot be deleted — {len(linked)} linked record(s). Follow 'How to fix' in this order, then delete again:**")
         st.dataframe(pd.DataFrame(linked), hide_index=True, width="stretch")
     else:
         st.caption("No linked rows are visible to your role. Ask an administrator to check the linked transactions.")
@@ -88,9 +94,10 @@ def linked_records_button(repo: Repository, table: str, record_id: str, key: str
     if record_id and st.button("Check linked records", key=f"{key}_linked", icon=":material/account_tree:"):
         linked = linked_records(repo, table, record_id)
         if linked:
+            st.warning(f"{len(linked)} linked record(s) will block this delete:")
             st.dataframe(pd.DataFrame(linked), hide_index=True, width="stretch")
         else:
-            st.success("No linked transactions found.")
+            st.success("Nothing blocks this delete.")
 
 
 def password_delete_panel(
@@ -109,7 +116,7 @@ def password_delete_panel(
         return False
     with st.expander(title, expanded=False):
         st.caption(help_text)
-        labels = {str(row.get("id")): labeler(row) for row in rows if row.get("id")}
+        labels = {str(row.get("id")): with_status(labeler(row), row) for row in rows if row.get("id")}
         selected = st.selectbox(
             "Selected row",
             list(labels),
@@ -164,7 +171,7 @@ def password_rpc_delete_panel(
         return False
     with st.expander(title, expanded=False):
         st.caption(help_text)
-        labels = {str(row.get("id")): labeler(row) for row in rows if row.get("id")}
+        labels = {str(row.get("id")): with_status(labeler(row), row) for row in rows if row.get("id")}
         selected = st.selectbox(
             "Selected row", list(labels), format_func=lambda value: labels[value],
             key=f"{key}_row", disabled=not can_delete,
@@ -186,7 +193,8 @@ def password_rpc_delete_panel(
                 verify_current_password(password)
                 repo.rpc(rpc_name, {rpc_param: selected})
             except Exception as exc:
-                st.error(f"Deletion blocked: {exc}")
+                from core.db_errors import db_message
+                st.error(f"Deletion blocked: {db_message(exc)}")
                 return False
             delete_success_popup(success_message, queue_for_rerun=True)
             return True
@@ -209,7 +217,7 @@ def password_transaction_delete_panel(
         return False
     with st.expander(title, expanded=False):
         st.caption(help_text)
-        labels = {str(row.get("id")): labeler(row) for row in rows if row.get("id")}
+        labels = {str(row.get("id")): with_status(labeler(row), row) for row in rows if row.get("id")}
         selected = st.selectbox(
             "Selected transaction", list(labels), format_func=lambda value: labels[value],
             key=f"{key}_row", disabled=not can_delete,

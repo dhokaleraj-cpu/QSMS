@@ -6,7 +6,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 from core.ui import portal_table
-from core.selection_labels import part_label
+from core.selection_labels import part_label, with_status
 
 from core.access import current_permissions
 from core.password_edit import password_reopen_for_edit
@@ -17,6 +17,7 @@ from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
 from core.reporting import dimensional_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
 from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
+from core.db_errors import db_message
 
 
 def _maps(service: InspectionService):
@@ -276,7 +277,7 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
                     )
                 st.session_state["edit_dimensional_id"] = str(saved["id"]); save_success_popup(f"Standalone Dimensional Report {final_number} saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
         if existing:
             disposition_cards([
@@ -295,7 +296,7 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
                     save_success_popup("Standalone Dimensional conclusion and final decision completed successfully.", queue_for_rerun=True)
                     st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))
             section_bar("PDF / EXCEL / PRINT EXPORT")
             _report_exports(service, existing_id, str(existing.get("report_number") or "Dimensional_Report"), key=f"dim_standalone_export_{existing_id}")
 
@@ -478,7 +479,7 @@ def render_entry() -> None:
                 save_success_popup(f"Dimensional Report {final_number} saved successfully.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
         if existing:
             disposition_cards([{"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")}, {"label": "Final Decision", "value": existing.get("disposition")}, {"label": "Layout", "value": existing.get("layout_name_snapshot") or plan.get("layout_name")}])
@@ -491,7 +492,7 @@ def render_entry() -> None:
                     save_success_popup("Dimensional decision finalized successfully.", queue_for_rerun=True)
                     st.rerun()
                 except Exception as exc:
-                    st.error(str(exc))
+                    st.error(db_message(exc))
             section_bar("PDF / EXCEL / PRINT EXPORT")
             _report_exports(service, str(existing["id"]), str(existing.get("report_number") or "Dimensional_Report"), key=f"dim_linked_export_{existing.get('id')}")
             if password_delete_panel(
@@ -511,7 +512,7 @@ def render_records() -> None:
     rows = service.dimensional_reports(); search = st.text_input("Search Report, Part, Heat or Inward")
     filtered = [row for row in rows if not search or search.casefold() in " ".join(str(row.get(key) or "") for key in ("report_number", "heat_number", "heat_code", "batch_number", "supplier_reference_number", "reference_text", "remarks", "layout_name_snapshot")).casefold()]
     if filtered:
-        labels = {str(row["id"]): f"{row.get('report_number')} · Heat {row.get('heat_number')} · {row.get('layout_name_snapshot') or 'Layout'} · {disposition_label(row.get('disposition'))}" for row in filtered}
+        labels = {str(row["id"]): with_status(f"{row.get('report_number')} · Heat {row.get('heat_number')} · {row.get('layout_name_snapshot') or 'Layout'} · {disposition_label(row.get('disposition'))}", row) for row in filtered}
         selected = st.selectbox("Select Dimensional Report", list(labels), format_func=lambda value: labels[value])
         selected_row = next(row for row in filtered if str(row["id"]) == selected); st.session_state["edit_dimensional_id"] = selected
         c1, c2, c3, c4 = st.columns(4, gap="small")

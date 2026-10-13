@@ -6,6 +6,7 @@ from core.auth import current_profile, verify_current_password
 from core.database import get_session_client
 from core.permissions import role_label
 from core.ui import page_header, save_success_popup, section_bar, stage_section
+from core.db_errors import db_message
 
 
 def render() -> None:
@@ -40,4 +41,4 @@ def render() -> None:
                     raise RuntimeError("Supabase did not confirm the password change.")
                 save_success_popup("Your QCMS login password was changed successfully.")
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))

@@ -17,6 +17,7 @@ from core.master_service import MasterService
 from core.master_import_templates import build_live_master_import_template
 from core.repository import Repository
 from core.ui import page_header, save_success_popup, section_bar, template_catalog, template_download_row
+from core.db_errors import db_message
 
 
 IMPORTABLE = (
@@ -444,4 +445,4 @@ def render() -> None:
             elif not errors:
                 st.info("No new database-missing rows were available to import.")
         except Exception as exc:
-            st.error(str(exc))
+            st.error(db_message(exc))

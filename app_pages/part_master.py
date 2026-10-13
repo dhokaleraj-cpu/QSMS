@@ -27,6 +27,7 @@ from core.permissions import is_admin
 from core.part_identity import find_part_conflicts
 from core.selection_labels import customer_standard_label, material_grade_label, part_label, party_label, process_label
 from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_dialog, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
+from core.db_errors import db_message
 
 DRAWING_TYPES = (
     ("FINISH_DRAWING", "Finish Drawing"),
@@ -363,7 +364,7 @@ def _render_osp_metlab_requirements(
             save_success_popup(f"{saved_count} OSP MetLAB requirement(s) saved for {process.get('process_name')}.")
             st.rerun()
         except Exception as exc:
-            st.error(str(exc))
+            st.error(db_message(exc))
 
     if group:
         render_attachment_manager(
@@ -393,7 +394,7 @@ def _render_osp_metlab_requirements(
                 )
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
 
 def _render_metallurgical_requirements(
@@ -501,7 +502,7 @@ def _render_metallurgical_requirements(
             save_success_popup(f"{saved_count} Metallurgical Requirement(s) saved successfully.")
             st.rerun()
         except Exception as exc:
-            st.error(str(exc))
+            st.error(db_message(exc))
 
     if st.button(
         "Create / Update Final Dispatch Metallurgical Inspection Layout",
@@ -518,7 +519,7 @@ def _render_metallurgical_requirements(
             )
             st.rerun()
         except Exception as exc:
-            st.error(str(exc))
+            st.error(db_message(exc))
 
 PART_USAGE_TABLES: tuple[tuple[str, str], ...] = (
     ("supply_customer_orders", "Customer Orders / Schedules"),
@@ -677,7 +678,7 @@ def render_entry() -> None:
                 save_success_dialog("Part Master Saved", f"Part Master saved successfully.\n\nPart Number: **{part_number.strip()}**" + (f"  ·  FSI Part Number: **{fsi_part_number.strip()}**" if fsi_part_number.strip() else "") + f"\n\nDescription: {part_name.strip()}" + ("\n\nSaved after similar-number review (confirmed not a duplicate)." if conflicts["similar"] else ""))
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
         if not existing:
             st.info("Save the Part header first. Drawing attachments and requirement grids will then become available.")
@@ -767,7 +768,7 @@ def render_entry() -> None:
                             )
                             st.rerun()
                         except Exception as exc:
-                            st.error(str(exc))
+                            st.error(db_message(exc))
 
     with stage_section("C", 'DRAWING REVISION HISTORY', 'All released drawings remain traceable. Only the latest revision for each drawing type is ACTIVE.', key="part_master_render_entry_c"):
         if not drawing_rows:
@@ -856,7 +857,7 @@ def render_entry() -> None:
                 save_success_popup("Selected Customer Standards / Specifications linked successfully.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
         active_link_rows = repo.select("part_standard_links", eq={"part_id": part_id, "status": "ACTIVE"}, order_by="sequence_no", limit=1000)
         standard_by_id = {str(row["id"]): row for row in all_standards}
@@ -964,7 +965,7 @@ def render_entry() -> None:
                     if existing_link: repo.update('part_supplier_links',str(existing_link['id']),payload)
                     else: repo.insert('part_supplier_links',payload)
                 save_success_popup('Approved Part sources saved successfully.', queue_for_rerun=True); st.rerun()
-            except Exception as exc: st.error(str(exc))
+            except Exception as exc: st.error(db_message(exc))
         if existing_source_links:
             portal_table(pd.DataFrame([{
                 'Supplier':supplier_map.get(str(r.get('supplier_id')),''), 'Steel Mill':steel_map.get(str(r.get('steel_mill_id')),''),
@@ -1108,7 +1109,7 @@ def render_entry() -> None:
                     return {"supplier_id": sid, "material_grade_id": row_grade_id, "source_part_id": source_part_id, "supplier_rm_item_code": str(row.get("Supplier RM Item Code") or "").strip() or None, "supplier_forging_part_number": str(row.get("Supplier Forging Part No.") or "").strip() or None, "hsn_sac_code": str(row.get("HSN / SAC Code") or "").strip() or None, "lead_time_days": int(row.get("Lead Time (Days)") or 0), "material_section_name": material_section, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section Size") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
                 _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id", "material_grade_id", "material_section_name", "section_size", "forging_route"), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
 
 
         # v4.13.8: supplier-specific technical heading/value data and price history
@@ -1158,7 +1159,7 @@ def render_entry() -> None:
                         return {"raw_material_detail_id": selected_raw_id, "supplier_id": selected_supplier_id, "heading": heading, "value_text": value, "include_on_po": bool(row.get("Include on PO", True)), "sequence_no": int(row.get("Sequence") or (index + 1) * 10), "status": str(row.get("Status") or "ACTIVE")}
                     _save_rows(repo, "part_raw_material_technical_data", part_id, tech_edit, ("raw_material_detail_id", "heading"), tech_mapper)
                     save_success_popup("Supplier technical data saved. Active rows will populate Purchase Orders automatically.", queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(str(exc))
+                except Exception as exc: st.error(db_message(exc))
 
             if not tech_section_perm["can_view"]:
                 st.info("Supplier Technical Data is hidden by your section permission.")
@@ -1179,6 +1180,7 @@ def render_entry() -> None:
                     "Currency": r.get("currency") or "INR", "UOM": r.get("uom") or "KGS",
                     "Remark": r.get("remarks") or "", "Status": r.get("status") or "ACTIVE",
                 } for r in price_rows], columns=["Start Date", "End Date", "Basic Rate", "Freight", "Tool Cost", "P&F", "Profit", "ICC/Rej.", "Currency", "UOM", "Remark", "Status"])
+                st.caption("Prices are controlled per Supplier + Raw Material record + UOM. Add a new row with a new Start Date and leave End Date blank: QCMS closes the previous open price automatically (End Date = new Start Date - 1).")
                 with st.form(f"price_history_form_{selected_raw_id}"):
                     price_edit = st.data_editor(
                         price_df, num_rows="dynamic", hide_index=True, width="stretch", height=240, key=f"price_history_{selected_raw_id}", disabled=not writable,
@@ -1227,7 +1229,7 @@ def render_entry() -> None:
                             }
                         _save_rows(repo, "part_supplier_price_history", part_id, frame, ("part_id", "supplier_id", "raw_material_detail_id", "uom", "start_date"), price_mapper)
                         save_success_popup("Supplier / FSI Part price history saved successfully.", queue_for_rerun=True); st.rerun()
-                    except Exception as exc: st.error(str(exc))
+                    except Exception as exc: st.error(db_message(exc))
             else:
                 st.info("Supplier Price History is hidden by your section permission.")
     with stage_section("F", 'JOMINY REQUIREMENT', 'Controlled 1/16 inch to millimetre conversion and HRC requirement band.', key="part_master_render_entry_f"):
@@ -1253,7 +1255,7 @@ def render_entry() -> None:
                     return {"jominy_distance_id": distance.get("id"), "distance_label": label, "minimum_hrc": low, "maximum_hrc": high, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
                 _save_rows(repo, "part_jominy_requirements", part_id, jedit, ("jominy_distance_id",), mapper); save_success_popup("Jominy Requirements saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                st.error(db_message(exc))
     with stage_section("G", "OSP INSPECTION FOR METLAB", key="part_master_render_entry_g"):
         _render_osp_metlab_requirements(repo, catalog, part_id, writable, perms["can_archive"], show_heading=False)
 

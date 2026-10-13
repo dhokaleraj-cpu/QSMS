@@ -8,7 +8,7 @@ from core.raw_source import resolve_raw_source, effective_link, INHERITED_FIELDS
 from core.repository import Repository
 from core.record_audit import annotate_transaction_rows
 from core.auth import current_employee_id
-from core.selection_labels import party_label
+from core.selection_labels import party_label, customer_order_label
 from core.purchase_order_reporting import DEFAULT_SPECIAL_INSTRUCTIONS
 
 MONTHS = {
@@ -139,6 +139,10 @@ def friendly_po_error(exc: Exception) -> str:
     return text
 
 
+OPENING_STAGE_CODES = ("RAW_MATERIAL", "FORGING", "CASTING", "MACHINING", "OSP_READY", "AT_OSP", "FINAL_INSPECTION", "FINISHED_GOODS")
+OPENING_STOCK_LOCATIONS = {"FSI": "At FSI (own plant)", "SUPPLIER": "At Supplier", "VENDOR": "At Vendor (forger / caster / OSP)"}
+
+
 class SupplyChainService:
     def __init__(self, repo: Repository | None = None):
         self.repo = repo or Repository()
@@ -208,9 +212,18 @@ class SupplyChainService:
         if not part_id or not self.repo.get("parts", part_id):
             raise ValueError("Select a valid Part Number for Opening Stock.")
         stage = str(p.get("stage") or "").upper().strip()
-        allowed = {"RAW_MATERIAL", "FORGING", "MACHINING", "OSP_READY", "AT_OSP", "FINAL_INSPECTION", "FINISHED_GOODS"}
+        allowed = set(OPENING_STAGE_CODES)
         if stage not in allowed:
             raise ValueError("Select a valid Supply Chain stage for Opening Stock.")
+        # R22: stock may lie at FSI, at a Supplier (e.g. steel mill / RM supplier) or at a Vendor (forger, caster, OSP).
+        location = str(p.get("stock_location") or "FSI").upper().strip()
+        if location not in OPENING_STOCK_LOCATIONS:
+            raise ValueError("Stock Location must be FSI, SUPPLIER or VENDOR.")
+        p["stock_location"] = location
+        if location == "FSI":
+            p["location_party_id"] = None
+        elif not str(p.get("location_party_id") or "").strip():
+            raise ValueError(f"Select the {'Supplier' if location == 'SUPPLIER' else 'Vendor'} where this opening stock is lying.")
         pcs = max(number(p.get("quantity_pcs")), 0.0)
         available = max(number(p.get("available_quantity_pcs") if p.get("available_quantity_pcs") is not None else pcs), 0.0)
         kg = max(number(p.get("quantity_kg")), 0.0)
@@ -227,6 +240,7 @@ class SupplyChainService:
         mapping = {
             "rawmaterial": "RAW_MATERIAL",
             "forging": "FORGING",
+            "casting": "CASTING",
             "machining": "MACHINING",
             "machiningwip": "MACHINING",
             "wip": "MACHINING",
@@ -252,7 +266,7 @@ class SupplyChainService:
             "|".join([
                 str(r.get("part_id") or ""), str(r.get("stage") or "").upper(),
                 normalize_match(r.get("lot_reference")), normalize_match(r.get("heat_number")),
-            ])
+            ]) + (f"|{str(r.get('stock_location')).upper()}|{r.get('location_party_id') or ''}" if str(r.get("stock_location") or "FSI").upper() != "FSI" else "")
             for r in self.opening_stock()
             if r.get("part_id") and r.get("stage") and r.get("lot_reference")
         }
@@ -267,12 +281,14 @@ class SupplyChainService:
             heat_number = str(raw.get("Heat Number") or "").strip()
             grade_text = str(raw.get("Material Grade") or "").strip()
             supplier_text = str(raw.get("Supplier Code") or raw.get("Supplier") or "").strip()
+            location = str(raw.get("Stock Location") or "FSI").strip().upper() or "FSI"
+            location_text = str(raw.get("Location Party Code") or raw.get("Location Party") or "").strip()
             section_text = str(raw.get("Raw Material Type") or raw.get("Raw Material Section") or "").strip()
             section_size = str(raw.get("Section Size") or "").strip()
             error = ""
             if not part:
                 error = "Part Number / FSI Part Number was not found in active Part Master."
-            elif stage not in {"RAW_MATERIAL","FORGING","MACHINING","OSP_READY","AT_OSP","FINAL_INSPECTION","FINISHED_GOODS"}:
+            elif stage not in set(OPENING_STAGE_CODES):
                 error = "Invalid Supply Chain Stage."
             elif not reference:
                 error = "Opening Reference is mandatory for duplicate-safe import."
@@ -283,6 +299,11 @@ class SupplyChainService:
             supplier = (supplier_by_code.get(normalize_match(supplier_text)) or supplier_by_name.get(normalize_match(supplier_text))) if supplier_text else {}
             if supplier_text and not supplier and not error:
                 error = f"Supplier {supplier_text} was not found."
+            location_party = (supplier_by_code.get(normalize_match(location_text)) or supplier_by_name.get(normalize_match(location_text))) if location_text else {}
+            if location not in OPENING_STOCK_LOCATIONS and not error:
+                error = "Stock Location must be FSI, SUPPLIER or VENDOR."
+            elif location != "FSI" and not location_party and not error:
+                error = f"Location Party {location_text or '(blank)'} was not found - enter the Supplier / Vendor code where the stock is lying."
 
             raw_detail = {}
             if part and (section_text or section_size or supplier):
@@ -321,6 +342,8 @@ class SupplyChainService:
             selected_grade_id = str((grade or {}).get("id") or (raw_detail or {}).get("material_grade_id") or (part or {}).get("material_grade_id") or "") or None
             supplier_id = str((supplier or {}).get("id") or (raw_detail or {}).get("supplier_id") or "") or None
             signature = "|".join([str((part or {}).get("id") or ""), stage, normalize_match(reference), normalize_match(heat_number)])
+            if location != "FSI":
+                signature += "|" + location + "|" + str((location_party or {}).get("id") or "")
             action = "ERROR" if error else ("SKIP_DUPLICATE" if signature in existing_signatures else "CREATE")
             payload = {
                 "part_id": str((part or {}).get("id") or ""), "stage": stage,
@@ -329,10 +352,13 @@ class SupplyChainService:
                 "heat_number": heat_number or None, "heat_code": str(raw.get("Heat Code") or "").strip() or None,
                 "quantity_pcs": qty_pcs, "available_quantity_pcs": available_pcs, "quantity_kg": qty_kg,
                 "remarks": str(raw.get("Remarks") or "").strip() or None, "status": "ACTIVE",
+                "stock_location": location if location in OPENING_STOCK_LOCATIONS else "FSI",
+                "location_party_id": str((location_party or {}).get("id") or "") or None,
             }
             preview.append({
                 "Row": row_no, "Part Number": (part or {}).get("part_number") or part_number,
                 "FSI Part Number": (part or {}).get("fsi_part_number") or fsi_number, "Stage": stage,
+                "Stock Location": location, "Location Party": (location_party or {}).get("party_name") or location_text,
                 "Material Grade": (grade or {}).get("grade_code") or grade_text,
                 "Supplier": (supplier or {}).get("party_name") or supplier_text,
                 "Raw Material Type": (raw_detail or {}).get("material_section_name") or section_text,
@@ -815,14 +841,16 @@ class SupplyChainService:
         # Backward compatibility: all pre-v4.12.4 orders are the original FSI-RM flow.
         return FLOW_FSI_RM
 
-    def order_label(self, order: Mapping[str, Any], parts: Mapping[str, Mapping[str, Any]] | None = None, parties: Mapping[str, Mapping[str, Any]] | None = None) -> str:
-        parts = parts or {}; parties = parties or {}
+    def order_label(self, order: Mapping[str, Any], parts: Mapping[str, Mapping[str, Any]] | None = None, parties: Mapping[str, Mapping[str, Any]] | None = None, *, extra: str = "") -> str:
+        """R22: Customer PO · Pos · Part · FSI · Ref · Customer · Qty [STATUS] everywhere."""
+        if parts is None or parties is None:
+            m_parts, m_parties, _ = self.master_maps()
+            parts = parts if parts is not None else m_parts
+            parties = parties if parties is not None else m_parties
         part = parts.get(str(order.get("part_id"))) or {}
         customer = parties.get(str(order.get("customer_id"))) or {}
-        return (
-            f"{order.get('master_reference_no')} · Pos {order.get('order_position') or '-'} · "
-            f"{part.get('part_number') or ''} · FSI {part.get('fsi_part_number') or '-'} · {party_label(customer)} · {number(order.get('order_qty_pcs')):,.0f} pcs"
-        )
+        qty = f"{number(order.get('order_qty_pcs')):,.0f} pcs"
+        return customer_order_label(order, part, customer, extra=" · ".join(v for v in (qty, extra) if v))
 
     def order_context(self, order: Mapping[str, Any] | str) -> dict[str, Any]:
         if isinstance(order, str):
