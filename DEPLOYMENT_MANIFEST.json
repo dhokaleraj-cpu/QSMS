@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R23",
+  "release_revision": "R24",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -513,5 +513,11 @@
     "po_preview_before_save",
     "email_preview_before_send"
   ],
-  "r23_sql": "QCMS_R23_RUN_IN_SUPABASE.sql"
+  "r24_changes": [
+    "po_sections_grid_po_entry",
+    "po_sections_order_list_edit_pdf",
+    "po_sections_batch_print",
+    "po_sections_every_po_email",
+    "designer_short_section_labels"
+  ]
 }

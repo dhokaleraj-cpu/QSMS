@@ -97,9 +97,11 @@ def render() -> None:
         # --- D. Sections -------------------------------------------------------
         if is_po:
             section_bar("D · SECTIONS SHOWN ON PRINT")
+            from core.po_print_ui import SECTION_OPTIONS
             cols = st.columns(3)
-            for index, (title, flag) in enumerate({**PO_SECTIONS, "APPROVAL STAMP": "show_approval_stamp"}.items()):
-                layout[flag] = cols[index % 3].checkbox(title.title(), value=bool(layout.get(flag, True)), key=f"pd_{flag}_{doc}")
+            for index, (flag, label) in enumerate(SECTION_OPTIONS):
+                layout[flag] = cols[index % 3].checkbox(label, value=bool(layout.get(flag, True)), key=f"pd_{flag}_{doc}")
+            st.caption("These are the defaults. Each PO can still tick / untick sections in PO Entry, Order List, Edit PO, PO PDF and every PO email.")
 
         # --- E. Headings ---------------------------------------------------------
         section_bar("E · RENAME HEADINGS")

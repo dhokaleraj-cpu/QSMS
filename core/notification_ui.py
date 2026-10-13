@@ -187,9 +187,20 @@ def record_email_sender(
             "**Attachments:** generated QCMS PDF + available controlled record documents (as enabled by the template)."
         )
         subject = str(preview.get("subject") or f"QCMS · {event_key.replace('_', ' ').title()}")
+        po_options = None
+        if related_table == "supply_purchase_orders" and related_id:
+            # R24: choose what the attached PO PDF prints for this email.
+            from core.po_print_ui import email_sections_ui
+            try:
+                po_header = notifier.repo.get("supply_purchase_orders", related_id) or {}
+            except Exception:
+                po_header = {}
+            po_options = email_sections_ui(po_header, f"{key}_po_sections")()
 
         def _send() -> None:
             try:
+                if po_options is not None:
+                    notifier.po_print_options = dict(po_options)
                 row = notifier.enqueue(
                     event_key,
                     related_table=related_table,

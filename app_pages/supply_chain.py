@@ -1340,12 +1340,10 @@ def render_purchase_orders() -> None:
                     st.warning("PO creation is waiting for: " + "; ".join(po_blockers) + ".")
                 else:
                     st.success("PO entry is ready. Your live Employee link and Supply Chain Create permission are valid.")
-                # R23: choose sections to hide on THIS PO print, preview the PDF before saving.
-                from core.print_designer import PO_SECTIONS as _PO_SECTIONS, saved_layout as _po_saved_layout
-                _section_flags={**{title.title():flag for title,flag in _PO_SECTIONS.items()},"Approval Stamp":"show_approval_stamp"}
-                _layout_now=_po_saved_layout("PURCHASE_ORDER")
-                hidden_sections=st.multiselect("Hide sections on this PO print (optional)",list(_section_flags),default=[t for t,f in _section_flags.items() if not _layout_now.get(f,True)],key="controlled_po_hidden_sections",help="For example hide PO Source Reference, Raw Material Details & Supplier Technical Data or Price Revision History for this supplier. Saved with the PO; can be changed later on the PO PDF page.")
-                po_print_options={flag:(title not in hidden_sections) for title,flag in _section_flags.items()}
+                # R24: same "Sections shown on print" grid as the Print Layout Designer.
+                from core.po_print_ui import section_checkboxes as _po_section_checkboxes, effective_options as _po_effective_options
+                section_bar("SECTIONS SHOWN ON PRINT","Untick a section to hide it on this PO's print. Saved with the PO; can be changed later in Order List, Edit PO, PO PDF and every PO email.")
+                po_print_options=_po_section_checkboxes("controlled_po_sections",_po_effective_options({}))
                 b1,b2=st.columns([1,2],gap="small")
                 preview_po=b1.form_submit_button("Preview PO PDF (not saved)",icon=":material/preview:",width="stretch",disabled=not supplier_id or not company_branch_id or not selected_ship_to_id or not all_lines_valid)
                 create_po=b2.form_submit_button("Create Controlled Purchase Order",type="primary",width="stretch",disabled=create_disabled)
@@ -1408,7 +1406,8 @@ def render_purchase_orders() -> None:
             design_choice=c[1].selectbox("Print design",["SAVED",*_po_preset_names],format_func=lambda v:"Saved layout (Print Layout Designer)" if v=="SAVED" else _po_preset_names[v],key=f"selected_po_design_{selected_po}")
             try: c[0].download_button("Download / Print Selected PO",purchase_order_pdf_bytes(header,items,design=None if design_choice=="SAVED" else design_choice),file_name=f"{header.get('po_number')}.pdf",mime="application/pdf",width="stretch",key=f"selected_po_pdf_{selected_po}")
             except Exception as exc: c[0].error(db_message(exc))
-            _po_print_sections_editor(service, selected_po, header, perms)
+            from core.po_print_ui import po_sections_panel
+            po_sections_panel(service, selected_po, header, perms, key="po_register_sections")
             from core.record_history import record_history_panel
             record_history_panel(service.repo, "supply_purchase_orders", header, key=f"po_history_{selected_po}")
             po_record_event = "RM_PO_CREATED" if str(header.get("po_type")) == "RAW_MATERIAL" else "FORGING_PO_CREATED"
@@ -1594,6 +1593,8 @@ def render_purchase_order_list() -> None:
             return
         selected = st.selectbox("Select Purchase Order", list(labels), format_func=lambda v: labels[v], key="po_order_list_select")
         _render_purchase_order_key_information(service, selected, key="po_list_source")
+        from core.po_print_ui import po_sections_panel
+        po_sections_panel(service, selected, service.purchase_order(selected) or {}, perms, key="po_list_sections")
         c = st.columns(3, gap="small")
         if c[0].button("Open Edit Purchase Order", type="primary", width="stretch", disabled=not perms.get("can_edit", False), key="po_list_open_edit"):
             st.session_state["supply_po_edit_request_id"] = selected
@@ -1631,6 +1632,8 @@ def render_purchase_order_edit_page() -> None:
     elif status == "APPROVED":
         st.warning("This PO is already approved. Saving a revision will send it back for re-approval. Supplier Confirmation still does not block editing.")
     _render_purchase_order_key_information(service, selected, key="po_edit_source")
+    from core.po_print_ui import po_sections_panel
+    po_sections_panel(service, selected, header, perms, key="po_edit_sections")
     _render_purchase_order_edit(
         service, purchase_order_id=selected, header=header, parts=parts, parties=parties,
         supplier_labels=supplier_labels, perms=perms, login_employee_id=login_employee_id,
@@ -1663,28 +1666,6 @@ def _batch_po_email_rows(service: SupplyChainService, purchase_order_ids: Sequen
     return rows, blockers
 
 
-def _po_print_sections_editor(service: SupplyChainService, po_id: str, header: Mapping[str, Any], perms: Mapping[str, Any]) -> None:
-    """R23: hide / show print sections for one saved PO, with a preview before saving the choice."""
-    from core.print_designer import PO_SECTIONS, saved_layout
-    flags = {**{title.title(): flag for title, flag in PO_SECTIONS.items()}, "Approval Stamp": "show_approval_stamp"}
-    current = {**saved_layout("PURCHASE_ORDER"), **dict(header.get("print_options") or {})}
-    with st.expander("Print sections for this PO (hide / show + preview)", icon=":material/visibility_off:"):
-        hidden = st.multiselect("Hide sections", list(flags), default=[t for t, f in flags.items() if not current.get(f, True)], key=f"po_hidden_sections_{po_id}")
-        options = {flag: (title not in hidden) for title, flag in flags.items()}
-        c1, c2 = st.columns(2, gap="small")
-        if c1.button("Preview with these sections", width="stretch", key=f"po_sections_preview_{po_id}", icon=":material/preview:"):
-            st.session_state[f"po_sections_pdf_{po_id}"] = purchase_order_pdf_bytes({**dict(header), "print_options": options}, service.purchase_order_items_for_print(po_id))
-        if c2.button("Save for this PO", type="primary", width="stretch", key=f"po_sections_save_{po_id}", disabled=not perms.get("can_edit", False)):
-            try:
-                service.set_purchase_order_print_options(po_id, options)
-                save_success_popup("Print sections saved for this Purchase Order. Downloads and emailed PDFs use them now.", queue_for_rerun=True); st.rerun()
-            except Exception as exc:
-                st.error(db_message(exc))
-        pdf = st.session_state.get(f"po_sections_pdf_{po_id}")
-        if pdf:
-            _show_pdf_preview(pdf, key=f"po_sections_view_{po_id}")
-
-
 def _show_pdf_preview(pdf: bytes, *, key: str, pages: int = 2) -> None:
     """R23: render the first PDF pages as images (PyMuPDF) so the user can check before saving / sending."""
     try:
@@ -1696,7 +1677,7 @@ def _show_pdf_preview(pdf: bytes, *, key: str, pages: int = 2) -> None:
         st.caption("Inline preview needs PyMuPDF - use the download button to open the preview PDF.")
 
 
-def _batch_po_email_dialog(service: SupplyChainService, purchase_order_ids: Sequence[str]) -> None:
+def _batch_po_email_dialog(service: SupplyChainService, purchase_order_ids: Sequence[str], batch_options: Mapping[str, Any] | None = None) -> None:
     rows, blockers = _batch_po_email_rows(service, purchase_order_ids)
 
     @st.dialog("Confirm Batch Purchase Order Emails", width="large")
@@ -1731,11 +1712,15 @@ def _batch_po_email_dialog(service: SupplyChainService, purchase_order_ids: Sequ
                         st.download_button("Open PO PDF preview", purchase_order_pdf_bytes(plan["header"], service.purchase_order_items_for_print(plan["po_id"])), file_name=f"{plan['header'].get('po_number')}.pdf", mime="application/pdf", key=f"po_batch_pdf_preview_{plan['po_id']}", width="stretch")
                     except Exception as exc:
                         st.caption(f"PDF preview unavailable: {exc}")
+        from core.po_print_ui import section_checkboxes as _mail_checkboxes, effective_options as _mail_effective
+        mail_same = st.toggle("Attach all PO PDFs with the same print sections", value=bool(batch_options), key="po_batch_mail_sections_same", help="Off: each PO PDF uses its own saved sections.")
+        mail_options = _mail_checkboxes("po_batch_mail_sections", batch_options or _mail_effective({})) if mail_same else None
         if blockers:
             st.error("Batch email is blocked until all selected Purchase Orders are approved and have a valid Supplier email.\n\n" + "\n".join(f"- {item}" for item in blockers))
         c1, c2 = st.columns(2, gap="small")
         if c1.button("Confirm & Send Selected POs", type="primary", width="stretch", disabled=bool(blockers) or not rows, key="po_batch_email_confirm"):
             queued: list[dict] = []
+            notifier.po_print_options = dict(mail_options) if mail_options else None
             for plan in plans:
                 queued_row = notifier.enqueue(
                     plan["event"],
@@ -1782,10 +1767,12 @@ def render_purchase_order_pdf_page() -> None:
         header = service.purchase_order(selected) or {}
         items = service.purchase_order_items_for_print(selected)
         _render_purchase_order_key_information(service, selected, key="po_pdf_source")
+        from core.po_print_ui import po_sections_panel, with_options
+        pdf_options = po_sections_panel(service, selected, header, perms, key="po_pdf_sections", expanded=True)
         c = st.columns(3, gap="small")
         try:
             c[0].download_button(
-                "Download / Print Purchase Order PDF", purchase_order_pdf_bytes(header, items),
+                "Download / Print Purchase Order PDF", purchase_order_pdf_bytes(with_options(header, pdf_options), items),
                 file_name=f"{header.get('po_number')}.pdf", mime="application/pdf", icon=":material/picture_as_pdf:",
                 type="primary", width="stretch", key=f"dedicated_po_pdf_{selected}",
             )
@@ -1793,7 +1780,7 @@ def render_purchase_order_pdf_page() -> None:
             c[0].error(f"Purchase Order PDF could not be generated: {exc}")
         try:
             c[1].download_button(
-                "Download Purchase Order Excel", purchase_order_excel_bytes(header, items),
+                "Download Purchase Order Excel", purchase_order_excel_bytes(with_options(header, pdf_options), items),
                 file_name=f"{header.get('po_number')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 icon=":material/table_view:", width="stretch", key=f"dedicated_po_excel_{selected}",
             )
@@ -1816,6 +1803,9 @@ def render_purchase_order_pdf_page() -> None:
             format_func=lambda v: labels[v],
             key="po_batch_pdf_select",
         )
+        from core.po_print_ui import section_checkboxes as _batch_checkboxes, effective_options as _batch_effective
+        batch_override = st.toggle("Use the same print sections for all selected POs", value=False, key="po_batch_sections_override", help="Off: every PO prints with its own saved sections.")
+        batch_options = _batch_checkboxes("po_batch_sections", _batch_effective({})) if batch_override else None
         c = st.columns([1, 2, 2], gap="small")
         copies = int(c[0].number_input("Copies per PO", min_value=1, max_value=5, value=1, step=1, key="po_batch_copies"))
         if selected_batch:
@@ -1830,7 +1820,7 @@ def render_purchase_order_pdf_page() -> None:
                     po_items = service.purchase_order_items_for_print(po_id)
                     if not po_items:
                         raise ValueError(f"{po_header.get('po_number') or po_id}: no printable items were found.")
-                    records.append((po_header, po_items))
+                    records.append(({**po_header, "print_options": batch_options} if batch_options else po_header, po_items))
                 po_files = purchase_order_pdf_files(records, copies_per_order=copies)
                 zip_data = purchase_order_files_zip_bytes(po_files)
                 c[1].download_button(
@@ -1854,7 +1844,7 @@ def render_purchase_order_pdf_page() -> None:
                 c[2].button("Send Selected POs by Email", width="stretch", disabled=True, key="po_batch_send_disabled")
                 st.warning("Email requires every selected PO to be APPROVED, not cancelled, and to have a Supplier email. Printing remains available.")
             elif c[2].button("Send Selected POs by Email", icon=":material/forward_to_inbox:", width="stretch", key="po_batch_send"):
-                _batch_po_email_dialog(service, selected_batch)
+                _batch_po_email_dialog(service, selected_batch, batch_options)
         else:
             st.info("Select one or more Purchase Orders, then use the one-click ZIP button to download all selected POs as separate PDF files.")
 
@@ -2007,11 +1997,15 @@ def _pending_po_approval_email_dialog(service: SupplyChainService, purchase_orde
                 with st.expander(f"Email preview · {_row.get('PO Number')}", expanded=len(work_rows) == 1):
                     _pv = _preview_notifier.preview("PO_APPROVAL_PENDING", context={"po_number": _row.get("PO Number"), "supplier_name": _row.get("Supplier"), "approval_status": "PENDING APPROVAL"}, include_supplier=False)
                     email_preview_block(to_email=str(_row.get("Approver Email") or ""), cc_emails=list(_pv.get("cc_emails") or []), subject=str(_pv.get("subject") or ""), body=str(_pv.get("body_text") or ""), attachments=f"{_row.get('PO Number')} (PENDING APPROVAL watermarked PDF)")
+        from core.po_print_ui import section_checkboxes as _appr_checkboxes, effective_options as _appr_effective
+        appr_same = st.toggle("Attach draft PO PDFs with the same print sections", value=False, key="po_approval_mail_sections_same", help="Off: each draft PO PDF uses its own saved sections.")
+        appr_options = _appr_checkboxes("po_approval_mail_sections", _appr_effective({})) if appr_same else None
         if blockers:
             st.error("Approval email is blocked for the affected POs until the approver email is configured.\n\n" + "\n".join(f"- {item}" for item in blockers))
         c1, c2 = st.columns(2, gap="small")
         if c1.button("Confirm & Email Draft POs for Approval", type="primary", width="stretch", disabled=bool(blockers) or not work_rows, key="po_pending_approval_email_confirm"):
             notifier = NotificationService(service.repo)
+            notifier.po_print_options = dict(appr_options) if appr_options else None
             queued: list[dict] = []
             for row in work_rows:
                 po_id = str(row.get("_po_id") or "")

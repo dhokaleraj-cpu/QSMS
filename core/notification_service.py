@@ -343,6 +343,9 @@ class NotificationService:
                 items = service.purchase_order_items_for_print(related_id)
                 if not header:
                     return None
+                if getattr(self, "po_print_options", None):
+                    # R24: sections chosen in the email panel for this send.
+                    header = {**header, "print_options": dict(self.po_print_options)}
                 return f"{header.get('po_number') or 'Purchase_Order'}.pdf", purchase_order_pdf_bytes(header, items)
             if related_table == "supply_po_confirmations":
                 from core.purchase_order_reporting import purchase_order_pdf_bytes
@@ -356,6 +359,8 @@ class NotificationService:
                 items = service.purchase_order_items_for_print(po_id)
                 if not header:
                     return None
+                if getattr(self, "po_print_options", None):
+                    header = {**header, "print_options": dict(self.po_print_options)}
                 return f"{header.get('po_number') or 'Purchase_Order'}.pdf", purchase_order_pdf_bytes(header, items)
             if related_table == "quality_complaints":
                 # Lazy import avoids a startup module cycle while reusing the exact

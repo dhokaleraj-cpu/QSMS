@@ -43,8 +43,8 @@ def test_preview_runs_full_validation_without_saving():
 
 def test_po_entry_and_pdf_page_controls():
     sc = (ROOT / "app_pages/supply_chain.py").read_text()
-    for token in ("Hide sections on this PO print (optional)", "Preview PO PDF (not saved)", "PO PREVIEW · NOT SAVED",
-                  "def _po_print_sections_editor", "Save for this PO", "Email preview · "):
+    for token in ("SECTIONS SHOWN ON PRINT", "Preview PO PDF (not saved)", "PO PREVIEW · NOT SAVED",
+                  "po_sections_panel", "Email preview · "):
         assert token in sc
     sql = (ROOT / "supabase/migrations/20261015100000_qcms_r23_po_print_options.sql").read_text()
     assert "add column if not exists print_options jsonb" in sql
