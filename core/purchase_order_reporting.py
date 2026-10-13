@@ -200,6 +200,21 @@ def _wrap(c: canvas.Canvas, x: float, y: float, text: Any, width: float, *, size
     return y - len(lines) * leading
 
 
+def _line_suffix(item: Mapping[str, Any]) -> str:
+    """R23: every item section shows its PO line number (LINE 1 OF 2)."""
+    count = int(item.get("_line_count") or 1)
+    return f" · LINE {int(item.get('_line_no') or 1)} OF {count}" if count > 1 else ""
+
+
+def po_quantity_totals(items: Sequence[Mapping[str, Any]]) -> str:
+    """Combined quantity of all PO lines per UOM, e.g. '12,012 KGS'."""
+    totals: dict[str, float] = {}
+    for item in items:
+        uom = _s(item.get("uom")).upper() or "-"
+        totals[uom] = totals.get(uom, 0.0) + _n(item.get("quantity"))
+    return " + ".join(f"{value:,.3f}".rstrip("0").rstrip(".") + f" {uom}" for uom, value in totals.items()) or "-"
+
+
 def _special_lines(c: canvas.Canvas, x: float, y: float, text: Any, width: float, *, bottom: float = 100) -> float:
     """R20: keep each numbered instruction on its own line (wrapping long ones)."""
     for line in [v.strip() for v in str(text or "").splitlines() if v.strip()]:
@@ -367,7 +382,7 @@ def _draw_customer_reference(c: canvas.Canvas, item: Mapping[str, Any], *, top: 
     shown = rows[:4]
     height = _customer_reference_height(item)
     bottom = top - height
-    _bar(c, left, top, total_w, "PO SOURCE REFERENCE", height=15)
+    _bar(c, left, top, total_w, "PO SOURCE REFERENCE" + _line_suffix(item), height=15)
     y = top - 15
     widths = [130, 55, 245, 72, total_w - 502]
     titles = ["CUSTOMER PO NO.", "POS", "PART DESCRIPTION", "QTY", "UOM"]
@@ -400,8 +415,8 @@ def _draw_customer_reference(c: canvas.Canvas, item: Mapping[str, Any], *, top: 
 
 # No vertical grid lines in the PO item body; item identity and values use open-column spacing.
 def _draw_item_row(c: canvas.Canvas, item: Mapping[str, Any], *, y_top: float, left: float, right: float, page_width: float) -> float:
-    widths = [218, 44, 62, 42, 40, 70, 63]
-    titles = ["ITEM #", "QTY", "UNIT PRICE", "UNIT", "GST%", "GST AMOUNT", "TOTAL"]
+    widths = [34, 184, 44, 62, 42, 40, 70, 63]
+    titles = ["LINE", "ITEM #", "QTY", "UNIT PRICE", "UNIT", "GST%", "GST AMOUNT", "TOTAL"]
     x = left
     for sw, title in zip(widths, titles):
         _bar(c, x, y_top, sw, title, height=14); x += sw
@@ -409,10 +424,13 @@ def _draw_item_row(c: canvas.Canvas, item: Mapping[str, Any], *, y_top: float, l
     row_bottom = row_top - 42
     _rules(c); c.setFillColor(white); c.rect(left, row_bottom, page_width-left-right, 42, stroke=1, fill=1)
     item_display = " ".join(v for v in (_s(item.get("item_no") or item.get("fsi_part_number_snapshot")), _s(item.get("item_description"))) if v)
-    vals = [item_display, f"{_n(item.get('quantity')):,.2f}".rstrip("0").rstrip("."), _money(item.get("unit_price")), item.get("uom"), f"{_n(item.get('gst_percent')):g}%", _money(item.get("gst_amount")), _money(item.get("line_total"))]
+    line_no = item.get("_line_no") or 1; line_count = item.get("_line_count") or 1
+    vals = [f"{line_no}/{line_count}", item_display, f"{_n(item.get('quantity')):,.2f}".rstrip("0").rstrip("."), _money(item.get("unit_price")), item.get("uom"), f"{_n(item.get('gst_percent')):g}%", _money(item.get("gst_amount")), _money(item.get("line_total"))]
     x = left
     for idx, (sw, value) in enumerate(zip(widths, vals)):
         if idx == 0:
+            _draw_text(c, x+5, row_top-20, value, size=7.6, bold=True, color=_accent(), max_width=sw-8)
+        elif idx == 1:
             _draw_text(c, x+5, row_top-10, value, size=6.7, bold=True, max_width=sw-10)
             part_description = _s(item.get("part_description_master"))
             if part_description:
@@ -431,7 +449,7 @@ def _draw_technical(c: canvas.Canvas, item: Mapping[str, Any], *, po_type: str, 
     is_rm = _s(po_type).upper() == "RAW_MATERIAL"
     title = "RAW MATERIAL DETAILS & SUPPLIER TECHNICAL DATA" if is_rm else "RAW MATERIAL / FORGING PARAMETERS & SUPPLIER TECHNICAL DATA"
     _rules(c); c.setFillColor(_fill_or_white("tech_fill")); c.rect(left, bottom, total_w, max(top-bottom, 0), stroke=1, fill=1)
-    _bar(c, left, top, total_w, title, height=15)
+    _bar(c, left, top, total_w, title + _line_suffix(item), height=15)
     pairs = _technical_pairs(item, po_type=po_type, limit=12)
     if not pairs:
         _draw_text(c, left+5, top-29, "No controlled supplier technical data configured", size=5.8, color=HexColor("#6B7280"), max_width=310)
@@ -469,7 +487,7 @@ def _draw_price_history(c: canvas.Canvas, item: Mapping[str, Any], history: Sequ
     The approved print contract follows the supplied table: Start Date / End Date / Price /
     Remark. Closed revisions remain visible and the open-ended row prints as CURRENT.
     """
-    _bar(c, left, top, page_width-left-right, f"PRICE REVISION HISTORY · FSI PART {_s(item.get('item_no') or item.get('fsi_part_number_snapshot'))}", height=15)
+    _bar(c, left, top, page_width-left-right, f"PRICE REVISION HISTORY · FSI PART {_s(item.get('item_no') or item.get('fsi_part_number_snapshot'))}{_line_suffix(item)}", height=15)
     y = top - 15
     total_w = page_width-left-right
     widths = [92, 92, 100, total_w-284]
@@ -576,6 +594,9 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     if _show("show_special_instructions"):
         _bar(c,left,206,386,"COMMENTS OR SPECIAL INSTRUCTIONS",height=14); _special_lines(c,left+2,181,header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,374)
     total_x=417; ytot=205
+    # R23: number of PO lines and combined quantity above the money totals.
+    _draw_text(c,total_x,237,"PO LINES",size=6.9,bold=True); c.rect(total_x+55,232,95,13,stroke=1,fill=0); _draw_text(c,total_x+61,236,str(len(items)),size=6.8,bold=True)
+    _draw_text(c,total_x,221,"TOTAL QTY",size=6.9,bold=True); c.rect(total_x+55,216,95,13,stroke=1,fill=0); _draw_text(c,total_x+61,220,po_quantity_totals(items),size=6.8,bold=True,max_width=88)
     for label,val in [("SUBTOTAL",header.get("subtotal")),("CGST 9%",header.get("cgst_amount")),("SGST 9%",header.get("sgst_amount")),("IGST",header.get("igst_amount")),("OTHER",header.get("other_amount"))]:
         _draw_text(c,total_x,ytot,label,size=6.9); c.rect(total_x+55,ytot-5,95,13,stroke=1,fill=0); _draw_text(c,total_x+61,ytot-1,_money(val),size=6.8); ytot -= 16
     c.setFont("Helvetica-Bold",8.0); c.drawString(total_x,ytot,"TOTAL"); c.drawString(total_x+61,ytot,f"INR {_money(header.get('grand_total'))}")
@@ -1019,6 +1040,9 @@ def _purchase_order_pdf_impl(header: Mapping[str, Any], items: Mapping[str, Any]
 
 
 def _purchase_order_pdf(header: Mapping[str, Any], normalized: list[dict], *, terms_path: str | Path | None = None) -> bytes:
+    total_lines = len(normalized)
+    for index, item in enumerate(normalized, start=1):
+        item["_line_no"] = index; item["_line_count"] = total_lines
     first = _first_page_bytes(header, normalized)
     writer = PdfWriter(); writer.add_page(PdfReader(BytesIO(first)).pages[0])
     first_history = _price_history_rows(normalized[0])
@@ -1048,6 +1072,10 @@ def purchase_order_pdf_bytes(header: Mapping[str, Any], items: Mapping[str, Any]
     """Return the controlled FSI Purchase Order PDF using the saved Print Layout (R21)."""
     if layout is None and not design:
         layout = _saved_layout("PURCHASE_ORDER")
+    options = header.get("print_options") if isinstance(header, Mapping) else None
+    if isinstance(options, Mapping) and options:
+        # R23: sections hidden for THIS Purchase Order (chosen at PO entry / PDF page) override the saved layout.
+        layout = {**dict(layout or {}), **{k: bool(v) for k, v in options.items() if str(k).startswith("show_")}}
     return _purchase_order_pdf_cached(header, items, terms_path=terms_path, design=design, layout=dict(layout or {}))
 purchase_order_excel_bytes = _session_memo_bytes(purchase_order_excel_bytes)
 batch_purchase_order_pdf_bytes = _session_memo_bytes(batch_purchase_order_pdf_bytes)

@@ -215,6 +215,16 @@ def render_send() -> None:
         st.markdown(f"**{len(rows)} recipient(s)** · Subject: **{pending['subject'] or '(no subject)'}** · {len(pending['attachments'])} attachment(s)")
         if rows:
             portal_table(pd.DataFrame(rows), hide_index=True, width="stretch", height=min(360, 60 + 32 * len(rows)))
+        # R23: show exactly what the recipients will receive before sending.
+        with st.expander("Email preview (as the recipient will see it)", expanded=True, icon=":material/preview:"):
+            shown_from = f"{sender_name} <{sender_email}>" if from_mode == "USER" else f"{sender_name} via QCMS <{company or 'company mailbox'}> · reply-to {sender_email}"
+            def _short(lst):
+                names = [r.email for r in lst]
+                return ", ".join(names[:6]) + (f" … +{len(names) - 6}" if len(names) > 6 else "") if names else "—"
+            st.markdown(f"**From:** {shown_from}  \n**To:** {_short(pending['to'])}  \n**CC:** {_short(pending['cc'])}  \n**BCC:** {_short(pending['bcc'])}  \n"
+                        f"**Subject:** {pending['subject'] or '(no subject)'}  \n**Attachments:** {', '.join(a[0] for a in pending['attachments']) or 'None'}")
+            with st.container(border=True, height=320):
+                st.html(ms.body_html(pending["body"], st.session_state.get("qcms_mail_signature", "")))
         s1, s2 = st.columns(2, gap="small")
         if s1.button(f"Send email to {len(rows)} recipient(s)", type="primary", width="stretch", disabled=not rows, key="mail_send_now"):
             status, error, count = "SENT", None, 1

@@ -127,6 +127,18 @@ def parse_import_quantity(value: Any) -> float:
 # Raw Material Purchase Orders remain blocked when system stock covers the rolling three-month schedule quantity.
 # Linked execution stages still carry the controlled PO header reference using: "purchase_order_id": header.get("id")
 
+PO_PRINT_FLAGS = ("show_plant", "show_vendor", "show_reference", "show_old_po", "show_ship_to", "show_source_reference",
+                  "show_technical", "show_price_history", "show_special_instructions", "show_approval_stamp")
+
+
+def clean_print_options(options: Mapping[str, Any] | None) -> dict[str, bool] | None:
+    """R23: per-PO section visibility saved with the Purchase Order (only hidden sections matter)."""
+    if not options:
+        return None
+    clean = {k: bool(v) for k, v in dict(options).items() if k in PO_PRINT_FLAGS}
+    return clean or None
+
+
 def friendly_po_error(exc: Exception) -> str:
     text = str(exc)
     if "uq_supply_rm_supplier_order_no" in text:
@@ -141,6 +153,71 @@ def friendly_po_error(exc: Exception) -> str:
 
 OPENING_STAGE_CODES = ("RAW_MATERIAL", "FORGING", "CASTING", "MACHINING", "OSP_READY", "AT_OSP", "FINAL_INSPECTION", "FINISHED_GOODS")
 OPENING_STOCK_LOCATIONS = {"FSI": "At FSI (own plant)", "SUPPLIER": "At Supplier", "VENDOR": "At Vendor (forger / caster / OSP)"}
+
+
+class DryRunRepository:
+    """R23: wraps the live repository for a Purchase Order *preview*.
+
+    Reads go to the database (plus anything written during the preview); every write
+    (insert / update / upsert / delete / number allocation) stays in memory, so the full
+    create_purchase_order validation runs without saving anything."""
+
+    PREVIEW_NUMBER = "PO-PREVIEW"
+
+    def __init__(self, live: Any):
+        self.live = live
+        self.rows: dict[str, dict[str, dict[str, Any]]] = {}
+
+    def _mem(self, table: str) -> dict[str, dict[str, Any]]:
+        return self.rows.setdefault(table, {})
+
+    def get(self, table: str, record_id: str | None) -> dict | None:
+        if record_id and str(record_id) in self._mem(table):
+            return dict(self._mem(table)[str(record_id)])
+        return self.live.get(table, record_id)
+
+    def select(self, table: str, **kwargs: Any) -> list[dict]:
+        filters = [*dict(kwargs.get("eq") or {}).values(), *[v for vals in dict(kwargs.get("in_") or {}).values() for v in vals]]
+        live_rows = [] if any(str(v).startswith("preview-") for v in filters) else self.live.select(table, **kwargs)
+        mem = list(self._mem(table).values())
+        eq = dict(kwargs.get("eq") or {})
+        in_ = dict(kwargs.get("in_") or {})
+        mem = [r for r in mem if all(str(r.get(k)) == str(v) for k, v in eq.items())]
+        mem = [r for r in mem if all(str(r.get(k)) in {str(x) for x in vals} for k, vals in in_.items())]
+        ids = {str(r.get("id")) for r in mem}
+        merged = [dict(self._mem(table).get(str(r.get("id")), r)) for r in live_rows if str(r.get("id")) not in ids] + [dict(r) for r in mem]
+        return merged
+
+    def find_one(self, table: str, *, eq: Mapping[str, Any]) -> dict | None:
+        rows = self.select(table, eq=eq, limit=1)
+        return rows[0] if rows else None
+
+    def insert(self, table: str, payload: Mapping[str, Any]) -> dict:
+        import uuid
+        row = {"id": f"preview-{uuid.uuid4()}", **dict(payload), "created_at": datetime.now(timezone.utc).isoformat()}
+        self._mem(table)[row["id"]] = row
+        return dict(row)
+
+    def update(self, table: str, record_id: str, payload: Mapping[str, Any]) -> dict:
+        base = self._mem(table).get(str(record_id)) or (self.live.get(table, record_id) or {"id": record_id})
+        row = {**base, **dict(payload)}
+        self._mem(table)[str(record_id)] = row
+        return dict(row)
+
+    def upsert_by(self, table: str, payload: Mapping[str, Any], *, natural_key: Mapping[str, Any]) -> tuple[dict, str]:
+        existing = self.find_one(table, eq=natural_key)
+        return (self.update(table, str(existing["id"]), payload), "updated") if existing else (self.insert(table, payload), "created")
+
+    def delete(self, table: str, record_id: str) -> None:
+        self._mem(table).pop(str(record_id), None)
+
+    def rpc(self, function_name: str, params: Mapping[str, Any] | None = None) -> Any:
+        if function_name == "qcms_next_supply_po_number":
+            return self.PREVIEW_NUMBER
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.live, name)
 
 
 class SupplyChainService:
@@ -1130,6 +1207,39 @@ class SupplyChainService:
             if qty > balance + 0.0001:
                 raise ValueError(f"{ref}: Forging PO quantity {qty:,.0f} pcs exceeds the pending forging balance of {balance:,.0f} pcs.")
 
+    def _insert_po_header(self, payload: Mapping[str, Any]) -> dict:
+        data = dict(payload)
+        if data.get("print_options") is None:
+            data.pop("print_options", None)
+        try:
+            return self.repo.insert("supply_purchase_orders", data)
+        except Exception as exc:
+            if "print_options" in str(exc) and "print_options" in data:
+                data.pop("print_options", None)   # R23 SQL not run yet: save without per-PO print options
+                return self.repo.insert("supply_purchase_orders", data)
+            raise
+
+    def set_purchase_order_print_options(self, purchase_order_id: str, options: Mapping[str, Any] | None) -> dict:
+        try:
+            return self.repo.update("supply_purchase_orders", purchase_order_id, {"print_options": clean_print_options(options) or {}})
+        except Exception as exc:
+            if "print_options" in str(exc):
+                raise ValueError("Per-PO print options need the R23 database step: run QCMS_R23_RUN_IN_SUPABASE.sql once.") from exc
+            raise
+
+    def preview_purchase_order(self, payload: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """R23: build the exact header + print lines of a new PO WITHOUT saving anything."""
+        import copy as _copy
+        dry = _copy.copy(self)
+        dry.repo = DryRunRepository(self.repo)
+        dry._page_cache = {}
+        result = dry.create_purchase_order(payload)
+        header = dict(result.get("header") or {})
+        header.update({"po_number": "PREVIEW (not saved)", "approval_status": "PREVIEW", "status": "PREVIEW"})
+        dry._page_cache.clear()
+        items = dry.purchase_order_items_for_print(str(header.get("id")))
+        return header, items
+
     def create_purchase_order(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         p = dict(payload)
         po_type = str(p.get("po_type") or "").upper()
@@ -1278,7 +1388,7 @@ class SupplyChainService:
             po_number = str(self.repo.rpc("qcms_next_supply_po_number") or "").strip()
             if not po_number:
                 raise RuntimeError("QCMS could not allocate the next Purchase Order number.")
-            header = self.repo.insert("supply_purchase_orders", {"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date_value,"delivery_date":p.get("delivery_date"),"requisitioner":requisitioner_name,"requisitioner_employee_id":requisitioner_employee_id,"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":currency,"company_branch_id":company_branch_id,"plant_snapshot":plant_snapshot,"vendor_snapshot":self._party_snapshot(supplier),"ship_to_party_id":ship_to_party_id or None,"ship_to_branch_id":ship_to_branch_id or None,"ship_to_source_type":ship_to_source_type,"ship_to_snapshot":ship_to_snapshot,"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"PENDING_APPROVAL","approval_status":"PENDING_APPROVAL","submitted_by_employee_id":requisitioner_employee_id,"submitted_at":datetime.now(timezone.utc).isoformat(),"replaces_purchase_order_id":p.get("replaces_purchase_order_id")})
+            header = self._insert_po_header({"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date_value,"delivery_date":p.get("delivery_date"),"requisitioner":requisitioner_name,"requisitioner_employee_id":requisitioner_employee_id,"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":currency,"company_branch_id":company_branch_id,"plant_snapshot":plant_snapshot,"vendor_snapshot":self._party_snapshot(supplier),"ship_to_party_id":ship_to_party_id or None,"ship_to_branch_id":ship_to_branch_id or None,"ship_to_source_type":ship_to_source_type,"ship_to_snapshot":ship_to_snapshot,"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"PENDING_APPROVAL","approval_status":"PENDING_APPROVAL","submitted_by_employee_id":requisitioner_employee_id,"submitted_at":datetime.now(timezone.utc).isoformat(),"replaces_purchase_order_id":p.get("replaces_purchase_order_id"),"print_options":clean_print_options(p.get("print_options"))})
             if p.get("replaces_purchase_order_id"):
                 try:
                     self.repo.update("supply_purchase_orders", str(p.get("replaces_purchase_order_id")), {"replacement_purchase_order_id": header.get("id")})
@@ -1364,7 +1474,7 @@ class SupplyChainService:
         subtotal=round(subtotal,2); gst_amount=round(subtotal*gst_percent/100.0,2); state=str(supplier.get("state") or "").strip().casefold(); intra_state=not state or state in {"maharashtra","mh"}; cgst=round(gst_amount/2,2) if intra_state else 0.0; sgst=round(gst_amount/2,2) if intra_state else 0.0; igst=gst_amount if not intra_state else 0.0; other=max(number(p.get("other_amount")),0.0); grand_total=round(subtotal+cgst+sgst+igst+other,2)
         po_number=str(self.repo.rpc("qcms_next_supply_po_number") or "").strip();
         if not po_number: raise RuntimeError("QCMS could not allocate the next Purchase Order number.")
-        header=self.repo.insert("supply_purchase_orders", {"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date_value,"delivery_date":p.get("delivery_date"),"requisitioner":requisitioner_name,"requisitioner_employee_id":requisitioner_employee_id,"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":currency,"company_branch_id":company_branch_id,"plant_snapshot":plant_snapshot,"vendor_snapshot":self._party_snapshot(supplier),"ship_to_party_id":ship_to_party_id or None,"ship_to_branch_id":ship_to_branch_id or None,"ship_to_source_type":ship_to_source_type,"ship_to_snapshot":ship_to_snapshot,"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"PENDING_APPROVAL","approval_status":"PENDING_APPROVAL","submitted_by_employee_id":requisitioner_employee_id,"submitted_at":datetime.now(timezone.utc).isoformat(),"replaces_purchase_order_id":p.get("replaces_purchase_order_id")})
+        header=self._insert_po_header({"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date_value,"delivery_date":p.get("delivery_date"),"requisitioner":requisitioner_name,"requisitioner_employee_id":requisitioner_employee_id,"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":currency,"company_branch_id":company_branch_id,"plant_snapshot":plant_snapshot,"vendor_snapshot":self._party_snapshot(supplier),"ship_to_party_id":ship_to_party_id or None,"ship_to_branch_id":ship_to_branch_id or None,"ship_to_source_type":ship_to_source_type,"ship_to_snapshot":ship_to_snapshot,"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"PENDING_APPROVAL","approval_status":"PENDING_APPROVAL","submitted_by_employee_id":requisitioner_employee_id,"submitted_at":datetime.now(timezone.utc).isoformat(),"replaces_purchase_order_id":p.get("replaces_purchase_order_id"),"print_options":clean_print_options(p.get("print_options"))})
         items=[]; stages=[]
         for line in line_data:
             part,raw=line["part"],line["raw"]; members=line["members"]; first=members[0]["order"]; linked_parts=sorted({str(m["part"].get("fsi_part_number") or m["part"].get("part_number") or "") for m in members})

@@ -108,6 +108,8 @@ def notification_confirmation(
         f"**Next stage:** {preview.get('next_stage') or '—'}  \n"
         f"**Template:** {preview.get('template_key') or event_key}"
     )
+    with st.popover("Preview email", icon=":material/preview:", width="stretch"):
+        email_preview_block(to_email=to_email, cc_emails=cc_emails, subject=subject, body=str(preview.get("body_text") or ""), attachments=_attachment_note(preview))
     if not to_email or "@" not in to_email:
         st.warning("Enter a valid primary recipient email or untick Email notification after save.")
 

@@ -1340,27 +1340,50 @@ def render_purchase_orders() -> None:
                     st.warning("PO creation is waiting for: " + "; ".join(po_blockers) + ".")
                 else:
                     st.success("PO entry is ready. Your live Employee link and Supply Chain Create permission are valid.")
-                create_po=st.form_submit_button("Create Controlled Purchase Order",type="primary",width="stretch",disabled=create_disabled)
+                # R23: choose sections to hide on THIS PO print, preview the PDF before saving.
+                from core.print_designer import PO_SECTIONS as _PO_SECTIONS, saved_layout as _po_saved_layout
+                _section_flags={**{title.title():flag for title,flag in _PO_SECTIONS.items()},"Approval Stamp":"show_approval_stamp"}
+                _layout_now=_po_saved_layout("PURCHASE_ORDER")
+                hidden_sections=st.multiselect("Hide sections on this PO print (optional)",list(_section_flags),default=[t for t,f in _section_flags.items() if not _layout_now.get(f,True)],key="controlled_po_hidden_sections",help="For example hide PO Source Reference, Raw Material Details & Supplier Technical Data or Price Revision History for this supplier. Saved with the PO; can be changed later on the PO PDF page.")
+                po_print_options={flag:(title not in hidden_sections) for title,flag in _section_flags.items()}
+                b1,b2=st.columns([1,2],gap="small")
+                preview_po=b1.form_submit_button("Preview PO PDF (not saved)",icon=":material/preview:",width="stretch",disabled=not supplier_id or not company_branch_id or not selected_ship_to_id or not all_lines_valid)
+                create_po=b2.form_submit_button("Create Controlled Purchase Order",type="primary",width="stretch",disabled=create_disabled)
 
-            if create_po:
+            if create_po or preview_po:
                 try:
                     replaces_po_id=str(st.session_state.get("supply_po_replaces_id") or "").strip() or None
                     payload={"po_type":po_type,"supplier_id":supplier_id,"company_branch_id":str(company_branch_id or "") or None,"order_date":order_date.isoformat(),"delivery_date":delivery_date.isoformat(),"requisitioner":requisitioner_name or None,"requisitioner_employee_id":login_employee_id or None,"ship_to_party_id":str(ship_to_party_id or "") or None,"ship_to_branch_id":str(ship_to_branch_id or "") or None,"ship_to_source_type":ship_to_source,"ship_via":ship_via.strip(),"incoterm":incoterm.strip(),"payment_term":payment.strip(),"quotation_reference":quote_ref.strip() or None,"quotation_date":quote_date.isoformat(),"old_po_reference":old_po.strip() or None,"gst_percent":gst,"remarks":remarks.strip() or None,"special_instructions":instructions.strip() or None,"replaces_purchase_order_id":replaces_po_id}
                     if po_type=="RAW_MATERIAL": payload.update({"customer_order_ids":source_order_ids,"allocations":allocations,"line_prices":line_prices,"line_hsn_sac":line_hsn,"line_fsi_part_numbers":line_fsi})
                     else: payload.update({"forging_sources":forging_sources_payload,"uom":"NOS"})
-                    result=service.create_purchase_order(payload)
-                    st.session_state["last_supply_purchase_order_id"]=str((result.get("header") or {}).get("id") or "")
-                    st.session_state.pop("supply_po_replaces_id",None)
-                    header_result=result.get("header") or {}
-                    # PO is controlled but not effective until the authoritative approval target approves.
-                    approval_target=service.purchase_order_approval_target(str(header_result.get("id") or ""))
-                    target_email=str(approval_target.get("email") or "").strip()
-                    target_name=str(approval_target.get("employee_name") or "").strip()
-                    target_stage=str(approval_target.get("level_name") or "Manager Approval").strip()
-                    NotificationService(service.repo).notify("PO_APPROVAL_PENDING",related_table="supply_purchase_orders",related_id=str(header_result.get("id") or ""),recipient_email=target_email or None,recipient_name=target_name or None,context={"po_number":header_result.get("po_number"),"requisitioner":requisitioner_name,"supplier_name":supplier_labels.get(str(supplier_id),"Supplier"),"supplier_id":str(supplier_id or ""),"next_stage":target_stage})
-                    save_success_popup(f"Purchase Order {header_result.get('po_number')} created and submitted for approval. You may edit it at any time before approval from the Edit Purchase Order tab; Supplier Confirmation is not required for editing.",queue_for_rerun=True); st.session_state["supply_po_edit_request_id"] = str(header_result.get("id") or ""); st.rerun()
+                    payload["print_options"]=po_print_options
+                    if preview_po:
+                        preview_header,preview_items=service.preview_purchase_order(payload)
+                        st.session_state["supply_po_preview_pdf"]=purchase_order_pdf_bytes(preview_header,preview_items,terms_path="/__qcms_preview_no_terms__.pdf")
+                    else:
+                        st.session_state.pop("supply_po_preview_pdf",None)
+                        result=service.create_purchase_order(payload)
+                        st.session_state["last_supply_purchase_order_id"]=str((result.get("header") or {}).get("id") or "")
+                        st.session_state.pop("supply_po_replaces_id",None)
+                        header_result=result.get("header") or {}
+                        # PO is controlled but not effective until the authoritative approval target approves.
+                        approval_target=service.purchase_order_approval_target(str(header_result.get("id") or ""))
+                        target_email=str(approval_target.get("email") or "").strip()
+                        target_name=str(approval_target.get("employee_name") or "").strip()
+                        target_stage=str(approval_target.get("level_name") or "Manager Approval").strip()
+                        NotificationService(service.repo).notify("PO_APPROVAL_PENDING",related_table="supply_purchase_orders",related_id=str(header_result.get("id") or ""),recipient_email=target_email or None,recipient_name=target_name or None,context={"po_number":header_result.get("po_number"),"requisitioner":requisitioner_name,"supplier_name":supplier_labels.get(str(supplier_id),"Supplier"),"supplier_id":str(supplier_id or ""),"next_stage":target_stage})
+                        save_success_popup(f"Purchase Order {header_result.get('po_number')} created and submitted for approval. You may edit it at any time before approval from the Edit Purchase Order tab; Supplier Confirmation is not required for editing.",queue_for_rerun=True); st.session_state["supply_po_edit_request_id"] = str(header_result.get("id") or ""); st.rerun()
                 except Exception as exc: st.error(db_message(exc))
 
+            preview_pdf=st.session_state.get("supply_po_preview_pdf")
+            if preview_pdf:
+                with st.container(border=True):
+                    section_bar("PO PREVIEW · NOT SAVED","Check the print, change the entry or hidden sections if needed, then Create Controlled Purchase Order.")
+                    _show_pdf_preview(preview_pdf,key="supply_po_preview")
+                    pc1,pc2=st.columns(2,gap="small")
+                    pc1.download_button("Download preview PDF",preview_pdf,file_name="PO_PREVIEW_NOT_SAVED.pdf",mime="application/pdf",icon=":material/picture_as_pdf:",width="stretch",key="supply_po_preview_download")
+                    if pc2.button("Close preview",width="stretch",key="supply_po_preview_close"):
+                        st.session_state.pop("supply_po_preview_pdf",None); st.rerun()
             last_id=str(st.session_state.get("last_supply_purchase_order_id") or "")
             if last_id:
                 header=service.purchase_order(last_id) or {}; items=service.purchase_order_items_for_print(last_id)
@@ -1385,6 +1408,7 @@ def render_purchase_orders() -> None:
             design_choice=c[1].selectbox("Print design",["SAVED",*_po_preset_names],format_func=lambda v:"Saved layout (Print Layout Designer)" if v=="SAVED" else _po_preset_names[v],key=f"selected_po_design_{selected_po}")
             try: c[0].download_button("Download / Print Selected PO",purchase_order_pdf_bytes(header,items,design=None if design_choice=="SAVED" else design_choice),file_name=f"{header.get('po_number')}.pdf",mime="application/pdf",width="stretch",key=f"selected_po_pdf_{selected_po}")
             except Exception as exc: c[0].error(db_message(exc))
+            _po_print_sections_editor(service, selected_po, header, perms)
             from core.record_history import record_history_panel
             record_history_panel(service.repo, "supply_purchase_orders", header, key=f"po_history_{selected_po}")
             po_record_event = "RM_PO_CREATED" if str(header.get("po_type")) == "RAW_MATERIAL" else "FORGING_PO_CREATED"
@@ -1637,6 +1661,39 @@ def _batch_po_email_rows(service: SupplyChainService, purchase_order_ids: Sequen
         if status == "CANCELLED": blockers.append(f"{po_number}: Purchase Order is CANCELLED")
         if not email or "@" not in email: blockers.append(f"{po_number}: supplier email is not configured")
     return rows, blockers
+
+
+def _po_print_sections_editor(service: SupplyChainService, po_id: str, header: Mapping[str, Any], perms: Mapping[str, Any]) -> None:
+    """R23: hide / show print sections for one saved PO, with a preview before saving the choice."""
+    from core.print_designer import PO_SECTIONS, saved_layout
+    flags = {**{title.title(): flag for title, flag in PO_SECTIONS.items()}, "Approval Stamp": "show_approval_stamp"}
+    current = {**saved_layout("PURCHASE_ORDER"), **dict(header.get("print_options") or {})}
+    with st.expander("Print sections for this PO (hide / show + preview)", icon=":material/visibility_off:"):
+        hidden = st.multiselect("Hide sections", list(flags), default=[t for t, f in flags.items() if not current.get(f, True)], key=f"po_hidden_sections_{po_id}")
+        options = {flag: (title not in hidden) for title, flag in flags.items()}
+        c1, c2 = st.columns(2, gap="small")
+        if c1.button("Preview with these sections", width="stretch", key=f"po_sections_preview_{po_id}", icon=":material/preview:"):
+            st.session_state[f"po_sections_pdf_{po_id}"] = purchase_order_pdf_bytes({**dict(header), "print_options": options}, service.purchase_order_items_for_print(po_id))
+        if c2.button("Save for this PO", type="primary", width="stretch", key=f"po_sections_save_{po_id}", disabled=not perms.get("can_edit", False)):
+            try:
+                service.set_purchase_order_print_options(po_id, options)
+                save_success_popup("Print sections saved for this Purchase Order. Downloads and emailed PDFs use them now.", queue_for_rerun=True); st.rerun()
+            except Exception as exc:
+                st.error(db_message(exc))
+        pdf = st.session_state.get(f"po_sections_pdf_{po_id}")
+        if pdf:
+            _show_pdf_preview(pdf, key=f"po_sections_view_{po_id}")
+
+
+def _show_pdf_preview(pdf: bytes, *, key: str, pages: int = 2) -> None:
+    """R23: render the first PDF pages as images (PyMuPDF) so the user can check before saving / sending."""
+    try:
+        import fitz
+        with fitz.open(stream=pdf, filetype="pdf") as document:
+            for index in range(min(pages, document.page_count)):
+                st.image(document[index].get_pixmap(dpi=95).tobytes("png"), width="stretch")
+    except Exception:
+        st.caption("Inline preview needs PyMuPDF - use the download button to open the preview PDF.")
 
 
 def _batch_po_email_dialog(service: SupplyChainService, purchase_order_ids: Sequence[str]) -> None:
@@ -1939,11 +1996,17 @@ def _pending_po_approval_email_dialog(service: SupplyChainService, purchase_orde
         if "@" not in str(row.get("Approver Email") or ""):
             blockers.append(f"{row.get('PO Number')}: approver email is not configured")
 
-    @st.dialog("Confirm Purchase Order Approval Emails")
+    @st.dialog("Confirm Purchase Order Approval Emails", width="large")
     def _dialog() -> None:
         st.markdown("Each selected Pending Approval PO will be emailed **separately to its resolved approver** with the controlled **PENDING APPROVAL watermarked draft PO PDF** attached.")
         if work_rows:
             portal_table(pd.DataFrame(work_rows).drop(columns=["_po_id"], errors="ignore"), hide_index=True, width="stretch", height=min(420, 95 + len(work_rows) * 38))
+            from core.notification_ui import email_preview_block
+            _preview_notifier = NotificationService(service.repo)
+            for _row in work_rows:
+                with st.expander(f"Email preview · {_row.get('PO Number')}", expanded=len(work_rows) == 1):
+                    _pv = _preview_notifier.preview("PO_APPROVAL_PENDING", context={"po_number": _row.get("PO Number"), "supplier_name": _row.get("Supplier"), "approval_status": "PENDING APPROVAL"}, include_supplier=False)
+                    email_preview_block(to_email=str(_row.get("Approver Email") or ""), cc_emails=list(_pv.get("cc_emails") or []), subject=str(_pv.get("subject") or ""), body=str(_pv.get("body_text") or ""), attachments=f"{_row.get('PO Number')} (PENDING APPROVAL watermarked PDF)")
         if blockers:
             st.error("Approval email is blocked for the affected POs until the approver email is configured.\n\n" + "\n".join(f"- {item}" for item in blockers))
         c1, c2 = st.columns(2, gap="small")

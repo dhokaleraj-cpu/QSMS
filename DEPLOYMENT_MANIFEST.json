@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R22",
+  "release_revision": "R23",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -506,5 +506,12 @@
     "part_designation_auto_K4404-0_10_20",
     "price_history_auto_close_per_rm_record"
   ],
-  "r22_sql": "QCMS_R22_RUN_IN_SUPABASE.sql"
+  "r23_changes": [
+    "po_print_line_numbers",
+    "po_lines_and_total_qty_in_totals",
+    "per_po_hidden_sections_at_entry_and_pdf_page",
+    "po_preview_before_save",
+    "email_preview_before_send"
+  ],
+  "r23_sql": "QCMS_R23_RUN_IN_SUPABASE.sql"
 }
