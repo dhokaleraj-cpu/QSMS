@@ -582,12 +582,29 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     for sw,title,value in zip(strip_widths,strip_titles,strip_values):
         _bar(c,x,y_strip,sw,title,height=14); c.rect(x,y_strip-34,sw,20,stroke=1,fill=0); _draw_text(c,x+4,y_strip-27,value,size=6.6,max_width=sw-8); x += sw
 
-    # One complete item pocket on the first page. Additional items continue on controlled
-    # item pages so each supplier line keeps its own technical data and full price history.
-    item = dict(items[0])
-    y_item_top = y_strip-45
-    row_bottom = _draw_item_row(c, item, y_top=y_item_top, left=left, right=right, page_width=w)
-    _item_sections(c, header, item, top=row_bottom, left=left, right=right, w=w, history_gap=4, history_bottom=245, max_rows=FIRST_HISTORY_ROWS)
+    # One complete item pocket on the first page is the minimum (regression contract).
+    # R26: as many complete line items as fit go on the first page (each with its own source
+    # reference, technical data and price history); the rest continue on item pages.
+    y_item = y_strip-45
+    drawn = 0
+    total = len(items)
+    for index, item_src in enumerate(items):
+        item = dict(item_src)
+        need = _item_block_height(header, item, history_rows=FIRST_HISTORY_ROWS)
+        is_last = index == total - 1
+        reserve = GRAND_TOTAL_HEIGHT if (is_last and total > 1) else 0
+        if index > 0 and y_item - need - reserve < FIRST_PAGE_ITEM_BOTTOM:
+            break
+        row_bottom = _draw_item_row(c, item, y_top=y_item, left=left, right=right, page_width=w)
+        history, rendered = _item_sections(c, header, item, top=row_bottom, left=left, right=right, w=w, history_gap=4, history_bottom=max(FIRST_PAGE_ITEM_BOTTOM, y_item-need), max_rows=FIRST_HISTORY_ROWS)
+        if rendered < len(history):
+            _FIRST_PAGE_STATE["overflow"].append((item, history[rendered:]))
+        y_item = y_item - need - ITEM_GAP
+        drawn += 1
+    _FIRST_PAGE_STATE["drawn"] = drawn
+    if drawn == total and total > 1 and y_item - GRAND_TOTAL_HEIGHT + ITEM_GAP >= FIRST_PAGE_ITEM_BOTTOM - 2:
+        _draw_grand_total(c, header, items, y_top=y_item + ITEM_GAP - 2, left=left, right=right, page_width=w)
+        _FIRST_PAGE_STATE["grand_total"] = True
 
     remark_color = HexColor(_ACTIVE.get("remark") or "#9A3412")
     _draw_text(c,left+2,236,"Remarks:",size=7.6,bold=True,color=_accent()); _rules(c); c.setFillColor(_fill_or_white("remark_fill")); c.rect(left,211,386,21,stroke=1,fill=1); _draw_text(c,left+4,220,header.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.",size=7.4,bold=True,color=remark_color,max_width=378)
@@ -611,6 +628,52 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     c.showPage(); c.save(); return out.getvalue()
 
 
+FIRST_PAGE_ITEM_BOTTOM = 245
+ITEM_GAP = 6
+GRAND_TOTAL_HEIGHT = 40
+_FIRST_PAGE_STATE: dict[str, Any] = {"drawn": 1, "overflow": [], "grand_total": False}
+
+
+def _history_block_height(item: Mapping[str, Any], rows: int) -> float:
+    if not _show("show_price_history"):
+        return 0.0
+    history = _price_history_rows(item)
+    shown = min(len(history), rows) if history else 1
+    return 4 + 15 + 15 + 15 * shown
+
+
+def _item_block_height(header: Mapping[str, Any], item: Mapping[str, Any], *, history_rows: int) -> float:
+    """Height of one complete line item (row + sources + technical data + price history)."""
+    po_type = _s(header.get("po_type") or "FORGING").upper()
+    height = 56.0
+    if _show("show_source_reference"):
+        height += _customer_reference_height(item)
+    if _show("show_technical"):
+        height += _technical_height(item, po_type=po_type)
+    return height + _history_block_height(item, history_rows)
+
+
+def _draw_grand_total(c: canvas.Canvas, header: Mapping[str, Any], items: Sequence[Mapping[str, Any]], *, y_top: float, left: float, right: float, page_width: float) -> float:
+    """R26: GRAND TOTAL row after the last line item - lines, combined quantity and amounts."""
+    total_w = page_width-left-right
+    widths = [70, 150, 100, 90, total_w-410]
+    titles = ["PO LINES", "TOTAL QTY", "SUBTOTAL", "GST", "GRAND TOTAL"]
+    subtotal = _n(header.get("subtotal")) or sum(_n(i.get("line_total")) for i in items)
+    gst = _n(header.get("cgst_amount")) + _n(header.get("sgst_amount")) + _n(header.get("igst_amount")) or sum(_n(i.get("gst_amount")) for i in items)
+    grand = _n(header.get("grand_total")) or subtotal + gst + _n(header.get("other_amount"))
+    values = [str(len(items)), po_quantity_totals(items), _money(subtotal), _money(gst), f"{_s(header.get('currency') or 'INR')} {_money(grand)}"]
+    _bar(c, left, y_top, total_w, "GRAND TOTAL · ALL PO LINES", height=14)
+    y = y_top - 14
+    x = left
+    for sw, title, value in zip(widths, titles, values):
+        _rules(c); c.setFillColor(_fill_or_white("head_fill")); c.rect(x, y-12, sw, 12, stroke=1, fill=1)
+        _draw_text(c, x+3, y-8.6, title, size=5.6, bold=True, color=HexColor("#111827"), max_width=sw-6)
+        c.setFillColor(white); c.rect(x, y-26, sw, 14, stroke=1, fill=1)
+        _draw_text(c, x+3, y-21.5, value, size=7.2, bold=True, color=_accent(), max_width=sw-6)
+        x += sw
+    return y - 26
+
+
 def _item_sections(c: canvas.Canvas, header: Mapping[str, Any], item: Mapping[str, Any], *, top: float, left: float, right: float, w: float, history_gap: float, history_bottom: float, max_rows: int) -> tuple[list, int]:
     """Source reference, technical data and price history, each optional (Print Layout Designer)."""
     y = top
@@ -626,18 +689,39 @@ def _item_sections(c: canvas.Canvas, header: Mapping[str, Any], item: Mapping[st
     return history, rendered
 
 
-def _continuation_items_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, Any]]) -> bytes:
-    """One clean supplier item per continuation page, including full price history."""
+def _continuation_items_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, Any]], *, all_items: Sequence[Mapping[str, Any]] | None = None, grand_total: bool = True) -> bytes:
+    """Continuation item pages: as many complete line items per page as fit, then the GRAND TOTAL row."""
     out = BytesIO(); c = canvas.Canvas(out, pagesize=A4)
-    for item_src in items:
-        item = dict(item_src)
-        w,h,left,right = _draw_continuation_header(c, header, title="PURCHASE ORDER · ITEM CONTINUED")
-        row_bottom = _draw_item_row(c, item, y_top=h-92, left=left, right=right, page_width=w)
-        history, rendered = _item_sections(c, header, item, top=row_bottom, left=left, right=right, w=w, history_gap=6, history_bottom=50, max_rows=CONT_HISTORY_ROWS)
-        c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",5.8); c.drawCentredString(w/2,27,"QCMS controlled continuation · Technical data and Price Revision History are item-specific and supplier-specific.")
-        c.showPage()
+    all_items = list(all_items or items)
+    queue = [dict(i) for i in items]
+    footer = "QCMS controlled continuation · Technical data and Price Revision History are item-specific and supplier-specific."
+    page_open = False; y = 0.0; w, h = A4; left = right = 28
+    pending_history: list[tuple[dict, list]] = []
+    while queue:
+        item = queue.pop(0)
+        need = _item_block_height(header, item, history_rows=CONT_HISTORY_ROWS)
+        if page_open and y - need < 60:
+            c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",5.8); c.drawCentredString(w/2,27,footer); c.showPage(); page_open = False
+            for it, rest in pending_history:
+                _history_continuation_pages(c, header, it, rest)
+            pending_history = []
+        if not page_open:
+            w, h, left, right = _draw_continuation_header(c, header, title="PURCHASE ORDER · ITEMS CONTINUED")
+            y = h - 92; page_open = True
+        row_bottom = _draw_item_row(c, item, y_top=y, left=left, right=right, page_width=w)
+        history, rendered = _item_sections(c, header, item, top=row_bottom, left=left, right=right, w=w, history_gap=4, history_bottom=max(50, y-need), max_rows=CONT_HISTORY_ROWS)
         if rendered < len(history):
-            _history_continuation_pages(c, header, item, history[rendered:])
+            pending_history.append((item, history[rendered:]))
+        y = y - need - ITEM_GAP
+    if page_open:
+        if grand_total and len(all_items) > 1:
+            if y - GRAND_TOTAL_HEIGHT < 50:
+                c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",5.8); c.drawCentredString(w/2,27,footer); c.showPage()
+                w, h, left, right = _draw_continuation_header(c, header, title="PURCHASE ORDER · ITEMS CONTINUED"); y = h - 92
+            _draw_grand_total(c, header, all_items, y_top=y + ITEM_GAP - 2, left=left, right=right, page_width=w)
+        c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica",5.8); c.drawCentredString(w/2,27,footer); c.showPage()
+    for it, rest in pending_history:
+        _history_continuation_pages(c, header, it, rest)
     c.save(); return out.getvalue()
 
 
@@ -1043,16 +1127,20 @@ def _purchase_order_pdf(header: Mapping[str, Any], normalized: list[dict], *, te
     total_lines = len(normalized)
     for index, item in enumerate(normalized, start=1):
         item["_line_no"] = index; item["_line_count"] = total_lines
+    _FIRST_PAGE_STATE.update({"drawn": 1, "overflow": [], "grand_total": False})
     first = _first_page_bytes(header, normalized)
+    drawn = int(_FIRST_PAGE_STATE.get("drawn") or 1)
+    overflow_items = list(_FIRST_PAGE_STATE.get("overflow") or [])
+    first_grand = bool(_FIRST_PAGE_STATE.get("grand_total"))
     writer = PdfWriter(); writer.add_page(PdfReader(BytesIO(first)).pages[0])
-    first_history = _price_history_rows(normalized[0])
-    if len(first_history) > FIRST_HISTORY_ROWS:
+    if overflow_items:
         overflow = BytesIO(); overflow_canvas = canvas.Canvas(overflow, pagesize=A4)
-        _history_continuation_pages(overflow_canvas, header, normalized[0], first_history[FIRST_HISTORY_ROWS:])
+        for item, rest in overflow_items:
+            _history_continuation_pages(overflow_canvas, header, item, rest)
         overflow_canvas.save(); overflow.seek(0)
         for page in PdfReader(overflow).pages: writer.add_page(page)
-    if len(normalized) > 1:
-        continuation = PdfReader(BytesIO(_continuation_items_bytes(header, normalized[1:])))
+    if drawn < len(normalized):
+        continuation = PdfReader(BytesIO(_continuation_items_bytes(header, normalized[drawn:], all_items=normalized, grand_total=not first_grand)))
         for page in continuation.pages: writer.add_page(page)
     path = Path(terms_path) if terms_path else Path(__file__).resolve().parent.parent / "templates" / "FSI_STANDARD_PO_TERMS_2023.pdf"
     if path.exists():

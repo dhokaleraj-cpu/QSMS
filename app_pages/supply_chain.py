@@ -202,10 +202,16 @@ def _exports(frame: pd.DataFrame, title: str, key: str, *, header: Mapping[str, 
     if frame.empty:
         return
     c1, c2 = st.columns(2, gap="small")
-    pdf = controlled_record_pdf_bytes(title, dict(header or {"Record Count": len(frame)}), {title: frame})
+
+    def _pdf() -> bytes:
+        # R26: built only when clicked, and never crashes the page.
+        try:
+            return controlled_record_pdf_bytes(title, dict(header or {"Record Count": len(frame)}), {title: frame})
+        except Exception as exc:
+            return controlled_record_pdf_bytes(title, {"Record Count": len(frame), "Note": f"Full table could not be laid out ({type(exc).__name__}); use the Excel export."}, {title: frame.head(200).astype(str).apply(lambda col: col.str.slice(0, 40))})
     c1.download_button(
-        "PDF Export", data=pdf, file_name=f"{key}.pdf", mime="application/pdf",
-        icon=":material/picture_as_pdf:", width="stretch", key=f"supply_pdf_{key}",
+        "PDF Export", data=_pdf, file_name=f"{key}.pdf", mime="application/pdf",
+        icon=":material/picture_as_pdf:", width="stretch", key=f"supply_pdf_{key}", on_click="ignore",
     )
     c2.download_button(
         "Excel Export", data=_excel_bytes(frame, title), file_name=f"{key}.xlsx",

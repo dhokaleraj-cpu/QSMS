@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R25",
+  "release_revision": "R26",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -527,5 +527,10 @@
     "deleted_records_archive_view_pdf",
     "android_first_app_1_2_0"
   ],
-  "r25_sql": "QCMS_R25_RUN_IN_SUPABASE.sql"
+  "r26_changes": [
+    "register_pdf_layout_error_fix_column_groups",
+    "lazy_safe_register_pdf_export",
+    "po_multiple_lines_on_first_page",
+    "po_grand_total_row_after_last_line"
+  ]
 }

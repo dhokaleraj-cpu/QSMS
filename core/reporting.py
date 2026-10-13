@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence
 import pandas as pd
 from PIL import Image as PILImage
 from reportlab.lib import colors
+from reportlab.platypus.doctemplate import LayoutError
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -1703,6 +1704,17 @@ def material_inward_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     return buffer.getvalue()
 
 
+MAX_PDF_COLUMNS = 9
+PDF_CELL_LIMIT = 160
+
+
+def _pdf_cell(value: object) -> object:
+    text = "" if value is None else str(value)
+    if len(text) > PDF_CELL_LIMIT:
+        return text[: PDF_CELL_LIMIT - 1] + "…"
+    return value
+
+
 def controlled_record_pdf_bytes(
     title: str,
     header_fields: Mapping[str, object],
@@ -1779,12 +1791,21 @@ def controlled_record_pdf_bytes(
         if frame.empty:
             frame = pd.DataFrame([{"Information": "No records available."}])
         frame = frame.fillna("")
-        columns = [str(column) for column in frame.columns]
-        table_rows: list[list[object]] = [columns]
-        table_rows.extend([list(row) for row in frame.itertuples(index=False, name=None)])
-        widths = [content_width / max(1, len(columns))] * max(1, len(columns))
-        status_columns = tuple(index for index, name in enumerate(columns) if "status" in name.casefold() or "result" in name.casefold())
-        story.append(_rmtc_grid(table_rows, widths, styles["header"], styles["cell"], status_columns=status_columns))
+        # R26: wide registers are split into column groups (first column repeated) and long cell
+        # text is shortened, so a row can never be taller than the page (ReportLab LayoutError).
+        all_columns = [str(column) for column in frame.columns]
+        frame.columns = all_columns
+        groups = [all_columns] if len(all_columns) <= MAX_PDF_COLUMNS else [
+            [all_columns[0], *all_columns[1:][i:i + MAX_PDF_COLUMNS - 1]] for i in range(0, len(all_columns) - 1, MAX_PDF_COLUMNS - 1)]
+        for group_index, columns in enumerate(groups):
+            if len(groups) > 1:
+                story.append(Spacer(1, 1.6 * mm))
+                story.append(_rmtc_section_bar(f"{section_name} · columns {group_index + 1} of {len(groups)}", content_width, styles["section"], light=True))
+            table_rows: list[list[object]] = [columns]
+            table_rows.extend([[_pdf_cell(v) for v in row] for row in frame[columns].itertuples(index=False, name=None)])
+            widths = [content_width / max(1, len(columns))] * max(1, len(columns))
+            status_columns = tuple(index for index, name in enumerate(columns) if "status" in name.casefold() or "result" in name.casefold())
+            story.append(_rmtc_grid(table_rows, widths, styles["header"], styles["cell"], status_columns=status_columns))
 
     image_rows = [dict(item) for item in (images or []) if bytes(item.get("bytes") or b"")]
     if image_rows:
@@ -2003,8 +2024,18 @@ def applied_print_layout(layout: Mapping[str, object] | None):
 
 def _layout_aware(fn, doc: str):
     def inner(*args, _layout=None, **kwargs):
+        global PDF_CELL_LIMIT, MAX_PDF_COLUMNS
         with applied_print_layout(_layout):
-            return fn(*args, **kwargs)
+            try:
+                return fn(*args, **kwargs)
+            except LayoutError:
+                # R26: retry with compact cells instead of crashing the page.
+                saved = (PDF_CELL_LIMIT, MAX_PDF_COLUMNS)
+                PDF_CELL_LIMIT, MAX_PDF_COLUMNS = 45, 7
+                try:
+                    return fn(*args, **kwargs)
+                finally:
+                    PDF_CELL_LIMIT, MAX_PDF_COLUMNS = saved
     inner.__name__ = inner.__qualname__ = f"{fn.__name__}_layout"
     cached = _session_memo_bytes(inner)
 
