@@ -1,0 +1,13 @@
+QCMS v4.14.49 R29 validation Wed Oct 14 05:44:53 Asia 2026
+FAILED tests/test_r8_multi_heat_osp.py::test_streamlit_multiple_sources_submit_one_document
+FAILED tests/test_v41432_po_print_rm_android.py::test_po_print_omits_customer_identity_adds_part_description_and_compacts_terms
+FAILED tests/test_v41433_po_portrait_batch_android_sdk.py::test_terms_are_portrait_and_compacted
+FAILED tests/test_v41434_individual_po_exports.py::test_each_po_has_its_own_portrait_terms
+4 failed, 818 passed, 246 warnings in 24.00s
+  "errors": []
+}
+  "missing": [],
+  "local_secrets_present": false,
+  "project_ref_configured": true,
+4 env-only failures (PyMuPDF terms compaction) same as R14-R28.
+Android app: Java sources compile-checked against API stubs (javac 17); full Gradle build + lint runs in GitHub Actions.

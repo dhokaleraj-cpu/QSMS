@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.QCMSApp" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">@color/qcms_teal</item>
+        <item name="android:colorPrimaryDark">@color/qcms_teal_dark</item>
+        <item name="android:colorAccent">@color/qcms_teal</item>
+        <item name="android:statusBarColor">@color/qcms_teal_dark</item>
+        <item name="android:navigationBarColor">@color/qcms_teal_dark</item>
+        <item name="android:windowBackground">@color/qcms_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

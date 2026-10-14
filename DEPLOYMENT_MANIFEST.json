@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R28",
+  "release_revision": "R29",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -548,5 +548,11 @@
     "scrollable_grids_both_directions_sticky_header_first_column",
     "updater_applies_database_sql_automatically",
     "android_app_ui_designs_for_approval"
+  ],
+  "r29_changes": [
+    "native_android_app_v2_0_0_from_approved_designs",
+    "github_workflow_builds_native_apk_fixed_signing_key",
+    "po_approval_page_deep_link_for_app",
+    "r28_recovery_sql_fix_missing_section_name_row_by_row_safe"
   ]
 }

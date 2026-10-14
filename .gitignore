@@ -27,3 +27,11 @@ mobile/android_qcms/app/build/
 *.apk
 *.aab
 apk-artifacts/
+
+# QCMS native Android app (R29): build output ignored; the fixed TEST signing key is tracked
+# so every CI-built APK installs over the previous one.
+mobile/android_qcms_app/.gradle/
+mobile/android_qcms_app/local.properties
+mobile/android_qcms_app/build/
+mobile/android_qcms_app/app/build/
+!mobile/android_qcms_app/app/qcms-debug.keystore

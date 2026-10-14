@@ -2174,6 +2174,14 @@ def render_purchase_order_approval_page() -> None:
             st.success("No Purchase Orders are pending approval.")
 
     requested = str(st.session_state.pop("supply_po_approval_request_id", "") or "")
+    # R29: the QCMS Android app opens this page as .../supply-po-approval?po=<id> to send the PO.
+    try:
+        linked_po = str(st.query_params.get("po") or "")
+    except Exception:
+        linked_po = ""
+    if linked_po and linked_po in labels and st.session_state.get("_qcms_app_linked_po") != linked_po:
+        st.session_state["_qcms_app_linked_po"] = linked_po
+        requested = linked_po
     if requested in labels:
         st.session_state["po_dedicated_approval_select"] = requested
     elif st.session_state.get("po_dedicated_approval_select") not in labels:

@@ -1,0 +1,59 @@
+plugins {
+    id 'com.android.application'
+}
+
+// QCMS native Android app (R29). Framework-only Java: no third-party libraries,
+// so nothing can break from library updates. Talks to the same Supabase project
+// as the QCMS website with the logged-in user's own session (same RLS / permissions).
+android {
+    namespace 'com.fourstar.qcmsapp'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.fourstar.qcmsapp'
+        minSdk 26
+        targetSdk 35
+        versionCode 200
+        versionName '2.0.0'
+        buildConfigField 'String', 'SUPABASE_URL', '"https://xxrxopzxzyjnzumrwuwy.supabase.co"'
+        // Publishable (public) key - safe to ship in an app; every request runs with the user's own login.
+        buildConfigField 'String', 'SUPABASE_KEY', '"sb_publishable_o1EpvnCYWnfJaSWQH5vfFA_EWzN4QGh"'
+        buildConfigField 'String', 'QCMS_WEB_URL', '"https://vf6fa9hrhxquqxmfgyy4wf.streamlit.app"'
+    }
+
+    // One fixed signing key for the test builds, so every new APK installs over the
+    // previous one (no "App not installed" / no need to uninstall first).
+    signingConfigs {
+        qcms {
+            storeFile file('qcms-debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+            signingConfig signingConfigs.qcms
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
