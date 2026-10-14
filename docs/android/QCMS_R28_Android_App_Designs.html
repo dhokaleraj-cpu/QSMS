@@ -1,0 +1,206 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>QCMS Android App Designs</title>
+<style>
+@page{size:A3 landscape;margin:10mm}
+*{box-sizing:border-box}
+body{margin:0;font-family:Roboto,"Segoe UI",Arial,sans-serif;background:#EEF4F4;color:#173233}
+.sheet{padding:14px 18px;page-break-after:always}
+.sheet:last-child{page-break-after:auto}
+h1{margin:0 0 2px;font-size:22px;color:#0B6E70}
+.sub{font-size:12px;color:#5C7778;margin-bottom:12px}
+.row{display:flex;gap:22px;justify-content:center;align-items:flex-start}
+.cap{width:300px;font-size:11px;color:#36504F;margin-top:8px;line-height:1.35}
+.cap b{color:#0B6E70}
+.phone{width:300px;height:620px;border-radius:34px;background:#111;padding:10px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.scr{width:100%;height:100%;border-radius:26px;background:#F1F6F6;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.sb{height:22px;display:flex;justify-content:space-between;align-items:center;padding:0 16px;font-size:10px;color:#173233;background:#fff}
+.top{background:#0F8B8D;color:#fff;padding:10px 14px 12px}
+.top .t{font-size:15px;font-weight:700}
+.top .s{font-size:10px;opacity:.85}
+.body{flex:1;padding:10px;overflow:hidden}
+.card{background:#fff;border:1px solid #D5E4E4;border-radius:12px;padding:10px;margin-bottom:8px}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kpi{background:#fff;border:1px solid #D5E4E4;border-radius:12px;padding:9px}
+.kpi .n{font-size:22px;font-weight:900;color:#0B6E70}
+.kpi .l{font-size:10px;color:#5C7778}
+.chip{display:inline-block;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px}
+.g{background:#DCFCE7;color:#166534}.a{background:#FEF3C7;color:#92400E}.r{background:#FEE2E2;color:#991B1B}.b{background:#E3F2F2;color:#0B6E70}
+.nav{height:52px;background:#fff;border-top:1px solid #D5E4E4;display:flex;justify-content:space-around;align-items:center;font-size:9px;color:#5C7778}
+.nav div{text-align:center}.nav .on{color:#0F8B8D;font-weight:700}
+.ic{width:20px;height:20px;border-radius:6px;background:#D5E4E4;margin:0 auto 2px}.on .ic{background:#0F8B8D}
+.btn{display:block;text-align:center;border-radius:10px;padding:10px;font-size:12px;font-weight:700;margin-top:8px}
+.p{background:#0F8B8D;color:#fff}.o{border:1.5px solid #0F8B8D;color:#0B6E70;background:#fff}.d{background:#fff;border:1.5px solid #C2410C;color:#C2410C}
+.in{border:1px solid #B5CFCF;border-radius:9px;padding:9px;font-size:11px;color:#5C7778;background:#fff;margin-bottom:8px}
+.lbl{font-size:9.5px;color:#5C7778;margin:2px 0 3px;font-weight:700;letter-spacing:.2px}
+.li{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #EEF3F3;font-size:11px}
+.li:last-child{border-bottom:0}
+.small{font-size:10px;color:#5C7778}
+.fab{position:absolute;right:16px;bottom:66px;width:46px;height:46px;border-radius:16px;background:#0F8B8D;color:#fff;font-size:26px;text-align:center;line-height:44px;box-shadow:0 4px 10px rgba(15,139,141,.4)}
+.grid{border:1px solid #B5CFCF;border-radius:8px;overflow:hidden;font-size:9.5px}
+.grid table{border-collapse:collapse;width:430px}
+.grid th{background:#E3F2F2;padding:6px;text-align:left;position:sticky;top:0}
+.grid td{padding:6px;border-top:1px solid #E5EEEE;white-space:nowrap}
+.sw{overflow:hidden;width:100%}
+.sbar{height:5px;border-radius:3px;background:#D5E4E4;margin-top:4px;position:relative}
+.sbar i{position:absolute;left:0;top:0;height:5px;width:46%;border-radius:3px;background:#0F8B8D}
+.step{display:flex;gap:8px;align-items:flex-start;margin-bottom:7px;font-size:10.5px}
+.dot{width:16px;height:16px;border-radius:50%;flex:none;margin-top:1px}
+.done{background:#0F8B8D}.cur{background:#F59E0B}.pen{background:#D5E4E4}
+.cam{height:150px;border-radius:12px;background:linear-gradient(135deg,#29393A,#4B6566);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;margin-bottom:8px}
+.thumbs{display:flex;gap:6px;margin-bottom:6px}.thumbs div{width:52px;height:42px;border-radius:7px;background:#9FB7B7}
+.prog{height:6px;background:#D5E4E4;border-radius:3px;overflow:hidden}.prog i{display:block;height:6px;width:72%;background:#0F8B8D}
+.logo{width:64px;height:64px;border-radius:18px;background:#0F8B8D;color:#fff;font-weight:900;font-size:22px;display:flex;align-items:center;justify-content:center;margin:40px auto 10px}
+.tog{display:flex;gap:6px;margin:6px 0}.tog span{flex:1;text-align:center;font-size:10px;padding:7px;border-radius:9px;border:1px solid #B5CFCF;background:#fff}.tog .sel{background:#0F8B8D;color:#fff;border-color:#0F8B8D}
+.legend{display:flex;gap:16px;justify-content:center;font-size:11px;color:#36504F;margin-top:10px}
+.sw2{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:4px}
+</style></head><body>
+
+<div class="sheet">
+<h1>QCMS Mobile · Android App Designs (R28 proposal) · Sheet 1 of 2</h1>
+<div class="sub">Four Star Industries · Teal Material design (same as the web app) · Native Android, Material 3, one-hand use, offline queue, dark-mode ready · Screens: Login, Home / KPI, PO Approval, PO Preview &amp; Send choice</div>
+<div class="row">
+ <div><div class="phone"><div class="scr">
+  <div class="sb"><span>9:41</span><span>LTE ▮▮▮ 86%</span></div>
+  <div class="body" style="background:#fff">
+   <div class="logo">QC</div>
+   <div style="text-align:center;font-weight:900;font-size:15px;color:#0B6E70">QCMS</div>
+   <div style="text-align:center;font-size:10px;color:#5C7778;margin-bottom:18px">Four Star Industries · Plant CHAKAN</div>
+   <div class="lbl">EMAIL</div><div class="in">name@fourstar.in</div>
+   <div class="lbl">PASSWORD</div><div class="in">••••••••••   <span style="float:right">👁</span></div>
+   <div class="small" style="display:flex;justify-content:space-between"><span>☑ Keep me signed in</span><span style="color:#0F8B8D">Forgot password?</span></div>
+   <span class="btn p">Sign in</span>
+   <span class="btn o">Unlock with fingerprint</span>
+   <div class="small" style="text-align:center;margin-top:24px">v1.3.0 · Secure Supabase login · Session lock after 15 min</div>
+  </div></div></div>
+  <div class="cap"><b>1 · Login.</b> Company name and plant shown. Fingerprint / face unlock after the first password login. Password is never stored on the phone (secure token in Android Keystore).</div></div>
+
+ <div><div class="phone"><div class="scr">
+  <div class="sb"><span>9:42</span><span>LTE ▮▮▮ 86%</span></div>
+  <div class="top"><div class="t">Good morning, Rajesh</div><div class="s">Thu 15 Oct · 4 items need you</div></div>
+  <div class="body">
+   <div class="kpis">
+    <div class="kpi"><div class="n">7</div><div class="l">POs awaiting approval</div></div>
+    <div class="kpi"><div class="n">12</div><div class="l">Inspections due today</div></div>
+    <div class="kpi"><div class="n">3</div><div class="l">Calibrations overdue</div></div>
+    <div class="kpi"><div class="n">98.4%</div><div class="l">First-pass yield (MTD)</div></div>
+   </div>
+   <div class="card" style="margin-top:8px"><div style="font-weight:700;font-size:11.5px;margin-bottom:4px">Needs your action</div>
+    <div class="li"><span>PO FSI-PO-0231 · Raw Material</span><span class="chip a">Approve</span></div>
+    <div class="li"><span>Deletion request · RMTC 118</span><span class="chip r">Admin</span></div>
+    <div class="li"><span>SNAP GAUGE SG-07 calibration</span><span class="chip r">Overdue</span></div>
+    <div class="li"><span>K11696 · OSP inspection</span><span class="chip b">Today</span></div>
+   </div>
+  </div>
+  <div class="fab">+</div>
+  <div class="nav"><div class="on"><div class="ic"></div>Home</div><div><div class="ic"></div>Orders</div><div><div class="ic"></div>Inspect</div><div><div class="ic"></div>Assets</div><div><div class="ic"></div>More</div></div>
+ </div></div>
+ <div class="cap"><b>2 · Home / KPI.</b> Numbers first (as on the web KPI page). "Needs your action" list opens the exact record. The + button opens quick entry: inspection, photo upload, inward.</div></div>
+
+ <div><div class="phone"><div class="scr">
+  <div class="sb"><span>9:43</span><span>LTE ▮▮▮ 86%</span></div>
+  <div class="top"><div class="t">PO Approval</div><div class="s">7 pending · Level 1</div></div>
+  <div class="body">
+   <div class="tog"><span class="sel">Pending 7</span><span>Approved</span><span>Cancelled</span></div>
+   <div class="card"><div style="display:flex;justify-content:space-between"><b style="font-size:12px">FSI-PO-0231</b><span class="chip a">Pending</span></div>
+    <div class="small">Raw Material · Kalyani Steels · 14-10-2026</div>
+    <div class="small">2 lines · 3 Customer Orders · <b>2,450 kg</b> · ₹ 2,03,350</div></div>
+   <div class="card"><div style="display:flex;justify-content:space-between"><b style="font-size:12px">FSI-PO-0229</b><span class="chip a">Pending</span></div>
+    <div class="small">Forging · Bharat Forge · 13-10-2026</div>
+    <div class="small">1 line · 1 Customer Order · <b>1,200 pcs</b> · ₹ 4,86,000</div></div>
+   <div class="card"><div style="display:flex;justify-content:space-between"><b style="font-size:12px">FSI-PO-0227</b><span class="chip b">Revised</span></div>
+    <div class="small">Raw Material · Sunflag · re-approval after edit</div>
+    <div class="small">+1 Customer Order added · <b>900 kg</b></div></div>
+   <div class="small" style="text-align:center">Swipe a card → Approve · ← Open</div>
+  </div>
+  <div class="nav"><div><div class="ic"></div>Home</div><div class="on"><div class="ic"></div>Orders</div><div><div class="ic"></div>Inspect</div><div><div class="ic"></div>Assets</div><div><div class="ic"></div>More</div></div>
+ </div></div>
+ <div class="cap"><b>3 · PO Approval list.</b> Filter chips with counts, quantity and value on each card, revised POs marked. Swipe right to approve, tap to open the full preview.</div></div>
+
+ <div><div class="phone"><div class="scr">
+  <div class="sb"><span>9:44</span><span>LTE ▮▮▮ 86%</span></div>
+  <div class="top"><div class="t">FSI-PO-0231 · Preview</div><div class="s">Kalyani Steels · Raw Material</div></div>
+  <div class="body">
+   <div class="card" style="padding:6px"><div style="height:150px;border:1px solid #D5E4E4;border-radius:8px;background:#fff;padding:8px;font-size:8px;color:#36504F">
+    <b style="color:#0B6E70">PURCHASE ORDER</b><br>FSI-PO-0231 · 14-10-2026<br><br>
+    1 · RB85 · Round Black Bar 85 MM · 1,550 kg<br>2 · RB60 · Round Black Bar 60 MM · 900 kg<br>
+    <b>GRAND TOTAL · 2,450 kg · ₹ 2,03,350</b><br><br><span class="small">Pinch to zoom · page 1 of 2</span></div></div>
+   <div class="lbl">PRINT SECTIONS</div>
+   <div class="tog"><span class="sel">Lines</span><span class="sel">Terms</span><span>Tech data</span><span class="sel">Price hist.</span></div>
+   <div class="lbl">AFTER APPROVAL</div>
+   <div class="tog"><span class="sel">Approve &amp; send to supplier</span><span>Approve, do not send</span></div>
+   <span class="btn p">Approve PO</span>
+   <span class="btn d">Reject with reason</span>
+  </div>
+ </div></div>
+ <div class="cap"><b>4 · PO Preview &amp; send choice.</b> The real PO PDF before approval. Print sections can be ticked on and off. Choose whether to email the supplier now or later. Reject needs a reason.</div></div>
+</div>
+<div class="legend"><span><i class="sw2" style="background:#0F8B8D"></i>Primary teal #0F8B8D</span><span><i class="sw2" style="background:#0B6E70"></i>Dark #0B6E70</span><span><i class="sw2" style="background:#F1F6F6;border:1px solid #ccc"></i>Background #F1F6F6</span><span><i class="sw2" style="background:#F59E0B"></i>Pending</span><span><i class="sw2" style="background:#166534"></i>Approved / OK</span><span><i class="sw2" style="background:#991B1B"></i>Rejected / Overdue</span></div>
+</div>
+
+<div class="sheet">
+<h1>QCMS Mobile · Android App Designs (R28 proposal) · Sheet 2 of 2</h1>
+<div class="sub">Screens: Inspection entry with camera, Customer Order tracker, Scrollable data grid, Quality Asset / Calibration · Offline: entries are queued and sent when the network returns</div>
+<div class="row">
+ <div><div class="phone"><div class="scr">
+  <div class="sb"><span>10:05</span><span>Wi-Fi 72%</span></div>
+  <div class="top"><div class="t">OSP Inspection · K11696</div><div class="s">Stage 20 · Turning · Lot 2210</div></div>
+  <div class="body">
+   <div class="cam">📷 Tap to capture · photo is auto-compressed</div>
+   <div class="thumbs"><div></div><div></div><div></div></div>
+   <div class="lbl">OD Ø 84.60 – 84.80</div><div class="in" style="color:#173233">84.72 <span class="chip g" style="float:right">OK</span></div>
+   <div class="lbl">LENGTH 152 ±0.2</div><div class="in" style="color:#173233">152.31 <span class="chip r" style="float:right">NG</span></div>
+   <div class="small">Uploading 2 of 3 photos</div><div class="prog"><i></i></div>
+   <span class="btn p">Save inspection</span>
+  </div>
+ </div></div>
+ <div class="cap"><b>5 · Inspection entry.</b> Camera upload with progress and an automatic retry when offline. Each value is checked against the layout tolerance as you type (OK / NG). Large touch targets for gloved hands.</div></div>
+
+ <div><div class="phone"><div class="scr">
+  <div class="sb"><span>10:07</span><span>Wi-Fi 72%</span></div>
+  <div class="top"><div class="t">K11696 / OCT-26 · Pos 10</div><div class="s">Customer Order tracker · 2,000 pcs</div></div>
+  <div class="body"><div class="card">
+   <div class="step"><span class="dot done"></span><div><b>Customer Order</b><div class="small">Saved 02-10 · RM required 9,000 kg</div></div></div>
+   <div class="step"><span class="dot done"></span><div><b>RM Purchase Order</b><div class="small">FSI-PO-0231 · Approved · sent</div></div></div>
+   <div class="step"><span class="dot cur"></span><div><b>Supplier Confirmation</b><div class="small">Pending · daily reminder</div></div></div>
+   <div class="step"><span class="dot pen"></span><div><b>RM Receipt / RMTC</b><div class="small">Expected 30-10</div></div></div>
+   <div class="step"><span class="dot pen"></span><div><b>Forging → Machining → Dispatch</b><div class="small">0 / 2,000 pcs</div></div></div>
+  </div>
+  <div class="card small">Cancelled PO FSI-PO-0219 released this order automatically (R28).</div></div>
+  <div class="nav"><div><div class="ic"></div>Home</div><div class="on"><div class="ic"></div>Orders</div><div><div class="ic"></div>Inspect</div><div><div class="ic"></div>Assets</div><div><div class="ic"></div>More</div></div>
+ </div></div>
+ <div class="cap"><b>6 · Customer Order tracker.</b> Every stage with its status and the linked document number. Each stage opens that record.</div></div>
+
+ <div><div class="phone"><div class="scr">
+  <div class="sb"><span>10:09</span><span>Wi-Fi 72%</span></div>
+  <div class="top"><div class="t">Part Master · RM Details</div><div class="s">K11696 · 2 rows × 11 columns</div></div>
+  <div class="body">
+   <div class="small" style="margin-bottom:5px">Scroll ← → ↑ ↓ · first column and header stay fixed</div>
+   <div class="grid sw"><table><tr><th>Supplier</th><th>Section</th><th>Size</th><th>Grade</th><th>Gross kg</th><th>Lead d</th><th>HSN</th></tr>
+    <tr><td><b>Kalyani</b></td><td>Round Black Bar</td><td>85 MM</td><td>20MnCr5</td><td>4.50</td><td>30</td><td>85409900</td></tr>
+    <tr><td><b>Sunflag</b></td><td>Round Black Bar</td><td>85 MM</td><td>20MnCr5</td><td>4.50</td><td>45</td><td>85409900</td></tr></table></div>
+   <div class="sbar"><i></i></div>
+   <span class="btn o">Edit row</span>
+   <div class="card small" style="margin-top:8px">Saving checks the Part again on the server: a row can never move to another Part (R28 fix).</div>
+  </div>
+  <div class="nav"><div><div class="ic"></div>Home</div><div><div class="ic"></div>Orders</div><div><div class="ic"></div>Inspect</div><div><div class="ic"></div>Assets</div><div class="on"><div class="ic"></div>More</div></div>
+ </div></div>
+ <div class="cap"><b>7 · Data grids.</b> Every table scrolls in both directions with a fixed header and first column, and shows a scroll bar. Tap a row to edit it in a bottom sheet instead of tiny cells.</div></div>
+
+ <div><div class="phone"><div class="scr">
+  <div class="sb"><span>10:12</span><span>Wi-Fi 72%</span></div>
+  <div class="top"><div class="t">Quality Assets</div><div class="s">SNAP GAUGE · 6 assets</div></div>
+  <div class="body">
+   <div class="in">🔍 Search name / asset number</div>
+   <div class="card"><div class="li"><span><b>SNAP GAUGE</b><br><span class="small">SG-01 · Ø84.60/84.80</span></span><span class="chip g">Valid 12-01</span></div>
+   <div class="li"><span><b>SNAP GAUGE</b><br><span class="small">SG-02 · Ø84.60/84.80</span></span><span class="chip a">Due 20-10</span></div>
+   <div class="li"><span><b>SNAP GAUGE</b><br><span class="small">SG-07 · Ø60.00/60.20</span></span><span class="chip r">Overdue</span></div>
+   <div class="li"><span><b>VERNIER 0-300</b><br><span class="small">VC-12 · Instrument · no Part link</span></span><span class="chip g">Valid 03-03</span></div></div>
+   <span class="btn p">Scan asset QR · record calibration</span>
+  </div>
+  <div class="nav"><div><div class="ic"></div>Home</div><div><div class="ic"></div>Orders</div><div><div class="ic"></div>Inspect</div><div class="on"><div class="ic"></div>Assets</div><div><div class="ic"></div>More</div></div>
+ </div></div>
+ <div class="cap"><b>8 · Quality Assets &amp; Calibration.</b> The same name is allowed and the unique Asset Number tells them apart. Instruments and equipment are calibrated directly without a Part link. Scan the asset QR code to record a calibration.</div></div>
+</div>
+<div class="sub" style="margin-top:12px;text-align:center">Build plan after approval: Android 8+ · Material 3 · Kotlin · Supabase auth + REST (same RLS as web) · offline queue (WorkManager) · camera (CameraX) · biometric unlock · APK built automatically by GitHub on every main push (QCMS-FIRST-APP-APK)</div>
+</div>
+</body></html>

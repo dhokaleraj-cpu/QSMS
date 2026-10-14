@@ -1207,7 +1207,16 @@ class SupplyChainService:
             if qty > balance + 0.0001:
                 raise ValueError(f"{ref}: Forging PO quantity {qty:,.0f} pcs exceeds the pending forging balance of {balance:,.0f} pcs.")
 
+    def _next_po_number(self) -> str:
+        target = getattr(self, "_po_append_target", None)
+        if target:
+            return str(target.get("po_number") or "")
+        return str(self.repo.rpc("qcms_next_supply_po_number") or "").strip()
+
     def _insert_po_header(self, payload: Mapping[str, Any]) -> dict:
+        target = getattr(self, "_po_append_target", None)
+        if target:
+            return dict(target)   # R28: Customer Orders are being added to this existing PO
         data = dict(payload)
         if data.get("print_options") is None:
             data.pop("print_options", None)
@@ -1385,7 +1394,7 @@ class SupplyChainService:
             state = str(supplier.get("state") or "").strip().casefold(); intra_state = not state or state in {"maharashtra", "mh"}
             cgst = round(gst_amount/2.0,2) if intra_state else 0.0; sgst = round(gst_amount/2.0,2) if intra_state else 0.0; igst = gst_amount if not intra_state else 0.0
             other = max(number(p.get("other_amount")),0.0); grand_total = round(subtotal+cgst+sgst+igst+other,2)
-            po_number = str(self.repo.rpc("qcms_next_supply_po_number") or "").strip()
+            po_number = self._next_po_number()
             if not po_number:
                 raise RuntimeError("QCMS could not allocate the next Purchase Order number.")
             header = self._insert_po_header({"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date_value,"delivery_date":p.get("delivery_date"),"requisitioner":requisitioner_name,"requisitioner_employee_id":requisitioner_employee_id,"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":currency,"company_branch_id":company_branch_id,"plant_snapshot":plant_snapshot,"vendor_snapshot":self._party_snapshot(supplier),"ship_to_party_id":ship_to_party_id or None,"ship_to_branch_id":ship_to_branch_id or None,"ship_to_source_type":ship_to_source_type,"ship_to_snapshot":ship_to_snapshot,"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"PENDING_APPROVAL","approval_status":"PENDING_APPROVAL","submitted_by_employee_id":requisitioner_employee_id,"submitted_at":datetime.now(timezone.utc).isoformat(),"replaces_purchase_order_id":p.get("replaces_purchase_order_id"),"print_options":clean_print_options(p.get("print_options"))})
@@ -1472,7 +1481,7 @@ class SupplyChainService:
             if not item_no: raise ValueError("Enter an FSI Part Number or Supplier Forging Part No. for the supplier PO item.")
             line_data.append({"source_part":source_part,"source_raw":source_raw,"technical":self.technical_data_snapshot(raw,part),"price_history":self.effective_price_history(part,raw,supplier_id,po_date=order_date_value,uom="NOS")[:250],"key":key,"part":part,"raw":raw,"members":members,"item_no":item_no,"common_code":common_code or None,"hsn":next(iter(hsns)),"quantity":qty,"unit_price":unit_price,"line_total":line_total,"gst_amount":round(line_total*gst_percent/100.0,2)})
         subtotal=round(subtotal,2); gst_amount=round(subtotal*gst_percent/100.0,2); state=str(supplier.get("state") or "").strip().casefold(); intra_state=not state or state in {"maharashtra","mh"}; cgst=round(gst_amount/2,2) if intra_state else 0.0; sgst=round(gst_amount/2,2) if intra_state else 0.0; igst=gst_amount if not intra_state else 0.0; other=max(number(p.get("other_amount")),0.0); grand_total=round(subtotal+cgst+sgst+igst+other,2)
-        po_number=str(self.repo.rpc("qcms_next_supply_po_number") or "").strip();
+        po_number=self._next_po_number();
         if not po_number: raise RuntimeError("QCMS could not allocate the next Purchase Order number.")
         header=self._insert_po_header({"po_number":po_number,"po_type":po_type,"supplier_id":supplier_id,"order_date":order_date_value,"delivery_date":p.get("delivery_date"),"requisitioner":requisitioner_name,"requisitioner_employee_id":requisitioner_employee_id,"ship_via":p.get("ship_via") or "Road","incoterm":p.get("incoterm") or "DAP, CHAKAN","payment_term":p.get("payment_term") or "NET 30 DAYS AFTER GRN","quotation_reference":p.get("quotation_reference"),"quotation_date":p.get("quotation_date"),"old_po_reference":p.get("old_po_reference"),"currency":currency,"company_branch_id":company_branch_id,"plant_snapshot":plant_snapshot,"vendor_snapshot":self._party_snapshot(supplier),"ship_to_party_id":ship_to_party_id or None,"ship_to_branch_id":ship_to_branch_id or None,"ship_to_source_type":ship_to_source_type,"ship_to_snapshot":ship_to_snapshot,"remarks":p.get("remarks") or "PART WILL BE SUPPLIED AS PER DRAWING.","special_instructions":p.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS,"subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":grand_total,"status":"PENDING_APPROVAL","approval_status":"PENDING_APPROVAL","submitted_by_employee_id":requisitioner_employee_id,"submitted_at":datetime.now(timezone.utc).isoformat(),"replaces_purchase_order_id":p.get("replaces_purchase_order_id"),"print_options":clean_print_options(p.get("print_options"))})
         items=[]; stages=[]
@@ -1622,6 +1631,7 @@ class SupplyChainService:
             "quotation_date":parse_business_date(p.get("quotation_date") if "quotation_date" in p else header.get("quotation_date")),"old_po_reference":str(p.get("old_po_reference") if "old_po_reference" in p else header.get("old_po_reference") or "").strip() or None,
             "remarks":str(p.get("remarks") if "remarks" in p else header.get("remarks") or "").strip() or None,"special_instructions":str(p.get("special_instructions") if "special_instructions" in p else header.get("special_instructions") or "").strip() or None,
             "subtotal":subtotal,"cgst_amount":cgst,"sgst_amount":sgst,"igst_amount":igst,"other_amount":other,"grand_total":round(subtotal+cgst+sgst+igst+other,2),
+            "currency":str(p.get("currency") or header.get("currency") or "INR").upper(),
             "approval_status":"PENDING_APPROVAL","status":"PENDING_APPROVAL","approver_employee_id":None,"approved_at":None,"approval_remarks":None,"submitted_by_employee_id":employee_id,"submitted_at":datetime.now(timezone.utc).isoformat(),
         }
         revised_header=self.repo.update("supply_purchase_orders",purchase_order_id,header_payload)
@@ -1634,12 +1644,130 @@ class SupplyChainService:
         self._invalidate_transactions()
         return {"header":revised_header,"items":revised_items,"reapproval_required":was_approved,"supplier_reconfirmation_required":was_approved,"supplier_confirmation_blocks_edit":False}
 
+    def add_orders_to_purchase_order(self, purchase_order_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """R28: add Customer Orders / Schedules to an existing (not cancelled, not received) PO.
+
+        RAW_MATERIAL payload: {"customer_order_ids": [...], "allocations": {order_id: kg}}
+        FORGING payload:      {"forging_sources": [{"customer_order_id", "quantity", "rm_dispatch"}]}
+        The new orders go through exactly the same checks as a new PO (supplier RM detail, price,
+        HSN, pending balance, forger). Orders with the same RM / forging item as an existing line are
+        clubbed into that line; others become new lines. The PO then returns to approval
+        (re-approval + supplier re-confirmation when it was already approved).
+        """
+        header = self.purchase_order(purchase_order_id) or {}
+        if not header:
+            raise ValueError("Purchase Order was not found.")
+        status = str(header.get("status") or "").upper()
+        if status in {"CANCELLED", "CLOSED", "COMPLETED"}:
+            raise ValueError(f"Customer Orders cannot be added to a {status.title()} Purchase Order.")
+        if self.purchase_order_received_qty(purchase_order_id) > 0:
+            raise ValueError("Material has already been received against this PO. Create a separate PO for the additional Customer Orders.")
+        po_type = str(header.get("po_type") or "").upper()
+        existing_orders = {str(r.get("customer_order_id") or "") for r in self.purchase_order_sources(purchase_order_id)}
+        p = dict(payload or {})
+        if po_type == "RAW_MATERIAL":
+            new_ids = [str(v) for v in (p.get("customer_order_ids") or []) if str(v or "").strip()]
+            dup = [i for i in new_ids if i in existing_orders]
+        else:
+            new_ids = [str(s.get("customer_order_id") or "") for s in (p.get("forging_sources") or [])]
+            dup = []   # a Customer Order can have several RM dispatches / forging sources
+        if not new_ids:
+            raise ValueError("Select at least one Customer Order / Schedule to add.")
+        if dup:
+            refs = ", ".join(str((self.order(i) or {}).get("master_reference_no") or i) for i in dup)
+            raise ValueError(f"{refs}: already on this PO - change its allocation in the PO line grid instead.")
+        items = self.purchase_order_items(purchase_order_id)
+        gst = next((number(i.get("gst_percent")) for i in items if i.get("gst_percent") is not None), number(p.get("gst_percent")))
+        create_payload = {
+            "po_type": po_type, "supplier_id": header.get("supplier_id"), "company_branch_id": header.get("company_branch_id"),
+            "ship_to_source_type": header.get("ship_to_source_type") or "BRANCH", "ship_to_party_id": header.get("ship_to_party_id"),
+            "ship_to_branch_id": header.get("ship_to_branch_id"), "order_date": header.get("order_date"), "delivery_date": header.get("delivery_date"),
+            "currency": header.get("currency") or "INR", "gst_percent": gst, "other_amount": header.get("other_amount"),
+            "requisitioner_employee_id": header.get("requisitioner_employee_id"),
+        }
+        if po_type == "RAW_MATERIAL":
+            create_payload.update({"customer_order_ids": new_ids, "allocations": dict(p.get("allocations") or {})})
+        else:
+            create_payload["forging_sources"] = list(p.get("forging_sources") or [])
+        before_items = {str(r.get("id")) for r in items}
+        before_sources = {str(r.get("id")) for r in self.purchase_order_sources(purchase_order_id)}
+        stage_table = "supply_rm_purchase_orders" if po_type == "RAW_MATERIAL" else "supply_forging_orders"
+        stage_rows = self.rm_purchase_orders() if po_type == "RAW_MATERIAL" else self.forging_orders()
+        before_stages = {str(r.get("id")) for r in stage_rows if str(r.get("purchase_order_id") or "") == str(purchase_order_id)}
+        self._po_append_target = dict(header)
+        try:
+            result = self.create_purchase_order(create_payload)
+        except Exception:
+            self._po_append_target = None
+            self._rollback_po_additions(purchase_order_id, stage_table, before_items, before_sources, before_stages)
+            raise
+        finally:
+            self._po_append_target = None
+        new_items = [dict(i) for i in (result.get("items") or []) if str(i.get("id")) not in before_items]
+        merged = self._club_added_po_items(purchase_order_id, stage_table, new_items, [dict(i) for i in items])
+        self._invalidate_transactions()
+        revision = self.update_purchase_order(purchase_order_id, {"refresh_master_data": True})
+        revision["added_orders"] = len(new_ids); revision["clubbed_lines"] = merged
+        return revision
+
+    def _rollback_po_additions(self, purchase_order_id: str, stage_table: str, items: set[str], sources: set[str], stages: set[str]) -> None:
+        self._invalidate_transactions()
+        for row in self.repo.select(stage_table, eq={"purchase_order_id": purchase_order_id}, limit=1000):
+            if str(row.get("id")) not in stages:
+                try:
+                    self.repo.update(stage_table, str(row.get("id")), {"status": "CANCELLED"})
+                except Exception:
+                    pass
+        for row in self.repo.select("supply_purchase_order_sources", eq={"purchase_order_id": purchase_order_id}, limit=1000):
+            if str(row.get("id")) not in sources:
+                try:
+                    self.repo.delete("supply_purchase_order_sources", str(row.get("id")))
+                except Exception:
+                    pass
+        for row in self.repo.select("supply_purchase_order_items", eq={"purchase_order_id": purchase_order_id}, limit=1000):
+            if str(row.get("id")) not in items:
+                try:
+                    self.repo.update("supply_purchase_order_items", str(row.get("id")), {"quantity": 0, "line_total": 0, "gst_amount": 0})
+                except Exception:
+                    pass
+        self._invalidate_transactions()
+
+    def _club_added_po_items(self, purchase_order_id: str, stage_table: str, new_items: list[dict], old_items: list[dict]) -> int:
+        """Move an added line into an existing line of the same supplier item (same item no., part
+        raw-material identity and price) so the PO keeps one line per RM / forging item."""
+        merged = 0
+        for new in new_items:
+            target = next((o for o in old_items if str(o.get("item_no") or "").strip().casefold() == str(new.get("item_no") or "").strip().casefold()
+                           and str(o.get("raw_material_detail_id") or "") == str(new.get("raw_material_detail_id") or "")
+                           and abs(number(o.get("unit_price")) - number(new.get("unit_price"))) < 0.000001), None)
+            if not target:
+                continue
+            nid, tid = str(new.get("id")), str(target.get("id"))
+            moves = [("supply_purchase_order_sources", "purchase_order_item_id"), (stage_table, "purchase_order_item_id"), ("part_supplier_price_history", "source_purchase_order_item_id")]
+            moved: list[tuple[str, str, str]] = []
+            try:
+                for table, column in moves:
+                    for row in self.repo.select(table, eq={column: nid}, limit=1000):
+                        self.repo.update(table, str(row.get("id")), {column: tid}); moved.append((table, column, str(row.get("id"))))
+                self.repo.delete("supply_purchase_order_items", nid)
+                merged += 1
+            except Exception:
+                for table, column, rid in moved:   # keep it as its own line rather than lose it
+                    try:
+                        self.repo.update(table, rid, {column: nid})
+                    except Exception:
+                        pass
+        return merged
+
     def _abort_purchase_order(self, header: Mapping[str, Any] | None, error: Exception) -> None:
         """R20: a PO whose items/stages failed must not stay half-created (it blocked the
         customer orders it had already reserved). Cancel it so the orders are free again."""
         po_id = str((header or {}).get("id") or "")
         if not po_id:
             return
+        target = getattr(self, "_po_append_target", None)
+        if target and str(target.get("id")) == po_id:
+            return   # R28: never cancel the existing PO when adding orders fails; the caller rolls back the additions
         try:
             self.repo.rpc("qcms_cancel_purchase_order", {"p_purchase_order_id": po_id, "p_reason": f"Auto-cancelled: PO creation failed - {str(error)[:180]}"})
         except Exception:
@@ -1652,8 +1780,25 @@ class SupplyChainService:
         self._invalidate_transactions()
 
     def cancel_purchase_order(self, purchase_order_id: str, reason: str) -> dict:
+        order_ids = self._purchase_order_customer_order_ids(purchase_order_id)
         result = self.repo.rpc("qcms_cancel_purchase_order", {"p_purchase_order_id": purchase_order_id, "p_reason": reason})
+        # R28: a cancelled PO releases everything linked to it. Its stages are CANCELLED by the
+        # RPC (ignored by every balance / eligibility calculation); the Customer Orders it used go
+        # back to OPEN when nothing else is active on them, so they can be put on a new PO at once.
+        self._invalidate_transactions()
+        for order_id in order_ids:
+            try:
+                self.sync_order_status(order_id)
+            except Exception:
+                pass
+        self._invalidate_transactions()
         return dict(result or {})
+
+    def _purchase_order_customer_order_ids(self, purchase_order_id: str) -> list[str]:
+        ids = [str(r.get("customer_order_id") or "") for r in self.purchase_order_sources(purchase_order_id)]
+        ids += [str(r.get("customer_order_id") or "") for r in self.rm_purchase_orders() if str(r.get("purchase_order_id") or "") == str(purchase_order_id)]
+        ids += [str(r.get("customer_order_id") or "") for r in self.forging_orders() if str(r.get("purchase_order_id") or "") == str(purchase_order_id)]
+        return [v for v in dict.fromkeys(ids) if v]
 
     def approve_purchase_order(self, purchase_order_id: str, remarks: str | None = None) -> dict:
         result = self.repo.rpc("qcms_approve_purchase_order", {"p_purchase_order_id": purchase_order_id, "p_remarks": remarks})

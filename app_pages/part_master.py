@@ -143,9 +143,15 @@ def _save_rows(repo: Repository, table: str, part_id: str, rows: pd.DataFrame, k
         if not payload:
             continue
         payload["part_id"] = part_id
-        natural = {key: payload[key] for key in key_fields}
+        # R28 CRITICAL FIX: the lookup is ALWAYS limited to this Part. Before, a matching row of
+        # another Part (same supplier / grade / section) was found and moved to this Part.
+        natural = {"part_id": part_id, **{key: payload[key] for key in key_fields if key != "part_id"}}
         if payload.get("id"):
-            repo.update(table, payload.pop("id"), payload)
+            row_id = payload.pop("id")
+            current = repo.get(table, str(row_id)) or {}
+            if current and str(current.get("part_id") or part_id) != str(part_id):
+                raise ValueError("This grid row belongs to another Part. Refresh the page and save again.")
+            repo.update(table, row_id, payload)
         else:
             repo.upsert_by(table, payload, natural_key=natural)
 
@@ -541,7 +547,14 @@ def part_usage_counts(repo: Repository, part_id: str) -> list[dict[str, Any]]:
     usage: list[dict[str, Any]] = []
     for table, label in PART_USAGE_TABLES:
         try:
-            count = len(repo.select(table, eq={"part_id": part_id}, limit=1000))
+            rows = repo.select(table, eq={"part_id": part_id}, limit=1000)
+            if table == "supply_purchase_order_items" and rows:
+                # R28: lines of CANCELLED Purchase Orders no longer block / count against the Part
+                po_ids = list({str(r.get("purchase_order_id") or "") for r in rows if r.get("purchase_order_id")})
+                cancelled = {str(po.get("id")) for po in repo.select("supply_purchase_orders", in_={"id": po_ids}, limit=1000)
+                             if str(po.get("status") or "").upper() == "CANCELLED"} if po_ids else set()
+                rows = [r for r in rows if str(r.get("purchase_order_id") or "") not in cancelled]
+            count = len(rows)
         except Exception:
             continue
         if count:

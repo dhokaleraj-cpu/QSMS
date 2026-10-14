@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R26",
+  "release_revision": "R28",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -532,5 +532,21 @@
     "lazy_safe_register_pdf_export",
     "po_multiple_lines_on_first_page",
     "po_grand_total_row_after_last_line"
+  ],
+  "r27_changes": [
+    "po_preview_with_sections_before_approval",
+    "approve_send_or_not_send_to_supplier",
+    "send_approved_po_later_from_approval_page"
+  ],
+  "r28_changes": [
+    "part_master_rows_scoped_to_part_no_more_moving_rm_rows",
+    "recovery_of_lost_rm_technical_price_jominy_rows",
+    "quality_asset_same_name_unique_asset_number",
+    "instrument_equipment_calibration_without_part_link",
+    "add_customer_orders_to_existing_po_and_edit_currency_other_charges",
+    "cancelled_po_releases_customer_orders",
+    "scrollable_grids_both_directions_sticky_header_first_column",
+    "updater_applies_database_sql_automatically",
+    "android_app_ui_designs_for_approval"
   ]
 }

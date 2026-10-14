@@ -257,7 +257,7 @@ def _import_definition(service: MasterService, definition: MasterDef, frame: pd.
             elif definition.key == "inspection_stages":
                 extra_unique_fields = ("stage_name",)
             elif definition.key == "quality_assets":
-                extra_unique_fields = ("asset_name",)
+                extra_unique_fields = ("asset_number",)
             fuzzy_duplicate = service.duplicate_match(definition, normalized, extra_unique_fields=extra_unique_fields)
             if existing_id or fuzzy_duplicate or (natural_signature and natural_signature in seen_keys):
                 skipped += 1

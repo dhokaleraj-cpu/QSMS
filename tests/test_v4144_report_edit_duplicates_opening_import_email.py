@@ -35,7 +35,7 @@ def test_rmtc_report_edit_is_prominent_and_not_admin_only():
 def test_duplicate_word_validation_is_identity_only():
     masters = read("core/master_service.py")
     identity = masters.split("_IDENTITY_DUPLICATE_FIELDS", 1)[1].split("}", 1)[0]
-    for token in ("party_name", "standard_code", "standard_name", "process_name", "stage_name", "asset_name"):
+    for token in ("party_name", "standard_code", "standard_name", "process_name", "stage_name", "asset_number"):  # R28: asset name may repeat, asset number is the identity
         assert token in identity
     assert '"parts": ("fsi_part_number",)' in identity
     assert "part_name" not in identity

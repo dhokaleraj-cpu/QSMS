@@ -109,6 +109,9 @@ def _standard_room_pdf(
     )
 
 
+PART_LINKED_ASSET_TYPES = {"GAUGE", "FIXTURE", "JIG"}
+
+
 def render_calibration_validation() -> None:
     page_header(
         "Calibration & Validation", "Process-wise gauge / fixture control with drawings, photographs, service history and due-date reminders.",
@@ -139,7 +142,11 @@ def render_calibration_validation() -> None:
         existing = next((r for r in links if str(r.get("id")) == choice), None)
         token = record_widget_token(existing, prefix="cal_link") if existing else "cal_link_new"
         a1,a2,a3 = st.columns(3, gap="small")
-        asset_ids = list(asset_map); part_ids = list(part_map); process_ids = [""] + list(process_map)
+        # R28: only gauges / fixtures / jigs are part- or process-specific. Instruments, equipment,
+        # masters and reference standards are calibrated directly in section B (no Part link).
+        asset_ids = [aid for aid, a in asset_map.items() if str(a.get("asset_type") or "").upper() in PART_LINKED_ASSET_TYPES] or list(asset_map)
+        st.caption("Instruments, equipment, masters and reference standards do not need a Part / Process link - record their calibration directly in section B.")
+        part_ids = list(part_map); process_ids = [""] + list(process_map)
         asset_default = str((existing or {}).get("asset_id") or ""); part_default = str((existing or {}).get("part_id") or ""); process_default = str((existing or {}).get("process_id") or "")
         asset_id = a1.selectbox("Gauge / Fixture / Instrument", asset_ids, index=asset_ids.index(asset_default) if asset_default in asset_ids else 0, format_func=lambda v: _label(asset_map[v],"asset_code","asset_number","asset_name","asset_type"), disabled=not perms["can_edit"] if existing else not perms["can_create"], key=f"{token}_asset") if asset_ids else ""
         part_id = a2.selectbox("Part Number", part_ids, index=part_ids.index(part_default) if part_default in part_ids else 0, format_func=lambda v: _label(part_map[v],"part_number","fsi_part_number","part_name"), disabled=not perms["can_edit"] if existing else not perms["can_create"], key=f"{token}_part") if part_ids else ""
@@ -183,9 +190,19 @@ def render_calibration_validation() -> None:
         rec_choice = st.selectbox("New / Edit Calibration-Validation Record", [""]+list(record_labels), format_func=lambda v: "＋ New Calibration / Validation Record" if not v else record_labels[v], key="cal_rec_choice")
         existing_rec = next((r for r in records if str(r.get("id")) == rec_choice), None)
         rec_token = record_widget_token(existing_rec,prefix="cal_rec") if existing_rec else "cal_rec_new"
-        link_ids=list(link_map); link_default=str((existing_rec or {}).get("link_id") or "")
-        selected_link=st.selectbox("Part / Process Gauge-Fixture Link",link_ids,index=link_ids.index(link_default) if link_default in link_ids else 0,format_func=lambda v:link_labels[v],key=f"{rec_token}_link") if link_ids else ""
-        link=link_map.get(selected_link) or {}; frequency=int(link.get("frequency_days") or 365); asset=asset_map.get(str(link.get("asset_id"))) or {}
+        # R28: instruments / equipment are selected directly (no Part / Process link).
+        direct_assets={f"asset:{aid}":a for aid,a in asset_map.items() if str(a.get("asset_type") or "").upper() not in PART_LINKED_ASSET_TYPES}
+        for key_,a in direct_assets.items():
+            link_labels[key_]=f"{_label(a,'asset_code','asset_number','asset_name','asset_type')} · Direct calibration (no Part link) · Due {a.get('next_due_date') or '-'}"
+        link_ids=list(link_map)+list(direct_assets)
+        link_default=str((existing_rec or {}).get("link_id") or "") or (f"asset:{(existing_rec or {}).get('asset_id')}" if existing_rec else "")
+        selected_link=st.selectbox("Gauge-Fixture Link or Instrument / Equipment",link_ids,index=link_ids.index(link_default) if link_default in link_ids else 0,format_func=lambda v:link_labels[v],key=f"{rec_token}_link") if link_ids else ""
+        if str(selected_link).startswith("asset:"):
+            direct_asset=direct_assets.get(selected_link) or {}
+            link={"asset_id":direct_asset.get("id"),"frequency_days":direct_asset.get("calibration_frequency_days") or 365,"service_type":direct_asset.get("service_type")}
+        else:
+            link=link_map.get(selected_link) or {}
+        frequency=int(link.get("frequency_days") or 365); asset=asset_map.get(str(link.get("asset_id"))) or {}
         if asset:
             st.markdown(f"**Asset Number:** {asset.get('asset_number') or '— (add it in Quality Asset Master)'}  ·  **Asset Code:** {asset.get('asset_code') or '-'}  ·  **Serial No.:** {asset.get('serial_number') or '-'}  ·  **Location:** {asset.get('location') or '-'}")
         r1,r2,r3,r4=st.columns(4,gap="small")
@@ -203,10 +220,11 @@ def render_calibration_validation() -> None:
         rec_remarks=st.text_area("Service Remarks",value=str((existing_rec or {}).get("remarks") or ""),key=f"{rec_token}_remarks")
         can_rec_save=perms["can_edit"] if existing_rec else perms["can_create"]
         if st.button("Update Calibration / Validation Record" if existing_rec else "Save Calibration / Validation Record",type="primary",width="stretch",disabled=not can_rec_save or not selected_link,key=f"{rec_token}_save"):
-            rec_payload={"link_id":selected_link,"asset_id":str(link.get("asset_id") or ""),"record_type":record_type,"service_date":service_date.isoformat(),"result":result,"report_number":report_no.strip() or None,"certificate_number":cert_no.strip() or None,"calibration_agency":agency.strip() or None,"performed_by_employee_id":performed or None,"next_due_date":next_service_due.isoformat(),"status":"VALID" if result in {"ACCEPTED","LIMITED_USE"} else ("REJECTED" if result=="REJECTED" else "PENDING"),"remarks":rec_remarks.strip() or None}
+            rec_payload={"link_id":None if str(selected_link).startswith("asset:") else selected_link,"asset_id":str(link.get("asset_id") or ""),"record_type":record_type,"service_date":service_date.isoformat(),"result":result,"report_number":report_no.strip() or None,"certificate_number":cert_no.strip() or None,"calibration_agency":agency.strip() or None,"performed_by_employee_id":performed or None,"next_due_date":next_service_due.isoformat(),"status":"VALID" if result in {"ACCEPTED","LIMITED_USE"} else ("REJECTED" if result=="REJECTED" else "PENDING"),"remarks":rec_remarks.strip() or None}
             saved=repo.update("quality_asset_calibration_records",str(existing_rec["id"]),rec_payload) if existing_rec else repo.insert("quality_asset_calibration_records",rec_payload)
             if result in {"ACCEPTED","LIMITED_USE"}:
-                repo.update("quality_asset_part_process_links",selected_link,{"last_service_date":service_date.isoformat(),"next_due_date":next_service_due.isoformat()})
+                if not str(selected_link).startswith("asset:"):
+                    repo.update("quality_asset_part_process_links",selected_link,{"last_service_date":service_date.isoformat(),"next_due_date":next_service_due.isoformat()})
                 asset_update={"next_due_date":next_service_due.isoformat()}
                 if record_type=="CALIBRATION": asset_update["last_calibration_date"]=service_date.isoformat()
                 else: asset_update.update({"last_validation_date":service_date.isoformat(),"next_validation_due_date":next_service_due.isoformat()})

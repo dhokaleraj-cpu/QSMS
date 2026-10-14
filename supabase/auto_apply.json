@@ -1,0 +1,6 @@
+{
+  "comment": "SQL applied automatically by scripts/apply_sql.py (ledger: public.qcms_applied_sql). Every file is safe to re-run.",
+  "files": [
+    "supabase/migrations/20261017100000_qcms_r28_part_rows_recovery_assets.sql"
+  ]
+}

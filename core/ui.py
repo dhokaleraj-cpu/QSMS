@@ -225,6 +225,29 @@ def safe(value: Any) -> str:
     return escape(str(value or ""))
 
 
+GRID_MAX_HEIGHT = 520
+GRID_SCROLL_ROWS = 14
+
+GRID_SCROLL_CSS = """
+/* R28 · scrollable grids: left/right and up/down on every grid */
+.qcms-enterprise-table-wrap,.qcms-scroll-grid{overflow:auto!important;-webkit-overflow-scrolling:touch!important;overscroll-behavior:contain!important;scrollbar-width:auto!important;scrollbar-color:#8A949C #EEF0F2!important;}
+.qcms-enterprise-table-wrap::-webkit-scrollbar,div[data-testid="stDataFrame"] .dvn-scroller::-webkit-scrollbar,div[data-testid="stDataEditor"] .dvn-scroller::-webkit-scrollbar{width:11px!important;height:11px!important;}
+.qcms-enterprise-table-wrap::-webkit-scrollbar-thumb,div[data-testid="stDataFrame"] .dvn-scroller::-webkit-scrollbar-thumb,div[data-testid="stDataEditor"] .dvn-scroller::-webkit-scrollbar-thumb{background:#8A949C!important;border-radius:6px!important;border:2px solid #EEF0F2!important;}
+.qcms-enterprise-table-wrap::-webkit-scrollbar-track,div[data-testid="stDataFrame"] .dvn-scroller::-webkit-scrollbar-track,div[data-testid="stDataEditor"] .dvn-scroller::-webkit-scrollbar-track{background:#EEF0F2!important;}
+.qcms-enterprise-table{width:max-content!important;min-width:100%!important;}
+.qcms-enterprise-table th:first-child,.qcms-enterprise-table td:first-child{position:sticky!important;left:0!important;z-index:1!important;box-shadow:1px 0 0 #BFC4C8!important;}
+.qcms-enterprise-table th:first-child{z-index:3!important;}
+.qcms-grid-hint{font-size:10px!important;color:#5F6B73!important;margin:6px 0 -3px!important;}
+div[data-testid="stDataFrame"],div[data-testid="stDataEditor"]{overflow:visible!important;max-width:100%!important;}
+div[data-testid="stDataFrame"] .dvn-scroller,div[data-testid="stDataEditor"] .dvn-scroller{overflow:auto!important;scrollbar-width:auto!important;scrollbar-color:#8A949C #EEF0F2!important;-webkit-overflow-scrolling:touch!important;}
+div[data-testid="stHorizontalBlock"]:has(div[data-testid="stDataFrame"]),div[data-testid="stHorizontalBlock"]:has(div[data-testid="stDataEditor"]){overflow-x:auto!important;}
+"""
+
+
+def grid_scroll_css() -> str:
+    return "<style>" + GRID_SCROLL_CSS + "</style>"
+
+
 def portal_table(data: Any, *, hide_index: bool = True, width: Any = "stretch", height: int | None = None, **_: Any) -> None:
     """Render a deterministic Meritor-style enterprise grid.
 
@@ -280,10 +303,20 @@ def portal_table(data: Any, *, hide_index: bool = True, width: Any = "stretch", 
 
     if not hide_index:
         head = '<th class="qcms-index-cell">#</th>' + head
-    max_height = f"max-height:{int(height)}px;" if height else ""
+    # R28: every grid scrolls left/right and up/down inside its own frame (sticky header and
+    # first column), so all rows and columns stay reachable on laptop, tablet and phone.
+    if height:
+        max_height = f"max-height:{int(height)}px;"
+    else:
+        max_height = f"max-height:{GRID_MAX_HEIGHT}px;" if len(frame.index) > GRID_SCROLL_ROWS else ""
     empty = '<div class="qcms-table-empty">No records available.</div>' if frame.empty else ""
+    hint = ""
+    if not frame.empty and (len(frame.columns) > 6 or len(frame.index) > GRID_SCROLL_ROWS):
+        hint = (f'<div class="qcms-grid-hint">{len(frame.index):,} row(s) × {len(frame.columns)} column(s) · '
+                'scroll / swipe ← → ↑ ↓ inside the grid to see everything</div>')
     html = (
-        f'<div class="qcms-enterprise-table-wrap" style="{max_height}">' +
+        hint +
+        f'<div class="qcms-enterprise-table-wrap qcms-scroll-grid" tabindex="0" style="{max_height}">' +
         (f'<table class="qcms-enterprise-table"><thead><tr>{head}</tr></thead><tbody>{"".join(rows_html)}</tbody></table>' if not frame.empty else empty) +
         '</div>'
     )
@@ -1430,6 +1463,7 @@ def apply_teal_material_theme() -> None:
     </style>
     """ % t
     st.markdown(css, unsafe_allow_html=True)
+    st.markdown(grid_scroll_css(), unsafe_allow_html=True)
 
 
 def render_public_brand() -> None:

@@ -248,7 +248,8 @@ class MasterService:
         "customer_standards": ("standard_code", "standard_name"),
         "processes": ("process_name",),
         "inspection_stages": ("stage_name",),
-        "quality_assets": ("asset_name",),
+        # R28: many gauges share one name (e.g. SNAP GAUGE); the Asset Number identifies each one.
+        "quality_assets": ("asset_number",),
     }
 
     def duplicate_match(
