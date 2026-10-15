@@ -1921,7 +1921,8 @@ def app_footer() -> None:
     st.markdown(
         '<div class="fsi-footer">Developed by Rajesh Dhokale &nbsp;|&nbsp; '
         '<a href="mailto:dhokaleraj@icloud.com">dhokaleraj@icloud.com</a> &nbsp;|&nbsp; '
-        'Copyrights by <strong>STAWN</strong></div>',
+        'Copyrights by <strong>STAWN</strong> &nbsp;|&nbsp; '
+        '<a href="./about" target="_self">About STAWN QCMS</a> · © 2026 STAWN PRECISION PRIVATE LIMITED</div>',
         unsafe_allow_html=True,
     )
 

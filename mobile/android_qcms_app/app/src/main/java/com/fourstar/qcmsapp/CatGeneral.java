@@ -16,6 +16,12 @@ public final class CatGeneral {
             .desc("Top-10 management dashboards: live numbers, charts and tables")
             .custom(GenKpiScreen::new).readOnly().noEdit());
 
+        list.add(new Module("reports_centre", "Reports Centre", Catalog.MORE, REPORTS, "")
+            .desc("All reports like the website: supply chain, heat, quality, complaints, NPD, APQP")
+            .custom(GenCentres.ReportsScreen::new).readOnly().noEdit());
+        list.add(new Module("records_centre", "Records Centre", Catalog.MORE, REPORTS, "")
+            .desc("Every register and record as PDF (website print layout), deletion requests, history")
+            .custom(GenCentres.RecordsScreen::new).readOnly().noEdit());
         list.add(new Module("report_builder", "Report Builder", Catalog.MORE, REPORTS, "")
             .desc("Build any report: dataset, columns, filters, totals, chart, CSV, saved reports")
             .custom(GenReportScreen::new).readOnly().noEdit());
@@ -29,5 +35,8 @@ public final class CatGeneral {
         list.add(new Module("my_account", "My Account", Catalog.MORE, ACCOUNT, "")
             .desc("Your login information and password change")
             .custom(GenAccountScreen::new).readOnly().noEdit());
+        list.add(new Module("about", "About STAWN QCMS", Catalog.MORE, ACCOUNT, "")
+            .desc("Version, developer STAWN PRECISION PRIVATE LIMITED, copyright and licence")
+            .custom(GenCentres.AboutScreen::new).readOnly().noEdit());
     }
 }

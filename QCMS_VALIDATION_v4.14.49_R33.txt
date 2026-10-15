@@ -1,0 +1,7 @@
+QCMS v4.14.49 R33 validation
+- Android sources compile against framework stubs (javac 17)
+- App report PDFs rendered on desktop (Java2D harness) from the same rows as the website PDFs:
+  MetLAB 3 pages / Bend 2 / Dimensional 1 / Inward 1 / RMTC 3 = same page counts as core/reporting.py; side-by-side visual check
+- Live schema audit of every app module (table, columns, order, filters) against Supabase: only osp_material_outs.status was missing -> fixed
+- Python suite: 845 passed (4 sandbox-only env failures), verify_phase1 errors [], readiness missing []
+- Website About page rendered with Streamlit AppTest (no exceptions)

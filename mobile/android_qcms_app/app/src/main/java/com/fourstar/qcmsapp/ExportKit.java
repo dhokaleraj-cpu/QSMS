@@ -39,6 +39,18 @@ final class ExportKit {
     // ------------------------------------------------------------------ entry point (top-bar ⇩ button)
     static void show(MainActivity a, Screen screen, View content) {
         if (screen == null) return;
+        if (screen instanceof RecordScreen && ((RecordScreen) screen).layoutReady()) {
+            RecordScreen rs = (RecordScreen) screen;
+            new AlertDialog.Builder(a).setTitle(screen.title())
+                .setItems(new String[]{"Print layout PDF (same as website)", "Data export: PDF / Excel / Print / Email"}, (d, w) -> {
+                    if (w == 0) rs.printLayout(); else showData(a, screen, content);
+                }).setNegativeButton("Close", null).show();
+            return;
+        }
+        showData(a, screen, content);
+    }
+
+    static void showData(MainActivity a, Screen screen, View content) {
         ExportDoc captured = null;
         if (!(screen instanceof ExportDoc.Source)) {
             captured = capture(screen.title(), screen.subtitle(), content);
@@ -71,6 +83,58 @@ final class ExportKit {
                     case 4: email(a, doc); break;
                     case 5: share(a, doc, false); break;
                     default: share(a, doc, true); break;
+                }
+            })
+            .setNegativeButton("Close", null)
+            .show();
+    }
+
+    // ------------------------------------------------------------------ R33: website print layout
+    /** Report in the website's controlled print layout: view, download, print, email, share. */
+    static void layoutMenu(MainActivity a, Api.Task<RptDoc> builder) {
+        a.toast("Preparing the print layout PDF…");
+        Api.async(() -> {
+            RptDoc doc = builder.run();
+            return new Object[]{doc, RptPdf.render(doc)};
+        }, (res, err) -> {
+            if (err != null || res == null) { a.toast("Could not create the PDF: " + Api.message(err)); return; }
+            RptDoc doc = (RptDoc) res[0];
+            byte[] pdf = (byte[]) res[1];
+            layoutActions(a, doc.title, doc.fileBase, pdf);
+        });
+    }
+
+    static void layoutActions(MainActivity a, String title, String fileBase, byte[] pdf) {
+        String stamp = new SimpleDateFormat("yyyyMMdd_HHmm", Locale.ENGLISH).format(new Date());
+        String name = SndFiles.safeName(fileBase + "_" + stamp + ".pdf");
+        String[] items = {"View PDF", "Download PDF", "Print", "Email from QCMS (PDF attached)", "Share PDF (WhatsApp, Gmail…)"};
+        new AlertDialog.Builder(a)
+            .setTitle(title)
+            .setItems(items, (d, which) -> {
+                switch (which) {
+                    case 0: SndPdfView.show(a, title, name, pdf); break;
+                    case 1:
+                        Api.async(() -> SndFiles.saveToDownloads(a, name, pdf, PDF), (saved, err) -> {
+                            if (err != null || saved == null) { a.toast("Could not save: " + Api.message(err)); return; }
+                            if (saved.uri == null) { a.toast("Saved: " + saved.where); return; }
+                            new AlertDialog.Builder(a).setTitle("Saved").setMessage(saved.where)
+                                .setPositiveButton("Open", (x, y) -> SndFiles.open(a, saved.uri, PDF))
+                                .setNeutralButton("Share", (x, y) -> SndFiles.share(a, saved.uri, PDF, name))
+                                .setNegativeButton("Done", null).show();
+                        });
+                        break;
+                    case 2: printPdf(a, title, pdf); break;
+                    case 3: {
+                        List<Attachments.FileData> files = new ArrayList<>();
+                        files.add(new Attachments.FileData(pdf, name, PDF));
+                        SndEmailSend.openWith(a, "QCMS · " + title, "Dear Sir / Madam,\n\nPlease find attached " + title + " from QCMS.\n\nRegards,\n" + printedBy(a), files);
+                        break;
+                    }
+                    default:
+                        Api.async(() -> SndFiles.saveToDownloads(a, name, pdf, PDF), (saved, err) -> {
+                            if (err != null || saved == null || saved.uri == null) { a.toast("Sharing needs Android 10 or newer - use Email from QCMS instead."); return; }
+                            SndFiles.share(a, saved.uri, PDF, title);
+                        });
                 }
             })
             .setNegativeButton("Close", null)

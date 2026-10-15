@@ -90,7 +90,7 @@ public final class CatInspection {
         // ---------------------------------------------------------------- OSP material out
         list.add(new Module("osp_material_out", "OSP Material Out", Catalog.QUALITY, OSP, "osp_material_outs")
             .desc("Multi-heat dispatch documents to approved OSP vendors")
-            .titleField("material_out_number")
+            .titleField("material_out_number").status("")
             .col("material_out_number", "Material Out").col("created_at", "Created")
             .editor((a, id, prefill) -> new InspOspOutScreen(a, id))
             .readOnly()

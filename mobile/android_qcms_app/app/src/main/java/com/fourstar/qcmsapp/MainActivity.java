@@ -14,6 +14,7 @@ import android.os.CancellationSignal;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
@@ -317,6 +318,41 @@ public class MainActivity extends Activity {
         top.addView(refresh, new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)));
         root.addView(top, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // R33: global search at the top of every screen
+        searchRow = Ui.hbox(this);
+        searchRow.setBackgroundColor(Ui.TEAL);
+        searchRow.setPadding(Ui.dp(this, 10), 0, Ui.dp(this, 10), Ui.dp(this, 8));
+        searchRow.setGravity(Gravity.CENTER_VERTICAL);
+        EditText searchBox = new EditText(this);
+        searchBox.setHint("🔍  Search Part, Heat, RMTC, Batch, PO, Report…");
+        searchBox.setHintTextColor(Ui.MUTED);
+        searchBox.setTextColor(Ui.TEXT);
+        searchBox.setTextSize(14);
+        searchBox.setSingleLine(true);
+        searchBox.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        searchBox.setPadding(Ui.dp(this, 14), Ui.dp(this, 8), Ui.dp(this, 14), Ui.dp(this, 8));
+        searchBox.setBackground(Ui.round(Color.WHITE, 0, 0, 22, this));
+        Runnable runSearch = () -> {
+            String q = searchBox.getText().toString().trim();
+            if (q.isEmpty()) { push(new GenSearchScreen(this)); return; }
+            searchBox.setText("");
+            searchBox.clearFocus();
+            hideKeyboard(searchBox);
+            push(new GenSearchScreen(this, q));
+        };
+        searchBox.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) { runSearch.run(); return true; }
+            return false;
+        });
+        searchRow.addView(searchBox, new LinearLayout.LayoutParams(0, Ui.dp(this, 42), 1));
+        Button go = barButton("🔍");
+        go.setTextSize(18);
+        go.setOnClickListener(v -> runSearch.run());
+        LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 42));
+        glp.leftMargin = Ui.dp(this, 6);
+        searchRow.addView(go, glp);
+        root.addView(searchRow, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         content = new FrameLayout(this);
         root.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
@@ -345,6 +381,8 @@ public class MainActivity extends Activity {
     }
 
     private Button backButton;
+    private LinearLayout searchRow;
+
 
     private Button barButton(String text) {
         Button b = new Button(this);
@@ -423,6 +461,7 @@ public class MainActivity extends Activity {
         subtitleView.setText(sub);
         subtitleView.setVisibility(sub == null || sub.isEmpty() ? View.GONE : View.VISIBLE);
         backButton.setVisibility(stack.size() > 1 ? View.VISIBLE : View.GONE);
+        if (searchRow != null) searchRow.setVisibility(s instanceof GenSearchScreen || s instanceof WebScreen ? View.GONE : View.VISIBLE);
         content.removeAllViews();
         content.addView(s.build(), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         int tab = s.tab();

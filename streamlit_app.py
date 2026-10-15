@@ -60,6 +60,7 @@ from app_pages import (
     material_inward,
     metlab_report,
     my_account,
+    about as about_page,
     osp_inspections,
     osp_transactions,
     part_master,
@@ -235,6 +236,7 @@ PAGE_ITEMS = (
     ("standards-entry", st.Page(standards_bank.render_entry, title="Customer Standards Entry", icon=":material/library_books:", url_path="standards-entry")),
     ("standards-records", st.Page(standards_bank.render_records, title="Customer Standards Records", icon=":material/menu_book:", url_path="standards-records")),
     ("my-account", st.Page(my_account.render, title="My Account", icon=":material/manage_accounts:", url_path="my-account")),
+    ("about", st.Page(about_page.render, title="About STAWN QCMS", icon=":material/info:", url_path="about")),
 
     ("rmtc-part", st.Page(rmtc_pages.render_part, title="RMTC Part Worksheet", icon=":material/format_list_bulleted:", url_path="rmtc-part")),
     ("rmtc-records", st.Page(rmtc_pages.render_records, title="RMTC Records", icon=":material/table_view:", url_path="rmtc-records")),
@@ -443,7 +445,7 @@ RECORD_ROUTES = {
     "grade-records", "reference-records", "employee-records", "standards-records",
 }
 ROUTE_MODULE = {
-    "dashboard": "Dashboard", "my-account": "Dashboard", "kpi-dashboards": "KPI Dashboards", "system-settings": "Admin", "print-designer": "Admin", "email-send": "Email", "email-groups": "Email", "email-my-settings": "Email", "email-sent": "Email",
+    "dashboard": "Dashboard", "my-account": "Dashboard", "about": "Dashboard", "kpi-dashboards": "KPI Dashboards", "system-settings": "Admin", "print-designer": "Admin", "email-send": "Email", "email-groups": "Email", "email-my-settings": "Email", "email-sent": "Email",
     "masters": "Masters", "company-branch-entry": "Masters", "company-branch-records": "Masters", "part-entry": "Masters", "process-entry": "Masters",
     "grade-entry": "Masters", "reference-entry": "Masters", "employee-entry": "Masters",
     "user-access": "Admin", "email-settings": "Admin", "deployment-diagnostics": "Admin", "master-import": "Masters", "standards-entry": "Masters",
@@ -478,7 +480,7 @@ PAGE_TITLE_TO_PATH = {
     "Process Master Records": "process-records", "Material Grade Entry": "grade-entry",
     "Material Grade Records": "grade-records", "Reference Master Entry": "reference-entry",
     "Reference Master Records": "reference-records", "Employee Entry": "employee-entry",
-    "Employee Records": "employee-records", "Users & Access": "user-access", "Email Server & Notifications": "email-settings", "Deployment Diagnostics": "deployment-diagnostics", "Master Import": "master-import", "Customer Standards Entry": "standards-entry", "Customer Standards Records": "standards-records", "My Account": "my-account",
+    "Employee Records": "employee-records", "Users & Access": "user-access", "Email Server & Notifications": "email-settings", "Deployment Diagnostics": "deployment-diagnostics", "Master Import": "master-import", "Customer Standards Entry": "standards-entry", "Customer Standards Records": "standards-records", "My Account": "my-account", "About STAWN QCMS": "about",
     "Approved RMTC Part Worksheet": "rmtc-approved-worksheet", "RMTC Part Worksheet": "rmtc-part", "RMTC Records": "rmtc-records",
     "RMTC Approval": "rmtc-approval", "Material Inward Records": "inward-records",
     "OSP Material Out": "osp-material-out", "OSP Sample Receipt": "osp-sample-receipt",

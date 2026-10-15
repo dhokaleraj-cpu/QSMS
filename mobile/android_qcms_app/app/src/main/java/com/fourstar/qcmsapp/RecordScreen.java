@@ -29,8 +29,28 @@ public final class RecordScreen extends Screen {
         "qc_calculation_records", "quality_complaints", "quality_asset_part_process_links", "quality_asset_calibration_records",
         "standard_room_inspection_records"));
 
+    static final Set<String> FULL_REPORT = new HashSet<>(Arrays.asList(
+        "lab_tests", "inspection_reports", "rmtc_approvals", "inward_lots", "qc_calculation_records", "quality_complaints"));
+
     private final Module m;
     private final String id;
+
+    boolean layoutReady() { return row != null && !m.idField.isEmpty(); }
+
+    /** Website print layout of this record (dedicated report or Universal Record PDF). */
+    void printLayout() { ExportKit.layoutMenu(a, () -> RptReports.forRecord(api, m, id)); }
+
+    private void addFullReport() {
+        add(Ui.label(a, "Full report (as printed)"), 10);
+        LinearLayout holder = Ui.card(a);
+        holder.addView(Ui.text(a, "Loading every entry of this report…", 12, Ui.MUTED, false));
+        add(holder, 2);
+        Api.async(() -> RptReports.forRecord(api, m, id), (doc, err) -> {
+            holder.removeAllViews();
+            if (err != null || doc == null) { holder.addView(Ui.text(a, "Could not load the report: " + Api.message(err), 12, Ui.RED_FG, false)); return; }
+            holder.addView(RptView.build(a, doc));
+        });
+    }
     private JSONObject row;
     private String title = "";
 
@@ -110,10 +130,16 @@ public final class RecordScreen extends Screen {
             b.setOnClickListener(v -> act.action.run(a, row, this::reload));
             actions.addView(b, Ui.matchWrap(a, 8));
         }
-        Button export = Ui.outline(a, "⇩ Download PDF / Excel · Print · Email", Ui.TEAL_DARK);
-        export.setOnClickListener(v -> ExportKit.show(a, this, scroll));
+        Button layout = Ui.primary(a, "🖨 Print layout PDF · Download · Print · Email");
+        layout.setOnClickListener(v -> printLayout());
+        actions.addView(layout, Ui.matchWrap(a, actions.getChildCount() > 0 ? 8 : 0));
+        Button export = Ui.outline(a, "⇩ Data export: PDF / Excel", Ui.TEAL_DARK);
+        export.setOnClickListener(v -> ExportKit.showData(a, this, scroll));
         actions.addView(export, Ui.matchWrap(a, actions.getChildCount() > 0 ? 8 : 0));
         if (actions.getChildCount() > 0) add(actions, 10);
+
+        // ---- R33: the full report exactly as printed (all entries of MetLAB / Bend Test / Dimensional / RMTC / Inward)
+        if (FULL_REPORT.contains(m.table)) addFullReport();
 
         // ---- details
         add(Ui.label(a, "Details"), 10);

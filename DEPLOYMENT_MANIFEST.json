@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R32",
+  "release_revision": "R33",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -571,5 +571,14 @@
     "brand_stawn_qcms_android_app_name_and_adaptive_icon_with_stawn_mark",
     "android_login_splash_stawn_qcms_logo",
     "website_title_favicon_header_stawn_qcms"
+  ],
+  "r33_changes": [
+    "android_print_layout_pdfs_same_as_website_metlab_bend_dimensional_rmtc_inward_complaint_calibration_standard_room_qc_calculation",
+    "android_universal_record_pdf_and_full_register_pdf_for_every_module",
+    "android_full_report_entries_on_record_screen",
+    "android_reports_centre_records_centre",
+    "android_global_search_bar_on_every_screen",
+    "about_page_app_and_website_stawn_precision_private_limited",
+    "fix_osp_material_out_register_missing_status_column"
   ]
 }

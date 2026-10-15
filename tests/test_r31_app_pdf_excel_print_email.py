@@ -21,7 +21,7 @@ def test_every_screen_has_the_export_button():
     main = read("MainActivity.java")
     assert 'barButton("⇩")' in main and "ExportKit.show(this, s, shown)" in main
     assert "implements ExportDoc.Source" in read("RegisterScreen.java")
-    assert "ExportKit.show(a, this, scroll)" in read("RecordScreen.java")
+    assert "ExportKit.showData(a, this, scroll)" in read("RecordScreen.java")  # R33: data export; print layout via printLayout()
     assert "exportPairs()" in read("FormView.java") and "rowsData()" in read("SheetView.java")
 
 
