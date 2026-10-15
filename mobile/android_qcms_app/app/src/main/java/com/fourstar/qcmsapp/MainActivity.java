@@ -35,8 +35,8 @@ import java.util.Deque;
  */
 public class MainActivity extends Activity {
     private static final long LOCK_AFTER_MS = 15L * 60L * 1000L;
-    private static final String[] TABS = {"Home", "Orders", "Inspect", "Assets", "More"};
-    private static final String[] TAB_ICONS = {"⌂", "☰", "◎", "⚙", "⋯"};
+    private static final String[] TABS = Catalog.TAB_NAMES;
+    private static final String[] TAB_ICONS = {"⌂", "⇄", "✓", "▤", "⋯"};
 
     private Api api;
     private final Deque<Screen> stack = new ArrayDeque<>();
@@ -355,15 +355,30 @@ public class MainActivity extends Activity {
     void openTab(int tab) {
         stack.clear();
         Screen s;
-        switch (tab) {
-            case 1: s = new OrdersScreen(this); break;
-            case 2: s = new InspectScreen(this); break;
-            case 3: s = new AssetsScreen(this); break;
-            case 4: s = new MoreScreen(this); break;
-            default: s = new HomeScreen(this); break;
-        }
+        s = tab <= 0 || tab >= TABS.length ? new HomeScreen(this) : new SectionScreen(this, tab);
         stack.push(s);
         render();
+    }
+
+    /** Replace the current screen (e.g. New form -> the saved record). */
+    void replaceTop(Screen s) {
+        if (!stack.isEmpty()) stack.pop();
+        stack.push(s);
+        render();
+    }
+
+    /** Open a catalogue module register by key (used by Home shortcuts). */
+    void openModule(String key) {
+        Module m = Catalog.get(key);
+        if (m == null) { toast("Module not available."); return; }
+        push(m.custom != null ? m.custom.open(this) : new RegisterScreen(this, m));
+    }
+
+    /** Open a catalogue module straight on its New form. */
+    void newRecord(String key) {
+        Module m = Catalog.get(key);
+        if (m == null || !m.canCreate()) { openModule(key); return; }
+        push(EditScreen.open(this, m, null, null));
     }
 
     void push(Screen s) {
@@ -434,10 +449,82 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ------------------------------------------------------------------ photos & files
+    interface FileResult { void picked(Attachments.FileData file); }
+    private static final int REQ_CAMERA = 801, REQ_PICK = 802, REQ_PERM = 803;
+    private FileResult pendingFile;
+    private Uri pendingCameraUri;
+    private boolean pendingImagesOnly;
+
+    /** Camera / gallery / file chooser. Photos are rotated upright and compressed (max 2000 px, JPEG 85). */
+    void pickFile(String title, boolean imagesOnly, FileResult result) {
+        pendingFile = result;
+        pendingImagesOnly = imagesOnly;
+        String[] items = imagesOnly ? new String[]{"Take photo", "Choose from gallery"} : new String[]{"Take photo", "Choose from gallery", "Choose file (PDF, Excel, …)"};
+        new AlertDialog.Builder(this).setTitle(title).setItems(items, (d, which) -> {
+            if (which == 0) startCamera();
+            else {
+                Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
+                pick.addCategory(Intent.CATEGORY_OPENABLE);
+                pick.setType(which == 1 ? "image/*" : "*/*");
+                try { startActivityForResult(Intent.createChooser(pick, title), REQ_PICK); } catch (Exception e) { toast("No file picker available."); }
+            }
+        }).setNegativeButton("Back", null).show();
+    }
+
+    private void startCamera() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+            && checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_PERM);
+            return;
+        }
+        try {
+            android.content.ContentValues values = new android.content.ContentValues();
+            values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "QCMS_" + System.currentTimeMillis() + ".jpg");
+            values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+            pendingCameraUri = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+            Intent camera = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+            camera.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, pendingCameraUri);
+            camera.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            startActivityForResult(camera, REQ_CAMERA);
+        } catch (Exception e) {
+            toast("Camera not available: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == REQ_PERM) {
+            if (results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) startCamera();
+            else toast("Storage permission is needed to save the camera photo (Android 9 and older).");
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (activeWeb != null) activeWeb.onActivityResult(requestCode, resultCode, data);
+        if (activeWeb != null && requestCode == WebScreen.FILE_CHOOSER) {
+            activeWeb.onActivityResult(requestCode, resultCode, data);
+            return;
+        }
+        if (pendingFile == null) return;
+        final FileResult callback = pendingFile;
+        Uri uri = null;
+        if (requestCode == REQ_CAMERA && resultCode == RESULT_OK) uri = pendingCameraUri;
+        else if (requestCode == REQ_PICK && resultCode == RESULT_OK && data != null) uri = data.getData();
+        if (uri == null) {
+            if (requestCode == REQ_CAMERA && pendingCameraUri != null) {
+                try { getContentResolver().delete(pendingCameraUri, null, null); } catch (Exception ignored) { }
+            }
+            return;
+        }
+        final Uri source = uri;
+        toast("Preparing file…");
+        Api.async(() -> Photos.read(this, source), (file, err) -> {
+            if (err != null) { toast("Could not read the file: " + Api.message(err)); return; }
+            callback.picked(file);
+        });
     }
 
     // ------------------------------------------------------------------ helpers

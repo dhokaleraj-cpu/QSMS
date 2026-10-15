@@ -154,11 +154,11 @@ public final class PoDetailScreen extends Screen {
         if (pending) renderApproval(h);
         else if (!cancelled) {
             Button send = Ui.primary(a, "Send approved PO to supplier (PDF + email preview)");
-            send.setOnClickListener(v -> a.openWeb("Send PO " + number, "supply-po-approval?po=" + id));
+            send.setOnClickListener(v -> SndPoSend.open(a, id));
             add(send, 14);
         }
-        Button web = Ui.outline(a, "Open PO PDF / full details in QCMS", Ui.TEAL);
-        web.setOnClickListener(v -> a.openWeb("PO " + number, "supply-po-approval?po=" + id));
+        Button web = Ui.outline(a, "Open PO PDF (print sections as saved)", Ui.TEAL);
+        web.setOnClickListener(v -> SndPdfView.forPo(a, id));
         add(web, 10);
         if (!cancelled) {
             Button cancel = Ui.outline(a, "Cancel PO (reason required)", Ui.ORANGE);
@@ -219,7 +219,7 @@ public final class PoDetailScreen extends Screen {
                 JSONObject options = new JSONObject();
                 try { for (Map.Entry<String, CheckBox> e : sectionBoxes.entrySet()) options.put(e.getKey(), e.getValue().isChecked()); } catch (Exception ignored) { }
                 approve(a, id, options, sendToSupplier, () -> {
-                    if (sendToSupplier) a.openWeb("Send PO " + number, "supply-po-approval?po=" + id);
+                    if (sendToSupplier) SndPoSend.open(a, id);
                     else a.rebuild();
                 }, remarks.getText().toString().trim());
             }));

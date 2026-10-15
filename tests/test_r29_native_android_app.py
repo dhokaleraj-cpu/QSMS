@@ -14,7 +14,7 @@ def read(path: Path) -> str:
 def test_project_and_gradle():
     gradle = read(APP / "app/build.gradle")
     assert "applicationId 'com.fourstar.qcmsapp'" in gradle and "minSdk 26" in gradle and "targetSdk 35" in gradle
-    assert "versionName '2.0.0'" in gradle and "signingConfig signingConfigs.qcms" in gradle
+    assert "versionName '3.0.0'" in gradle and "signingConfig signingConfigs.qcms" in gradle
     assert '"https://xxrxopzxzyjnzumrwuwy.supabase.co"' in gradle
     assert "sb_publishable_" in gradle and "service_role" not in gradle
     assert (APP / "app/qcms-debug.keystore").exists()
@@ -23,11 +23,13 @@ def test_project_and_gradle():
 
 
 def test_all_designed_screens_exist():
-    for name in ("MainActivity", "HomeScreen", "OrdersScreen", "PoDetailScreen", "OrderTrackerScreen", "InspectScreen",
-                 "AssetsScreen", "AssetDetailScreen", "MoreScreen", "PartRmScreen", "WebScreen", "DataGrid", "Api", "SecureStore", "Ui"):
+    for name in ("MainActivity", "HomeScreen", "OrdersScreen", "PoDetailScreen", "OrderTrackerScreen", "Catalog", "SectionScreen",
+                 "RegisterScreen", "RecordScreen", "EditScreen", "AssetsScreen", "AssetDetailScreen", "MoreScreen", "PartRmScreen",
+                 "DataGrid", "SheetView", "Api", "SecureStore", "Ui"):
         assert (SRC / f"{name}.java").exists(), name
     main = read(SRC / "MainActivity.java")
-    assert 'TABS = {"Home", "Orders", "Inspect", "Assets", "More"}' in main
+    assert "TABS = Catalog.TAB_NAMES" in main
+    assert 'TAB_NAMES = {"Home", "Supply", "Quality", "Masters", "More"}' in read(SRC / "Catalog.java")
     assert "BiometricPrompt" in main and "LOCK_AFTER_MS = 15L * 60L * 1000L" in main
 
 
@@ -50,15 +52,15 @@ def test_po_approval_matches_website():
     for flag, label in SECTION_OPTIONS:
         assert f'{{"{flag}", "{label}"}}' in po
     assert "Approve & send to supplier" in po and "Approve, do not send" in po
-    assert "supply-po-approval?po=" in po
+    assert "SndPoSend.open(a, id)" in po and "SndPdfView.forPo(a, id)" in po   # R30: native PDF + send
     web = read(ROOT / "app_pages/supply_chain.py")
     assert 'st.query_params.get("po")' in web
 
 
 def test_grids_scroll_both_ways_with_frozen_panes():
-    grid = read(SRC / "DataGrid.java")
-    assert "HorizontalScrollView" in grid and "ScrollView" in grid and "setOnScrollChangeListener" in grid
-    assert "requestDisallowInterceptTouchEvent" in grid
+    grid = read(SRC / "SheetView.java")   # R30: canvas spreadsheet grid replaces the nested scroll views
+    assert "GestureDetector" in grid and "ScaleGestureDetector" in grid and "fling" in grid
+    assert "requestDisallowInterceptTouchEvent" in grid and "frozen first column" in grid
 
 
 def test_ci_workflow_builds_native_apk():

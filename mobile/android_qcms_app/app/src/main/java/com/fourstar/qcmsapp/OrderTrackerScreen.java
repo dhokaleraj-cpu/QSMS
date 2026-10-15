@@ -158,8 +158,8 @@ public final class OrderTrackerScreen extends Screen {
                 add(b, 8);
             }
         }
-        Button web = Ui.outline(a, "Open traceability in QCMS", Ui.TEAL);
-        web.setOnClickListener(v -> a.openWeb("Traceability", "supply-traceability"));
+        Button web = Ui.outline(a, "Open traceability", Ui.TEAL);
+        web.setOnClickListener(v -> a.push(GenTraceScreen.forOrder(a, id)));
         add(web, 8);
     }
 

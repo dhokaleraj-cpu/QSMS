@@ -28,7 +28,7 @@ public final class PartRmScreen extends Screen {
 
     @Override public String title() { return "Part Master · RM details"; }
     @Override public String subtitle() { return "Search part number / FSI number / description"; }
-    @Override public int tab() { return 4; }
+    @Override public int tab() { return Catalog.MASTERS; }
 
     @Override
     public View build() {
@@ -124,8 +124,8 @@ public final class PartRmScreen extends Screen {
                     AssetsScreen.nz(r.optString("supplier_forging_part_number")), Ui.pretty(r.optString("status")), AssetsScreen.nz(r.optString("remarks"))));
             }
             results.addView(new DataGrid(a, cols, rows, 360, null), Ui.matchWrap(a, 2));
-            Button edit = Ui.outline(a, "Edit Part in QCMS (Part Master)", Ui.TEAL);
-            edit.setOnClickListener(v -> a.openWeb("Part Master", "part-entry"));
+            Button edit = Ui.outline(a, "Edit Raw Material details of this Part", Ui.TEAL);
+            edit.setOnClickListener(v -> a.push(new MstPartRmScreen(a, part)));
             results.addView(edit, Ui.matchWrap(a, 12));
             Button again = Ui.outline(a, "Search another Part", Ui.TEAL);
             again.setOnClickListener(v -> find());

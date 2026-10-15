@@ -228,24 +228,94 @@ def safe(value: Any) -> str:
 GRID_MAX_HEIGHT = 520
 GRID_SCROLL_ROWS = 14
 
+GRID_SCROLLBAR_PX = 14
+
+# R30 root cause (verified in Chromium 141): Streamlit's global stylesheet sets
+#   *{scrollbar-width:thin;scrollbar-color:transparent transparent}
+# in every browser that supports scrollbar-color (Chrome/Edge 121+, Android WebView, Firefox).
+# Any standard scrollbar-* value switches Blink OFF the ::-webkit-scrollbar styling, so the
+# R28 11px bars were never used: grids got thin transparent (invisible) or overlay bars that
+# only flash while scrolling (macOS, Android) and cannot be grabbed. Grid scrollers therefore
+# reset scrollbar-width/-color to auto in WebKit/Blink (so the always-visible styled
+# ::-webkit-scrollbar applies, also in Safari) and use scrollbar-color only in Firefox.
+_GRID_SCROLLERS = ('html body div.qcms-enterprise-table-wrap,html body div.qcms-scroll-grid,'
+                   'html body div[data-testid="stDataFrame"] .dvn-scroller,html body div[data-testid="stDataEditor"] .dvn-scroller')
+
+
+def _grid_sel(suffix: str) -> str:
+    return ",".join(part + suffix for part in _GRID_SCROLLERS.split(","))
+
+
 GRID_SCROLL_CSS = """
-/* R28 · scrollable grids: left/right and up/down on every grid */
-.qcms-enterprise-table-wrap,.qcms-scroll-grid{overflow:auto!important;-webkit-overflow-scrolling:touch!important;overscroll-behavior:contain!important;scrollbar-width:auto!important;scrollbar-color:#8A949C #EEF0F2!important;}
-.qcms-enterprise-table-wrap::-webkit-scrollbar,div[data-testid="stDataFrame"] .dvn-scroller::-webkit-scrollbar,div[data-testid="stDataEditor"] .dvn-scroller::-webkit-scrollbar{width:11px!important;height:11px!important;}
-.qcms-enterprise-table-wrap::-webkit-scrollbar-thumb,div[data-testid="stDataFrame"] .dvn-scroller::-webkit-scrollbar-thumb,div[data-testid="stDataEditor"] .dvn-scroller::-webkit-scrollbar-thumb{background:#8A949C!important;border-radius:6px!important;border:2px solid #EEF0F2!important;}
-.qcms-enterprise-table-wrap::-webkit-scrollbar-track,div[data-testid="stDataFrame"] .dvn-scroller::-webkit-scrollbar-track,div[data-testid="stDataEditor"] .dvn-scroller::-webkit-scrollbar-track{background:#EEF0F2!important;}
-.qcms-enterprise-table{width:max-content!important;min-width:100%!important;}
-.qcms-enterprise-table th:first-child,.qcms-enterprise-table td:first-child{position:sticky!important;left:0!important;z-index:1!important;box-shadow:1px 0 0 #BFC4C8!important;}
-.qcms-enterprise-table th:first-child{z-index:3!important;}
+/* R28/R30 · scrollable grids: left/right and up/down on every grid, Excel-style scroll bars */
+html body div.qcms-enterprise-table-wrap,html body div.qcms-scroll-grid{overflow:auto!important;touch-action:pan-x pan-y!important;cursor:grab;-webkit-overflow-scrolling:touch!important;overscroll-behavior:contain!important;max-width:100%!important;}
+html body div[data-testid="stDataFrame"] .dvn-scroller,html body div[data-testid="stDataEditor"] .dvn-scroller{overflow:auto!important;-webkit-overflow-scrolling:touch!important;overscroll-behavior:contain!important;}
+@supports selector(::-webkit-scrollbar){@@SCROLLERS@@{scrollbar-width:auto!important;scrollbar-color:auto!important;}}
+@supports not selector(::-webkit-scrollbar){@@SCROLLERS@@{scrollbar-width:auto!important;scrollbar-color:#7E8B92 #EEF3F3!important;}}
+@@BAR@@{width:@@PX@@px!important;height:@@PX@@px!important;background:#EEF3F3!important;display:block!important;-webkit-appearance:none!important;}
+@@THUMB@@{background:#7E8B92!important;border-radius:8px!important;border:3px solid #EEF3F3!important;min-width:36px!important;min-height:36px!important;}
+@@THUMB_HOVER@@{background:#0F8B8D!important;}
+@@TRACK@@{background:#EEF3F3!important;}
+@@CORNER@@{background:#EEF3F3!important;}
+html body table.qcms-enterprise-table{width:max-content!important;min-width:100%!important;}""".replace("@@SCROLLERS@@", _GRID_SCROLLERS).replace("@@PX@@", str(GRID_SCROLLBAR_PX)).replace(
+    "@@BAR@@", _grid_sel("::-webkit-scrollbar")).replace("@@THUMB_HOVER@@", _grid_sel("::-webkit-scrollbar-thumb:hover")).replace(
+    "@@THUMB@@", _grid_sel("::-webkit-scrollbar-thumb")).replace("@@TRACK@@", _grid_sel("::-webkit-scrollbar-track")).replace(
+    "@@CORNER@@", _grid_sel("::-webkit-scrollbar-corner")) + """
+html body div.qcms-scroll-grid.qcms-dragging{cursor:grabbing!important;user-select:none!important;}
+html body table.qcms-enterprise-table thead th{position:sticky!important;top:0!important;z-index:2!important;}
+html body table.qcms-enterprise-table th:first-child,html body table.qcms-enterprise-table td:first-child{position:sticky!important;left:0!important;z-index:1!important;box-shadow:1px 0 0 #BFC4C8!important;}
+html body table.qcms-enterprise-table thead th:first-child{z-index:3!important;}
 .qcms-grid-hint{font-size:10px!important;color:#5F6B73!important;margin:6px 0 -3px!important;}
-div[data-testid="stDataFrame"],div[data-testid="stDataEditor"]{overflow:visible!important;max-width:100%!important;}
-div[data-testid="stDataFrame"] .dvn-scroller,div[data-testid="stDataEditor"] .dvn-scroller{overflow:auto!important;scrollbar-width:auto!important;scrollbar-color:#8A949C #EEF0F2!important;-webkit-overflow-scrolling:touch!important;}
-div[data-testid="stHorizontalBlock"]:has(div[data-testid="stDataFrame"]),div[data-testid="stHorizontalBlock"]:has(div[data-testid="stDataEditor"]){overflow-x:auto!important;}
+/* native grids: never clip the scroller (its bars sit inside the frame), frame never wider than the page */
+html body div[data-testid="stDataFrame"],html body div[data-testid="stDataEditor"]{max-width:100%!important;}
+html body div[data-testid="stElementContainer"]:has(> [data-testid="stDataFrame"]),
+html body div[data-testid="stElementContainer"]:has(> [data-testid="stIFrame"]){max-width:100%!important;min-width:0!important;}
 """
 
 
 def grid_scroll_css() -> str:
     return "<style>" + GRID_SCROLL_CSS + "</style>"
+
+
+# R30: Excel-like panning - press and drag inside any QCMS grid to slide it left/right/up/down
+# (touch screens swipe natively; the mouse wheel / trackpad and the scroll bars also work).
+GRID_DRAG_SCRIPT = """
+<script>
+(function () {
+  if (window.__qcmsGridDrag) return; window.__qcmsGridDrag = true;
+  var active = null, sx = 0, sy = 0, sl = 0, st = 0, moved = false;
+  function grid(t) { return t && t.closest ? t.closest('.qcms-scroll-grid') : null; }
+  document.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    var g = grid(e.target); if (!g) return;
+    if (e.target.closest('a,button,input,select,textarea,label')) return;
+    var r = g.getBoundingClientRect();   // R30: a press on the scroll bar drags the bar, not the sheet
+    if (e.clientX - r.left - g.clientLeft >= g.clientWidth || e.clientY - r.top - g.clientTop >= g.clientHeight) return;
+    active = g; sx = e.clientX; sy = e.clientY; sl = g.scrollLeft; st = g.scrollTop; moved = false;
+  }, true);
+  document.addEventListener('mousemove', function (e) {
+    if (!active) return;
+    var dx = e.clientX - sx, dy = e.clientY - sy;
+    if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+    moved = true; active.classList.add('qcms-dragging');
+    active.scrollLeft = sl - dx; active.scrollTop = st - dy; e.preventDefault();
+  }, true);
+  document.addEventListener('mouseup', function () { if (active) active.classList.remove('qcms-dragging'); active = null; }, true);
+  document.addEventListener('keydown', function (e) {
+    var g = grid(document.activeElement); if (!g) return;
+    var step = {ArrowLeft: [-80, 0], ArrowRight: [80, 0], ArrowUp: [0, -38], ArrowDown: [0, 38], PageUp: [0, -300], PageDown: [0, 300]}[e.key];
+    if (step) { g.scrollBy(step[0], step[1]); e.preventDefault(); }
+  }, true);
+})();
+</script>
+"""
+
+
+def install_grid_drag() -> None:
+    try:
+        st.html(GRID_DRAG_SCRIPT, unsafe_allow_javascript=True)
+    except Exception:
+        pass
 
 
 def portal_table(data: Any, *, hide_index: bool = True, width: Any = "stretch", height: int | None = None, **_: Any) -> None:
@@ -320,6 +390,15 @@ def portal_table(data: Any, *, hide_index: bool = True, width: Any = "stretch", 
         (f'<table class="qcms-enterprise-table"><thead><tr>{head}</tr></thead><tbody>{"".join(rows_html)}</tbody></table>' if not frame.empty else empty) +
         '</div>'
     )
+    # R30: real spreadsheet behaviour (drag / swipe to slide, frozen header + first column,
+    # visible scroll bars, page buttons, filter) needs a small script, so the grid renders as
+    # a component. The plain HTML table stays as the fallback (e.g. tests / no components).
+    try:
+        from core.excel_grid import render_grid
+        render_grid(frame, hide_index=hide_index, height=height)
+        return
+    except Exception:
+        pass
     st.markdown(html, unsafe_allow_html=True)
 
 
@@ -1451,8 +1530,9 @@ def apply_teal_material_theme() -> None:
 
     /* Tables */
     html body .qcms-enterprise-table-wrap,html body div[data-testid="stDataFrame"],html body div[data-testid="stDataEditor"]{
-      border:1px solid var(--tm-line)!important;border-radius:var(--tm-rs)!important;overflow:hidden!important;
+      border:1px solid var(--tm-line)!important;border-radius:var(--tm-rs)!important;
     }
+    html body div[data-testid="stDataFrame"],html body div[data-testid="stDataEditor"]{overflow:hidden!important;}
     html body .qcms-enterprise-table thead th{background:var(--tm-soft)!important;color:var(--tm-primary-dark)!important;}
 
     /* Tabs, pills, alerts, dialog */
@@ -1464,6 +1544,7 @@ def apply_teal_material_theme() -> None:
     """ % t
     st.markdown(css, unsafe_allow_html=True)
     st.markdown(grid_scroll_css(), unsafe_allow_html=True)
+    install_grid_drag()
 
 
 def render_public_brand() -> None:

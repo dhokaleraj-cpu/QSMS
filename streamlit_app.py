@@ -94,6 +94,11 @@ st.set_page_config(
     initial_sidebar_state="collapsed", menu_items=None,
 )
 apply_global_style()
+try:  # R30: every Streamlit grid scrolls like a spreadsheet (fixed height + frozen first column)
+    from core.excel_grid import install_streamlit_grid_defaults
+    install_streamlit_grid_defaults()
+except Exception:
+    pass
 
 # QCMS v4.14.46 persistent-login contract. A browser refresh or Android direct
 # route creates a fresh Streamlit WebSocket/Python session. Restore from the

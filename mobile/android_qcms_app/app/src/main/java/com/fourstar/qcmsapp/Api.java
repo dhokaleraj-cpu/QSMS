@@ -60,6 +60,9 @@ public final class Api {
     public String email = "";
     public String fullName = "";
     public String role = "";
+    public String tenantId = "";
+    public String employeeId = "";
+    public String employeeLabel = "";
     public volatile boolean lastCallOffline = false;
 
     private Api(Context context) {
@@ -117,6 +120,15 @@ public final class Api {
         loadProfile();
     }
 
+    /** Change the signed-in user's password (Supabase Auth PUT /auth/v1/user). */
+    public void changePassword(String newPassword) throws Exception {
+        Response r = authed("PUT", "/auth/v1/user", new JSONObject().put("password", newPassword).toString(), null);
+        if (new JSONObject(r.body).optString("id", "").isEmpty()) throw new ApiException(500, "Supabase did not confirm the password change.");
+    }
+
+    /** Same as changePassword (name used by the Administration area). */
+    public void updatePassword(String password) throws Exception { changePassword(password); }
+
     /** Re-check the password of the signed-in user (for sensitive actions). */
     public void verifyPassword(String password) throws Exception {
         signIn(email, password);
@@ -161,13 +173,25 @@ public final class Api {
 
     private void loadProfile() {
         try {
-            JSONArray rows = new JSONArray(get("profiles?select=full_name,role,email&id=eq." + userId, false).body);
+            JSONArray rows = new JSONArray(get("profiles?select=full_name,role,email,tenant_id&id=eq." + userId, false).body);
             if (rows.length() > 0) {
                 JSONObject p = rows.getJSONObject(0);
                 fullName = p.optString("full_name", "");
                 role = p.optString("role", "");
+                tenantId = p.optString("tenant_id", "");
                 prefs.edit().putString("full_name", fullName).putString("role", role).apply();
             }
+            try {
+                String emp = authed("POST", "/rest/v1/rpc/qcms_current_login_employee_id", "{}", null).body.trim().replace("\"", "");
+                employeeId = emp.equals("null") ? "" : emp;
+                if (!employeeId.isEmpty()) {
+                    JSONArray e = new JSONArray(get("employees?select=employee_code,first_name,last_name&id=eq." + employeeId, false).body);
+                    if (e.length() > 0) {
+                        JSONObject r = e.getJSONObject(0);
+                        employeeLabel = (r.optString("employee_code") + " · " + r.optString("first_name") + " " + r.optString("last_name")).trim();
+                    }
+                }
+            } catch (Exception ignored) { employeeId = ""; }
         } catch (Exception ignored) { }
     }
 
@@ -236,6 +260,185 @@ public final class Api {
 
     public String rpc(String function, JSONObject args) throws Exception {
         return authed("POST", "/rest/v1/rpc/" + function, args.toString(), null).body;
+    }
+
+    // ------------------------------------------------------------------ writes (same as the website's Repository)
+    /** Insert one row; id and tenant_id are added like core/repository.py does. Returns the saved row. */
+    public JSONObject insert(String table, JSONObject values) throws Exception {
+        JSONObject v = new JSONObject(values.toString());
+        if (!v.has("id") || v.isNull("id")) v.put("id", java.util.UUID.randomUUID().toString());
+        if (!tenantId.isEmpty() && Tables.TENANT.contains(table) && (!v.has("tenant_id") || v.isNull("tenant_id"))) v.put("tenant_id", tenantId);
+        String body = authed("POST", "/rest/v1/" + table, v.toString(), "return=representation").body;
+        JSONArray rows = new JSONArray(body);
+        JSONObject saved = rows.length() > 0 ? rows.getJSONObject(0) : v;
+        logActivity("CREATE", table, saved.optString("id"));
+        return saved;
+    }
+
+    /** Update one row by id. Returns the saved row. */
+    public JSONObject update(String table, String id, JSONObject values) throws Exception {
+        JSONArray rows = new JSONArray(patch(table, id, values));
+        if (rows.length() == 0) throw new ApiException(403, "The record was not saved - it is not visible / editable for your role.");
+        logActivity("UPDATE", table, id);
+        return rows.getJSONObject(0);
+    }
+
+    /** Insert or update (by id) - one call for a row from a form. */
+    public JSONObject save(String table, String id, JSONObject values) throws Exception {
+        return id == null || id.isEmpty() ? insert(table, values) : update(table, id, values);
+    }
+
+    /** Bulk upsert like Repository.bulk_upsert (on_conflict, merge duplicates). */
+    public JSONArray upsert(String table, JSONArray rows, String onConflict) throws Exception {
+        JSONArray out = new JSONArray();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject v = new JSONObject(rows.getJSONObject(i).toString());
+            if (!v.has("id") || v.isNull("id")) v.put("id", java.util.UUID.randomUUID().toString());
+            if (!tenantId.isEmpty() && Tables.TENANT.contains(table) && (!v.has("tenant_id") || v.isNull("tenant_id"))) v.put("tenant_id", tenantId);
+            out.put(v);
+        }
+        if (out.length() == 0) return out;
+        String q = onConflict == null || onConflict.isEmpty() ? "" : "?on_conflict=" + enc(onConflict);
+        String body = authed("POST", "/rest/v1/" + table + q, out.toString(), "resolution=merge-duplicates,return=representation").body;
+        return new JSONArray(body);
+    }
+
+    /** Find one row by exact column values (Repository.upsert_by) and update it, else insert. */
+    public JSONObject upsertBy(String table, JSONObject values, String... keys) throws Exception {
+        StringBuilder q = new StringBuilder(table + "?select=id&limit=1");
+        for (String k : keys) {
+            Object v = values.opt(k);
+            q.append('&').append(k).append(v == null || v == JSONObject.NULL ? "=is.null" : "=eq." + enc(String.valueOf(v)));
+        }
+        JSONArray found = new JSONArray(get(q.toString(), false).body);
+        if (found.length() > 0) return update(table, found.getJSONObject(0).getString("id"), values);
+        return insert(table, values);
+    }
+
+    /** Delete one row by id (DELETE /rest/v1/table?id=eq.x) and log the activity like the website. */
+    public void delete(String table, String id) throws Exception {
+        authed("DELETE", "/rest/v1/" + table + "?id=eq." + enc(id), null, "return=minimal");
+        logActivity("DELETE", table, id);
+    }
+
+    /** Call a Supabase Edge Function with the user's session (e.g. qcms-send-email). Returns the body. */
+    public String invokeFunction(String name, JSONObject body) throws Exception {
+        byte[] data = raw("POST", "/functions/v1/" + name, (body == null ? "{}" : body.toString()).getBytes(StandardCharsets.UTF_8), "application/json", null);
+        return new String(data, StandardCharsets.UTF_8);
+    }
+
+    public Object rpcValue(String function, JSONObject args) throws Exception {
+        String body = rpc(function, args).trim();
+        if (body.isEmpty() || body.equals("null")) return null;
+        if (body.startsWith("{")) return new JSONObject(body);
+        if (body.startsWith("[")) return new JSONArray(body);
+        if (body.startsWith("\"")) return body.substring(1, body.length() - 1);
+        return body;
+    }
+
+    /** Next document / master number from the same server sequences as the website. */
+    public String nextNumber(String function, JSONObject args) throws Exception {
+        Object v = rpcValue(function, args == null ? new JSONObject() : args);
+        if (v instanceof JSONObject) {
+            JSONObject o = (JSONObject) v;
+            for (String k : new String[]{"code", "number", "document_number", "value"}) if (o.has(k)) return o.optString(k);
+        }
+        if (v instanceof JSONArray && ((JSONArray) v).length() > 0) {
+            Object first = ((JSONArray) v).get(0);
+            if (first instanceof JSONObject) {
+                JSONObject o = (JSONObject) first;
+                java.util.Iterator<String> it = o.keys();
+                if (it.hasNext()) return o.optString(it.next());
+            }
+            return String.valueOf(first);
+        }
+        return v == null ? "" : String.valueOf(v);
+    }
+
+    private void logActivity(String action, String table, String rowId) {
+        try {
+            JSONObject a = new JSONObject();
+            a.put("p_action", action);
+            a.put("p_module_key", Tables.moduleFor(table));
+            a.put("p_section_key", JSONObject.NULL);
+            a.put("p_table_name", table);
+            a.put("p_row_id", rowId == null || rowId.isEmpty() ? JSONObject.NULL : rowId);
+            a.put("p_details", new JSONObject().put("source", "android_app"));
+            authed("POST", "/rest/v1/rpc/qcms_log_user_activity", a.toString(), null);
+        } catch (Exception ignored) { }
+    }
+
+    // ------------------------------------------------------------------ storage (bucket quality-documents)
+    public static final String BUCKET = "quality-documents";
+
+    public void upload(String path, byte[] data, String mime, boolean upsert) throws Exception {
+        java.util.Map<String, String> h = new java.util.HashMap<>();
+        h.put("x-upsert", upsert ? "true" : "false");
+        h.put("cache-control", "3600");
+        raw("POST", "/storage/v1/object/" + BUCKET + "/" + encPath(path), data, mime, h);
+    }
+
+    public void removeObject(String path) {
+        try { raw("DELETE", "/storage/v1/object/" + BUCKET + "/" + encPath(path), null, null, null); } catch (Exception ignored) { }
+    }
+
+    public String signedUrl(String path, int seconds) throws Exception {
+        byte[] body = new JSONObject().put("expiresIn", seconds).toString().getBytes(StandardCharsets.UTF_8);
+        JSONObject r = new JSONObject(new String(raw("POST", "/storage/v1/object/sign/" + BUCKET + "/" + encPath(path), body, "application/json", null), StandardCharsets.UTF_8));
+        String rel = r.optString("signedURL", r.optString("signedUrl", ""));
+        if (rel.isEmpty()) throw new ApiException(404, "File link not available.");
+        return rel.startsWith("http") ? rel : BuildConfig.SUPABASE_URL + "/storage/v1" + (rel.startsWith("/") ? rel : "/" + rel);
+    }
+
+    public byte[] download(String path) throws Exception {
+        return raw("GET", "/storage/v1/object/authenticated/" + BUCKET + "/" + encPath(path), null, null, null);
+    }
+
+    private static String encPath(String path) {
+        StringBuilder b = new StringBuilder();
+        for (String part : path.split("/")) {
+            if (b.length() > 0) b.append('/');
+            b.append(enc(part).replace("+", "%20"));
+        }
+        return b.toString();
+    }
+
+    private byte[] raw(String method, String path, byte[] body, String mime, java.util.Map<String, String> headers) throws Exception {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            HttpURLConnection c = (HttpURLConnection) new URL(BuildConfig.SUPABASE_URL + path).openConnection();
+            try {
+                setMethod(c, method);
+                c.setConnectTimeout(20000);
+                c.setReadTimeout(90000);
+                c.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
+                c.setRequestProperty("Authorization", "Bearer " + token());
+                if (headers != null) for (java.util.Map.Entry<String, String> e : headers.entrySet()) c.setRequestProperty(e.getKey(), e.getValue());
+                if (body != null) {
+                    c.setDoOutput(true);
+                    c.setRequestProperty("Content-Type", mime == null ? "application/octet-stream" : mime);
+                    c.setFixedLengthStreamingMode(body.length);
+                    try (OutputStream out = c.getOutputStream()) { out.write(body); }
+                }
+                int code = c.getResponseCode();
+                if (code == 401 && attempt == 0) { refresh(); continue; }
+                InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+                byte[] data = readBytes(in);
+                if (code >= 400) throw new ApiException(code, friendly(code, new String(data, StandardCharsets.UTF_8)));
+                return data;
+            } finally {
+                c.disconnect();
+            }
+        }
+        throw new ApiException(401, "Session expired - please sign in again.");
+    }
+
+    private static byte[] readBytes(InputStream in) throws IOException {
+        if (in == null) return new byte[0];
+        try (InputStream s = in; ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[16384]; int n;
+            while ((n = s.read(buf)) > 0) out.write(buf, 0, n);
+            return out.toByteArray();
+        }
     }
 
     public String patch(String table, String id, JSONObject values) throws Exception {

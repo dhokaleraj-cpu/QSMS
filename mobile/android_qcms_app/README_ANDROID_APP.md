@@ -1,4 +1,4 @@
-# QCMS Android app v2.0.0 (native) - QCMS R29
+# QCMS Android app v3.0.0 (native, all modules) - QCMS R30
 
 Native Android app built from the approved R28 designs (Teal Material). Framework-only Java
 (no third-party libraries), minSdk 26 (Android 8), targetSdk 35 (Android 15).
@@ -24,9 +24,13 @@ Every grid scrolls left / right and up / down with a fixed header row and first 
 ## Build
 GitHub builds it automatically on every push to main that changes `mobile/android_qcms_app`
 (workflow **QCMS Native Android App APK**, artifact **QCMS-NATIVE-APP-APK**, file
-`QCMS_App_v2.0.0.apk`). The test APK is signed with the fixed key `app/qcms-debug.keystore`,
+`QCMS_App_v3.0.0.apk`). The test APK is signed with the fixed key `app/qcms-debug.keystore`,
 so a new APK installs over the previous one without uninstalling.
 
 Install on the phone: download the artifact zip from GitHub → Actions → latest run, unzip,
-open `QCMS_App_v2.0.0.apk` on the phone, allow "Install unknown apps" for the browser / Files app.
+open `QCMS_App_v3.0.0.apk` on the phone, allow "Install unknown apps" for the browser / Files app.
 The older WebView app (`com.fourstar.qcms.test`) can stay installed; this app is `com.fourstar.qcmsapp`.
+
+## v3.0.0 (R30)
+Every QCMS module runs natively (tabs Home · Supply · Quality · Masters · More); no website pages are needed.
+Grids are spreadsheet canvases: slide in all directions, pinch zoom, frozen header and first column. See RELEASE_NOTES_v4.14.49_R30.md.

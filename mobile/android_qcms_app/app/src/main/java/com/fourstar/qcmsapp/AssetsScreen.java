@@ -27,7 +27,7 @@ public final class AssetsScreen extends Screen {
 
     @Override public String title() { return "Quality Assets"; }
     @Override public String subtitle() { return "Gauges · instruments · equipment · calibration status"; }
-    @Override public int tab() { return 3; }
+    @Override public int tab() { return Catalog.QUALITY; }
 
     @Override
     public View build() {

@@ -1,0 +1,367 @@
+{
+ "audit_findings": {
+  "audit_plan_id": "audit_plans"
+ },
+ "audit_plans": {
+  "party_id": "parties"
+ },
+ "calibration_events": {
+  "asset_id": "quality_assets"
+ },
+ "control_plan_headers": {
+  "part_id": "parts",
+  "ppap_project_id": "ppap_projects"
+ },
+ "control_plan_items": {
+  "control_plan_header_id": "control_plan_headers"
+ },
+ "customer_standards": {
+  "customer_id": "parties",
+  "process_id": "processes"
+ },
+ "employees": {
+  "reports_to_employee_id": "employees"
+ },
+ "inspection_plan_characteristics": {
+  "checking_aid_id": "quality_assets",
+  "inspection_plan_id": "inspection_plans"
+ },
+ "inspection_plans": {
+  "inspection_stage_id": "inspection_stages",
+  "part_id": "parts",
+  "process_id": "processes",
+  "source_process_specification_id": "part_process_specifications"
+ },
+ "inspection_reports": {
+  "approved_by_employee_id": "employees",
+  "batch_id": "production_batches",
+  "customer_id": "parties",
+  "inspection_plan_id": "inspection_plans",
+  "inspection_stage_id": "inspection_stages",
+  "inward_lot_id": "inward_lots",
+  "material_grade_id": "material_grades",
+  "osp_job_id": "osp_jobs",
+  "part_id": "parts",
+  "prepared_by_employee_id": "employees",
+  "process_id": "processes",
+  "supplier_id": "parties",
+  "validated_by_employee_id": "employees"
+ },
+ "inspection_results": {
+  "checking_aid_id": "quality_assets",
+  "inspection_plan_characteristic_id": "inspection_plan_characteristics",
+  "inspection_report_id": "inspection_reports"
+ },
+ "inward_lots": {
+  "part_id": "parts",
+  "prepared_by_employee_id": "employees",
+  "rmtc_approval_id": "rmtc_approvals",
+  "rmtc_part_approval_id": "rmtc_part_approvals",
+  "supplier_id": "parties",
+  "supplier_source_detail_id": "part_raw_material_details",
+  "supply_customer_order_id": "supply_customer_orders",
+  "supply_rm_purchase_order_id": "supply_rm_purchase_orders",
+  "validated_by_employee_id": "employees"
+ },
+ "lab_tests": {
+  "approved_by_employee_id": "employees",
+  "batch_id": "production_batches",
+  "customer_id": "parties",
+  "inspection_stage_id": "inspection_stages",
+  "inward_lot_id": "inward_lots",
+  "layout_plan_id": "inspection_plans",
+  "material_grade_id": "material_grades",
+  "osp_job_id": "osp_jobs",
+  "osp_vendor_id": "parties",
+  "part_id": "parts",
+  "prepared_by_employee_id": "employees",
+  "process_id": "processes",
+  "rmtc_approval_id": "rmtc_approvals",
+  "steel_mill_id": "parties",
+  "supplier_id": "parties",
+  "test_plan_id": "test_plans",
+  "validated_by_employee_id": "employees"
+ },
+ "material_grade_elements": {
+  "material_grade_id": "material_grades"
+ },
+ "npd_order_step_points": {
+  "flow_point_id": "npd_process_flow_points",
+  "npd_order_step_id": "npd_order_steps",
+  "responsible_employee_id": "employees"
+ },
+ "npd_order_steps": {
+  "flow_step_id": "npd_process_flow_steps",
+  "npd_order_id": "npd_orders",
+  "process_id": "processes",
+  "responsible_employee_id": "employees"
+ },
+ "npd_orders": {
+  "customer_id": "parties",
+  "part_id": "parts"
+ },
+ "npd_process_flow_points": {
+  "flow_step_id": "npd_process_flow_steps",
+  "responsible_employee_id": "employees"
+ },
+ "npd_process_flow_steps": {
+  "flow_id": "npd_process_flows",
+  "process_id": "processes",
+  "responsible_employee_id": "employees"
+ },
+ "npd_process_flows": {
+  "part_id": "parts"
+ },
+ "osp_jobs": {
+  "material_out_id": "osp_material_outs",
+  "opening_stock_id": "supply_opening_stock",
+  "osp_batch_id": "production_batches",
+  "part_id": "parts",
+  "process_id": "processes",
+  "process_specification_id": "part_process_specifications",
+  "source_batch_id": "production_batches",
+  "source_inward_lot_id": "inward_lots",
+  "vendor_id": "parties"
+ },
+ "osp_receipts": {
+  "osp_job_id": "osp_jobs"
+ },
+ "part_heat_treatment_details": {
+  "part_id": "parts"
+ },
+ "part_jominy_requirements": {
+  "jominy_distance_id": "jominy_distances",
+  "part_id": "parts"
+ },
+ "part_material_grade_links": {
+  "material_grade_id": "material_grades",
+  "part_id": "parts"
+ },
+ "part_metallurgical_requirements": {
+  "part_id": "parts"
+ },
+ "part_process_parameter_specifications": {
+  "part_id": "parts",
+  "process_id": "processes",
+  "process_specification_id": "part_process_specifications"
+ },
+ "part_process_specifications": {
+  "part_id": "parts",
+  "process_id": "processes"
+ },
+ "part_raw_material_details": {
+  "material_grade_id": "material_grades",
+  "part_id": "parts",
+  "source_part_id": "parts",
+  "supplier_id": "parties"
+ },
+ "part_raw_material_technical_data": {
+  "part_id": "parts",
+  "raw_material_detail_id": "part_raw_material_details",
+  "supplier_id": "parties"
+ },
+ "part_standard_links": {
+  "part_id": "parts",
+  "standard_id": "customer_standards"
+ },
+ "part_supplier_links": {
+  "part_id": "parts",
+  "steel_mill_id": "parties",
+  "supplier_id": "parties"
+ },
+ "part_supplier_price_history": {
+  "part_id": "parts",
+  "raw_material_detail_id": "part_raw_material_details",
+  "supplier_id": "parties"
+ },
+ "parts": {
+  "customer_id": "parties",
+  "material_grade_id": "material_grades"
+ },
+ "pfd_headers": {
+  "part_id": "parts",
+  "ppap_project_id": "ppap_projects"
+ },
+ "pfd_steps": {
+  "pfd_header_id": "pfd_headers"
+ },
+ "pfmea_headers": {
+  "part_id": "parts",
+  "ppap_project_id": "ppap_projects"
+ },
+ "pfmea_items": {
+  "pfmea_header_id": "pfmea_headers"
+ },
+ "ppap_documents": {
+  "owner_employee_id": "employees",
+  "ppap_project_id": "ppap_projects"
+ },
+ "ppap_projects": {
+  "coordinator_employee_id": "employees",
+  "customer_id": "parties",
+  "part_id": "parts"
+ },
+ "production_batches": {
+  "current_process_id": "processes",
+  "inward_lot_id": "inward_lots",
+  "opening_stock_id": "supply_opening_stock",
+  "parent_batch_id": "production_batches",
+  "part_id": "parts"
+ },
+ "qc_calculation_records": {
+  "material_grade_id": "material_grades",
+  "part_id": "parts",
+  "performed_by_employee_id": "employees"
+ },
+ "quality_asset_calibration_records": {
+  "asset_id": "quality_assets",
+  "link_id": "quality_asset_part_process_links",
+  "performed_by_employee_id": "employees"
+ },
+ "quality_asset_part_process_links": {
+  "asset_id": "quality_assets",
+  "part_id": "parts",
+  "process_id": "processes",
+  "responsible_employee_id": "employees"
+ },
+ "quality_complaint_actions": {
+  "complaint_id": "quality_complaints",
+  "owner_employee_id": "employees"
+ },
+ "quality_complaint_followups": {
+  "complaint_id": "quality_complaints",
+  "responsible_employee_id": "employees"
+ },
+ "quality_complaints": {
+  "closure_approved_by_employee_id": "employees",
+  "containment_responsible_employee_id": "employees",
+  "effectiveness_verified_by_employee_id": "employees",
+  "fourstar_responsible_employee_id": "employees",
+  "part_id": "parts",
+  "party_id": "parties",
+  "process_id": "processes",
+  "root_cause_responsible_employee_id": "employees"
+ },
+ "rmtc_approvals": {
+  "approved_by_employee_id": "employees",
+  "decision_by_employee_id": "employees",
+  "material_grade_id": "material_grades",
+  "part_id": "parts",
+  "prepared_by_employee_id": "employees",
+  "selected_source_detail_id": "part_raw_material_details",
+  "steel_mill_id": "parties",
+  "supplier_id": "parties",
+  "validated_by_employee_id": "employees"
+ },
+ "rmtc_chemistry_results": {
+  "material_grade_element_id": "material_grade_elements",
+  "part_id": "parts",
+  "rmtc_approval_id": "rmtc_approvals"
+ },
+ "rmtc_jominy_results": {
+  "jominy_distance_id": "jominy_distances",
+  "part_id": "parts",
+  "rmtc_approval_id": "rmtc_approvals"
+ },
+ "rmtc_part_approvals": {
+  "decision_by_employee_id": "employees",
+  "part_id": "parts",
+  "rmtc_approval_id": "rmtc_approvals"
+ },
+ "rmtc_requirement_results": {
+  "part_id": "parts",
+  "rmtc_approval_id": "rmtc_approvals"
+ },
+ "standard_room_inspection_records": {
+  "instrument_asset_id": "quality_assets",
+  "operator_employee_id": "employees",
+  "part_id": "parts",
+  "process_id": "processes"
+ },
+ "supply_customer_orders": {
+  "customer_id": "parties",
+  "forging_supplier_id": "parties",
+  "part_id": "parts",
+  "raw_material_detail_id": "part_raw_material_details",
+  "responsible_employee_id": "employees"
+ },
+ "supply_downstream_events": {
+  "customer_order_id": "supply_customer_orders",
+  "inward_lot_id": "inward_lots",
+  "source_event_id": "supply_downstream_events",
+  "source_forging_receipt_id": "supply_forging_receipts",
+  "source_rm_receipt_id": "supply_rm_receipts"
+ },
+ "supply_forging_orders": {
+  "customer_order_id": "supply_customer_orders",
+  "forging_supplier_id": "parties",
+  "inward_lot_id": "inward_lots",
+  "purchase_order_id": "supply_purchase_orders",
+  "purchase_order_item_id": "supply_purchase_order_items",
+  "rm_dispatch_id": "supply_rm_dispatches"
+ },
+ "supply_forging_receipts": {
+  "customer_order_id": "supply_customer_orders",
+  "forging_order_id": "supply_forging_orders",
+  "forging_supplier_id": "parties",
+  "inward_lot_id": "inward_lots",
+  "rm_dispatch_id": "supply_rm_dispatches"
+ },
+ "supply_opening_stock": {
+  "location_party_id": "parties",
+  "material_grade_id": "material_grades",
+  "part_id": "parts",
+  "raw_material_detail_id": "part_raw_material_details",
+  "supplier_id": "parties"
+ },
+ "supply_po_confirmations": {
+  "purchase_order_id": "supply_purchase_orders",
+  "supplier_id": "parties"
+ },
+ "supply_purchase_order_items": {
+  "customer_order_id": "supply_customer_orders",
+  "material_grade_id": "material_grades",
+  "part_id": "parts",
+  "purchase_order_id": "supply_purchase_orders",
+  "raw_material_detail_id": "part_raw_material_details"
+ },
+ "supply_purchase_order_sources": {
+  "customer_order_id": "supply_customer_orders",
+  "purchase_order_id": "supply_purchase_orders",
+  "purchase_order_item_id": "supply_purchase_order_items"
+ },
+ "supply_purchase_orders": {
+  "approver_employee_id": "employees",
+  "cancelled_by_employee_id": "employees",
+  "company_branch_id": "company_branches",
+  "replacement_purchase_order_id": "supply_purchase_orders",
+  "replaces_purchase_order_id": "supply_purchase_orders",
+  "requisitioner_employee_id": "employees",
+  "ship_to_branch_id": "company_branches",
+  "ship_to_party_id": "parties",
+  "submitted_by_employee_id": "employees",
+  "supplier_id": "parties"
+ },
+ "supply_rm_dispatches": {
+  "customer_order_id": "supply_customer_orders",
+  "forging_supplier_id": "parties",
+  "inward_lot_id": "inward_lots",
+  "rm_receipt_id": "supply_rm_receipts"
+ },
+ "supply_rm_purchase_orders": {
+  "customer_order_id": "supply_customer_orders",
+  "purchase_order_id": "supply_purchase_orders",
+  "purchase_order_item_id": "supply_purchase_order_items",
+  "rm_supplier_id": "parties"
+ },
+ "supply_rm_receipts": {
+  "customer_order_id": "supply_customer_orders",
+  "inward_lot_id": "inward_lots",
+  "rm_purchase_order_id": "supply_rm_purchase_orders"
+ },
+ "test_plans": {
+  "inspection_stage_id": "inspection_stages",
+  "part_id": "parts",
+  "process_id": "processes"
+ }
+}

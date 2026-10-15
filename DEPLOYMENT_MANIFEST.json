@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R29",
+  "release_revision": "R30",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -554,5 +554,11 @@
     "github_workflow_builds_native_apk_fixed_signing_key",
     "po_approval_page_deep_link_for_app",
     "r28_recovery_sql_fix_missing_section_name_row_by_row_safe"
+  ],
+  "r30_changes": [
+    "android_app_v3_all_modules_native_no_website_pages",
+    "android_canvas_spreadsheet_grid_2d_slide_pinch_zoom_frozen_panes",
+    "android_native_po_pdf_send_email_admin_kpi_reports_search",
+    "website_excel_style_grids_drag_swipe_frozen_header_first_column_filter"
   ]
 }

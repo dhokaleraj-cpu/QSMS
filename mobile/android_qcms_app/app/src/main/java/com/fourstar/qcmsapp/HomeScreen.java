@@ -52,11 +52,16 @@ public final class HomeScreen extends Screen {
     }
 
     private void quickActions() {
-        String[] items = {"OSP dimensional inspection (camera)", "Material inward entry", "Record calibration", "Bend test entry", "Customer complaint", "Open full QCMS website"};
-        String[] paths = {"osp-dimensional", "inward-entry", "calibration-validation", "bend-test-entry", "customer-complaint", ""};
+        String[] items = {"Dimensional inspection", "MetLAB report", "Bend test", "Material inward", "RMTC entry", "Calibration record",
+            "Customer complaint", "Customer order", "OSP material out", "Search all QCMS records"};
+        String[] keys = {"dimensional_reports", "metlab_reports", "bend_tests", "inward", "rmtc", "calibration_records",
+            "customer_complaints", "customer_orders", "osp_material_out", ""};
         new AlertDialog.Builder(a)
             .setTitle("Quick entry")
-            .setItems(items, (d, which) -> a.openWeb(items[which], paths[which]))
+            .setItems(items, (d, which) -> {
+                if (keys[which].isEmpty()) a.openModule("global_search");
+                else a.newRecord(keys[which]);
+            })
             .show();
     }
 
@@ -89,15 +94,16 @@ public final class HomeScreen extends Screen {
 
     private void render(Data d) {
         offlineNote();
+        GenHomeExtras.addKpis(a, page);
         int need = d.pendingPo + d.overdue + d.deleteRequests;
         a.setSubtitle(subtitle() + (need > 0 ? " · " + need + " item(s) need you" : ""));
 
         List<View> tiles = new ArrayList<>();
         tiles.add(tile(d.pendingPo, "POs awaiting approval", "amber", v -> openOrders(0)));
-        tiles.add(tile(d.confirmations, "Supplier confirmations pending", "teal", v -> a.openWeb("PO confirmation", "supply-po-approval")));
+        tiles.add(tile(d.confirmations, "Supplier confirmations pending", "teal", v -> a.openModule("po_confirmations")));
         tiles.add(tile(d.openOrders, "Open customer orders", "teal", v -> openOrders(1)));
-        tiles.add(tile(d.overdue, "Calibrations overdue", d.overdue > 0 ? "red" : "green", v -> a.openTab(3)));
-        tiles.add(tile(d.dueSoon, "Calibrations due in 30 days", "amber", v -> a.openTab(3)));
+        tiles.add(tile(d.overdue, "Calibrations overdue", d.overdue > 0 ? "red" : "green", v -> a.push(new AssetsScreen(a))));
+        tiles.add(tile(d.dueSoon, "Calibrations due in 30 days", "amber", v -> a.push(new AssetsScreen(a))));
         if (api.isAdmin()) tiles.add(tile(d.deleteRequests, "Deletion requests (Admin)", d.deleteRequests > 0 ? "red" : "green", null));
         for (int i = 0; i < tiles.size(); i += 2) {
             LinearLayout row = Ui.hbox(a);
@@ -147,7 +153,8 @@ public final class HomeScreen extends Screen {
 
     private void openOrders(int segment) {
         OrdersScreen.segment = segment;
-        a.openTab(1);
+        a.openTab(Catalog.SUPPLY);
+        a.push(new OrdersScreen(a));
     }
 
     private View tile(int value, String label, String tone, View.OnClickListener click) {

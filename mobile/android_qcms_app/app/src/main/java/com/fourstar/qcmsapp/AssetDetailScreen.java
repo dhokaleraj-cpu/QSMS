@@ -21,7 +21,7 @@ public final class AssetDetailScreen extends Screen {
 
     @Override public String title() { return name.isEmpty() ? "Quality Asset" : name; }
     @Override public String subtitle() { return "Calibration status & history"; }
-    @Override public int tab() { return 3; }
+    @Override public int tab() { return Catalog.QUALITY; }
 
     @Override
     public View build() {
@@ -77,10 +77,17 @@ public final class AssetDetailScreen extends Screen {
         add(new DataGrid(a, cols, rows, 300, null), 2);
 
         Button record = Ui.primary(a, "Record calibration / validation");
-        record.setOnClickListener(v -> a.openWeb("Calibration", "calibration-validation"));
+        record.setOnClickListener(v -> {
+            JSONObject pre = new JSONObject();
+            try { pre.put("asset_id", id); } catch (Exception ignored) { }
+            a.push(new CalRecordEditor(a, null, pre));
+        });
         add(record, 14);
-        Button edit = Ui.outline(a, "Edit asset in Quality Asset Master", Ui.TEAL);
-        edit.setOnClickListener(v -> a.openWeb("Quality Assets", "reference-entry"));
+        Button edit = Ui.outline(a, "Edit asset (Quality Asset Master)", Ui.TEAL);
+        edit.setOnClickListener(v -> {
+            Module m = Catalog.get("quality_assets");
+            if (m != null) a.push(EditScreen.open(a, m, id, null));
+        });
         add(edit, 10);
     }
 }

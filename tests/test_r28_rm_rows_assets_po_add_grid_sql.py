@@ -214,6 +214,8 @@ def test_grids_scroll_both_ways(monkeypatch):
     import core.ui as ui
     captured = []
     monkeypatch.setattr(ui.st, "markdown", lambda html, **_: captured.append(html))
+    import core.excel_grid as eg   # R30 component path disabled -> HTML fallback is still scrollable
+    monkeypatch.setattr(eg, "render_grid", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no components")))
     ui.portal_table(pd.DataFrame([{f"Col {c}": r for c in range(12)} for r in range(40)]))
     html = captured[-1]
     assert "qcms-scroll-grid" in html and f"max-height:{ui.GRID_MAX_HEIGHT}px" in html and "scroll / swipe" in html
