@@ -35,7 +35,7 @@ public final class MoreScreen {
         page.addView(link(a, "Open full QCMS website", "Everything as on the computer", v -> a.openWeb("QCMS", "")), Ui.matchWrap(a, 6));
         page.addView(link(a, "Sign out", "Remove the saved session from this phone",
             v -> a.confirm("Sign out?", "You will need your password to sign in again.", "Sign out", a::signOut)), Ui.matchWrap(a, 14));
-        TextView about = Ui.text(a, "QCMS app v" + BuildConfig.VERSION_NAME + " · Four Star Industries\nSigned in as " + api.email
+        TextView about = Ui.text(a, "STAWN QCMS app v" + BuildConfig.VERSION_NAME + " · Four Star Industries\nSigned in as " + api.email
             + (api.employeeLabel.isEmpty() ? "" : "\nEmployee " + api.employeeLabel) + (api.role.isEmpty() ? "" : " · " + Ui.pretty(api.role)), 11.5f, Ui.MUTED, false);
         about.setPadding(Ui.dp(a, 4), Ui.dp(a, 18), Ui.dp(a, 4), 0);
         page.addView(about);

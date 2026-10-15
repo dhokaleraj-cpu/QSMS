@@ -1,4 +1,4 @@
-name: QCMS Native Android App APK
+name: STAWN QCMS Android App APK
 on:
   workflow_dispatch:
   push:
@@ -42,7 +42,7 @@ jobs:
           set -euo pipefail
           mkdir -p apk-artifacts
           VERSION="$(sed -n "s/^[[:space:]]*versionName[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" app/build.gradle | head -1)"
-          APK="apk-artifacts/QCMS_App_v${VERSION}.apk"
+          APK="apk-artifacts/STAWN_QCMS_v${VERSION}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
           BT="$QCMS_ANDROID_SDK/build-tools/35.0.0"
           "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-artifacts/SIGNATURE_VERIFICATION.txt

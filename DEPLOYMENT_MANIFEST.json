@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R31",
+  "release_revision": "R32",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -566,5 +566,10 @@
     "android_real_xlsx_writer_frozen_header_autofilter",
     "android_controlled_pdf_print_multi_page_repeated_header",
     "android_print_via_android_print_service"
+  ],
+  "r32_changes": [
+    "brand_stawn_qcms_android_app_name_and_adaptive_icon_with_stawn_mark",
+    "android_login_splash_stawn_qcms_logo",
+    "website_title_favicon_header_stawn_qcms"
   ]
 }

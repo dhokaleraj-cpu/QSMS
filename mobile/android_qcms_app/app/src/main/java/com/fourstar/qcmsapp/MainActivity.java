@@ -76,7 +76,7 @@ public class MainActivity extends Activity {
         box.setGravity(Gravity.CENTER);
         box.setBackgroundColor(Color.WHITE);
         box.addView(logo(), new LinearLayout.LayoutParams(Ui.dp(this, 72), Ui.dp(this, 72)));
-        TextView t = Ui.text(this, "Opening QCMS…", 14, Ui.MUTED, false);
+        TextView t = Ui.text(this, "Opening STAWN QCMS…", 14, Ui.MUTED, false);
         t.setPadding(0, Ui.dp(this, 14), 0, 0);
         box.addView(t);
         setContentView(box);
@@ -94,10 +94,13 @@ public class MainActivity extends Activity {
     }
 
     // ------------------------------------------------------------------ login
-    private TextView logo() {
-        TextView logo = Ui.text(this, "QC", 26, Color.WHITE, true);
-        logo.setGravity(Gravity.CENTER);
-        logo.setBackground(Ui.round(Ui.TEAL, 0, 0, 20, this));
+    /** STAWN QCMS logo (same art as the launcher icon), rounded like the icon. */
+    private View logo() {
+        android.widget.ImageView logo = new android.widget.ImageView(this);
+        logo.setImageResource(R.drawable.stawn_qcms_logo);
+        logo.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        logo.setBackground(Ui.round(Color.parseColor("#165D91"), 0, 0, 20, this));
+        logo.setClipToOutline(true);
         return logo;
     }
 
@@ -115,7 +118,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(this, 72), Ui.dp(this, 72));
         lp.gravity = Gravity.CENTER_HORIZONTAL;
         root.addView(logo(), lp);
-        TextView name = Ui.text(this, "QCMS", 22, Ui.TEAL_DARK, true);
+        TextView name = Ui.text(this, "STAWN QCMS", 22, Ui.TEAL_DARK, true);
         name.setGravity(Gravity.CENTER);
         name.setPadding(0, Ui.dp(this, 12), 0, 0);
         root.addView(name);

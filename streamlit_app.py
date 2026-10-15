@@ -34,6 +34,7 @@
 # COMPAT BUILD 4134-PRIORITY-UI-RMTC-REUSE-DUPLICATE-SAFE-IMPORT
 from __future__ import annotations
 
+from pathlib import Path
 import streamlit as st
 
 from app_pages import (
@@ -90,7 +91,10 @@ from core.ui import app_footer, apply_global_style, module_submenu, render_left_
 
 settings = get_settings()
 st.set_page_config(
-    page_title=f"{settings.app_name} · {settings.company_name}", page_icon="✅", layout="wide",
+    page_title=f"STAWN QCMS · {settings.company_name}",
+    page_icon=(str(Path(__file__).resolve().parent / "assets" / "stawn_qcms_favicon.png")
+               if (Path(__file__).resolve().parent / "assets" / "stawn_qcms_favicon.png").exists() else "✅"),
+    layout="wide",
     initial_sidebar_state="collapsed", menu_items=None,
 )
 apply_global_style()

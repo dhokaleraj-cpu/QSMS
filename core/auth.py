@@ -719,7 +719,7 @@ def render_login() -> None:
         with image_col:
             with st.container(border=True, key="qcms_login_image_card"):
                 # R20: legal company name on the login page.
-                st.markdown(f'<div class="qcms-login-welcome">{COMPANY_LEGAL_NAME}</div><div class="qcms-login-sub">Quality Control Monitoring System</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="qcms-login-welcome">{COMPANY_LEGAL_NAME}</div><div class="qcms-login-sub">STAWN QCMS · Quality Control Monitoring System</div>', unsafe_allow_html=True)
                 if factory_image.exists():
                     st.image(str(factory_image), width="stretch")
         with form_col:

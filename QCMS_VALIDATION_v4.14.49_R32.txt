@@ -1,0 +1,5 @@
+QCMS v4.14.49 R32 validation
+- Android: compile check vs framework stubs passed (all Java sources), resources XML well-formed, versionName 3.2.0, app_name STAWN QCMS
+- Adaptive icon (background/foreground/monochrome) + stawn_qcms_logo drawable present
+- Website: STAWN QCMS title, favicon assets/stawn_qcms_favicon.png, header/login text
+- Python suite: 840 passed (4 sandbox-only env failures), verify_phase1 errors [], readiness missing []

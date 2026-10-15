@@ -1549,7 +1549,7 @@ def apply_teal_material_theme() -> None:
 
 def render_public_brand() -> None:
     s = get_settings(); uri = logo_data_uri(); logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
-    st.markdown(f'<div style="text-align:center;padding:.5rem">{logo}<div class="fsi-app-title">QUALITY CONTROL MONITORING SYSTEM</div><div class="fsi-user-meta">{safe(s.company_name)} · Plant {safe(s.plant_code)}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align:center;padding:.5rem">{logo}<div class="fsi-app-title">STAWN QCMS · QUALITY CONTROL MONITORING SYSTEM</div><div class="fsi-user-meta">{safe(s.company_name)} · Plant {safe(s.plant_code)}</div></div>', unsafe_allow_html=True)
 
 
 def render_app_launcher(apps: Sequence[PortalApp]) -> None:
@@ -1580,7 +1580,7 @@ def render_shell_header(
             st.markdown(
                 f'<div class="fsi-company-block"><div class="fsi-logo-card">{logo}</div>'
                 f'<div><div class="fsi-company-name">QCMS</div>'
-                f'<div class="fsi-company-sub">QUALITY CONTROL MONITORING SYSTEM</div></div></div>',
+                f'<div class="fsi-company-sub">STAWN QCMS · QUALITY CONTROL MONITORING SYSTEM</div></div></div>',
                 unsafe_allow_html=True,
             )
         with c2:

@@ -23,12 +23,12 @@ Every grid scrolls left / right and up / down with a fixed header row and first 
 
 ## Build
 GitHub builds it automatically on every push to main that changes `mobile/android_qcms_app`
-(workflow **QCMS Native Android App APK**, artifact **QCMS-NATIVE-APP-APK**, file
-`QCMS_App_v3.1.0.apk`). The test APK is signed with the fixed key `app/qcms-debug.keystore`,
+(workflow **STAWN QCMS Android App APK**, artifact **QCMS-NATIVE-APP-APK**, file
+`STAWN_QCMS_v3.2.0.apk`). The test APK is signed with the fixed key `app/qcms-debug.keystore`,
 so a new APK installs over the previous one without uninstalling.
 
 Install on the phone: download the artifact zip from GitHub → Actions → latest run, unzip,
-open `QCMS_App_v3.1.0.apk` on the phone, allow "Install unknown apps" for the browser / Files app.
+open `STAWN_QCMS_v3.2.0.apk` on the phone, allow "Install unknown apps" for the browser / Files app.
 The older WebView app (`com.fourstar.qcms.test`) can stay installed; this app is `com.fourstar.qcmsapp`.
 
 ## v3.0.0 (R30)
@@ -37,3 +37,6 @@ Grids are spreadsheet canvases: slide in all directions, pinch zoom, frozen head
 
 ## v3.1.0 (R31)
 ⇩ in the top bar of every screen: Download PDF, Download Excel (.xlsx), View PDF, Print, Email from QCMS (PDF + Excel attached), Share.
+
+## v3.2.0 (R32)
+App name STAWN QCMS; launcher icon from the STAWN logo mark (adaptive + monochrome).
