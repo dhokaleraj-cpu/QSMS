@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R30",
+  "release_revision": "R31",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -560,5 +560,11 @@
     "android_canvas_spreadsheet_grid_2d_slide_pinch_zoom_frozen_panes",
     "android_native_po_pdf_send_email_admin_kpi_reports_search",
     "website_excel_style_grids_drag_swipe_frozen_header_first_column_filter"
+  ],
+  "r31_changes": [
+    "android_app_v3_1_download_pdf_excel_print_email_share_on_every_screen",
+    "android_real_xlsx_writer_frozen_header_autofilter",
+    "android_controlled_pdf_print_multi_page_repeated_header",
+    "android_print_via_android_print_service"
   ]
 }

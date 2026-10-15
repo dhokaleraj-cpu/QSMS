@@ -23,7 +23,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /** Register of one module: search, status filter and a spreadsheet grid (slide ↔ ↕, pinch, frozen panes). */
-public final class RegisterScreen extends Screen {
+public final class RegisterScreen extends Screen implements ExportDoc.Source {
     private final Module m;
     private JSONArray rows = new JSONArray();
     private Map<String, Map<String, String>> fk = new HashMap<>();
@@ -94,9 +94,9 @@ public final class RegisterScreen extends Screen {
         LinearLayout bar = Ui.hbox(a);
         info = Ui.text(a, "Loading…", 11.5f, Ui.MUTED, false);
         bar.addView(info, Ui.weight(1));
-        TextView share = Ui.text(a, "Share CSV", 12, Ui.TEAL_DARK, true);
+        TextView share = Ui.text(a, "⇩ PDF · Excel · Print · Email", 12, Ui.TEAL_DARK, true);
         share.setPadding(dp(8), dp(6), dp(4), dp(6));
-        share.setOnClickListener(v -> shareCsv());
+        share.setOnClickListener(v -> ExportKit.show(a, this, null));
         bar.addView(share);
         root.addView(bar, Ui.matchWrap(a, 6));
 
@@ -205,6 +205,23 @@ public final class RegisterScreen extends Screen {
         send.putExtra(Intent.EXTRA_SUBJECT, "QCMS " + m.title);
         send.putExtra(Intent.EXTRA_TEXT, csv.toString());
         try { a.startActivity(Intent.createChooser(send, "Share " + m.title)); } catch (Exception e) { a.toast("No app to share with."); }
+    }
+
+    /** Register as shown (status chip + search applied): all columns, all filtered rows. */
+    @Override
+    public ExportDoc export() {
+        List<String> headers = new ArrayList<>();
+        for (String[] c : m.cols) headers.add(c[1]);
+        List<List<String>> data = new ArrayList<>();
+        for (JSONObject r : new ArrayList<>(shown)) {
+            List<String> line = new ArrayList<>();
+            for (String[] c : m.cols) line.add(cell(r, c));
+            data.add(line);
+        }
+        String filters = (status.isEmpty() ? "" : "Status " + Ui.pretty(status)) + (query.isEmpty() ? "" : (status.isEmpty() ? "" : " · ") + "Search \"" + query + "\"");
+        ExportDoc doc = new ExportDoc(m.title + " Register").subtitle(filters.isEmpty() ? m.section : m.section + " · " + filters).file("QCMS_" + m.title + "_Register");
+        doc.table(m.title, headers, data);
+        return doc;
     }
 
     private static String q(String s) {

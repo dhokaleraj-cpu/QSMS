@@ -110,6 +110,9 @@ public final class RecordScreen extends Screen {
             b.setOnClickListener(v -> act.action.run(a, row, this::reload));
             actions.addView(b, Ui.matchWrap(a, 8));
         }
+        Button export = Ui.outline(a, "⇩ Download PDF / Excel · Print · Email", Ui.TEAL_DARK);
+        export.setOnClickListener(v -> ExportKit.show(a, this, scroll));
+        actions.addView(export, Ui.matchWrap(a, actions.getChildCount() > 0 ? 8 : 0));
         if (actions.getChildCount() > 0) add(actions, 10);
 
         // ---- details

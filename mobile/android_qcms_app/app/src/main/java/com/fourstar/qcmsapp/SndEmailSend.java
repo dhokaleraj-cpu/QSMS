@@ -48,6 +48,15 @@ public final class SndEmailSend extends Screen {
 
     public SndEmailSend(MainActivity a) { super(a); }
 
+    /** Open Send Email with subject, message and attachments filled in (record / report / register exports). */
+    static void openWith(MainActivity a, String subject, String body, List<Attachments.FileData> attachments) {
+        SndEmailSend s = new SndEmailSend(a);
+        s.subject = subject == null ? "" : subject;
+        s.body = body == null ? "" : body;
+        if (attachments != null) s.files.addAll(attachments);
+        a.push(s);
+    }
+
     @Override public String title() { return "Send Email"; }
     @Override public String subtitle() { return "Company mailbox · shows your name & email"; }
     @Override public int tab() { return Catalog.MORE; }

@@ -108,6 +108,9 @@ public final class SheetView extends View {
     }
 
     public void setOnRowClick(RowClick c) { click = c; }
+    /** Copies of the grid content (for PDF / Excel export). */
+    public List<String> columnsData() { return new ArrayList<>(columns); }
+    public List<String[]> rowsData() { return new ArrayList<>(rows); }
     public void setMaxHeightDp(int dp) { maxHeightPx = Math.round(dp * density); requestLayout(); }
     public int rowCount() { return rows.size(); }
 

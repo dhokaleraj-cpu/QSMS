@@ -333,4 +333,21 @@ public final class FormView extends LinearLayout {
         }
         return null;
     }
+
+    /** Label / shown value of every visible field (PDF, Excel and email of an entry). */
+    public java.util.List<String[]> exportPairs() {
+        java.util.List<String[]> out = new java.util.ArrayList<>();
+        for (Map.Entry<String, Field> e : fields.entrySet()) {
+            View in = inputs.get(e.getKey());
+            if (in != null && in.getVisibility() != View.VISIBLE) continue;
+            Object raw = values.get(e.getKey());
+            String v;
+            if (raw instanceof Boolean) v = (Boolean) raw ? "Yes" : "No";
+            else if (in instanceof TextView && !(in instanceof android.widget.CompoundButton)) v = String.valueOf(((TextView) in).getText()).trim();
+            else v = str(e.getKey());
+            if ("Select…".equals(v) || "-".equals(v)) v = "";
+            out.add(new String[]{e.getValue().label, v});
+        }
+        return out;
+    }
 }

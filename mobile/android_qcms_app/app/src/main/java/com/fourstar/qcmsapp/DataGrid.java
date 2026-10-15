@@ -17,6 +17,7 @@ public final class DataGrid extends LinearLayout {
     public interface RowClick { void onRow(int index); }
 
     private final SheetView sheet;
+    private final String title;
 
     public DataGrid(Context c, List<String> columns, List<List<String>> rows, int maxHeightDp, RowClick click) {
         this(c, "", columns, rows, maxHeightDp, click);
@@ -24,6 +25,7 @@ public final class DataGrid extends LinearLayout {
 
     public DataGrid(Context c, String title, List<String> columns, List<List<String>> rows, int maxHeightDp, RowClick click) {
         super(c);
+        this.title = title == null ? "" : title;
         setOrientation(VERTICAL);
         LinearLayout bar = Ui.hbox(c);
         TextView info = Ui.text(c, rows.size() + " row(s) × " + columns.size() + " column(s) · slide ↔ ↕ · pinch to zoom", 11, Ui.MUTED, false);
@@ -52,6 +54,7 @@ public final class DataGrid extends LinearLayout {
     }
 
     public SheetView sheet() { return sheet; }
+    public String title() { return title; }
 
     /** Full-screen spreadsheet view of the same rows. */
     static final class SheetScreen extends Screen {

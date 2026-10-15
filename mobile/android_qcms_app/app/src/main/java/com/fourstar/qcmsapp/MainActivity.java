@@ -306,6 +306,9 @@ public class MainActivity extends Activity {
         titles.addView(titleView);
         titles.addView(subtitleView);
         top.addView(titles, Ui.weight(1));
+        Button export = barButton("⇩");
+        export.setOnClickListener(v -> exportCurrent());
+        top.addView(export, new LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 48)));
         Button refresh = barButton("↻");
         refresh.setOnClickListener(v -> { Screen s = stack.peek(); if (s != null) s.reload(); });
         top.addView(refresh, new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)));
@@ -358,6 +361,13 @@ public class MainActivity extends Activity {
         s = tab <= 0 || tab >= TABS.length ? new HomeScreen(this) : new SectionScreen(this, tab);
         stack.push(s);
         render();
+    }
+
+    /** Top-bar ⇩: Download PDF / Excel, Print, Email or Share whatever is on screen. */
+    void exportCurrent() {
+        Screen s = stack.peek();
+        View shown = content == null || content.getChildCount() == 0 ? null : content.getChildAt(0);
+        ExportKit.show(this, s, shown);
     }
 
     /** Replace the current screen (e.g. New form -> the saved record). */
