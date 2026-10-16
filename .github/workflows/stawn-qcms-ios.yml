@@ -1,0 +1,35 @@
+name: STAWN QCMS iOS iPadOS App Build
+
+on:
+  push:
+    paths:
+      - "mobile/ios_stawn_qcms/**"
+      - ".github/workflows/stawn-qcms-ios.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode version
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || true
+          xcodebuild -version
+      - name: Generate project
+        working-directory: mobile/ios_stawn_qcms
+        run: python3 make_project.py 1.0.0 ${{ github.run_number }}
+      - name: Build for iOS Simulator (compile check, no signing)
+        working-directory: mobile/ios_stawn_qcms
+        run: |
+          set -o pipefail
+          xcodebuild -project STAWNQCMS.xcodeproj -scheme STAWNQCMS -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO build | tee build.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build.log
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: STAWN-QCMS-iOS-build-log
+          path: mobile/ios_stawn_qcms/build.log

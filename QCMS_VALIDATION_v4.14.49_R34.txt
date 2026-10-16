@@ -1,0 +1,7 @@
+QCMS v4.14.49 R34 validation
+- No Swift compiler in the build sandbox: Swift sources reviewed line by line (independent review pass); compile check runs on
+  the Mac (updater step / BUILD_STAWN_QCMS_iOS.command) and on GitHub (workflow STAWN QCMS iOS iPadOS App Build, macos-14)
+- Module catalogue generated from the Android app's own Catalog (79 modules, FK map, labels, 27 search sources)
+- Report builders and PDF engine ported 1:1 from the Android RptReports / RptPdf, which were visually checked against the website PDFs (R33)
+- project.pbxproj parsed (56 objects, no dangling references); app icon 1024x1024 RGB without alpha
+- Python suite + gates as listed by the updater

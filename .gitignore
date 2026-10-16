@@ -35,3 +35,9 @@ mobile/android_qcms_app/local.properties
 mobile/android_qcms_app/build/
 mobile/android_qcms_app/app/build/
 !mobile/android_qcms_app/app/qcms-debug.keystore
+
+# STAWN QCMS iOS / iPadOS app (R34): build output ignored
+mobile/ios_stawn_qcms/build/
+mobile/ios_stawn_qcms/build.log
+mobile/ios_stawn_qcms/STAWNQCMS.xcodeproj/xcuserdata/
+mobile/ios_stawn_qcms/STAWNQCMS.xcodeproj/project.xcworkspace/xcuserdata/

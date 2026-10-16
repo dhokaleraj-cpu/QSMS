@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R33",
+  "release_revision": "R34",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -580,5 +580,14 @@
     "android_global_search_bar_on_every_screen",
     "about_page_app_and_website_stawn_precision_private_limited",
     "fix_osp_material_out_register_missing_status_column"
+  ],
+  "r34_changes": [
+    "native_ios_ipados_app_stawn_qcms_v1_0_0_swiftui_universal",
+    "ios_login_keychain_face_id_auto_lock",
+    "ios_all_79_modules_registers_records_child_tables_attachments_history",
+    "ios_website_print_layout_pdfs_view_save_airprint_email_share",
+    "ios_global_search_reports_centre_records_centre_about_account",
+    "ios_po_approve_cancel_standard_room_form",
+    "ios_xcode_project_generator_build_command_testflight_and_github_build_check"
   ]
 }
