@@ -6,6 +6,7 @@ struct SearchView: View {
     @EnvironmentObject var nav: TabNav
     @State private var query = ""
     @State private var results: [SearchResult] = []
+    @State private var modules: [QModule] = []
     @State private var running = false
     @State private var searched = ""
     @State private var error: String?
@@ -21,7 +22,14 @@ struct SearchView: View {
             }
             if running { Section { HStack { ProgressView(); Text("Searching every register…").foregroundColor(Theme.muted) } } }
             if let e = error { Section { Text(e).foregroundColor(Theme.red) } }
-            if !running && !searched.isEmpty && results.isEmpty && error == nil { Section { Text("No records found for “\(searched)”.").foregroundColor(Theme.muted) } }
+            if !running && !searched.isEmpty && results.isEmpty && modules.isEmpty && error == nil { Section { Text("No records found for “\(searched)”.").foregroundColor(Theme.muted) } }
+            if !modules.isEmpty {
+                Section("Modules & screens (\(modules.count))") {
+                    ForEach(modules) { m in
+                        NavigationLink(value: Route.module(m.key)) { ModuleRow(title: m.title, detail: m.description, icon: "square.grid.2x2") }
+                    }
+                }
+            }
             ForEach(groups, id: \.self) { g in
                 Section("\(g) (\(results.filter { $0.module == g }.count))") {
                     ForEach(results.filter { $0.module == g }) { r in
@@ -34,6 +42,7 @@ struct SearchView: View {
                                 }
                                 Text(r.recordType).font(.caption).foregroundColor(Theme.tealDark)
                                 if !r.detail.isEmpty { Text(r.detail).font(.caption).foregroundColor(Theme.muted).lineLimit(2) }
+                                if !r.snippet.isEmpty { Text(r.snippet).font(.caption2).foregroundColor(Theme.muted).italic().lineLimit(2) }
                             }
                         }
                     }
@@ -59,15 +68,24 @@ struct SearchView: View {
         guard q.count >= 2, !running else { return }
         running = true
         error = nil
-        Task {
-            do { results = try await GlobalSearch.everywhere(q) } catch { self.error = error.localizedDescription }
+        modules = GlobalSearch.modules(q)
+        Task { @MainActor in
+            async let server = GlobalSearch.server(q)
+            var local: [SearchResult] = []
+            var failure: String?
+            do { local = try await GlobalSearch.everywhere(q) } catch { failure = error.localizedDescription }
+            let remote = await server
+            results = GlobalSearch.merge(local, remote)
+            self.error = results.isEmpty ? failure : nil
             searched = q
             running = false
         }
     }
 
+    /// In-app record when a module shows the table, else the website page of the hit.
     private func open(_ r: SearchResult) {
-        if let m = Catalog.shared.forTable(r.table) { nav.push(.record(m.key, r.id)) }
+        if !r.id.isEmpty, let m = Catalog.shared.forTable(r.table) { nav.push(.record(m.key, r.id)); return }
+        if !r.webRoute.isEmpty { nav.push(.web(r.reference, r.webRoute)) }
     }
 }
 
@@ -79,6 +97,8 @@ struct SearchResult: Identifiable {
     let detail: String
     let status: String
     let table: String
+    var webRoute = ""
+    var snippet = ""
 }
 
 enum GlobalSearch {
@@ -136,6 +156,55 @@ enum GlobalSearch {
             }
         }
         return found.sorted { ($0.module, $0.recordType, $0.reference.lowercased()) < ($1.module, $1.recordType, $1.reference.lowercased()) }
+    }
+
+    /// Live database-wide search (qcms_global_search): every business table and field the user can see. Empty on any error.
+    static func server(_ query: String, limit: Int = 200) async -> [SearchResult] {
+        guard let raw = try? await Api.shared.rpc("qcms_global_search", ["p_query": query, "p_limit": limit]) else { return [] }
+        var out: [SearchResult] = []
+        for r in J.rows(raw) {
+            let table = J.str(r["source_table"])
+            let source = Catalog.shared.searchSources.first { $0.table == table }
+            let module = source?.module ?? Catalog.shared.forTable(table)?.title ?? "Other records"
+            var recordType = J.str(r["record_type"])
+            if recordType.isEmpty { recordType = source?.recordType ?? Fmt.pretty(table) }
+            var title = J.str(r["title"])
+            if title.isEmpty { title = J.str(r["record_id"]) }
+            let field = J.str(r["matched_field"])
+            let snippet = J.str(r["snippet"])
+            out.append(SearchResult(id: J.str(r["record_id"]), module: module, recordType: recordType, reference: title.isEmpty ? "Record" : title,
+                                    detail: J.str(r["subtitle"]), status: "", table: table, webRoute: J.str(r["web_route"]),
+                                    snippet: snippet.isEmpty ? "" : (field.isEmpty ? snippet : "\(Fmt.pretty(field)): \(snippet)")))
+        }
+        return out
+    }
+
+    /// Records of both searches, one row per table + id (the app's own row first, server snippet / web route added).
+    static func merge(_ local: [SearchResult], _ remote: [SearchResult]) -> [SearchResult] {
+        var out = local
+        var index: [String: Int] = [:]
+        for (i, r) in out.enumerated() { index["\(r.table):\(r.id)"] = i }
+        for r in remote {
+            let token = "\(r.table):\(r.id)"
+            if let i = index[token] {
+                if out[i].snippet.isEmpty { out[i].snippet = r.snippet }
+                if out[i].webRoute.isEmpty { out[i].webRoute = r.webRoute }
+                continue
+            }
+            index[token] = out.count
+            out.append(r)
+        }
+        return out.sorted { ($0.module, $0.recordType, $0.reference.lowercased()) < ($1.module, $1.recordType, $1.reference.lowercased()) }
+    }
+
+    /// Modules / screens whose name or description matches ("bend test" -> Bend Test register, entry, reports).
+    static func modules(_ query: String) -> [QModule] {
+        let words = query.lowercased().split(separator: " ").map { String($0) }.filter { !$0.isEmpty }
+        if words.isEmpty { return [] }
+        return Catalog.shared.modules.filter { m in
+            let text = (m.title + " " + m.description + " " + m.key.replacingOccurrences(of: "_", with: " ")).lowercased()
+            return words.allSatisfy { text.contains($0) }
+        }
     }
 
     static func reference(_ row: Row) -> String {

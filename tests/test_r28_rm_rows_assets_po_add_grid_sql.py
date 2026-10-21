@@ -226,7 +226,7 @@ def test_grids_scroll_both_ways(monkeypatch):
 
 def test_auto_apply_sql_manifest_and_token_safety():
     manifest = json.loads((ROOT / "supabase/auto_apply.json").read_text())
-    assert manifest["files"] == ["supabase/migrations/20261017100000_qcms_r28_part_rows_recovery_assets.sql"]
+    assert manifest["files"][0] == "supabase/migrations/20261017100000_qcms_r28_part_rows_recovery_assets.sql"  # R35 appends its files
     for name in manifest["files"]:
         assert (ROOT / name).exists()
     src = (ROOT / "scripts/apply_sql.py").read_text()

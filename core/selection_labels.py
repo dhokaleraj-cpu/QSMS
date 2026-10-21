@@ -160,3 +160,46 @@ def customer_order_label(order: Mapping[str, Any], part: Mapping[str, Any] | Non
         _clean(customer.get("party_name")), extra,
     ]
     return with_status(_join(*pieces), order)
+
+
+def stage_record_label(
+    order: Mapping[str, Any],
+    part: Mapping[str, Any] | None = None,
+    *,
+    reference: Any = "",
+    stage: str = "",
+    heat: Any = "",
+    qty: float | int | None = None,
+    unit: str = "pcs",
+    extra: str = "",
+) -> str:
+    """R35: supply-chain stage record label used by every 'select previous stage' list.
+
+    Customer Order No · Pos · Part Number · FSI · Description · Heat · Qty available · Ref · Stage
+    so users can pick the right order without opening the grid.
+    """
+    part = part or {}
+    po_no = _clean(order.get("customer_order_no")) or _clean(order.get("master_reference_no")) or "-"
+    fsi = _clean(part.get("fsi_part_number"))
+    desc = _clean(part.get("part_name"))
+    qty_text = ""
+    if qty is not None:
+        try:
+            qty_text = f"{float(qty):,.3f} {unit}" if unit == "kg" else f"{float(qty):,.0f} {unit}"
+        except (TypeError, ValueError):
+            qty_text = ""
+    pieces = [
+        f"CO {po_no}", f"Pos {_clean(order.get('order_position')) or '-'}",
+        f"Part {_clean(part.get('part_number')) or '-'}", f"FSI {fsi}" if fsi else "", desc,
+        f"Heat {_clean(heat) or '-'}", f"Qty {qty_text}" if qty_text else "",
+        f"Ref {_clean(reference)}" if _clean(reference) else "", _clean(stage), extra,
+    ]
+    return _join(*pieces)
+
+
+def filter_labels(labels: Mapping[str, str], query: str) -> dict[str, str]:
+    """R35: type-to-filter on every word (AND, case-insensitive) across the whole label."""
+    words = [w for w in str(query or "").casefold().split() if w]
+    if not words:
+        return dict(labels)
+    return {k: v for k, v in labels.items() if all(w in str(v).casefold() for w in words)}

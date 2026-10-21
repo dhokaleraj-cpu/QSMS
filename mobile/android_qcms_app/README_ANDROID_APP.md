@@ -24,11 +24,11 @@ Every grid scrolls left / right and up / down with a fixed header row and first 
 ## Build
 GitHub builds it automatically on every push to main that changes `mobile/android_qcms_app`
 (workflow **STAWN QCMS Android App APK**, artifact **QCMS-NATIVE-APP-APK**, file
-`STAWN_QCMS_v3.3.0.apk`). The test APK is signed with the fixed key `app/qcms-debug.keystore`,
+`STAWN_QCMS_v3.4.0.apk`). The test APK is signed with the fixed key `app/qcms-debug.keystore`,
 so a new APK installs over the previous one without uninstalling.
 
 Install on the phone: download the artifact zip from GitHub → Actions → latest run, unzip,
-open `STAWN_QCMS_v3.3.0.apk` on the phone, allow "Install unknown apps" for the browser / Files app.
+open `STAWN_QCMS_v3.4.0.apk` on the phone, allow "Install unknown apps" for the browser / Files app.
 The older WebView app (`com.fourstar.qcms.test`) can stay installed; this app is `com.fourstar.qcmsapp`.
 
 ## v3.0.0 (R30)
@@ -43,3 +43,9 @@ App name STAWN QCMS; launcher icon from the STAWN logo mark (adaptive + monochro
 
 ## v3.3.0 (R33)
 Website print-layout PDFs on the phone (MetLAB, Bend Test, Dimensional, RMTC, Material Inward, complaints, calibration, standard room, QC calculations, Universal record PDF for every other record); full report shown on the record; Reports Centre, Records Centre; global search bar at the top; About page (STAWN PRECISION PRIVATE LIMITED).
+
+## v3.4.0 (R35)
+KPI start dashboard after login (qcms_kpi_dashboard: pending tasks, cards, charts; Quality · Supply Chain · Production · NPD · Management,
+auto-switch every 20 s, pauses 60 s after a tap; Home overview one tap away). Notification inbox + bell with unread count, Android
+notifications every 15 min via JobScheduler (channels qcms_alerts / qcms_alerts_approval), WhatsApp alerts opt-in. Global search also uses
+qcms_global_search and lists matching modules. Licence check (qcms_licence_status) with a STAWN licence screen; licence details in About.

@@ -150,6 +150,28 @@ public final class Api {
         }
     }
 
+    /**
+     * Background use (NotifJob): make sure a usable session exists without touching the UI.
+     * Uses the in-memory token while it is valid, otherwise the encrypted saved refresh token.
+     * Returns false (quietly) when nobody is signed in on this phone.
+     */
+    public synchronized boolean ensureSession() {
+        if (accessToken != null && System.currentTimeMillis() < expiresAtMs - 60_000L) return true;
+        if (refreshToken == null) {
+            String saved = secure.get("refresh_token");
+            if (saved == null) return false;
+            refreshToken = saved;
+        }
+        try {
+            refresh();
+            return accessToken != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean signedIn() { return accessToken != null || hasSavedSession(); }
+
     private synchronized void refresh() throws Exception {
         if (refreshToken == null) throw new ApiException(401, "Please sign in again.");
         JSONObject body = new JSONObject();
@@ -325,6 +347,25 @@ public final class Api {
     public String invokeFunction(String name, JSONObject body) throws Exception {
         byte[] data = raw("POST", "/functions/v1/" + name, (body == null ? "{}" : body.toString()).getBytes(StandardCharsets.UTF_8), "application/json", null);
         return new String(data, StandardCharsets.UTF_8);
+    }
+
+    /** RPC returning a set of rows (PostgREST JSON array). Null / scalar answers become an empty array. */
+    public JSONArray rpcRows(String function, JSONObject args) throws Exception {
+        String body = rpc(function, args == null ? new JSONObject() : args).trim();
+        if (body.startsWith("[")) return new JSONArray(body);
+        if (body.startsWith("{")) return new JSONArray().put(new JSONObject(body));
+        return new JSONArray();
+    }
+
+    /** RPC returning jsonb (one object). Null answers become an empty object. */
+    public JSONObject rpcObject(String function, JSONObject args) throws Exception {
+        String body = rpc(function, args == null ? new JSONObject() : args).trim();
+        if (body.startsWith("{")) return new JSONObject(body);
+        if (body.startsWith("[")) {
+            JSONArray arr = new JSONArray(body);
+            if (arr.length() > 0 && arr.opt(0) instanceof JSONObject) return arr.getJSONObject(0);
+        }
+        return new JSONObject();
     }
 
     public Object rpcValue(String function, JSONObject args) throws Exception {

@@ -1,0 +1,11 @@
+QCMS v4.14.49 R35 validation
+- Python suite: 910 passed; 4 known sandbox-only failures (test_r8 multi sources, v41432, v41433, v41434 - PDF engine differences)
+- scripts/verify_phase1.py errors: [] (108 registered pages) · scripts/check_online_readiness.py missing: []
+- R35 tests: test_r35_quality_fixes (16), test_r35_supply_chain (14), test_r35_dashboards_search, test_r35_notifications_licensing (5,
+  incl. AppTest render of My Notifications, Licence & Company, STAWN Developer Console), test_r35_android_app, test_r35_ios_app
+- Android v3.4.0: javac compile against Android API stubs - COMPILE DONE, no errors
+- iOS v1.1.0: no Swift compiler in the sandbox; two independent line-by-line review passes; project.pbxproj regenerated and parsed;
+  real compile on the Mac (updater step) and GitHub workflow
+- Live database: R35 migrations applied and verified on xxrxopzxzyjnzumrwuwy (licence status ACTIVE / ENTERPRISE / 18 of 50 users);
+  qcms_remove_po_source is applied by the updater (apply_sql.py)
+- Edge functions qcms-push-dispatch and qcms-whatsapp-dispatch deployed; pg_cron every 2 minutes; no-op until secrets are set

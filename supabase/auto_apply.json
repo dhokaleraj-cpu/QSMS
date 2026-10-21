@@ -1,6 +1,10 @@
 {
   "comment": "SQL applied automatically by scripts/apply_sql.py (ledger: public.qcms_applied_sql). Every file is safe to re-run.",
   "files": [
-    "supabase/migrations/20261017100000_qcms_r28_part_rows_recovery_assets.sql"
+    "supabase/migrations/20261017100000_qcms_r28_part_rows_recovery_assets.sql",
+    "supabase/migrations/20261021100000_qcms_r35_quality_fixes.sql",
+    "supabase/migrations/20261021110000_qcms_r35_supply_chain.sql",
+    "supabase/migrations/20261021120000_qcms_r35_notifications_licensing.sql",
+    "supabase/migrations/20261021130000_qcms_r35_dashboards_search.sql"
   ]
 }

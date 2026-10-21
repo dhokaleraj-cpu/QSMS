@@ -31,12 +31,16 @@ public final class MoreScreen {
         box.addView(note, Ui.matchWrap(a, 8));
         page.addView(box, Ui.matchWrap(a, 4));
 
+        page.addView(link(a, "Notifications", "Approvals, tasks and updates · WhatsApp alerts", v -> a.push(new NotifScreen(a))), Ui.matchWrap(a, 16));
+        page.addView(link(a, "Home overview", "POs awaiting approval, calibrations due, deletion requests", v -> a.push(new HomeScreen(a))), Ui.matchWrap(a, 6));
+        page.addView(link(a, "KPI start dashboard", "Quality · Supply Chain · Production · NPD · Management", v -> a.openTab(Catalog.HOME)), Ui.matchWrap(a, 6));
         AdmSettings.addAdminLinks(a, page);
         page.addView(link(a, "About STAWN QCMS", "Version, developer, copyright and licence", v -> a.push(new GenCentres.AboutScreen(a))), Ui.matchWrap(a, 6));
         page.addView(link(a, "Open full QCMS website", "Everything as on the computer", v -> a.openWeb("QCMS", "")), Ui.matchWrap(a, 6));
         page.addView(link(a, "Sign out", "Remove the saved session from this phone",
             v -> a.confirm("Sign out?", "You will need your password to sign in again.", "Sign out", a::signOut)), Ui.matchWrap(a, 14));
-        TextView about = Ui.text(a, "STAWN QCMS app v" + BuildConfig.VERSION_NAME + " · Four Star Industries\n" + GenCentres.About.COPYRIGHT + "\nSigned in as " + api.email
+        String company = Licence.company(api);
+        TextView about = Ui.text(a, "STAWN QCMS app v" + BuildConfig.VERSION_NAME + " · " + (company.isEmpty() ? "Four Star Industries" : company) + "\n" + GenCentres.About.COPYRIGHT + "\nSigned in as " + api.email
             + (api.employeeLabel.isEmpty() ? "" : "\nEmployee " + api.employeeLabel) + (api.role.isEmpty() ? "" : " · " + Ui.pretty(api.role)), 11.5f, Ui.MUTED, false);
         about.setPadding(Ui.dp(a, 4), Ui.dp(a, 18), Ui.dp(a, 4), 0);
         page.addView(about);

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject var nav: TabNav
+    @EnvironmentObject var app: AppState
     @State private var kpi: [Int] = [-1, -1, -1, -1, -1, -1]
     @State private var name = Api.shared.fullName
 
@@ -20,6 +21,7 @@ struct HomeView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(name.isEmpty ? "Welcome" : "Welcome, \(name)").font(.title3.bold()).foregroundColor(Theme.text)
                         Text(Api.shared.employeeLabel.isEmpty ? Api.shared.email : Api.shared.employeeLabel).font(.caption).foregroundColor(Theme.muted)
+                        CompanyLine(licence: app.licence)
                     }
                     Spacer()
                 }
@@ -61,6 +63,7 @@ struct HomeView: View {
         .background(Theme.bg)
         .navigationTitle("STAWN QCMS")
         .qcmsNavBar()
+        .qcmsBell()
         .task { await load() }
         .refreshable { await load() }
     }

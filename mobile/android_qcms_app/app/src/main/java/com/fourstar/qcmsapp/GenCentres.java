@@ -300,8 +300,20 @@ final class GenCentres {
 
             add(Ui.label(a, "Licensed to"), 16);
             LinearLayout lic = Ui.card(a);
-            for (String[] p : About.LICENSEE) lic.addView(Ui.pair(a, p[0], p[1]));
+            String company = Licence.company(api);
+            for (String[] p : About.LICENSEE) lic.addView(Ui.pair(a, p[0], p[0].equals("Licensed user") && !company.isEmpty() ? company : p[1]));
             add(lic, 4);
+
+            // R35: licence details from qcms_licence_status (plan, status, users, valid until, masked key, developer)
+            add(Ui.label(a, "Licence"), 16);
+            LinearLayout licBox = Ui.vbox(a);
+            if (Licence.status != null) licBox.addView(Licence.detailsCard(a, Licence.status));
+            else licBox.addView(loading());
+            add(licBox, 4);
+            Api.async(() -> Licence.load(api), (st, err) -> {
+                licBox.removeAllViews();
+                licBox.addView(Licence.detailsCard(a, err != null ? Licence.status : st));
+            });
 
             add(Ui.label(a, "Copyright"), 16);
             LinearLayout cr = Ui.card(a);

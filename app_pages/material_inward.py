@@ -15,6 +15,7 @@ from core.reporting import material_inward_record_pdf_bytes
 from core.supply_chain_service import SupplyChainService
 from core.ui import disposition_cards, disposition_label, page_header, record_widget_token, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
 from core.db_errors import db_message
+from core.inward_service import inward_error_message
 from core.selection_labels import with_status
 
 DISPOSITIONS = ["PENDING", "ON_HOLD", "ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"]
@@ -283,6 +284,23 @@ def render_entry() -> None:
         )
 
         invalid_quantity = required_steel > available_for_entry + 0.001
+        # R35: inward quantity vs linked RM PO quantity (tolerance % from system settings).
+        over_reason = ""; allow_over = False; po_check: dict[str, Any] = {}
+        if supply_link_enabled and supply_po_id:
+            try:
+                po_check = supply_service.check_inward_against_po(supply_po_id, required_steel, str(existing.get("id") or "") or None)
+            except Exception:
+                po_check = {}
+            if po_check.get("status") == "WARN":
+                st.warning(f"Inward makes {po_check['after_kg']:,.3f} kg against RM PO {po_check.get('po_number') or ''} ordered {po_check['ordered_kg']:,.3f} kg (+{po_check['excess_kg']:,.3f} kg) — within the allowed {po_check['tolerance_pct']:g}% over-receipt tolerance.")
+                over_reason = st.text_input("Over-receipt remark (optional)", key=f"inward_over_reason_{editor_scope}")
+            elif po_check.get("status") == "BLOCK":
+                st.error(f"Inward makes {po_check['after_kg']:,.3f} kg against RM PO {po_check.get('po_number') or ''} ordered {po_check['ordered_kg']:,.3f} kg — above the allowed {po_check['tolerance_pct']:g}% (max {po_check['limit_kg']:,.3f} kg). Increase the PO quantity in Edit Purchase Order, or record an over-receipt override.")
+                can_override = bool(current_permissions("SUPPLY_CHAIN").get("can_approve"))
+                allow_over = st.checkbox("Override: accept this over-receipt (Supply Chain approve permission)", key=f"inward_over_allow_{editor_scope}", disabled=not can_override)
+                over_reason = st.text_input("Over-receipt override reason (mandatory)", key=f"inward_over_reason_{editor_scope}", disabled=not can_override)
+                if not can_override:
+                    st.caption("Your login has no Supply Chain approve permission — ask your manager to record the override or increase the PO quantity.")
         if st.button("Save Material Inward", type="primary", disabled=not writable or invalid_quantity, width="stretch", key=f"inward_save_{editor_scope}"):
             try:
                 if not source_id:
@@ -321,14 +339,22 @@ def render_entry() -> None:
                 }
                 if existing and existing_po_id and not supply_link_enabled:
                     supply_service.assert_inward_can_unlink(str(existing["id"]))
+                if supply_link_enabled:
+                    if not supply_po_id:
+                        raise ValueError("Supply Chain Link is enabled. Select the linked RM Procurement record before saving.")
+                    supply_service.assert_inward_link_ready(supply_po_id, str(source.get("part_id") or ""))
+                    if po_check.get("status") == "BLOCK" and not (allow_over and over_reason.strip()):
+                        raise ValueError("Inward quantity is above the RM PO tolerance. Tick the override and give a reason, or increase the PO quantity first.")
                 with st.spinner("Saving steel and production allocation…"):
                     saved = service.save(payload, str(existing["id"]) if existing else None)
+                    # R35: remember the saved inward at once, so a retry after a later error edits it instead of duplicating the GRN.
+                    st.session_state["edit_inward_id"] = str(saved["id"])
                     # Keep Supply Chain RM Receipt mirror synchronized from this
                     # Material Inward record, including RMTC / Heat / quantity.
                     if supply_link_enabled:
                         if not supply_po_id:
                             raise ValueError("Supply Chain Link is enabled. Select the linked RM Procurement record before saving.")
-                        supply_service.link_inward_to_rm_po(supply_po_id, str(saved["id"]))
+                        supply_service.link_inward_to_rm_po(supply_po_id, str(saved["id"]), over_receipt_reason=over_reason, allow_over_tolerance=allow_over)
                     elif existing and existing_po_id:
                         supply_service.unlink_inward_supply_chain(str(saved["id"]))
                     attachment_service = AttachmentService(service.repo)
@@ -346,7 +372,7 @@ def render_entry() -> None:
                 save_success_popup(f"Material Inward {saved.get('inward_number')} saved successfully.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
-                st.error(db_message(exc))
+                st.error(inward_error_message(exc, grn=grn.strip(), heat=str(source.get("heat_number") or "") if source_id else ""))
 
         if existing:
             st.session_state["inspection_inward_id"] = str(existing.get("id"))

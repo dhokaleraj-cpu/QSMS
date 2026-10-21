@@ -19,7 +19,7 @@ jobs:
           xcodebuild -version
       - name: Generate project
         working-directory: mobile/ios_stawn_qcms
-        run: python3 make_project.py 1.0.0 ${{ github.run_number }}
+        run: python3 make_project.py 1.1.0 ${{ github.run_number }}
       - name: Build for iOS Simulator (compile check, no signing)
         working-directory: mobile/ios_stawn_qcms
         run: |

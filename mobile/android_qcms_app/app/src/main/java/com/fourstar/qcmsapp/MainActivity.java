@@ -31,7 +31,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 
 /**
- * QCMS native Android app (v2.0.0, QCMS R29).
+ * QCMS native Android app (v2.0.0, QCMS R29; v3.4.0 R35: KPI start dashboard, notifications, licence).
  * Single activity: Login / biometric unlock, then Home · Orders · Inspect · Assets · More.
  */
 public class MainActivity extends Activity {
@@ -49,13 +49,60 @@ public class MainActivity extends Activity {
     private boolean locked = false;
     private long stoppedAt = 0L;
     private WebScreen activeWeb;
+    private TextView brandView;
+    private TextView bellBadge;
+    private boolean foreground = false;
+    /** R35: screen to open once the shell is shown (e.g. "notifications" from a system notification). */
+    private String pendingOpen;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         api = Api.get(this);
+        takeOpenRequest(getIntent());
         start();
     }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        takeOpenRequest(intent);
+        if (shellVisible && !locked) openPending();
+    }
+
+    private void takeOpenRequest(Intent intent) {
+        String open = intent == null ? null : intent.getStringExtra(Notif.EXTRA_OPEN);
+        if (open != null && !open.isEmpty()) pendingOpen = open;
+    }
+
+    private void openPending() {
+        String open = pendingOpen;
+        pendingOpen = null;
+        if (Notif.OPEN_NOTIFICATIONS.equals(open) && !(stack.peek() instanceof NotifScreen)) push(new NotifScreen(this));
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        foreground = true;
+        if (shellVisible) {
+            Notif.schedule(this);
+            Notif.checkSoon(this);
+            refreshBell();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        foreground = false;
+    }
+
+    boolean isForeground() { return foreground; }
+
+    /** True while this screen is the one on display. */
+    boolean isTop(Screen s) { return shellVisible && stack.peek() == s; }
 
     private void start() {
         if (!api.hasSavedSession()) {
@@ -123,7 +170,8 @@ public class MainActivity extends Activity {
         name.setGravity(Gravity.CENTER);
         name.setPadding(0, Ui.dp(this, 12), 0, 0);
         root.addView(name);
-        TextView sub = Ui.text(this, "Quality Control Monitoring System\nFour Star Industries", 12.5f, Ui.MUTED, false);
+        String company = Licence.company(api);
+        TextView sub = Ui.text(this, "Quality Control Monitoring System\n" + (company.isEmpty() ? "Four Star Industries" : company), 12.5f, Ui.MUTED, false);
         sub.setGravity(Gravity.CENTER);
         sub.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 22));
         root.addView(sub);
@@ -285,8 +333,78 @@ public class MainActivity extends Activity {
     }
 
     void signOut() {
+        Notif.cancelAll(this);
+        Licence.status = null;
         api.signOut();
         showLogin(null);
+    }
+
+    // ------------------------------------------------------------------ R35 licence
+    /** qcms_licence_status after login. Blocks only on a clear "not valid" answer; never when the RPC fails. */
+    void checkLicence(boolean fromBlockScreen) {
+        Api.async(() -> Licence.load(api), (st, err) -> {
+            if (err != null) {
+                if (fromBlockScreen) { toast("Could not check the licence: " + Api.message(err)); showShell(0); }
+                return;
+            }
+            if (Licence.blocks(st)) { showLicenceBlocked(st); return; }
+            if (fromBlockScreen) { showShell(0); return; }
+            if (brandView != null) brandView.setText(brandText());
+            Screen s = stack.peek();
+            if (s instanceof KpiHomeScreen) setSubtitle(s.subtitle());
+        });
+    }
+
+    /** STAWN-branded blocking licence screen (reason, contact, About, Sign out; admin key activation). */
+    void showLicenceBlocked(org.json.JSONObject st) {
+        shellVisible = false;
+        stack.clear();
+        setContentView(Licence.blockingView(this, st));
+    }
+
+    private String brandText() {
+        String company = Licence.company(api);
+        return "STAWN QCMS" + (company.isEmpty() ? "" : "  ·  " + company);
+    }
+
+    // ------------------------------------------------------------------ R35 notifications
+    private static final int REQ_NOTIF = 804;
+
+    /** Unread count on the top-bar bell (qcms_unread_notification_count). */
+    void refreshBell() {
+        if (bellBadge == null) return;
+        Api.async(() -> Notif.unreadCount(api), (n, err) -> {
+            if (err != null || n == null || bellBadge == null) return;
+            bellBadge.setText(n > 99 ? "99+" : String.valueOf(n));
+            bellBadge.setVisibility(n > 0 ? View.VISIBLE : View.GONE);
+        });
+    }
+
+    private void askNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+        if (api.prefs().getBoolean("notif_permission_asked", false)) return;
+        api.prefs().edit().putBoolean("notif_permission_asked", true).apply();
+        requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF);
+    }
+
+    private View bell() {
+        FrameLayout box = new FrameLayout(this);
+        Button b = barButton("🔔");
+        b.setTextSize(19);
+        b.setOnClickListener(v -> { if (!(stack.peek() instanceof NotifScreen)) push(new NotifScreen(this)); });
+        box.addView(b, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        bellBadge = Ui.text(this, "", 9.5f, Color.WHITE, true);
+        bellBadge.setGravity(Gravity.CENTER);
+        bellBadge.setPadding(Ui.dp(this, 4), 0, Ui.dp(this, 4), 0);
+        bellBadge.setBackground(Ui.round(Color.parseColor("#DC2626"), Color.WHITE, 1, 9, this));
+        bellBadge.setMinWidth(Ui.dp(this, 18));
+        bellBadge.setVisibility(View.GONE);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(this, 18), Gravity.TOP | Gravity.END);
+        lp.topMargin = Ui.dp(this, 4);
+        lp.rightMargin = Ui.dp(this, 2);
+        box.addView(bellBadge, lp);
+        return box;
     }
 
     // ------------------------------------------------------------------ shell
@@ -303,6 +421,10 @@ public class MainActivity extends Activity {
         back.setOnClickListener(v -> onBackPressed());
         top.addView(back, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 48)));
         LinearLayout titles = Ui.vbox(this);
+        brandView = Ui.text(this, brandText(), 10, Color.parseColor("#BFE6E6"), true);
+        brandView.setSingleLine(true);
+        brandView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        titles.addView(brandView);
         titleView = Ui.text(this, "", 17, Color.WHITE, true);
         titleView.setSingleLine(true);
         subtitleView = Ui.text(this, "", 11.5f, Color.parseColor("#D9F0F0"), false);
@@ -310,6 +432,7 @@ public class MainActivity extends Activity {
         titles.addView(titleView);
         titles.addView(subtitleView);
         top.addView(titles, Ui.weight(1));
+        top.addView(bell(), new LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 48)));
         Button export = barButton("⇩");
         export.setOnClickListener(v -> exportCurrent());
         top.addView(export, new LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 48)));
@@ -378,6 +501,13 @@ public class MainActivity extends Activity {
         setContentView(root);
         backButton = back;
         openTab(tab);
+        // R35: notifications (JobScheduler every 15 min + now), bell, permission, licence check
+        Notif.schedule(this);
+        Notif.checkSoon(this);
+        refreshBell();
+        askNotificationPermission();
+        checkLicence(false);
+        if (pendingOpen != null) openPending();
     }
 
     private Button backButton;
@@ -399,7 +529,8 @@ public class MainActivity extends Activity {
     void openTab(int tab) {
         stack.clear();
         Screen s;
-        s = tab <= 0 || tab >= TABS.length ? new HomeScreen(this) : new SectionScreen(this, tab);
+        // R35: the first screen is the KPI start dashboard; the Home overview is one tap away from it
+        s = tab <= 0 || tab >= TABS.length ? new KpiHomeScreen(this) : new SectionScreen(this, tab);
         stack.push(s);
         render();
     }
@@ -547,6 +678,10 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == REQ_NOTIF) {
+            if (results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) Notif.checkSoon(this);
+            return;
+        }
         if (requestCode == REQ_PERM) {
             if (results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) startCamera();
             else toast("Storage permission is needed to save the camera photo (Android 9 and older).");

@@ -190,6 +190,39 @@ def _changed_fields(old_data: Any, new_data: Any) -> str:
     return ", ".join(changed[:12]) + (" …" if len(changed) > 12 else "")
 
 
+def link_problem(employee: Mapping[str, Any], login_email: str, *, profile_id: str = "") -> str:
+    """R35: plain warning when an Employee is linked to a login with a different email,
+    or the Employee is already linked to another login."""
+    if not employee:
+        return ""
+    name = " ".join(str(v) for v in (employee.get("first_name"), employee.get("last_name")) if v) or "this employee"
+    emp_email = str(employee.get("email") or "").strip().casefold()
+    login = str(login_email or "").strip().casefold()
+    other = str(employee.get("profile_id") or "")
+    if other and profile_id and other != profile_id:
+        return f"{name} is already linked to another QCMS login. Linking here moves the link."
+    if emp_email and login and emp_email != login:
+        return f"Email mismatch: Employee {name} has email {employee.get('email')}, but the login is {login_email}."
+    return ""
+
+
+def link_check_rows(employees: list[Mapping[str, Any]], users: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """R35: Employee ↔ Login links whose emails differ, and active employees without a login."""
+    by_id = {str(u.get("id")): u for u in users if u.get("id")}
+    rows: list[dict[str, Any]] = []
+    for e in employees:
+        name = " ".join(str(v) for v in (e.get("first_name"), e.get("last_name")) if v)
+        pid = str(e.get("profile_id") or "")
+        if pid:
+            login = by_id.get(pid) or {}
+            login_email = str(login.get("email") or "")
+            if login_email and str(e.get("email") or "").strip().casefold() != login_email.strip().casefold():
+                rows.append({"Employee": name, "Employee Email": e.get("email"), "Linked Login": login_email, "Issue": "Email differs – check the employee is linked to the right login"})
+        elif str(e.get("status") or "ACTIVE").upper() == "ACTIVE" and e.get("email"):
+            rows.append({"Employee": name, "Employee Email": e.get("email"), "Linked Login": "—", "Issue": "No QCMS login – use Create User → 'Create login for an Employee without login'"})
+    return rows
+
+
 def render() -> None:
     subpage_navigation(("masters", "Back to Masters", ":material/arrow_back:"))
     page_header(
@@ -217,20 +250,35 @@ def render() -> None:
 
     with create_tab:
         with stage_section("A", "CREATE USER", "Create the login and optionally link one Employee Master record. Employee email is never overwritten by login administration.", key="user_access_create_a"):
+            # R35: one-click prefill for an employee that has no QCMS login yet (e.g. Saket Jha).
+            without_login = {str(e["id"]): _employee_label(e) + (f" · {e.get('email')}" if e.get("email") else "") for e in employees if not e.get("profile_id") and str(e.get("status") or "ACTIVE").upper() == "ACTIVE"}
+            if without_login:
+                pick = st.selectbox("Create login for an Employee without login (prefills the form)", [""] + list(without_login), format_func=lambda x: without_login.get(x, "— Select employee —"), key="ua_prefill_employee")
+                if pick and st.session_state.get("_ua_prefilled") != pick:
+                    e = employee_by_id.get(pick, {})
+                    st.session_state["ua_create_full"] = " ".join(str(v) for v in (e.get("first_name"), e.get("last_name")) if v)
+                    st.session_state["ua_create_email"] = str(e.get("email") or "")
+                    st.session_state["ua_create_employee"] = pick
+                    st.session_state["_ua_prefilled"] = pick
+                    st.rerun()
             with st.form("create_user_v41418"):
                 c = st.columns(3, gap="small")
-                full = c[0].text_input("Full Name")
-                email = c[1].text_input("Login / Company Email")
+                full = c[0].text_input("Full Name", key="ua_create_full")
+                email = c[1].text_input("Login / Company Email", key="ua_create_email")
                 role = c[2].selectbox("QCMS Role", ROLES)
                 c = st.columns(3, gap="small")
-                employee = c[0].selectbox("Employee Link", [""] + list(emp), format_func=lambda x: emp.get(x, "— Not linked —"))
+                employee = c[0].selectbox("Employee Link", [""] + list(emp), format_func=lambda x: emp.get(x, "— Not linked —"), key="ua_create_employee")
                 status = c[1].selectbox("Access Status", ACCESS_STATUSES)
                 password = c[2].text_input("Temporary Password", type="password")
                 selected_department = str(employee_by_id.get(employee, {}).get("department") or "")
                 st.caption(f"Department: {selected_department or 'Link an Employee Master record to derive Department access.'}")
+                confirm_mismatch = st.checkbox("Link even if the Employee Master email differs from the login email", value=False, key="ua_create_mismatch_ok")
                 submit = st.form_submit_button("Create User", type="primary", width="stretch")
             if submit:
                 try:
+                    problem = link_problem(employee_by_id.get(employee or "", {}), email)
+                    if problem and not confirm_mismatch:
+                        raise ValueError(problem + " Tick 'Link even if … differs' to confirm, or choose the correct employee.")
                     result = _invoke({
                         "action": "create_user", "email": email, "password": password, "full_name": full,
                         "role": role, "status": status, "employee_id": employee or None,
@@ -304,7 +352,12 @@ def render() -> None:
                         value=False, key=f"unlink_employee_confirm_{uid}",
                     )
                     st.warning("The existing Employee link will be preserved unless this confirmation is selected.")
-                if st.button("Update User / Employee Link", type="primary", width="stretch", key=f"update_user_{uid}"):
+                mismatch = link_problem(employee_by_id.get(employee_value or "", {}), str(selected_user.get("email") or ""), profile_id=uid)
+                mismatch_ok = True
+                if mismatch:
+                    st.warning(mismatch)
+                    mismatch_ok = st.checkbox("I confirm this Employee belongs to this login", value=False, key=f"link_mismatch_ok_{uid}")
+                if st.button("Update User / Employee Link", type="primary", width="stretch", key=f"update_user_{uid}", disabled=not mismatch_ok):
                     try:
                         _invoke({
                             "action": "update_user", "user_id": uid, "role": role_value, "status": status_value,
@@ -316,6 +369,14 @@ def render() -> None:
                         st.rerun()
                     except Exception as exc:
                         st.error(db_message(exc))
+
+            with st.expander("Link check · Employee ↔ Login consistency", expanded=False):
+                checks = link_check_rows(employees, users)
+                if checks:
+                    st.warning(f"{len(checks)} link(s) need attention. QCMS does not change them automatically – correct each one with 'Update User / Employee Link' above.")
+                    portal_table(pd.DataFrame(checks), hide_index=True, width="stretch")
+                else:
+                    st.success("Every Employee ↔ Login link matches by email.")
 
             with stage_section("B", "EXPLICIT USER MODULE PERMISSIONS", "An enabled Override is authoritative. If Override is off, the user inherits Role → Department → legacy defaults. This same effective permission is enforced by the database/RLS and the UI.", key="user_access_user_module"):
                 effective_profile = {
@@ -508,8 +569,9 @@ def render() -> None:
 
     with audit_tab:
         with stage_section("A", "USER ACTIVITY", "Navigation and application actions by user, module, section and record.", key="activity_log_v41418"):
+            activity_limit = st.selectbox("Latest activity rows", [300, 1000, 2000], index=0, key="activity_limit", help="Smaller lists load faster.")
             try:
-                activities = repo.select("qcms_user_activity_log", order_by="occurred_at", desc=True, limit=2000)
+                activities = repo.select("qcms_user_activity_log", order_by="occurred_at", desc=True, limit=int(activity_limit))
             except Exception as exc:
                 st.error(db_message(exc)); activities = []
             action_filter = st.text_input("Activity search", placeholder="user, module, section, action, record", key="activity_search")

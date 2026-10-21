@@ -2,9 +2,16 @@
 import hashlib, os, sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, "STAWNQCMS")
-VERSION = sys.argv[1] if len(sys.argv) > 1 else "1.0.0"
-BUILD = sys.argv[2] if len(sys.argv) > 2 else "1"
+VERSION = sys.argv[1] if len(sys.argv) > 1 else "1.1.0"
+BUILD = sys.argv[2] if len(sys.argv) > 2 else "2"
 BUNDLE = "com.stawnprecision.qcms"
+# Apple Developer Team ID: argument 3, env STAWN_APPLE_TEAM_ID or ~/.stawn_apple_team_id (kept on every regeneration)
+TEAM = sys.argv[3] if len(sys.argv) > 3 else os.environ.get("STAWN_APPLE_TEAM_ID", "")
+if not TEAM:
+    try:
+        TEAM = open(os.path.expanduser("~/.stawn_apple_team_id")).read().strip()
+    except OSError:
+        TEAM = ""
 
 def uid(name):
     return hashlib.md5(name.encode()).hexdigest()[:24].upper()
@@ -28,10 +35,14 @@ for r in resources:
     res.append((ref, bf))
 plist = uid("refInfo.plist")
 P(plist, '{isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; }')
+# Push notifications (aps-environment); file reference only - entitlements are not a build-phase resource
+ENTITLEMENTS = "STAWNQCMS.entitlements"
+ent = uid("ref" + ENTITLEMENTS)
+P(ent, '{isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "' + ENTITLEMENTS + '"; sourceTree = "<group>"; }')
 app = uid("product")
 P(app, '{isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "STAWN QCMS.app"; sourceTree = BUILT_PRODUCTS_DIR; }')
 main, grp, prods = uid("maingroup"), uid("srcgroup"), uid("products")
-P(grp, "{isa = PBXGroup; children = (" + ", ".join([r for r, _ in files] + [r for r, _ in res] + [plist]) + '); path = STAWNQCMS; sourceTree = "<group>"; }')
+P(grp, "{isa = PBXGroup; children = (" + ", ".join([r for r, _ in files] + [r for r, _ in res] + [plist, ent]) + '); path = STAWNQCMS; sourceTree = "<group>"; }')
 P(prods, "{isa = PBXGroup; children = (" + app + '); name = Products; sourceTree = "<group>"; }')
 P(main, "{isa = PBXGroup; children = (" + grp + ", " + prods + '); sourceTree = "<group>"; }')
 srcp, frp, resp = uid("sources"), uid("frameworks"), uid("resources")
@@ -44,8 +55,10 @@ common = {
     "GCC_C_LANGUAGE_STANDARD": "gnu11", "IPHONEOS_DEPLOYMENT_TARGET": "16.0", "SDKROOT": "iphoneos", "SWIFT_VERSION": "5.0",
     "SWIFT_STRICT_CONCURRENCY": "minimal",
 }
+def key(k):
+    return k if all(c.isalnum() or c == "_" for c in k) else '"' + k + '"'
 def settings(d):
-    return "{" + " ".join(f'{k} = "{v}";' for k, v in d.items()) + "}"
+    return "{" + " ".join(f'{key(k)} = "{v}";' for k, v in d.items()) + "}"
 pd, pr = uid("projdebug"), uid("projrelease")
 P(pd, "{isa = XCBuildConfiguration; buildSettings = " + settings({**common, "DEBUG_INFORMATION_FORMAT": "dwarf", "ONLY_ACTIVE_ARCH": "YES", "ENABLE_TESTABILITY": "YES",
    "SWIFT_OPTIMIZATION_LEVEL": "-Onone", "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "DEBUG", "GCC_OPTIMIZATION_LEVEL": "0"}) + "; name = Debug; }")
@@ -53,14 +66,16 @@ P(pr, "{isa = XCBuildConfiguration; buildSettings = " + settings({**common, "DEB
    "SWIFT_COMPILATION_MODE": "wholemodule", "SWIFT_OPTIMIZATION_LEVEL": "-O"}) + "; name = Release; }")
 target_common = {
     "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon", "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor", "CODE_SIGN_STYLE": "Automatic",
-    "CURRENT_PROJECT_VERSION": BUILD, "MARKETING_VERSION": VERSION, "DEVELOPMENT_TEAM": "", "GENERATE_INFOPLIST_FILE": "NO",
+    "CURRENT_PROJECT_VERSION": BUILD, "MARKETING_VERSION": VERSION, "DEVELOPMENT_TEAM": TEAM, "GENERATE_INFOPLIST_FILE": "NO",
     "INFOPLIST_FILE": "STAWNQCMS/Info.plist", "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks", "PRODUCT_BUNDLE_IDENTIFIER": BUNDLE,
-    "PRODUCT_NAME": "STAWN QCMS", "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator", "SUPPORTS_MACCATALYST": "NO", "TARGETED_DEVICE_FAMILY": "1,2",
+    "PRODUCT_NAME": "STAWN QCMS", "CODE_SIGN_ENTITLEMENTS": "STAWNQCMS/" + ENTITLEMENTS, "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator", "SUPPORTS_MACCATALYST": "NO", "TARGETED_DEVICE_FAMILY": "1,2",
     "SWIFT_EMIT_LOC_STRINGS": "NO", "ENABLE_PREVIEWS": "YES",
 }
 td, tr = uid("targetdebug"), uid("targetrelease")
 P(td, "{isa = XCBuildConfiguration; buildSettings = " + settings(target_common) + "; name = Debug; }")
-P(tr, "{isa = XCBuildConfiguration; buildSettings = " + settings(target_common) + "; name = Release; }")
+# Release (Archive / TestFlight) signs with the Apple Distribution certificate + App Store profile:
+# no registered iPhone / iPad is needed for TestFlight.
+P(tr, "{isa = XCBuildConfiguration; buildSettings = " + settings({**target_common, "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Distribution"}) + "; name = Release; }")
 pl, tl = uid("projlist"), uid("targetlist")
 P(pl, "{isa = XCConfigurationList; buildConfigurations = (" + pd + ", " + pr + "); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; }")
 P(tl, "{isa = XCConfigurationList; buildConfigurations = (" + td + ", " + tr + "); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; }")
@@ -89,4 +104,34 @@ open(os.path.join(sd, "STAWNQCMS.xcscheme"), "w").write(f'''<?xml version="1.0" 
    <ArchiveAction buildConfiguration = "Release" revealArchiveInOrganizer = "YES"></ArchiveAction>
 </Scheme>
 ''')
-print("project with", len(swift), "swift files")
+
+def _check_pbxproj(text):
+    """Minimal OpenStep-plist sanity check (balanced braces / parentheses outside quoted strings, unique object ids)."""
+    depth = {"{": 0, "(": 0}
+    pairs = {"}": "{", ")": "("}
+    quoted = False
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if quoted:
+            if c == "\\":
+                i += 1
+            elif c == '"':
+                quoted = False
+        elif c == '"':
+            quoted = True
+        elif c in depth:
+            depth[c] += 1
+        elif c in pairs:
+            depth[pairs[c]] -= 1
+            if depth[pairs[c]] < 0:
+                raise SystemExit("project.pbxproj: unbalanced " + c)
+        i += 1
+    if quoted or any(depth.values()):
+        raise SystemExit("project.pbxproj: unbalanced braces or quotes")
+    ids = [line.strip().split(" = ", 1)[0] for line in text.splitlines() if line.startswith("\t\t") and " = {isa = " in line]
+    if len(ids) != len(set(ids)):
+        raise SystemExit("project.pbxproj: duplicate object ids")
+
+_check_pbxproj(out)
+print("project", VERSION, "build", BUILD, "with", len(swift), "swift files", "team", TEAM or "(not set)")

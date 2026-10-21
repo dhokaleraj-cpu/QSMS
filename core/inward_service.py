@@ -104,3 +104,14 @@ class InwardService:
             self.repo.insert("document_attachments", attachment)
         self.repo.update("inward_lots", inward_id, {"inward_copy_path": path})
         return path
+
+
+def inward_error_message(exc: object, *, grn: str = "", heat: str = "") -> str:
+    """R35: plain message for Material Inward save errors (duplicate GRN + Part + Heat)."""
+    from core.db_errors import db_message
+    text = str(exc or "")
+    if "inward_lots_tenant_id_grn_number_part_id_heat_number_key" in text or ("duplicate key" in text and "grn_number" in text):
+        return (f"A Material Inward with GRN {grn or '-'} for this Part Number and Heat {heat or '-'} already exists. "
+                "It was probably saved on the previous click. Open it from 'Current Material Inward Status' above to edit it, "
+                "or use a different GRN number for a new receipt.")
+    return db_message(exc)

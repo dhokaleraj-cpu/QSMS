@@ -142,7 +142,7 @@ expected_paths = {
     "reports-home", "heat-transaction-report", "osp-balance-report", "supply-chain-report", "rmtc-report", "inward-report", "dimensional-report", "metlab-report", "complaints-report", "traceability-report", "npd-report", "apqp-report", "qc-report", "inspection-layout-report", "standards-report", "templates",
     "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
-    "user-access", "email-settings", "master-import", "standards-entry", "standards-records", "my-account", "about", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
+    "user-access", "email-settings", "master-import", "standards-entry", "standards-records", "my-account", "about", "notifications", "licence-company", "stawn-developer", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
     "osp-material-out", "osp-sample-receipt", "osp-inward", "osp-dimensional", "osp-metlab", "osp-records",
     "inspection-layout-entry", "inspection-layout-records", "dimensional-entry",
     "dimensional-records", "metlab-entry", "metlab-records", "bend-test-entry", "bend-test-records", "bend-test-report", "global-search", "kpi-dashboards", "system-settings", "email-send", "email-groups", "email-my-settings", "email-sent", "bend-layout-entry", "report-builder", "master-lists", "print-designer",

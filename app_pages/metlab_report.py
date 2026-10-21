@@ -1,5 +1,5 @@
 from __future__ import annotations
-from core.attachments import MICROSTRUCTURE_IMAGE_TYPES
+from core.attachments import MICROSTRUCTURE_IMAGE_TYPES, saved_photo_preview
 # Legacy controlled PDF label retained for regression traceability: Download MetLAB Report PDF
 
 import re
@@ -22,7 +22,8 @@ from core.inspection_service import FINAL_DISPOSITIONS, RESULT_OPTIONS, Inspecti
 from core.reporting import metlab_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
 from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
-from core.db_errors import db_message
+from core.db_errors import db_message, report_generation_error, missing_fields_message
+from core.auth import verify_current_password
 
 
 BEND_PHOTO_LABELS = {
@@ -105,7 +106,7 @@ def _report_exports(service: InspectionService, report_id: str, report_number: s
             icon=":material/download:", key=f"{key}_xlsx", width="stretch",
         )
     except Exception as exc:
-        st.error(f"Report export could not be generated: {exc}")
+        st.error(report_generation_error(exc))
 
 
 def _inward_label(row: dict, parts: dict[str, dict], parties: dict[str, dict]) -> str:
@@ -118,7 +119,7 @@ def _inward_label(row: dict, parts: dict[str, dict], parties: dict[str, dict]) -
     )
 
 
-def _pending_frame(rows: list[dict], parts: dict[str, dict], parties: dict[str, dict]) -> pd.DataFrame:
+def _pending_frame(rows: list[dict], parts: dict[str, dict], parties: dict[str, dict], readiness: dict[str, str] | None = None) -> pd.DataFrame:
     return pd.DataFrame([{
         "Inward": row.get("inward_number"),
         "Date": row.get("inward_date"),
@@ -129,6 +130,7 @@ def _pending_frame(rows: list[dict], parts: dict[str, dict], parties: dict[str, 
         "Steel kg": row.get("steel_quantity_kg") or row.get("quantity_received"),
         "Production pcs": row.get("production_quantity_pcs"),
         "Status": row.get("metlab_queue_status"),
+        **({"Layout": (readiness or {}).get(str(row.get("part_id")), "-")} if readiness is not None else {}),
     } for row in rows])
 
 
@@ -479,6 +481,113 @@ def _reference_controls(catalog: LearnedValueCatalog, existing: dict | None, cur
     return str(spec_ref or ""), [str(value).strip() for value in reference_documents if str(value).strip()]
 
 
+# ---------------------------------------------------------------- R35 report evidence / validation helpers
+def persist_pending_evidence(service: InspectionService, report_id: str, micro_files: list, micro_captions: list[str], attachment: Any = None, existing: dict | None = None) -> int:
+    """Save photographs / report copy chosen in the form (also when the user presses Finalize
+    without pressing Save first) so evidence is never lost at finalization. Returns files saved."""
+    saved = 0
+    if not report_id:
+        return 0
+    if attachment is not None:
+        service.upload_attachment("METLAB_REPORT", report_id, "REPORT_COPY", attachment, "lab_tests", "attachment_path")
+        saved += 1
+    for slot, image in enumerate(micro_files or [], start=1):
+        if image is not None:
+            service.upload_attachment("METLAB_REPORT", report_id, f"MICROSTRUCTURE_{slot}", image, "lab_tests", f"microstructure_image_{slot}_path")
+            saved += 1
+    captions = {f"microstructure_caption_{slot}": (str(micro_captions[slot - 1] or "").strip() or None)
+                for slot in range(1, 5) if slot - 1 < len(micro_captions or [])}
+    changed = {k: v for k, v in captions.items() if (existing or {}).get(k) != v}
+    if changed:
+        service.repo.update("lab_tests", report_id, changed)
+    return saved
+
+
+def report_save_blockers(*, existing: dict | None, perms: dict, prepared: str, sample_ref: str, case_depth_valid: bool, notify_pref: dict | None, plan_id: str | None = None) -> list[str]:
+    """R35: every reason the Save button is disabled, named by field, so the user knows what to fix."""
+    reasons: list[str] = []
+    status = str((existing or {}).get("status") or "DRAFT").upper()
+    if existing and status != "DRAFT":
+        reasons.append(f"Report is {status}. Photographs can still be added below without reopening; to change results use 'Edit Selected MetLAB Report with Password'.")
+        return reasons
+    if not (perms.get("can_edit") if existing else perms.get("can_create")):
+        reasons.append("Your role has no " + ("Edit" if existing else "Create") + " permission for MetLAB / Bend Test reports (Admin → User Access).")
+    if plan_id is not None and not plan_id:
+        reasons.append("Layout – select an approved layout.")
+    if not prepared:
+        reasons.append("Prepared By – select the employee who prepared the report.")
+    if not str(sample_ref or "").strip():
+        reasons.append("Sample / Reference – enter the sample reference.")
+    if not case_depth_valid:
+        reasons.append("Case Depth / Microhardness Traverse – complete or correct the highlighted rows.")
+    if notify_pref and notify_pref.get("send") and not notify_pref.get("confirmed"):
+        reasons.append("Email notification – press 'Confirm recipients' (or untick Email notification).")
+    return reasons
+
+
+def finalize_blockers(*, existing: dict, perms: dict, disposition: str, reason: str, validator: str, approver: str) -> list[str]:
+    reasons: list[str] = []
+    if str(existing.get("status") or "").upper() == "FINAL":
+        return ["Report is already FINAL."]
+    if not perms.get("can_approve"):
+        reasons.append("Your role has no Approve permission for this module.")
+    if str(disposition or "PENDING").upper() == "PENDING":
+        reasons.append("Final Decision is PENDING – choose Accepted / Accepted Under Reserve / Rejected / On Hold.")
+    elif str(disposition).upper() in {"ON_HOLD", "ACCEPTED_UNDER_RESERVE", "REJECTED"} and not str(reason or "").strip():
+        reasons.append("Decision Reason – mandatory for On Hold, Accepted Under Reserve and Rejected.")
+    if not validator:
+        reasons.append("Validated By – select the validator.")
+    if not approver:
+        reasons.append("Approved By – select yourself (approval is recorded against the signed-in employee).")
+    return reasons
+
+
+def show_blockers(reasons: list[str], *, title: str = "Cannot save yet") -> None:
+    if reasons:
+        st.info(f"{title}:\n\n" + "\n".join(f"- {r}" for r in reasons))
+
+
+def final_photo_update(service: InspectionService, existing: dict, micro_files: list, micro_captions: list[str], attachment: Any = None, *, key: str) -> None:
+    """R35: add / replace photographs on a FINAL report without reopening it (status stays FINAL)."""
+    if str(existing.get("status") or "").upper() == "DRAFT":
+        return
+    chosen = [f for f in (micro_files or []) if f is not None] + ([attachment] if attachment is not None else [])
+    with st.expander("Add / replace photographs on this finalized report (report stays FINAL)", expanded=bool(chosen)):
+        st.caption("Choose the photograph(s) in section B above, then confirm with your QCMS password. The decision, results and FINAL status are not changed; the upload is recorded in the record history.")
+        password = st.text_input("Current QCMS Password", type="password", key=f"{key}_pw")
+        if st.button("Save photographs to finalized report", disabled=not chosen and not micro_captions, width="stretch", key=f"{key}_btn"):
+            try:
+                verify_current_password(password)
+                count = persist_pending_evidence(service, str(existing["id"]), micro_files, micro_captions, attachment, existing)
+                save_success_popup(f"{count} file(s) saved. The report remains FINAL.", queue_for_rerun=True)
+                st.rerun()
+            except Exception as exc:
+                st.error(db_message(exc))
+
+
+def layout_readiness(service: InspectionService, part_id: str, *, bend: bool = False) -> str:
+    """R35: plain status of the inward MetLAB / Bend layout of a part for the pending list."""
+    try:
+        plans = service.plans("METLAB", part_id, approved_only=True)
+    except Exception:
+        return "-"
+    raw = [p for p in plans if service.is_raw_material_metlab_plan(p) and str(p.get("requirement_scope") or "GENERAL").upper() != "FINAL_METALLURGICAL"]
+    bend_plans = [p for p in plans if str(p.get("inspection_method") or "").upper() == BEND_TEST]
+    general = [p for p in raw if str(p.get("inspection_method") or "GENERAL").upper() != BEND_TEST]
+    if bend:
+        return "Ready" if bend_plans else "No approved Bend Test layout"
+    if general:
+        return "Ready"
+    found = []
+    if bend_plans:
+        found.append("Bend Test only – use Bend Test Entry")
+    if any(str(p.get("requirement_scope") or "").upper() == "FINAL_METALLURGICAL" for p in plans):
+        found.append("Final Dispatch layout only")
+    if any(str(p.get("inward_type") or "").upper() == "OSP_PROCESS" or str(p.get("requirement_scope") or "").upper() == "OSP_METLAB" for p in plans):
+        found.append("OSP layout only")
+    return "Missing inward MetLAB layout" + (f" ({'; '.join(found)})" if found else " – create & approve in Layout Master")
+
+
 STANDALONE_STAGES = {
     "RAW_MATERIAL_STAGE": "Raw Material Stage",
     "OSP_STAGE": "OSP Stage",
@@ -648,8 +757,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
         micro_cols = st.columns(4, gap="small"); micro_files = []; micro_captions = []
         for slot, col in enumerate(micro_cols, start=1):
             with col:
-                if (existing or {}).get(f"microstructure_image_{slot}_path"):
-                    st.caption(f"Photo {slot} already uploaded")
+                saved_photo_preview(existing, slot)
                 micro_files.append(st.file_uploader((("Part Bend Photograph · " + BEND_PHOTO_LABELS[slot]) if inspection_method == BEND_TEST and slot == 2 else (BEND_PHOTO_LABELS[slot] if inspection_method == BEND_TEST else f"Photo {slot}")), type=MICROSTRUCTURE_IMAGE_TYPES, key=f"standalone_metlab_photo_{slot}_{existing_id or 'new'}"))
                 bend_defaults = BEND_PHOTO_CAPTIONS
                 default_caption = bend_defaults.get(slot, "") if inspection_method == BEND_TEST else ""
@@ -679,6 +787,7 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             layout_rows.append({"sequence_no": int(row.get("Sr No") or len(layout_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "parameter": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "checking_method": row.get("Method / Aid"), "actual_value": row.get("Actual Value"), "unit": row.get("Unit"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "result": result, "remarks": row.get("Remark"), "characteristic_type": row.get("_type"), "layout_metadata": layout_metadata_by_id.get(str(row.get("_characteristic_id") or ""), {})})
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
         metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"standalone_metlab_notify_{existing_id or 'new'}", context={"part_number":(parts.get(str(part_id)) or {}).get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing_id))
+        show_blockers(report_save_blockers(existing=existing, perms=perms, prepared=prepared, sample_ref=sample_ref, case_depth_valid=case_depth_valid, notify_pref=metlab_notify_pref, plan_id=plan_id))
         if st.button("Save Standalone MetLAB Report", type="primary", width="stretch", disabled=not writable or not prepared or not sample_ref.strip() or not case_depth_valid or (metlab_notify_pref["send"] and not metlab_notify_pref["confirmed"])):
             try:
                 final_number = report_no.strip() or service.next_number("METLAB")
@@ -742,13 +851,19 @@ def _render_standalone_metlab(service: InspectionService, perms: dict, parts: di
             current_approver = str(existing.get("approved_by_employee_id") or "")
             validator = c1.selectbox("Validated By", employee_options, index=employee_options.index(current_validator) if current_validator in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"), key=f"met_standalone_validator_{existing_id}")
             approver = c2.selectbox("Approved By", employee_options, index=employee_options.index(current_approver) if current_approver in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"), key=f"met_standalone_approver_{existing_id}")
-            if c3.button("Finalize MetLAB Decision", disabled=not perms["can_approve"] or disposition == "PENDING" or not validator or not approver or str(existing.get("status")) == "FINAL", width="stretch", key=f"met_standalone_finalize_{existing_id}"):
+            fin_block = finalize_blockers(existing=existing, perms=perms, disposition=disposition, reason=reason, validator=validator, approver=approver)
+            if str(existing.get("status") or "").upper() != "FINAL":
+                show_blockers(fin_block, title="Finalize is not available yet")
+            if c3.button("Finalize MetLAB Decision", disabled=bool(fin_block), width="stretch", key=f"met_standalone_finalize_{existing_id}"):
                 try:
+                    # R35: photographs / report copy chosen in the form are saved first, so they are never lost.
+                    persist_pending_evidence(service, existing_id, micro_files, micro_captions, attachment, existing)
                     service.finalize_metlab(existing_id, disposition, reason, validator, approver)
                     save_success_popup("Standalone MetLAB conclusion and final decision completed successfully.", queue_for_rerun=True)
                     st.rerun()
                 except Exception as exc:
                     st.error(db_message(exc))
+            final_photo_update(service, existing, micro_files, micro_captions, attachment, key=f"met_standalone_final_photos_{existing_id}")
             section_bar("PDF / EXCEL / PRINT EXPORT")
             _report_exports(service, existing_id, str(existing.get("report_number") or "MetLAB_Report"), key=f"met_standalone_export_{existing_id}")
 
@@ -818,8 +933,12 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
     pending_queue = [row for row in service.inspection_queue() if row.get("metlab_pending")]
     with stage_section("A", 'METLAB PENDING LIST', key="metlab_report_render_entry_a"):
         if pending_queue:
+            readiness = {pid: layout_readiness(service, pid, bend=bend_mode) for pid in {str(r.get("part_id")) for r in pending_queue if r.get("part_id")}}
+            not_ready = sorted({(parts.get(pid) or {}).get("part_number") or pid for pid, state in readiness.items() if state != "Ready"})
+            if not_ready:
+                st.warning("Layout check: these pending part numbers have no usable approved " + ("Bend Test" if bend_mode else "Raw Material Inward MetLAB") + " layout yet, so a report cannot be entered for them: " + ", ".join(map(str, not_ready)) + ". See the Layout column for what was found (Final Dispatch / OSP / Bend Test layouts cannot be used for inward reports).")
             portal_table(
-                style_status_dataframe(_pending_frame(pending_queue, parts, parties)),
+                style_status_dataframe(_pending_frame(pending_queue, parts, parties, readiness)),
                 hide_index=True, width="stretch", height=min(300, 84 + 38 * len(pending_queue)),
             )
         else:
@@ -869,6 +988,9 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
                     st.page_link(st.session_state["_qsms_pages"].get("bend-layout-entry") or st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve Bend Test Layout", icon=":material/add:", width="stretch")
             else:
                 st.error("No approved Raw Material Inward MetLAB layout is available in Layout Master for this Part. Create and approve a MetLAB layout before entering the Raw Material Inward report. Part Master Final Metallurgical Requirements cannot be used for this stage.")
+                st.caption(f"Layout check for Part {part.get('part_number') or ''}: {layout_readiness(service, part_id)}")
+                if existing and saved_plan_id:
+                    st.caption("This saved draft points to a layout that is not an inward MetLAB layout (for example an OSP or Final Dispatch layout). Create / approve the inward layout, then open this draft again and select it.")
             return
 
         inspection_method = service.plan_inspection_method(plan_id)
@@ -914,9 +1036,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
         micro_captions = []
         for slot, column in enumerate(micro_cols, start=1):
             with column:
-                existing_path = str((existing or {}).get(f"microstructure_image_{slot}_path") or "")
-                if existing_path:
-                    st.caption(f"Photo {slot} already uploaded")
+                saved_photo_preview(existing, slot)
                 photo_label = (("Part Bend Photograph · " + BEND_PHOTO_LABELS[slot]) if slot == 2 else BEND_PHOTO_LABELS[slot]) if inspection_method == BEND_TEST else f"Microstructure Photo {slot}"
                 micro_files.append(st.file_uploader(photo_label, type=MICROSTRUCTURE_IMAGE_TYPES, key=f"microstructure_{slot}_{existing_id or 'new'}"))
                 bend_defaults = BEND_PHOTO_CAPTIONS
@@ -963,6 +1083,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
 
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
         linked_metlab_notify_pref = notification_confirmation(NotificationService(service.repo), "METLAB_APPROVAL_PENDING", key=f"linked_metlab_notify_{str((existing or {}).get('id') or inward_id or 'new')}", context={"part_number":part.get("part_number"),"next_task":"MetLAB Approval"}, default_send=not bool(existing))
+        show_blockers(report_save_blockers(existing=existing, perms=perms, prepared=prepared, sample_ref=sample_ref, case_depth_valid=case_depth_valid, notify_pref=linked_metlab_notify_pref, plan_id=plan_id))
         if st.button("Save Raw Material MetLAB Draft", type="primary", disabled=not writable or not prepared or not sample_ref.strip() or not case_depth_valid or (linked_metlab_notify_pref["send"] and not linked_metlab_notify_pref["confirmed"]), width="stretch"):
             try:
                 final_number = report_no.strip() or service.next_number("METLAB")
@@ -1006,13 +1127,19 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
             c1, c2, c3 = st.columns(3, gap="small")
             validator = c1.selectbox("Validated By", employee_options, index=employee_options.index(str(existing.get("validated_by_employee_id") or "")) if str(existing.get("validated_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
             approver = c2.selectbox("Approved By", employee_options, index=employee_options.index(str(existing.get("approved_by_employee_id") or "")) if str(existing.get("approved_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
-            if c3.button("Finalize MetLAB Decision", disabled=not perms["can_approve"] or disposition == "PENDING" or not validator or not approver or str(existing.get("status")) == "FINAL", width="stretch"):
+            fin_block = finalize_blockers(existing=existing, perms=perms, disposition=disposition, reason=reason, validator=validator, approver=approver)
+            if str(existing.get("status") or "").upper() != "FINAL":
+                show_blockers(fin_block, title="Finalize is not available yet")
+            if c3.button("Finalize MetLAB Decision", disabled=bool(fin_block), width="stretch"):
                 try:
+                    # R35: photographs / report copy chosen in the form are saved first, so they are never lost.
+                    persist_pending_evidence(service, str(existing["id"]), micro_files, micro_captions, attachment, existing)
                     service.finalize_metlab(str(existing["id"]), disposition, reason, validator, approver)
                     save_success_popup("MetLAB decision finalized successfully.", queue_for_rerun=True)
                     st.rerun()
                 except Exception as exc:
                     st.error(db_message(exc))
+            final_photo_update(service, existing, micro_files, micro_captions, attachment, key=f"met_linked_final_photos_{existing.get('id')}")
             section_bar("PDF / EXCEL / PRINT EXPORT")
             _report_exports(service, str(existing["id"]), str(existing.get("report_number") or "MetLAB_Report"), key=f"met_linked_export_{existing.get('id')}")
             if password_delete_panel(
@@ -1057,7 +1184,7 @@ def _render_records(required_inspection_method: str | None = None) -> None:
             with c3:
                 st.download_button("Download Excel Report", data=quality_record_excel_bytes(selected_payload, "METLAB"), file_name=f"{selected_row.get('report_number') or 'MetLAB_Report'}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"metlab_xlsx_{selected}", icon=":material/download:", width="stretch")
         except Exception as exc:
-            st.error(f"Report export could not be generated: {exc}")
+            st.error(report_generation_error(exc))
         record_email_sender(
             NotificationService(service.repo), "METLAB_APPROVAL_PENDING",
             related_table="lab_tests", related_id=selected, key=f"metlab_record_email_{selected}",

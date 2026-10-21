@@ -78,6 +78,16 @@ def render_entry(bend_mode: bool = False) -> None:
 
     page_key = "bend-layout-entry" if bend_mode else "inspection-layout-entry"
     edit_key = "edit_bend_layout_id" if bend_mode else "edit_inspection_layout_id"
+    # R35: a clearly visible New Layout button (the '+ New Layout' option inside the selector was easy to miss
+    # and was overridden by a previously opened layout).
+    n1, n2 = st.columns([1, 3], gap="small")
+    if n1.button("＋ New Bend Test Layout" if bend_mode else "＋ New Layout", type="primary", width="stretch", disabled=not perms["can_create"], key=f"{page_key}_new_layout_btn"):
+        st.session_state["_qcms_master_blank_request"] = page_key
+        st.rerun()
+    if not perms["can_create"]:
+        n2.warning("New layout entry needs the Create permission for Inspection Layouts. Ask the administrator (Admin → User Access → Inspection Layouts → Create).")
+    else:
+        n2.caption("Press ＋ New Layout for a blank layout, or select an existing layout below to edit / revise it.")
     force_new = consume_master_blank_request(page_key, edit_keys=(edit_key,), widget_keys=(("bend_layout_selector",) if bend_mode else ("inspection_layout_selector", "inspection_layout_type_selector")))
     requested = str(st.session_state.get(edit_key) or "")
     existing = service.get_plan(requested) if requested else None
@@ -94,15 +104,19 @@ def render_entry(bend_mode: bool = False) -> None:
         all_plans = service.plans(layout_type)
     labels = {str(row["id"]): with_status(f"{row.get('plan_number')} Rev {row.get('revision')} · {part_map.get(str(row.get('part_id')), 'Part')}", row) for row in all_plans}
     options = ["__new__"] + list(labels); selector_key="bend_layout_selector" if bend_mode else "inspection_layout_selector"
-    if force_new: st.session_state[selector_key]="__new__"
-    elif requested in options: st.session_state[selector_key]=requested
+    applied_key = f"{selector_key}_applied_request"
+    if force_new:
+        st.session_state[selector_key] = "__new__"; st.session_state[applied_key] = ""
+    elif requested in options and st.session_state.get(applied_key) != requested:
+        # apply an edit request once; afterwards the user's own choice (including '+ New Layout') wins
+        st.session_state[selector_key] = requested; st.session_state[applied_key] = requested
     elif st.session_state.get(selector_key) not in options: st.session_state[selector_key]="__new__"
     selected = st.selectbox("Select Bend Test Layout" if bend_mode else "Select Layout", options, format_func=lambda value: ("＋ New Bend Test Layout" if bend_mode else "＋ New Layout") if value == "__new__" else labels[value], key=selector_key)
     if selected != "__new__" and selected != requested:
         st.session_state[edit_key] = selected
         st.rerun()
     if selected == "__new__" and requested:
-        st.session_state.pop(edit_key, None)
+        st.session_state.pop(edit_key, None); st.session_state[applied_key] = ""
         existing = None
     elif selected != "__new__":
         existing = service.get_plan(selected)
@@ -338,10 +352,14 @@ def render_records() -> None:
         labels = {str(row["id"]): with_status(f"{row.get('plan_number')} Rev {row.get('revision')} · {(parts.get(str(row.get('part_id'))) or {}).get('part_number')} · {row.get('layout_type')}", row) for row in filtered}
         selected = st.selectbox("Select Layout Record", list(labels), format_func=lambda value: labels[value])
         selected_row = next(row for row in filtered if str(row["id"]) == selected)
-        st.session_state["edit_inspection_layout_id"] = selected
         c1, c2, c3 = st.columns(3, gap="small")
         with c1:
-            st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Open Selected Layout", icon=":material/edit:", width="stretch")
+            # R35: the selected layout is handed to the entry page only when the user asks to open it,
+            # so '+ New Layout' on the entry page is not overridden by the last row viewed here.
+            if st.button("Open Selected Layout", icon=":material/edit:", width="stretch", key="open_selected_layout_btn"):
+                st.session_state["edit_inspection_layout_id"] = selected
+                st.session_state.pop("inspection_layout_selector_applied_request", None)
+                st.switch_page(st.session_state["_qsms_pages"]["inspection-layout-entry"])
         with c2:
             characteristics = service.plan_characteristics(selected)
             pdf = controlled_record_pdf_bytes(

@@ -6,7 +6,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
-VERSION="1.0.0"
+VERSION="1.1.0"
 BUILD_NO="$(date +%Y%m%d%H%M)"
 MODE="${1:-check}"
 LOG="$HOME/Downloads/STAWN_QCMS_iOS_build_log.txt"
@@ -19,10 +19,24 @@ if ! xcodebuild -version >/dev/null 2>&1; then
   exit 1
 fi
 xcodebuild -version
-python3 make_project.py "$VERSION" "$BUILD_NO" || exit 1
-
+# ---- Apple Team ID: env > ~/.stawn_apple_team_id > signing certificate in the Keychain (saved once) ----
 TEAM_ID="${STAWN_APPLE_TEAM_ID:-}"
-if [ -z "$TEAM_ID" ] && [ -f "$HOME/.stawn_apple_team_id" ]; then TEAM_ID="$(cat "$HOME/.stawn_apple_team_id")"; fi
+if [ -z "$TEAM_ID" ] && [ -f "$HOME/.stawn_apple_team_id" ]; then TEAM_ID="$(tr -d ' \n\r' < "$HOME/.stawn_apple_team_id")"; fi
+if [ -z "$TEAM_ID" ]; then
+  for CN in "Apple Distribution" "Apple Development" "iPhone Distribution" "iPhone Developer"; do
+    TEAM_ID="$(security find-certificate -a -c "$CN" -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null | sed -n 's/.*OU *= *\([A-Z0-9]\{10\}\).*/\1/p' | head -1)"
+    [ -n "$TEAM_ID" ] && break
+  done
+fi
+if [ -z "$TEAM_ID" ] && [ -t 0 ]; then
+  echo "Apple Team ID not found. developer.apple.com > Account > Membership details > Team ID (10 characters)."
+  read -r -p "Enter your Apple Team ID (or press Enter to skip): " TEAM_ID
+fi
+if [ -n "$TEAM_ID" ]; then
+  echo "$TEAM_ID" > "$HOME/.stawn_apple_team_id"
+  echo "Apple Team ID: $TEAM_ID (saved in ~/.stawn_apple_team_id)"
+fi
+python3 make_project.py "$VERSION" "$BUILD_NO" "$TEAM_ID" || exit 1
 
 case "$MODE" in
   check)
@@ -37,8 +51,14 @@ case "$MODE" in
     fi
     open STAWNQCMS.xcodeproj
     echo
-    echo "In Xcode: target STAWNQCMS > Signing & Capabilities > Team = your Apple Developer team."
-    echo "Connect the iPhone / iPad, pick it at the top and press Run (or Product > Archive for TestFlight)."
+    echo "Signing for your own iPhone / iPad (fixes 'Your team has no devices' / 'No profiles were found'):"
+    echo "  1. Xcode > Settings > Accounts: add your Apple ID (Team shows there)."
+    echo "  2. Connect the iPhone / iPad with a cable, unlock it, tap 'Trust This Computer'."
+    echo "  3. iPhone: Settings > Privacy & Security > Developer Mode > On (restart when asked)."
+    echo "  4. In Xcode pick the iPhone / iPad at the top (not 'Any iOS Device') - Xcode registers it."
+    echo "  5. Signing & Capabilities > Try Again, then press Run."
+    echo "No device at hand? Use TestFlight - no device registration needed:"
+    echo "  ./BUILD_STAWN_QCMS_iOS.command testflight"
     ;;
   testflight|adhoc)
     [ -n "$TEAM_ID" ] || { echo "Set your Apple Team ID once:  echo YOURTEAMID > ~/.stawn_apple_team_id   (developer.apple.com > Membership)"; exit 1; }

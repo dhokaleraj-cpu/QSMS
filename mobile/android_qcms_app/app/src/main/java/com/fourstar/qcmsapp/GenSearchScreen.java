@@ -15,6 +15,8 @@ import java.util.Map;
 /**
  * Global Search (website app_pages/global_search.py, Keyword Search tab): every permitted register,
  * results grouped by module with counts, tap a result to open the record natively.
+ * R35: also lists matching app modules / screens and the server-wide qcms_global_search rows
+ * (every table and field), merged with the local field search.
  */
 final class GenSearchScreen extends Screen {
     private static String lastQuery = "";
@@ -83,14 +85,56 @@ final class GenSearchScreen extends Screen {
         TextView wait = Ui.text(a, "Searching permitted QCMS masters and transactions…", 12, Ui.MUTED, false);
         results.addView(wait);
         go.setEnabled(false);
-        Api.async(() -> GenSearch.everywhere(api, q, 40), (found, err) -> {
-            go.setEnabled(true);
-            results.removeAllViews();
-            if (err != null) { results.addView(error(err, this::run)); return; }
-            lastQuery = q;
-            lastResults = found;
-            render(found);
+        final int run = ++runs;
+        // 1) app modules / screens + qcms_global_search (every table and field on the server) - fast
+        Api.async(() -> {
+            Partial p = new Partial();
+            p.modules = GenSearch.modules(q);
+            try { p.server = GenSearch.server(api, q, 200); }
+            catch (Exception e) {
+                if (e instanceof Api.ApiException && ((Api.ApiException) e).status == 401) throw e;
+                p.serverError = e;   // older database / offline: the local search below still runs
+            }
+            return p;
+        }, (p, err) -> {
+            if (run != runs) return;
+            if (err != null) { go.setEnabled(true); results.removeAllViews(); results.addView(error(err, this::run)); return; }
+            List<GenSearch.Result> first = GenSearch.merge(p.modules, p.server, null);
+            query = q;
+            searchingMore = true;
+            if (!first.isEmpty()) render(first);
+            // 2) the existing field search of the 27 registers (part / party relations) - merged in
+            Api.async(() -> GenSearch.everywhere(api, q, 40), (local, err2) -> {
+                if (run != runs) return;
+                go.setEnabled(true);
+                searchingMore = false;
+                if (err2 != null && p.server == null) {
+                    results.removeAllViews();
+                    if (!p.modules.isEmpty()) { lastResults = null; render(p.modules); }
+                    results.addView(error(err2, this::run));
+                    return;
+                }
+                List<GenSearch.Result> all = GenSearch.merge(p.modules, p.server, err2 == null ? local : null);
+                lastQuery = q;
+                lastResults = all;
+                render(all);
+            });
         });
+    }
+
+    private static final class Partial {
+        List<GenSearch.Result> modules, server;
+        Exception serverError;
+    }
+
+    private int runs = 0;
+    private boolean searchingMore = false;
+
+    /** Opens a hit: module -> the module; server row -> the record natively or its website page; local -> the record. */
+    private void open(GenSearch.Result r) {
+        if (GenSearch.Result.MODULE.equals(r.kind)) { a.openModule(r.appModule); return; }
+        if (GenSearch.Result.SERVER.equals(r.kind)) { Notif.open(a, r.table, r.recordId, r.route, r.reference); return; }
+        GenUtil.openRecord(a, r.table, r.record);
     }
 
     private void render(List<GenSearch.Result> found) {
@@ -100,11 +144,15 @@ final class GenSearchScreen extends Screen {
 
         List<View> tiles = new ArrayList<>();
         tiles.add(GenUtil.tile(a, "", "Search", query, "Current query", "neutral"));
-        tiles.add(GenUtil.tile(a, "", "Matches", String.valueOf(found.size()), "Across permitted registers", "neutral"));
+        tiles.add(GenUtil.tile(a, "", "Matches", String.valueOf(found.size()), searchingMore ? "Searching more…" : "Records + modules", "neutral"));
         tiles.add(GenUtil.tile(a, "", "Modules", String.valueOf(byModule.size()), "With matching records", "neutral"));
         tiles.add(GenUtil.tile(a, "", "Security", "Permission aware", "View rights + tenant RLS", "neutral"));
         GenUtil.grid2(a, results, tiles, 4);
 
+        if (found.isEmpty() && searchingMore) {
+            results.addView(loading());
+            return;
+        }
         if (found.isEmpty()) {
             TextView none = Ui.text(a, "No permitted QCMS records matched \"" + query + "\". Try a Part Number, Heat Number, RMTC, Batch, PO, Supplier / Customer name or Report Number.", 13, Ui.AMBER_FG, false);
             none.setBackground(Ui.round(Ui.AMBER_BG, 0, 0, 10, a));
@@ -116,6 +164,7 @@ final class GenSearchScreen extends Screen {
         // module filter chips with counts (website: "Filter Results by Module")
         List<String> keys = new ArrayList<>(byModule.keySet());
         java.util.Collections.sort(keys);
+        if (keys.remove(GenSearch.MODULES_GROUP)) keys.add(0, GenSearch.MODULES_GROUP);   // modules to open first
         List<String> labels = new ArrayList<>();
         labels.add("All · " + found.size());
         for (String k : keys) labels.add(k + " · " + byModule.get(k).size());
@@ -124,7 +173,7 @@ final class GenSearchScreen extends Screen {
 
         int visible = 0;
         for (String k : keys) if (module.isEmpty() || module.equals(k)) visible += byModule.get(k).size();
-        results.addView(Ui.text(a, visible + " matching record(s) · tap a row to open the record", 11.5f, Ui.MUTED, false), Ui.matchWrap(a, 8));
+        results.addView(Ui.text(a, visible + " match(es) · tap a row to open it" + (searchingMore ? " · searching more registers…" : ""), 11.5f, Ui.MUTED, false), Ui.matchWrap(a, 8));
 
         for (String k : keys) {
             if (!module.isEmpty() && !module.equals(k)) continue;
@@ -134,7 +183,7 @@ final class GenSearchScreen extends Screen {
             List<List<String>> data = new ArrayList<>();
             for (GenSearch.Result r : rows) data.add(GenUtil.listOf(r.reference, r.recordType, r.detail, r.status));
             results.addView(new DataGrid(a, "Global Search · " + k, cols, data, 360, index -> {
-                if (index >= 0 && index < rows.size()) GenUtil.openRecord(a, rows.get(index).table, rows.get(index).record);
+                if (index >= 0 && index < rows.size()) open(rows.get(index));
             }), Ui.matchWrap(a, 2));
         }
         Button csv = Ui.outline(a, "Export results (CSV)", Ui.TEAL);

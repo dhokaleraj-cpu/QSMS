@@ -12,6 +12,8 @@ enum Route: Hashable {
     case account
     case form(String, String)      // module key, id ("" = new record)
     case history(String, String)   // module key, id
+    case notifications
+    case home
 }
 
 /// Navigation path of one tab (lets screens push / pop programmatically).
@@ -30,6 +32,8 @@ struct PdfItem: Identifiable {
 }
 
 struct MainView: View {
+    @EnvironmentObject var app: AppState
+    @EnvironmentObject var inbox: Inbox
     @State private var tab = 0
     var body: some View {
         TabView(selection: $tab) {
@@ -39,19 +43,22 @@ struct MainView: View {
                     .tag(i)
             }
         }
+        .task { await app.postLogin() }
+        .onChange(of: inbox.openRequest) { _ in tab = 0 }
     }
 }
 
 /// One tab: navigation stack with the global search bar at the top of the root screen.
 struct TabRoot: View {
     let tab: Int
+    @EnvironmentObject var inbox: Inbox
     @StateObject private var nav = TabNav()
     @State private var query = ""
 
     var body: some View {
         NavigationStack(path: $nav.path) {
             Group {
-                if tab == 0 { HomeView() } else { SectionView(tab: tab) }
+                if tab == 0 { KpiDashboardView() } else { SectionView(tab: tab) }
             }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search Part, Heat, RMTC, Batch, PO, Report…")
             .onSubmit(of: .search) {
@@ -61,6 +68,16 @@ struct TabRoot: View {
             .navigationDestination(for: Route.self) { RouteView(route: $0) }
         }
         .environmentObject(nav)
+        .onAppear { if tab == 0 { openInboxIfRequested() } }
+        .onChange(of: inbox.openRequest) { _ in if tab == 0 { openInboxIfRequested() } }
+    }
+
+    /// A tapped push notification opens the inbox on the first tab.
+    private func openInboxIfRequested() {
+        if inbox.consumeOpen() {
+            nav.path = NavigationPath()
+            nav.push(.notifications)
+        }
     }
 }
 
@@ -84,6 +101,8 @@ struct RouteView: View {
             if let m = Catalog.shared.module(key) { FormScreen(module: m, id: id) } else { ErrorBox(message: "Module not available.") }
         case .history(let key, let id):
             if let m = Catalog.shared.module(key) { HistoryView(module: m, id: id) } else { ErrorBox(message: "Module not available.") }
+        case .notifications: NotificationsView()
+        case .home: HomeView()
         }
     }
 }
@@ -142,6 +161,7 @@ struct SectionView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(Catalog.tabNames[tab])
         .qcmsNavBar()
+        .qcmsBell()
     }
 
     private func hidden(_ m: QModule) -> Bool { ["global_search", "reports_centre", "records_centre", "about", "my_account"].contains(m.key) }

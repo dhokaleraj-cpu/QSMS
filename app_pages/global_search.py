@@ -323,7 +323,7 @@ def _render_ai_assistant(repo: Repository, profile: dict) -> None:
 
 def render() -> None:
     subpage_navigation(("dashboard", "Dashboard", ":material/arrow_back:"), ("records-center", "Records Centre", ":material/table_view:"))
-    page_header("Global Search", "Ask QCMS AI in plain English, or search Part, Heat, RMTC, Batch, Supplier, Customer, PO, Report and other records.", "AI + Permission-aware")
+    page_header("Global Search", "Search everything: modules and screens, fields, and every record in the database (part, heat, PO, RMTC, batch, supplier, report...). Or ask QCMS AI.", "Everything · Permission-aware")
 
     repo = Repository()
     profile = current_profile() or {}
@@ -334,13 +334,13 @@ def render() -> None:
         st.caption("AI Assistant is switched off by the System Administrator. Keyword Search is available below.")
         _render_keyword_search(repo, profile)
         return
-    ai_tab, keyword_tab = st.tabs(["✨ AI Assistant", "🔎 Keyword Search"])
+    keyword_tab, ai_tab = st.tabs(["🔎 Search Everything", "✨ AI Assistant"])
+    with keyword_tab:
+        _render_keyword_search(repo, profile)
     with ai_tab:
         if ai_mode == "ADMIN_ONLY":
             st.caption("AI Assistant is currently enabled for System Administrators only (Admin → System Settings).")
         _render_ai_assistant(repo, profile)
-    with keyword_tab:
-        _render_keyword_search(repo, profile)
 
 
 def _render_keyword_search(repo: Repository, profile: dict) -> None:
@@ -353,27 +353,157 @@ def _render_keyword_search(repo: Repository, profile: dict) -> None:
         query = c1.text_input(
             "Search QCMS",
             key="qcms_global_search_page_query",
-            placeholder="Part No, FSI Part No, Heat, RMTC, FSI Batch, vendor batch, supplier, customer, PO, report...",
+            placeholder="Anything: bend test, heat code, J5/16, part no, PO, RMTC, batch, supplier, customer, report...",
             label_visibility="collapsed",
         )
         submitted = c2.form_submit_button("Search", icon=":material/search:", type="primary", width="stretch")
 
     auto_search = bool(incoming)
     if submitted or auto_search:
-        if len(str(query).strip()) < 2:
+        cleaned = str(query or "").strip()
+        if len(cleaned) < 2:
             st.warning("Enter at least 2 characters to search QCMS.")
             st.session_state["_qcms_global_search_results"] = []
+            st.session_state["_qcms_global_search_everything"] = None
         else:
-            with st.spinner("Searching permitted QCMS masters and transactions..."):
-                st.session_state["_qcms_global_search_results"] = search_everywhere(repo, profile, query)
-                st.session_state["_qcms_global_search_last_query"] = str(query).strip()
+            with st.spinner("Searching modules, fields and every permitted database record..."):
+                st.session_state["_qcms_global_search_everything"] = _search_everything(repo, profile, cleaned)
+                st.session_state["_qcms_global_search_last_query"] = cleaned
+                if st.session_state["_qcms_global_search_everything"].get("records") is None:
+                    st.session_state["_qcms_global_search_results"] = search_everywhere(repo, profile, cleaned)
 
-    results = list(st.session_state.get("_qcms_global_search_results") or [])
     last_query = str(st.session_state.get("_qcms_global_search_last_query") or "").strip()
     if not last_query:
-        st.info("Enter a search value. Global Search respects the employee's current module View permissions and Supabase tenant/RLS controls.")
+        st.info("Search anything: a module (\"bend test\"), a field (\"heat code\"), or any value stored in QCMS (part, heat, PO, RMTC, batch, supplier, report...). "
+                "Results respect your module View permissions and Supabase tenant / row-level security.")
         return
+    everything = st.session_state.get("_qcms_global_search_everything") or {}
+    if everything.get("records") is None:
+        _render_classic_results(last_query)
+        return
+    _render_everything(repo, last_query, everything)
 
+
+def _search_everything(repo: Repository, profile: dict, query: str) -> dict:
+    from core.global_search_service import search_fields, search_modules, search_records
+    cache: dict[str, bool] = {}
+
+    def can_view(module_key: str) -> bool:
+        if module_key not in cache:
+            cache[module_key] = bool(module_permissions(profile, module_key, repo).get("can_view"))
+        return cache[module_key]
+
+    pages = st.session_state.get("_qsms_pages") or {}
+    try:
+        records = search_records(repo, query, limit=400, can_view=can_view)
+    except Exception as exc:
+        st.warning(f"Database search could not finish: {exc}")
+        records = []
+    return {"modules": search_modules(query, pages), "fields": search_fields(query), "records": records}
+
+
+def _open_route(route: str) -> None:
+    pages = st.session_state.get("_qsms_pages") or {}
+    if route in pages:
+        st.switch_page(pages[route])
+    else:
+        st.warning("This screen is not available for your login.")
+
+
+_EDIT_ROUTED_TABLES = {
+    "parts", "part_raw_material_details", "part_raw_material_technical_data", "part_supplier_price_history", "material_grades", "parties",
+    "processes", "inspection_stages", "company_branches", "employees", "inspection_plans", "rmtc_approvals", "rmtc_part_approvals",
+    "inward_lots", "osp_jobs", "osp_receipts", "production_batches", "inspection_reports", "lab_tests", "npd_orders", "npd_process_flows",
+    "ppap_projects", "qc_calculation_records", "quality_complaints", "quality_assets", "quality_asset_calibration_records",
+    "standard_room_inspection_records", "supply_customer_orders", "supply_purchase_orders", "supply_purchase_order_items",
+    "supply_po_confirmations", "supply_opening_stock", "supply_rm_purchase_orders", "supply_rm_receipts", "supply_rm_dispatches",
+    "supply_forging_orders", "supply_forging_receipts", "supply_downstream_events",
+}
+
+
+def _open_record(repo: Repository, item: dict) -> None:
+    table = str(item.get("table") or "")
+    if table in _EDIT_ROUTED_TABLES:
+        rows = repo.select(table, eq={"id": str(item.get("id") or "")}, limit=1)
+        if rows:
+            _open_result({"table": table, "record": rows[0]})
+            return
+    _open_route(str(item.get("route") or "records-center"))
+
+
+def _render_everything(repo: Repository, query: str, everything: dict) -> None:
+    from core.global_search_service import group_records
+    modules = list(everything.get("modules") or [])
+    fields = list(everything.get("fields") or [])
+    records = list(everything.get("records") or [])
+    disposition_cards([
+        {"label": "Search", "value": query, "foot": "Current query"},
+        {"label": "Modules & screens", "value": len(modules), "foot": "Open directly"},
+        {"label": "Fields", "value": len(fields), "foot": "Where this is captured"},
+        {"label": "Records", "value": len(records), "foot": "Whole database, permission aware"},
+    ])
+    if not (modules or fields or records):
+        st.warning(f"Nothing in QCMS matched **{query}**. Try part of the value (e.g. the first characters of a heat or part number).")
+        return
+    tab_labels = [f"All ({len(modules) + len(fields) + len(records)})", f"Modules & screens ({len(modules)})", f"Fields ({len(fields)})", f"Records ({len(records)})"]
+    t_all, t_mod, t_fld, t_rec = st.tabs(tab_labels)
+    with t_all:
+        if modules:
+            section_bar("MODULES & SCREENS", "Open the matching module, entry screen, register or report")
+            _module_buttons(modules[:8], "all")
+        if records:
+            section_bar("RECORDS", f"{len(records)} matching record(s) across the database")
+            _record_table(repo, records[:60], "all")
+        if fields:
+            section_bar("FIELDS", "Screens where a matching field is captured")
+            _field_table(fields[:12], "all")
+    with t_mod:
+        _module_buttons(modules, "mod") if modules else st.caption("No module or screen matched.")
+    with t_fld:
+        _field_table(fields, "fld") if fields else st.caption("No field label matched.")
+    with t_rec:
+        if not records:
+            st.caption("No stored record matched.")
+        for record_type, items in group_records(records).items():
+            with st.expander(f"{record_type} · {len(items)}", expanded=len(records) <= 30):
+                _record_table(repo, list(items), f"rec_{record_type}")
+
+
+def _module_buttons(modules: list[dict], key: str) -> None:
+    cols = st.columns(4, gap="small")
+    for index, item in enumerate(modules):
+        with cols[index % 4]:
+            label = str(item.get("title") or item.get("route"))
+            route = str(item.get("route") or "")
+            if st.button(label, key=f"gs_mod_{key}_{index}_{route}", icon=":material/open_in_new:", width="stretch", disabled=not route,
+                         help=str(item.get("keywords") or "")[:160] or None):
+                _open_route(route)
+
+
+def _field_table(fields: list[dict], key: str) -> None:
+    portal_table(pd.DataFrame([{"Field": f["label"], "Screen / Module": f["module"], "Column": f["field"]} for f in fields]),
+                 hide_index=True, width="stretch", height=min(420, 80 + 35 * len(fields)))
+    routes = [f for f in fields if f.get("route")]
+    if routes:
+        choice = st.selectbox("Open the screen for a field", range(len(routes)), format_func=lambda i: f"{routes[i]['label']} · {routes[i]['module']}", key=f"gs_fld_pick_{key}")
+        if st.button("Open screen", key=f"gs_fld_open_{key}", icon=":material/open_in_new:"):
+            _open_route(str(routes[choice]["route"]))
+
+
+def _record_table(repo: Repository, items: list[dict], key: str) -> None:
+    frame = pd.DataFrame([{
+        "Type": item["record_type"], "Reference": item["title"], "Details": item["subtitle"],
+        "Found in": item["matched_field"], "Matched text": item["snippet"],
+    } for item in items])
+    portal_table(frame, hide_index=True, width="stretch", height=min(520, 80 + 35 * len(items)))
+    choice = st.selectbox("Select a record to open", range(len(items)), key=f"gs_rec_pick_{key}",
+                          format_func=lambda i: f"{items[i]['record_type']} · {items[i]['title']} · {items[i]['subtitle']}"[:160])
+    if st.button("Open selected record", key=f"gs_rec_open_{key}", icon=":material/open_in_new:", type="primary"):
+        _open_record(repo, items[choice])
+
+
+def _render_classic_results(last_query: str) -> None:
+    results = list(st.session_state.get("_qcms_global_search_results") or [])
     module_count = len({str(item.get("module")) for item in results})
     disposition_cards([
         {"label": "Search", "value": last_query, "foot": "Current query"},

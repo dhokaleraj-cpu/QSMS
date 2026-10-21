@@ -3,6 +3,7 @@ import LocalAuthentication
 
 @main
 struct STAWNQCMSApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var app = AppState()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -10,6 +11,7 @@ struct STAWNQCMSApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(app)
+                .environmentObject(Inbox.shared)
                 .tint(Theme.teal)
                 .onChange(of: scenePhase) { phase in app.scene(phase) }
         }
@@ -24,6 +26,10 @@ final class AppState: ObservableObject {
     @Published var faceID: Bool = UserDefaults.standard.object(forKey: "face_id") as? Bool ?? false {
         didSet { UserDefaults.standard.set(faceID, forKey: "face_id") }
     }
+    /// qcms_licence_status (nil until loaded or when the RPC is not available).
+    @Published var licence: LicenceInfo?
+    @Published var licenceBlocked = false
+    private var pushStarted = false
     private var backgroundAt: Date?
     static let lockAfter: TimeInterval = 15 * 60
 
@@ -55,8 +61,32 @@ final class AppState: ObservableObject {
         Task {
             await Api.shared.signOut()
             await LabelCache.shared.clear()
+            licence = nil
+            licenceBlocked = false
+            pushStarted = false
+            Inbox.shared.reset()
             phase = .login
         }
+    }
+
+    /// After sign in / restore / unlock: licence check, push registration, unread count.
+    func postLogin() async {
+        await checkLicence()
+        if !pushStarted {
+            pushStarted = true
+            await Push.start()
+        }
+        await Inbox.shared.refreshCount()
+    }
+
+    /// Never blocks when the RPC fails (offline / older database).
+    func checkLicence() async {
+        guard let raw = try? await Api.shared.rpc("qcms_licence_status", [:]) else { return }
+        let row = J.obj(raw)
+        if row.isEmpty { return }
+        let info = LicenceInfo(row)
+        licence = info
+        licenceBlocked = info.blocks
     }
 
     func scene(_ p: ScenePhase) {
@@ -69,6 +99,7 @@ final class AppState: ObservableObject {
                 if faceID { unlock() }
             }
             backgroundAt = nil
+            if phase == .ready { Task { await Inbox.shared.refreshCount() } }
         default: break
         }
     }
@@ -90,7 +121,8 @@ struct RootView: View {
             case .starting: SplashView().task { await app.start() }
             case .login: LoginView()
             case .locked: LockView()
-            case .ready: MainView()
+            case .ready:
+                if app.licenceBlocked { LicenceBlockedView() } else { MainView() }
             }
         }
         .animation(.easeInOut(duration: 0.2), value: app.phase)

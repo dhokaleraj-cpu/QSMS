@@ -136,8 +136,8 @@ struct Catalog: Decodable {
     let moduleKeys: [String: String]
     let searchSources: [SearchSource]
 
-    static let tabNames = ["Home", "Supply", "Quality", "Masters", "More"]
-    static let tabIcons = ["house.fill", "shippingbox.fill", "checkmark.seal.fill", "square.stack.3d.up.fill", "ellipsis.circle.fill"]
+    static let tabNames = ["Dashboard", "Supply", "Quality", "Masters", "More"]
+    static let tabIcons = ["chart.bar.xaxis", "shippingbox.fill", "checkmark.seal.fill", "square.stack.3d.up.fill", "ellipsis.circle.fill"]
 
     static let shared: Catalog = {
         guard let url = Bundle.main.url(forResource: "catalog", withExtension: "json"),

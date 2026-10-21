@@ -51,6 +51,8 @@ from app_pages import (
     inspection_home,
     inspection_layouts,
     kpi_dashboards,
+    licence_company,
+    notifications as notifications_page,
     print_designer,
     report_builder,
     master_home,
@@ -237,6 +239,10 @@ PAGE_ITEMS = (
     ("standards-records", st.Page(standards_bank.render_records, title="Customer Standards Records", icon=":material/menu_book:", url_path="standards-records")),
     ("my-account", st.Page(my_account.render, title="My Account", icon=":material/manage_accounts:", url_path="my-account")),
     ("about", st.Page(about_page.render, title="About STAWN QCMS", icon=":material/info:", url_path="about")),
+    # R35: notifications inbox, licence & company setup, STAWN developer console
+    ("notifications", st.Page(notifications_page.render, title="My Notifications", icon=":material/notifications:", url_path="notifications")),
+    ("licence-company", st.Page(licence_company.render, title="Licence & Company", icon=":material/verified_user:", url_path="licence-company")),
+    ("stawn-developer", st.Page(licence_company.render_developer, title="STAWN Developer Console", icon=":material/developer_mode:", url_path="stawn-developer")),
 
     ("rmtc-part", st.Page(rmtc_pages.render_part, title="RMTC Part Worksheet", icon=":material/format_list_bulleted:", url_path="rmtc-part")),
     ("rmtc-records", st.Page(rmtc_pages.render_records, title="RMTC Records", icon=":material/table_view:", url_path="rmtc-records")),
@@ -280,6 +286,8 @@ MODULE_SUBMENUS = {
         ("dashboard", "Quality Dashboard", ":material/dashboard:"),
         ("kpi-dashboards", "KPI Dashboards", ":material/insights:"),
         ("global-search", "Search & AI", ":material/search:"),
+        ("notifications", "My Notifications", ":material/notifications:"),
+        ("about", "About STAWN QCMS", ":material/info:"),
     ),
     "Bend Test": (
         ("bend-test-entry", "Bend Test Report", ":material/architecture:"),
@@ -315,6 +323,7 @@ MODULE_SUBMENUS = {
         ("system-settings", "System Settings", ":material/tune:"),
         ("print-designer", "Print Layout Designer", ":material/design_services:"),
         ("deployment-diagnostics", "Deployment Diagnostics", ":material/verified:"),
+        ("licence-company", "Licence & Company", ":material/verified_user:"),
     ),
     "RMTC": (
         ("rmtc-entry", "RMTC Entry", ":material/fact_check:"),
@@ -445,7 +454,7 @@ RECORD_ROUTES = {
     "grade-records", "reference-records", "employee-records", "standards-records",
 }
 ROUTE_MODULE = {
-    "dashboard": "Dashboard", "my-account": "Dashboard", "about": "Dashboard", "kpi-dashboards": "KPI Dashboards", "system-settings": "Admin", "print-designer": "Admin", "email-send": "Email", "email-groups": "Email", "email-my-settings": "Email", "email-sent": "Email",
+    "dashboard": "Dashboard", "my-account": "Dashboard", "about": "Dashboard", "notifications": "Dashboard", "licence-company": "Admin", "stawn-developer": "Admin", "kpi-dashboards": "KPI Dashboards", "system-settings": "Admin", "print-designer": "Admin", "email-send": "Email", "email-groups": "Email", "email-my-settings": "Email", "email-sent": "Email",
     "masters": "Masters", "company-branch-entry": "Masters", "company-branch-records": "Masters", "part-entry": "Masters", "process-entry": "Masters",
     "grade-entry": "Masters", "reference-entry": "Masters", "employee-entry": "Masters",
     "user-access": "Admin", "email-settings": "Admin", "deployment-diagnostics": "Admin", "master-import": "Masters", "standards-entry": "Masters",
@@ -480,7 +489,7 @@ PAGE_TITLE_TO_PATH = {
     "Process Master Records": "process-records", "Material Grade Entry": "grade-entry",
     "Material Grade Records": "grade-records", "Reference Master Entry": "reference-entry",
     "Reference Master Records": "reference-records", "Employee Entry": "employee-entry",
-    "Employee Records": "employee-records", "Users & Access": "user-access", "Email Server & Notifications": "email-settings", "Deployment Diagnostics": "deployment-diagnostics", "Master Import": "master-import", "Customer Standards Entry": "standards-entry", "Customer Standards Records": "standards-records", "My Account": "my-account", "About STAWN QCMS": "about",
+    "Employee Records": "employee-records", "Users & Access": "user-access", "Email Server & Notifications": "email-settings", "Deployment Diagnostics": "deployment-diagnostics", "Master Import": "master-import", "Customer Standards Entry": "standards-entry", "Customer Standards Records": "standards-records", "My Account": "my-account", "About STAWN QCMS": "about", "My Notifications": "notifications", "Licence & Company": "licence-company", "STAWN Developer Console": "stawn-developer",
     "Approved RMTC Part Worksheet": "rmtc-approved-worksheet", "RMTC Part Worksheet": "rmtc-part", "RMTC Records": "rmtc-records",
     "RMTC Approval": "rmtc-approval", "Material Inward Records": "inward-records",
     "OSP Material Out": "osp-material-out", "OSP Sample Receipt": "osp-sample-receipt",
@@ -550,6 +559,25 @@ current_permission_module = ROUTE_PERMISSION_MODULE.get(current_path)
 current_route_permission = module_permissions(profile, current_permission_module) if current_permission_module else {"can_view": True}
 log_route_view(current_path, current_permission_module, nav.title)
 
+# R35 · STAWN QCMS licence (online check, cached 10 min), company setup and notifications.
+from core import licence_service as _lic
+st.session_state["_qcms_page_by_path"] = PAGE_BY_PATH
+_licence = _lic.licence_status()
+if _licence.get("is_stawn_developer"):
+    MODULE_SUBMENUS["Admin"] = tuple(MODULE_SUBMENUS["Admin"]) + (("stawn-developer", "STAWN Developer Console", ":material/developer_mode:"),)
+_LICENCE_FREE_ROUTES = {"licence-company", "about", "my-account", "stawn-developer"}
+if _lic.licence_blocks_use(_licence) and current_path not in _LICENCE_FREE_ROUTES:
+    st.error(f"**STAWN QCMS licence {_licence.get('status')}** – {_licence.get('reason') or 'the licence is not valid'}.  \n"
+             "The company administrator can enter a new licence key on Licence & Company. "
+             "Contact STAWN PRECISION PRIVATE LIMITED · business@stawnprecision.com.")
+    _b1, _b2, _b3 = st.columns(3)
+    _b1.page_link(PAGE_BY_PATH["licence-company"], label="Licence & Company", icon=":material/verified_user:")
+    _b2.page_link(PAGE_BY_PATH["about"], label="About STAWN QCMS", icon=":material/info:")
+    if _b3.button("Sign out"):
+        logout()
+    st.stop()
+_unread_notifications = _lic.unread_count()
+
 # QCMS v4.12.9 — hardened responsive enterprise navigation contract.
 # Legacy v4.12.8 marker: QCMS v4.12.8 — responsive enterprise navigation contract.
 # The red header stays intentionally concise while the charcoal rail preserves
@@ -609,11 +637,21 @@ if not native_mobile:
             shell_global_query = gs1.text_input(
                 "Global Search",
                 key="qcms_shell_global_search_query",
-                placeholder="Search Part, Heat, RMTC, PO, Supplier… or ask AI",
+                placeholder="Search everything: module, field, part, heat, PO, report… or ask AI",
                 label_visibility="collapsed",
             )
             shell_global_submit = gs2.form_submit_button("Search", icon=":material/search:", width="stretch")
-            gs3.caption(f"LIVE BUILD · QCMS v{settings.version} · 41449-ANDROID-SINGLE-NATIVE-DRAWER-V12")
+            gs3.caption(f"STAWN QCMS · v{settings.version} R35 · {_licence.get('company_name') or settings.company_name} · licence {_licence.get('status') or '-'} · LIVE BUILD · QCMS v{settings.version} · 41449-ANDROID-SINGLE-NATIVE-DRAWER-V12")
+    # R35: notification bell (approval requests, tasks, updates) + one-time company setup reminder for the admin.
+    _nb1, _nb2 = st.columns([1.3, 10.7], gap="small", vertical_alignment="center")
+    with _nb1:
+        with st.container(border=False, key="qcms_notification_bell"):
+            st.page_link(PAGE_BY_PATH["notifications"], label=(f"🔔 {_unread_notifications} new" if _unread_notifications else "🔔 Alerts"),
+                         width="stretch")
+    if _licence.get("is_company_admin") and not _licence.get("setup_complete") and not _licence.get("unchecked"):
+        _nb2.warning("One-time company setup is pending: add the company details and logo in **Admin → Licence & Company**.", icon=":material/business:")
+    elif _unread_notifications:
+        _nb2.caption(f"You have {_unread_notifications} unread notification(s) – approval requests and tasks appear here and on the STAWN QCMS mobile app.")
     if shell_global_submit:
         cleaned_global_query = str(shell_global_query or "").strip()
         if len(cleaned_global_query) < 2:

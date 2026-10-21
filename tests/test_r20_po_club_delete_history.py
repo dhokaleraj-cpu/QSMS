@@ -120,7 +120,7 @@ def test_record_status_window_wired():
 
 def test_kpi_number_first_and_login_company_name():
     kpi = (ROOT / "app_pages/kpi_dashboards.py").read_text()
-    assert "board.question" not in kpi and "font-size:34px" in kpi and 'page_header("KPI Dashboards", "Live numbers"' in kpi
+    assert "board.question" not in kpi and "font-size:34px" in kpi and 'page_header("STAWN QCMS · KPI Dashboard"' in kpi  # R35 start dashboard header
     auth = (ROOT / "core/auth.py").read_text()
     assert 'COMPANY_LEGAL_NAME = "FOUR STAR INDUSTRIES PRIVATE LIMITED"' in auth
 

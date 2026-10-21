@@ -5,12 +5,15 @@ PRODUCT = "STAWN QCMS"
 TAGLINE = "Quality Control Monitoring System"
 COMPANY = "STAWN PRECISION PRIVATE LIMITED"
 EMAIL = "business@stawnprecision.com"
+ANDROID_VERSION = "3.4.0"
+IOS_VERSION = "1.1.0"
 COPYRIGHT = f"© 2026 {COMPANY}. All rights reserved."
 DEVELOPER = (
     ("Developed by", COMPANY),
     ("Location", "Thane, Maharashtra, India"),
     ("Product", f"{PRODUCT} – {TAGLINE}"),
-    ("Platforms", "Android app · Web application (desktop, tablet, phone browser)"),
+    ("Platforms", "Web application · Android app · iPhone and iPad app"),
+    ("Licensing", "Company licence with online key validation and licensed user seats"),
     ("Contact", EMAIL),
 )
 LICENSEE = (

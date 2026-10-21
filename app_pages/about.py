@@ -25,12 +25,23 @@ def render() -> None:
     left, right = st.columns([1, 4], gap="small")
     if icon.exists():
         left.image(str(icon), width=110)
-    right.markdown(f"### {about.PRODUCT}\n{about.TAGLINE}\n\n**Website version {settings.version}** · Android app v3.3.0")
+    right.markdown(f"### {about.PRODUCT}\n{about.TAGLINE}\n\n**Website version {settings.version} R35** · "
+                   f"Android app v{about.ANDROID_VERSION} · iPhone / iPad app v{about.IOS_VERSION}")
 
     section_bar("DEVELOPER")
     st.markdown(f"<table style='width:100%;border-collapse:collapse'>{_rows(about.DEVELOPER)}</table>", unsafe_allow_html=True)
     section_bar("LICENSED TO")
-    st.markdown(f"<table style='width:100%;border-collapse:collapse'>{_rows(about.LICENSEE)}</table>", unsafe_allow_html=True)
+    try:
+        from core import licence_service as lic
+        status = lic.licence_status()
+    except Exception:
+        status = {}
+    licensee = [("Licensed company", str(status.get("company_name") or about.LICENSEE[0][1])),
+                ("Licence", f"{status.get('plan') or '-'} · {status.get('status') or '-'} · {status.get('licence_key_masked') or ''}"),
+                ("Users", f"{status.get('used_users') or 0} of {status.get('max_users') or '-'} licensed"),
+                ("Valid until", str(status.get("expires_on") or "No expiry")),
+                about.LICENSEE[1]]
+    st.markdown(f"<table style='width:100%;border-collapse:collapse'>{_rows(licensee)}</table>", unsafe_allow_html=True)
     section_bar("COPYRIGHT")
     st.markdown(f"**{about.COPYRIGHT}**")
     for para in about.NOTICE:

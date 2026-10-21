@@ -25,6 +25,8 @@ enum GenAbout {
 }
 
 struct AboutView: View {
+    @EnvironmentObject var app: AppState
+
     var body: some View {
         List {
             Section {
@@ -37,7 +39,31 @@ struct AboutView: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 8)
             }
             Section("Developer") { ForEach(GenAbout.developer.indices, id: \.self) { i in PairRow(label: GenAbout.developer[i].0, value: GenAbout.developer[i].1) } }
-            Section("Licensed to") { ForEach(GenAbout.licensee.indices, id: \.self) { i in PairRow(label: GenAbout.licensee[i].0, value: GenAbout.licensee[i].1) } }
+            if let l = app.licence {
+                Section("Licence") {
+                    PairRow(label: "Licensed to", value: l.displayName)
+                    if !l.companyLegalName.isEmpty && l.companyLegalName != l.displayName { PairRow(label: "Legal name", value: l.companyLegalName) }
+                    PairRow(label: "Product", value: l.product.isEmpty ? GenAbout.product : l.product)
+                    PairRow(label: "Plan", value: Fmt.pretty(l.plan))
+                    PairRow(label: "Status", value: Fmt.pretty(l.status), valueColor: l.valid ? Theme.green : Theme.red)
+                    PairRow(label: "Users", value: l.usersText)
+                    PairRow(label: "Valid until", value: l.expiresOn.isEmpty ? "" : Fmt.date(l.expiresOn))
+                    PairRow(label: "Licence key", value: l.keyMasked)
+                    if !l.valid && !l.reason.isEmpty { Text(l.reason).font(.footnote).foregroundColor(Theme.red) }
+                    PairRow(label: "Developer", value: J.str(l.developer["name"]).isEmpty ? GenAbout.company : J.str(l.developer["name"]))
+                    PairRow(label: "App version", value: "iOS / iPadOS v\(AppConfig.appVersion) (build \(AppConfig.appBuild))")
+                    NavigationLink(destination: WebPageView(title: "Licence & Company", path: "licence-company")) {
+                        Label("Company profile & licence (website)", systemImage: "building.2")
+                    }
+                    if l.isStawnDeveloper {
+                        NavigationLink(destination: WebPageView(title: "STAWN Developer", path: "stawn-developer")) {
+                            Label("STAWN developer console (website)", systemImage: "hammer")
+                        }
+                    }
+                }
+            } else {
+                Section("Licensed to") { ForEach(GenAbout.licensee.indices, id: \.self) { i in PairRow(label: GenAbout.licensee[i].0, value: GenAbout.licensee[i].1) } }
+            }
             Section("Copyright") {
                 Text(GenAbout.copyright).font(.subheadline.bold())
                 ForEach(GenAbout.notice, id: \.self) { Text($0).font(.footnote).foregroundColor(Theme.muted) }
@@ -50,6 +76,7 @@ struct AboutView: View {
         }
         .navigationTitle("About STAWN QCMS")
         .qcmsNavBar()
+        .task { if app.licence == nil { await app.checkLicence() } }
     }
 }
 

@@ -28,7 +28,10 @@ def test_module_keys_unique_and_many():
 
 def test_no_module_opens_the_website():
     for name, text in _all_java().items():
-        if name in {"MainActivity.java", "MoreScreen.java", "WebScreen.java", "AdmSettings.java"}:
+        if name in {"MainActivity.java", "MoreScreen.java", "WebScreen.java", "AdmSettings.java",
+                    # R35: company profile / STAWN developer console are admin web pages; Notif falls back to the
+                    # website only for a notification route that has no native module.
+                    "Licence.java", "Notif.java"}:
             continue
         assert "openWeb(" not in text, name
 

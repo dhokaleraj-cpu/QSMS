@@ -17,7 +17,8 @@ from core.inspection_service import FINAL_DISPOSITIONS, InspectionService
 from core.reporting import dimensional_record_pdf_bytes, quality_record_excel_bytes
 from core.selection_labels import employee_label, party_label
 from core.ui import disposition_cards, disposition_label, page_header, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, template_download_row
-from core.db_errors import db_message
+from core.db_errors import db_message, report_generation_error
+from app_pages.metlab_report import finalize_blockers, report_save_blockers, show_blockers
 
 
 def _maps(service: InspectionService):
@@ -48,7 +49,7 @@ def _report_exports(service: InspectionService, report_id: str, report_number: s
             icon=":material/download:", key=f"{key}_xlsx", width="stretch",
         )
     except Exception as exc:
-        st.error(f"Report export could not be generated: {exc}")
+        st.error(report_generation_error(exc))
 
 
 def _inward_label(row: dict, parts: dict[str, dict], parties: dict[str, dict]) -> str:
@@ -238,6 +239,7 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
             saved_rows.append({"sequence_no": int(row.get("_sequence") or len(saved_rows) + 1), "inspection_plan_characteristic_id": row.get("_characteristic_id"), "characteristic_no": row.get("Sr No"), "characteristic": row.get("Parameter"), "specification": row.get("Specification"), "lower_spec": row.get("Min"), "upper_spec": row.get("Max"), "unit": row.get("_unit"), "checking_aid": row.get("Checking Aid"), "observations": observations, "result": result, "remarks": row.get("Remark"), "applicability": "NOT_APPLICABLE" if na else "APPLICABLE", "report_section": section_name})
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
         dim_notify_pref = notification_confirmation(NotificationService(service.repo), "DIMENSIONAL_APPROVAL_PENDING", key=f"standalone_dim_notify_{existing_id or 'new'}", context={"part_number":(parts.get(str(part_id)) or {}).get("part_number"),"next_task":"Dimensional Approval"}, default_send=not bool(existing_id)) if not existing_id else {"send":False,"confirmed":True,"preview":{}}
+        show_blockers([r.replace("MetLAB / Bend Test reports", "Dimensional reports").replace("'Edit Selected MetLAB Report with Password'", "the password Edit option").replace("Photographs can still be added below without reopening; to change results use", "To change it use") for r in report_save_blockers(existing=existing, perms=perms, prepared=prepared, sample_ref="-", case_depth_valid=True, notify_pref=dim_notify_pref, plan_id=plan_id)])
         if st.button("Save Standalone Dimensional Report", type="primary", width="stretch", disabled=not writable or not prepared or (dim_notify_pref["send"] and not dim_notify_pref["confirmed"])):
             try:
                 final_number = report_no.strip() or service.next_number("DIMENSIONAL")
@@ -290,6 +292,9 @@ def _render_standalone_entry(service: InspectionService, perms: dict, parts: dic
             current_approver = str(existing.get("approved_by_employee_id") or "")
             validator = c1.selectbox("Validated By", employee_options, index=employee_options.index(current_validator) if current_validator in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"), key=f"dim_standalone_validator_{existing_id}")
             approver = c2.selectbox("Approved By", employee_options, index=employee_options.index(current_approver) if current_approver in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"), key=f"dim_standalone_approver_{existing_id}")
+            fin_block = finalize_blockers(existing=existing, perms=perms, disposition=disposition, reason=reason, validator=validator, approver=approver)
+            if str(existing.get("status") or "").upper() != "FINAL":
+                show_blockers(fin_block, title="Finalize is not available yet")
             if c3.button("Finalize Dimensional Decision", disabled=not perms["can_approve"] or disposition == "PENDING" or not validator or not approver or str(existing.get("status")) == "FINAL", width="stretch", key=f"dim_standalone_finalize_{existing_id}"):
                 try:
                     service.finalize_dimensional(existing_id, disposition, reason, validator, approver)
@@ -455,6 +460,7 @@ def render_entry() -> None:
 
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT").upper() == "DRAFT"
         linked_dim_notify_pref = notification_confirmation(NotificationService(service.repo), "DIMENSIONAL_APPROVAL_PENDING", key=f"linked_dim_notify_{str((existing or {}).get('id') or inward_id or 'new')}", context={"part_number":part.get("part_number"),"next_task":"Dimensional Approval"}, default_send=not bool(existing)) if not existing else {"send":False,"confirmed":True,"preview":{}}
+        show_blockers([r.replace("MetLAB / Bend Test reports", "Dimensional reports").replace("'Edit Selected MetLAB Report with Password'", "the password Edit option").replace("Photographs can still be added below without reopening; to change results use", "To change it use") for r in report_save_blockers(existing=existing, perms=perms, prepared=prepared, sample_ref="-", case_depth_valid=True, notify_pref=linked_dim_notify_pref, plan_id=plan_id)])
         if st.button("Save Dimensional Report Draft", type="primary", disabled=not writable or not prepared or (linked_dim_notify_pref["send"] and not linked_dim_notify_pref["confirmed"]), width="stretch"):
             try:
                 final_number = report_no.strip() or service.next_number("DIMENSIONAL")
@@ -486,6 +492,9 @@ def render_entry() -> None:
             c1, c2, c3 = st.columns(3, gap="small")
             validator = c1.selectbox("Validated By", employee_options, index=employee_options.index(str(existing.get("validated_by_employee_id") or "")) if str(existing.get("validated_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
             approver = c2.selectbox("Approved By", employee_options, index=employee_options.index(str(existing.get("approved_by_employee_id") or "")) if str(existing.get("approved_by_employee_id") or "") in employee_options else 0, format_func=lambda value: employee_map.get(value, "— Select —"))
+            fin_block = finalize_blockers(existing=existing, perms=perms, disposition=disposition, reason=reason, validator=validator, approver=approver)
+            if str(existing.get("status") or "").upper() != "FINAL":
+                show_blockers(fin_block, title="Finalize is not available yet")
             if c3.button("Finalize Dimensional Decision", disabled=not perms["can_approve"] or disposition == "PENDING" or not validator or not approver or str(existing.get("status")) == "FINAL", width="stretch"):
                 try:
                     service.finalize_dimensional(str(existing["id"]), disposition, reason, validator, approver)
@@ -524,7 +533,7 @@ def render_records() -> None:
             with c3:
                 st.download_button("Download Excel Report", data=quality_record_excel_bytes(selected_payload, "DIMENSIONAL"), file_name=f"{selected_row.get('report_number') or 'Dimensional_Report'}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"dimensional_xlsx_{selected}", icon=":material/download:", width="stretch")
         except Exception as exc:
-            st.error(f"Report export could not be generated: {exc}")
+            st.error(report_generation_error(exc))
         record_email_sender(
             NotificationService(service.repo), "DIMENSIONAL_APPROVAL_PENDING",
             related_table="inspection_reports", related_id=selected, key=f"dimensional_record_email_{selected}",

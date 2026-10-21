@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R34",
+  "release_revision": "R35",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -589,5 +589,28 @@
     "ios_global_search_reports_centre_records_centre_about_account",
     "ios_po_approve_cancel_standard_room_form",
     "ios_xcode_project_generator_build_command_testflight_and_github_build_check"
-  ]
+  ],
+  "r35_changes": [
+    "excel_issue_1_metlab_inward_layout_reason_column_and_clear_error",
+    "excel_issue_2_bend_osp_finalize_keeps_photos_status_final_add_photos_on_final",
+    "excel_issue_3_field_wise_error_messages_save_finalize_report",
+    "excel_issue_4_po_line_qty_editable_inward_over_po_tolerance_with_approver_override",
+    "excel_issue_5_new_layout_button_visible_selector_fix",
+    "excel_issue_6_previous_stage_list_co_pos_part_qty_with_search",
+    "excel_issue_7_user_link_check_create_login_for_employee",
+    "excel_issue_8_osp_sample_to_dimensional_queue_layout_fallback",
+    "screenshot_blocked_delete_plain_message_remove_order_from_po",
+    "screenshot_rm_po_club_supplier_reason_table_split_price_lines",
+    "six_month_schedule_override_current_future_only_past_locked",
+    "live_stage_stock_panel_co_po_rm_to_forging",
+    "global_search_every_table_field_and_module",
+    "kpi_start_dashboard_quality_first_department_tabs_auto_switch_animated",
+    "custom_user_dashboards_cards_charts_tables_order_size_multiple",
+    "notifications_web_bell_inbox_db_triggers_android_ios_push",
+    "whatsapp_cloud_api_auto_messages_opt_in",
+    "stawn_branding_licence_online_validation_seats_company_setup_logo_developer_console",
+    "android_app_v3_4_0_notifications_kpi_search_licence",
+    "ios_app_v1_1_0_push_kpi_search_licence_signing_team_fix"
+  ],
+  "r35_database": "auto_apply.json (scripts/apply_sql.py) - already live on xxrxopzxzyjnzumrwuwy except qcms_remove_po_source"
 }

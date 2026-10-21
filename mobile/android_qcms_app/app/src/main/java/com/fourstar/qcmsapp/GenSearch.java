@@ -1,5 +1,6 @@
 package com.fourstar.qcmsapp;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -68,12 +69,92 @@ final class GenSearch {
     }
 
     static final class Result {
+        static final String LOCAL = "local", SERVER = "server", MODULE = "module";
         final String key, module, recordType, reference, detail, status, table;
         final JSONObject record;
+        /** R35: where the hit came from (local field search, qcms_global_search, app module / screen). */
+        String kind = LOCAL;
+        String recordId = "", route = "", appModule = "";
         Result(String key, String module, String recordType, String reference, String detail, String status, String table, JSONObject record) {
             this.key = key; this.module = module; this.recordType = recordType; this.reference = reference; this.detail = detail;
             this.status = status; this.table = table; this.record = record;
         }
+    }
+
+    // ------------------------------------------------------------------ R35: modules / screens + server-wide search
+    static final String MODULES_GROUP = "Modules & screens";
+
+    /** App modules whose name / section / description contain every word of the query ("bend test" -> Bend Test modules). */
+    static List<Result> modules(String query) {
+        List<Result> out = new ArrayList<>();
+        String q = casefold(query == null ? "" : query.trim());
+        if (q.length() < 2) return out;
+        String[] words = q.split("\\s+");
+        for (Module m : Catalog.all()) {
+            String hay = casefold(m.title + " " + m.key.replace('_', ' ') + " " + m.section + " " + (m.description == null ? "" : m.description));
+            boolean all = true;
+            for (String w : words) if (!w.isEmpty() && !hay.contains(w)) { all = false; break; }
+            if (!all) continue;
+            Result r = new Result("module:" + m.key, MODULES_GROUP, "Open module", m.title, joinNonEmpty(Catalog.TAB_NAMES[Math.max(0, Math.min(Catalog.TAB_NAMES.length - 1, m.tab))], m.section, m.description), "", m.table, new JSONObject());
+            r.kind = Result.MODULE;
+            r.appModule = m.key;
+            out.add(r);
+        }
+        // the module whose title starts with the query first
+        out.sort((x, y) -> {
+            boolean xs = casefold(x.reference).startsWith(q), ys = casefold(y.reference).startsWith(q);
+            if (xs != ys) return xs ? -1 : 1;
+            return casefold(x.reference).compareTo(casefold(y.reference));
+        });
+        return out;
+    }
+
+    private static String s(JSONObject o, String k) { return o == null || o.isNull(k) ? "" : o.optString(k, ""); }
+
+    /** Group (module) label for a server row: the local source's module, else the module key in words. */
+    static String groupFor(String table, String moduleKey) {
+        Source src = source(table);
+        if (src != null) return src.module;
+        if (moduleKey != null && !moduleKey.isEmpty()) return GenUtil.title(moduleKey.replace('_', ' ').toLowerCase(Locale.ROOT));
+        return table == null || table.isEmpty() ? "Other records" : Ui.pretty(table);
+    }
+
+    /** qcms_global_search(p_query, p_limit): every business table and field, RLS scoped. Background thread. */
+    static List<Result> server(Api api, String query, int limit) throws Exception {
+        JSONArray rows = api.rpcRows("qcms_global_search", new JSONObject().put("p_query", query.trim()).put("p_limit", limit));
+        List<Result> out = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject r = rows.optJSONObject(i);
+            if (r == null) continue;
+            String table = s(r, "source_table"), id = s(r, "record_id");
+            String key = table + ":" + id;
+            if (seen.contains(key)) continue;
+            seen.add(key);
+            String matched = s(r, "matched_field"), snippet = s(r, "snippet");
+            String match = matched.isEmpty() ? snippet : (snippet.isEmpty() ? Ui.pretty(matched) : Ui.pretty(matched) + ": " + snippet);
+            String title = s(r, "title");
+            String type = s(r, "record_type");
+            JSONObject record = new JSONObject();
+            try { record.put("id", id); } catch (Exception ignored) { }
+            Result res = new Result(key, groupFor(table, s(r, "module_key")), type.isEmpty() ? Ui.pretty(table) : type,
+                title.isEmpty() ? (id.isEmpty() ? "Record" : id) : title, joinNonEmpty(s(r, "subtitle"), match), "", table, record);
+            res.kind = Result.SERVER;
+            res.recordId = id;
+            res.route = s(r, "web_route");
+            res.appModule = s(r, "module_key");
+            out.add(res);
+        }
+        return out;
+    }
+
+    /** Module hits first, then server rows, then local rows not already found by the server (same table:id). */
+    static List<Result> merge(List<Result> modules, List<Result> server, List<Result> local) {
+        List<Result> out = new ArrayList<>(modules == null ? new ArrayList<>() : modules);
+        Set<String> keys = new HashSet<>();
+        if (server != null) for (Result r : server) if (keys.add(r.key)) out.add(r);
+        if (local != null) for (Result r : local) if (keys.add(r.key)) out.add(r);
+        return out;
     }
 
     private static final String[] REFERENCE_KEYS = {"part_number", "fsi_part_number", "party_code", "grade_code", "process_code", "employee_code",

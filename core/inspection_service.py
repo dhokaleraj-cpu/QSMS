@@ -775,6 +775,9 @@ class InspectionService:
             "status": "ACTIVE",
         }
         existing = self.repo.find_one("document_attachments", eq={"entity_type": entity_type, "entity_id": entity_id, "document_type": document_type})
+        if not existing:
+            # R35: same file re-uploaded at finalization -> reuse the row that already holds this path.
+            existing = self.repo.find_one("document_attachments", eq={"object_path": path})
         if existing:
             self.repo.update("document_attachments", str(existing["id"]), attachment)
         else:

@@ -16,6 +16,10 @@
 	<key>NSFaceIDUsageDescription</key><string>Unlock STAWN QCMS with Face ID.</string>
 	<key>NSPhotoLibraryUsageDescription</key><string>Attach photographs to QCMS records.</string>
 	<key>NSCameraUsageDescription</key><string>Take photographs for QCMS records.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key><string>AccentColor</string>

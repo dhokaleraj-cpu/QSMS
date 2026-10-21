@@ -551,6 +551,26 @@ class SupplyChainService:
             return "|".join(["RM_SECTION", grade, section_type, section_size])
         return f"PART_RM|{part.get('id')}|{raw.get('id')}"
 
+    def _split_rm_groups_by_price(self, groups: Mapping[str, Mapping[str, Any]], supplier_id: str, on_date: Any) -> dict[str, dict[str, Any]]:
+        """R35: split a clubbed RM group into one line per (current price, HSN/SAC)."""
+        out: dict[str, dict[str, Any]] = {}
+        for key, group in groups.items():
+            members = list(group.get("members") or [])
+            if len(members) <= 1:
+                out[key] = dict(group); continue
+            buckets: dict[tuple[float, str], list[dict]] = {}
+            for m in members:
+                price = round(number(self.current_price(str(m["part"].get("id")), supplier_id, on_date=on_date, uom="KGS", raw_material_detail_id=str(m["raw"].get("id") or "") or None)), 6)
+                hsn = str(m["raw"].get("hsn_sac_code") or m["part"].get("hsn_sac_code") or "").strip()
+                buckets.setdefault((price, hsn), []).append(m)
+            if len(buckets) == 1:
+                out[key] = dict(group); continue
+            for (price, hsn), bucket in buckets.items():
+                sub_key = f"{key}|PRICE:{price:g}|HSN:{hsn}"
+                out[sub_key] = {"part": bucket[0]["part"], "raw": bucket[0]["raw"], "quantity": sum(number(m["allocation"]) for m in bucket), "base_key": key, "split": True,
+                                "orders": [(m["order"], m["allocation"]) for m in bucket], "members": bucket}
+        return out
+
     def rm_section_label(self, part_id: str) -> str:
         """R20: readable steel requirement of a Part (grade · RM section · size) used to club
         Customer Orders for one RM Purchase Order. Raw forging / casting data is ignored."""
@@ -1358,6 +1378,10 @@ class SupplyChainService:
             gst_percent = max(number(p.get("gst_percent")), 0.0)
             order_date_value = p.get("order_date") or date.today().isoformat()
             currency = str(p.get("currency") or "INR").upper()
+            # R35: same steel but a different current price or HSN on the Part-specific RM
+            # records -> keep the orders on ONE PO, as separate lines (one per price/HSN),
+            # instead of refusing the clubbed PO.
+            groups = self._split_rm_groups_by_price(groups, supplier_id, order_date_value)
             line_data: list[dict[str, Any]] = []
             subtotal = 0.0
             for key, group in groups.items():
@@ -1372,7 +1396,8 @@ class SupplyChainService:
                 positive_prices = {round(number(v), 6) for v in member_prices if number(v) > 0}
                 if len(members) > 1 and len(positive_prices) > 1:
                     raise ValueError(f"Clubbed RM {rm_label}: current supplier price per kg differs between the selected Parts ({', '.join(f'{v:g}' for v in sorted(positive_prices))}). Align Part Master Price History or split the PO.")
-                price = line_prices.get(key)
+                base_key = str(group.get("base_key") or key)
+                price = None if group.get("split") else line_prices.get(key)
                 if price is None or price <= 0:
                     price = self.current_price(str(part.get("id")), supplier_id, on_date=order_date_value, uom="KGS", raw_material_detail_id=str(raw.get("id") or "") or None)
                 price = max(number(price), 0.0)
@@ -1380,12 +1405,12 @@ class SupplyChainService:
                     raise ValueError(f"{part.get('fsi_part_number') or part.get('part_number') or 'Part'}: current supplier price is missing in Part Master Price History.")
                 qty = round(number(group["quantity"]), 3)
                 line_total = round(qty * price, 2); subtotal += line_total
-                fsi = common_rm_code or line_fsi.get(key) or str(part.get("fsi_part_number") or "").strip()
+                fsi = common_rm_code or line_fsi.get(key) or line_fsi.get(base_key) or str(part.get("fsi_part_number") or "").strip()
                 if not fsi:
                     raise ValueError(f"Enter an FSI Part Number for {part.get('part_number') or 'the selected Part'} in the PO item grid before creating the supplier PO.")
                 history = self.price_history_for_po(str(part.get("id")), supplier_id, po_date=order_date_value, uom="KGS", raw_material_detail_id=str(raw.get("id") or "") or None)
                 master_hsn = str(raw.get("hsn_sac_code") or part.get("hsn_sac_code") or "").strip()
-                hsn_value = line_hsn.get(key) or master_hsn
+                hsn_value = (master_hsn or line_hsn.get(base_key)) if group.get("split") else (line_hsn.get(key) or master_hsn)
                 if not hsn_value:
                     raise ValueError(f"{part.get('fsi_part_number') or part.get('part_number') or 'Part'}: HSN / SAC is missing in Part Master Raw Material Details.")
                 line_data.append({"key": key, "part": part, "raw": raw, "fsi_part_number": fsi, "supplier_item_code": common_rm_code or None, "linked_parts": sorted({str(m["part"].get("fsi_part_number") or m["part"].get("part_number") or "") for m in members if m.get("part")}), "quantity": qty, "unit_price": price, "hsn_sac_code": hsn_value, "line_total": line_total, "gst_amount": round(line_total*gst_percent/100.0,2), "technical": self.technical_data_snapshot(raw, part), "price_history": history[:250], "orders": group["orders"]})
@@ -1539,6 +1564,28 @@ class SupplyChainService:
         items=self.purchase_order_items(purchase_order_id); sources=self.purchase_order_sources(purchase_order_id)
         sources_by_item: dict[str,list[dict]]={}
         for source in sources: sources_by_item.setdefault(str(source.get("purchase_order_item_id") or ""),[]).append(source)
+
+        # R35: Ordered Qty is editable on the PO line as well. When the user changes a line
+        # quantity (and did not edit its source allocations), the change goes to the line's
+        # Customer Order allocation(s): a single source takes the new quantity, several sources
+        # take the difference on the last allocation (never below received quantity — checked below).
+        for item in items:
+            iid = str(item.get("id") or ""); upd = item_updates.get(iid, {}); item_sources = sources_by_item.get(iid, [])
+            if not item_sources or "quantity" not in upd or upd.get("quantity") in (None, ""):
+                continue
+            requested = round(number(upd.get("quantity")), 3); current_sum = round(sum(number(x.get("allocated_qty")) for x in item_sources), 3)
+            touched = any(str(x.get("id")) in allocation_updates and abs(number(allocation_updates[str(x.get("id"))].get("allocated_qty")) - number(x.get("allocated_qty"))) > 0.000001 for x in item_sources)
+            if touched or abs(requested - current_sum) <= 0.000001:
+                continue
+            if requested <= 0:
+                raise ValueError("Purchase Order line quantity must be greater than zero. To remove an order from the PO use 'Remove' in PO Source Allocations.")
+            if len(item_sources) == 1:
+                allocation_updates[str(item_sources[0].get("id"))] = {"id": item_sources[0].get("id"), "allocated_qty": requested}
+            else:
+                last = item_sources[-1]; new_last = round(number(last.get("allocated_qty")) + requested - current_sum, 3)
+                if new_last <= 0:
+                    raise ValueError(f"Line {item.get('item_no') or iid}: the reduction is larger than the last Customer Order allocation. Edit the individual allocations in PO Source Allocations instead.")
+                allocation_updates[str(last.get("id"))] = {"id": last.get("id"), "allocated_qty": new_last}
 
         linked_revisions = {}
         if refresh_master:
@@ -2360,7 +2407,215 @@ class SupplyChainService:
                 raise ValueError("Supply Chain link cannot be disabled because this RM Receipt is already used by a downstream RM-to-Forger / forging transaction.") from exc
         self.repo.update("inward_lots",inward_id,{"supply_customer_order_id":None,"supply_rm_purchase_order_id":None})
 
-    def link_inward_to_rm_po(self, po_id: str, inward_id: str) -> dict:
+    # ------------------------------------------------------------ R35 six-month schedule override
+    def schedule_consumed_pcs(self, order_id: str) -> float:
+        """Pieces of a schedule already used downstream (forging ordered / produced / dispatched)."""
+        t = self.totals(order_id)
+        return max(number(t.get("forging_ordered_pcs")), number(t.get("forging_received_pcs")), number(t.get("machined_pcs")),
+                   number(t.get("finished_goods_pcs")), number(t.get("customer_dispatched_pcs")))
+
+    def schedule_override_plan(self, customer_id: str, part_id: str, months: Sequence[tuple[int, int, float, Any]], *, today: date | None = None) -> list[dict[str, Any]]:
+        """R35: compare an entered / re-uploaded six-month schedule with the saved schedules.
+
+        * past months (before the current month) are never changed  -> PAST_LOCKED
+        * current + future months: new -> INSERT, changed qty/date -> UPDATE, same -> UNCHANGED,
+          qty 0 with a saved schedule -> CANCEL (only when nothing is consumed yet)
+        * a quantity is never reduced below what is already consumed downstream -> BELOW_CONSUMED
+          (the schedule is set to the consumed quantity instead and the reason is shown)."""
+        today = today or date.today()
+        current = (today.year, today.month)
+        saved = [o for o in self.customer_orders()
+                 if str(o.get("order_type") or "") == "MONTHLY_SCHEDULE" and str(o.get("customer_id") or "") == str(customer_id)
+                 and str(o.get("part_id") or "") == str(part_id) and str(o.get("status") or "") != "CANCELLED"]
+        by_month: dict[tuple[int, int], dict] = {}
+        for o in saved:
+            m = str(o.get("schedule_month") or "")[:7]
+            if len(m) == 7:
+                by_month.setdefault((int(m[:4]), int(m[5:7])), o)
+        plan = []
+        for mm, yy, qty, delivery in months:
+            key = (int(yy), int(mm)); qty = round(max(number(qty), 0.0), 3)
+            existing = by_month.get(key)
+            delivery_iso = delivery.isoformat() if hasattr(delivery, "isoformat") else (str(delivery)[:10] if delivery else None)
+            row = {"Month": f"{int(mm):02d}-{int(yy)}", "_mm": int(mm), "_yy": int(yy), "_delivery": delivery_iso, "New Qty pcs": qty,
+                   "Saved Qty pcs": number(existing.get("order_qty_pcs")) if existing else None, "Consumed pcs": 0.0,
+                   "_order_id": str(existing.get("id")) if existing else "", "Reference": existing.get("master_reference_no") if existing else ""}
+            if key < current:
+                row["Action"] = "PAST_LOCKED" if existing or qty > 0 else "SKIP"
+                row["Reason"] = "Past month — never changed"
+            elif existing:
+                consumed = self.schedule_consumed_pcs(str(existing.get("id")))
+                row["Consumed pcs"] = consumed
+                same_date = str(existing.get("customer_delivery_date") or "")[:10] == str(delivery_iso or "")[:10]
+                rm_ordered = number(self.totals(str(existing.get("id"))).get("rm_ordered_kg"))
+                if qty <= 0:
+                    if consumed <= 0 and rm_ordered > 0:
+                        row.update({"Action": "LOCKED_LINKED", "Reason": f"{rm_ordered:,.3f} kg RM already ordered on a PO — remove the order from the PO first, then revise"})
+                    elif consumed > 0:
+                        row.update({"Action": "BELOW_CONSUMED", "_apply_qty": consumed, "Reason": f"{consumed:,.0f} pcs already used downstream — kept at that quantity"})
+                    else:
+                        row.update({"Action": "CANCEL", "Reason": "Removed from the new schedule"})
+                elif qty + 0.0005 < consumed:
+                    row.update({"Action": "BELOW_CONSUMED", "_apply_qty": consumed, "Reason": f"New qty is below {consumed:,.0f} pcs already used downstream — set to {consumed:,.0f} pcs"})
+                elif abs(qty - number(existing.get("order_qty_pcs"))) <= 0.0005 and same_date:
+                    row.update({"Action": "UNCHANGED", "Reason": ""})
+                else:
+                    gross = number(existing.get("gross_weight_kg_snapshot"))
+                    note = f" · RM already ordered {rm_ordered:,.3f} kg is above 125% of the new requirement — review the RM PO" if gross > 0 and rm_ordered > qty * gross * 1.25 + 0.001 else ""
+                    row.update({"Action": "UPDATE", "_apply_qty": qty, "Reason": "Current / future month overwritten" + note})
+            else:
+                row.update({"Action": "INSERT" if qty > 0 else "SKIP", "Reason": "New month" if qty > 0 else ""})
+            plan.append(row)
+        return [r for r in plan if r["Action"] != "SKIP"]
+
+    @staticmethod
+    def schedule_plan_counts(plan: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+        counts = {"INSERT": 0, "UPDATE": 0, "UNCHANGED": 0, "CANCEL": 0, "BELOW_CONSUMED": 0, "LOCKED_LINKED": 0, "PAST_LOCKED": 0}
+        for r in plan:
+            counts[str(r.get("Action"))] = counts.get(str(r.get("Action")), 0) + 1
+        return counts
+
+    def apply_schedule_override(self, plan: Sequence[Mapping[str, Any]], base_payload: Mapping[str, Any]) -> dict[str, list[str]]:
+        """Apply a schedule_override_plan: insert new months, overwrite current/future months, never touch past months."""
+        done: dict[str, list[str]] = {"created": [], "updated": [], "cancelled": [], "created_ids": []}
+        for r in plan:
+            action = str(r.get("Action"))
+            if action == "INSERT":
+                payload = dict(base_payload)
+                payload.update({"order_type": "MONTHLY_SCHEDULE", "order_position": f"{r['_mm']:02d}-{r['_yy']}",
+                                "schedule_month": date(int(r["_yy"]), int(r["_mm"]), 1).isoformat(),
+                                "customer_delivery_date": r.get("_delivery"), "order_qty_pcs": r["New Qty pcs"], "status": "OPEN"})
+                saved = self.create_customer_order(payload)
+                done["created"].append(str(saved.get("master_reference_no") or "")); done["created_ids"].append(str(saved.get("id") or ""))
+            elif action in {"UPDATE", "BELOW_CONSUMED"} and r.get("_order_id"):
+                upd = {"order_qty_pcs": r.get("_apply_qty", r["New Qty pcs"])}
+                if r.get("_delivery"):
+                    upd["customer_delivery_date"] = r["_delivery"]
+                if base_payload.get("order_date"):
+                    upd["order_date"] = base_payload["order_date"]
+                saved = self.update_customer_order(str(r["_order_id"]), upd)
+                done["updated"].append(str(saved.get("master_reference_no") or r.get("Reference") or ""))
+            elif action == "CANCEL" and r.get("_order_id"):
+                self.repo.update("supply_customer_orders", str(r["_order_id"]), {"status": "CANCELLED", "remarks": f"Cancelled by schedule revision {date.today().isoformat()}"})
+                done["cancelled"].append(str(r.get("Reference") or ""))
+        self._invalidate_transactions()
+        return done
+
+    # ------------------------------------------------------------ R35 PO source removal / stage stock
+    def po_sources_for_customer_order(self, customer_order_id: str) -> list[dict[str, Any]]:
+        """Every PO allocation that holds a Customer Order, with its PO header and receipt state."""
+        rows = self.repo.select("supply_purchase_order_sources", eq={"customer_order_id": customer_order_id}, limit=200)
+        out = []
+        for src in rows:
+            po = self.purchase_order(str(src.get("purchase_order_id") or "")) or {}
+            received_kg = sum(number(r.get("received_qty_kg")) for r in self.rm_receipts()
+                              if str(r.get("rm_purchase_order_id") or "") in {str(x.get("id")) for x in self.rm_purchase_orders()
+                                                                                if str(x.get("purchase_order_id") or "") == str(po.get("id") or "-") and str(x.get("customer_order_id") or "") == str(customer_order_id)})
+            received_pcs = sum(number(r.get("received_qty_pcs")) for r in self.forging_receipts()
+                               if str(r.get("forging_order_id") or "") in {str(x.get("id")) for x in self.forging_orders()
+                                                                            if str(x.get("purchase_order_id") or "") == str(po.get("id") or "-") and str(x.get("customer_order_id") or "") == str(customer_order_id)})
+            others = len(self.repo.select("supply_purchase_order_sources", eq={"purchase_order_id": str(po.get("id") or "")}, limit=500)) - 1 if po else 0
+            out.append({"source": src, "po": po, "received_kg": received_kg, "received_pcs": received_pcs, "other_orders": max(others, 0)})
+        return out
+
+    def remove_order_from_po(self, source_id: str, reason: str) -> dict[str, Any]:
+        """R35: take ONE Customer Order off a PO (nothing received). The PO is revised and returns to approval."""
+        if not str(reason or "").strip():
+            raise ValueError("A reason is mandatory to remove a Customer Order from a Purchase Order.")
+        result = self.repo.rpc("qcms_remove_po_source", {"p_source_id": source_id, "p_reason": str(reason).strip()}) or {}
+        if isinstance(result, list):
+            result = result[0] if result else {}
+        po_id = str((result or {}).get("purchase_order_id") or "")
+        self._invalidate_transactions()
+        if po_id:
+            try:
+                self.update_purchase_order(po_id, {"refresh_master_data": False})
+                result["recalculated"] = True
+            except Exception as exc:  # totals are recalculated on the next PO edit save
+                result["recalculated"] = False; result["recalc_error"] = str(exc)
+        order_id = str((result or {}).get("customer_order_id") or "")
+        if order_id:
+            try:
+                self.sync_order_status(order_id)
+            except Exception:
+                pass
+        return result
+
+    def part_stage_stock(self, part_id: str, heat_number: str | None = None) -> dict[str, Any]:
+        """R35: live quantities of one Part at every Supply Chain stage (RPC qcms_part_stage_stock)."""
+        if not part_id:
+            return {}
+        try:
+            data = self.repo.rpc("qcms_part_stage_stock", {"p_part_id": part_id, "p_heat_number": heat_number or None})
+            if isinstance(data, list):
+                data = data[0] if data else {}
+            if isinstance(data, dict) and "qcms_part_stage_stock" in data and len(data) == 1:
+                data = data["qcms_part_stage_stock"]
+            return dict(data or {})
+        except Exception:
+            return self._part_stage_stock_fallback(part_id)
+
+    def _part_stage_stock_fallback(self, part_id: str) -> dict[str, Any]:
+        orders = [o for o in self.customer_orders() if str(o.get("part_id") or "") == str(part_id)]
+        open_orders = [o for o in orders if str(o.get("status") or "") not in {"COMPLETED", "CANCELLED"}]
+        t = {"rm_ordered_kg": 0.0, "rm_received_kg": 0.0, "rm_dispatched_kg": 0.0, "forging_ordered_pcs": 0.0, "forging_received_pcs": 0.0, "machined_pcs": 0.0, "finished_goods_pcs": 0.0, "customer_dispatched_pcs": 0.0}
+        for o in orders:
+            for k, v in self.totals(str(o.get("id"))).items():
+                if k in t: t[k] += number(v)
+        pending = max(sum(number(o.get("order_qty_pcs")) for o in open_orders) - t["customer_dispatched_pcs"], 0.0)
+        stages = [
+            ("Open customer orders", pending, "pcs"), ("RM ordered", t["rm_ordered_kg"], "kg"),
+            ("RM pending receipt", max(t["rm_ordered_kg"] - t["rm_received_kg"], 0), "kg"), ("RM at FSI", max(t["rm_received_kg"] - t["rm_dispatched_kg"], 0), "kg"),
+            ("RM sent to forger", t["rm_dispatched_kg"], "kg"), ("Forging pending at forger", max(t["forging_ordered_pcs"] - t["forging_received_pcs"], 0), "pcs"),
+            ("Forgings received", t["forging_received_pcs"], "pcs"), ("Machining WIP", max(t["forging_received_pcs"] - t["machined_pcs"], 0), "pcs"),
+            ("Machined, pending FG", max(t["machined_pcs"] - t["finished_goods_pcs"], 0), "pcs"), ("Finished goods stock", max(t["finished_goods_pcs"] - t["customer_dispatched_pcs"], 0), "pcs"),
+            ("Dispatched to customer", t["customer_dispatched_pcs"], "pcs"),
+        ]
+        return {"part_id": part_id, "stages": [{"stage": a, "qty": round(b, 3), "unit": c} for a, b, c in stages], "available_pcs": max(t["finished_goods_pcs"] - t["customer_dispatched_pcs"], 0), "fallback": True}
+
+    # ------------------------------------------------------------ R35 inward vs PO quantity
+    INWARD_TOLERANCE_KEY = "qcms.supply.inward_over_po_tolerance_pct"
+    DEFAULT_INWARD_TOLERANCE_PCT = 10.0
+
+    def inward_over_po_tolerance_pct(self) -> float:
+        try:
+            from core.system_settings import get_system_value
+            value, _ = get_system_value(self.repo, self.INWARD_TOLERANCE_KEY)
+            pct = float(str(value).strip()) if str(value).strip() else self.DEFAULT_INWARD_TOLERANCE_PCT
+        except Exception:
+            pct = self.DEFAULT_INWARD_TOLERANCE_PCT
+        return max(0.0, min(pct, 100.0))
+
+    def check_inward_against_po(self, po_id: str, qty_kg: float, inward_id: str | None = None) -> dict[str, Any]:
+        """R35: received (other inwards + this one) vs ordered kg of one RM Procurement row.
+
+        status OK = within PO qty; WARN = above PO qty but within tolerance %;
+        BLOCK = above tolerance (needs override permission + reason)."""
+        po = self.repo.get("supply_rm_purchase_orders", po_id) or {}
+        ordered = number(po.get("ordered_qty_kg"))
+        received_other = sum(number(r.get("received_qty_kg")) for r in self.rm_receipts()
+                             if str(r.get("rm_purchase_order_id") or "") == str(po_id) and str(r.get("inward_lot_id") or "") != str(inward_id or ""))
+        after = round(received_other + max(number(qty_kg), 0.0), 3)
+        pct = self.inward_over_po_tolerance_pct()
+        limit = round(ordered * (1 + pct / 100.0), 3)
+        status = "OK" if after <= ordered + 0.0005 else ("WARN" if after <= limit + 0.0005 else "BLOCK")
+        return {"ordered_kg": round(ordered, 3), "received_other_kg": round(received_other, 3), "after_kg": after,
+                "tolerance_pct": pct, "limit_kg": limit, "excess_kg": round(max(after - ordered, 0.0), 3), "status": status,
+                "po_number": po.get("supplier_order_no")}
+
+    def assert_inward_link_ready(self, po_id: str, part_id: str) -> None:
+        """R35: run the RM-PO link checks BEFORE the Material Inward is saved, so a failed
+        link never leaves a half-saved inward that then fails again as a duplicate GRN."""
+        po = self.repo.get("supply_rm_purchase_orders", po_id) or {}
+        order = self.order(str(po.get("customer_order_id") or "")) or {}
+        if not po or not order:
+            raise ValueError("The selected RM Procurement / Customer Order was not found.")
+        if not self._po_confirmation_is_confirmed(str(po.get("purchase_order_id") or "")):
+            raise ValueError(f"PO {po.get('supplier_order_no') or ''}: Supplier PO Confirmation is still pending. Record the supplier acknowledgement (Supply Chain → Purchase Orders → Approval / Supplier Confirmation) before saving this inward with the Supply Chain link — or save it without the link.")
+        if part_id and str(part_id) != str(order.get("part_id")):
+            raise ValueError("Material Inward Part Number must match the Customer Order Part Number of the selected RM Procurement.")
+
+    def link_inward_to_rm_po(self, po_id: str, inward_id: str, *, over_receipt_reason: str = "", allow_over_tolerance: bool = False) -> dict:
         po=self.repo.get("supply_rm_purchase_orders",po_id) or {}
         order=self.order(str(po.get("customer_order_id") or "")) or {}
         inward=self.repo.get("inward_lots",inward_id) or {}
@@ -2373,6 +2628,9 @@ class SupplyChainService:
         other=str(inward.get("supply_rm_purchase_order_id") or "")
         if other and other != po_id:
             raise ValueError("This Material Inward is already linked to another RM Procurement record.")
+        check = self.check_inward_against_po(po_id, number(inward.get("steel_quantity_kg") or inward.get("quantity_received")), inward_id)
+        if check["status"] == "BLOCK" and not (allow_over_tolerance and str(over_receipt_reason or "").strip()):
+            raise ValueError(f"Inward {check['after_kg']:,.3f} kg exceeds RM PO {check['po_number'] or ''} quantity {check['ordered_kg']:,.3f} kg by more than the allowed {check['tolerance_pct']:g}% (max {check['limit_kg']:,.3f} kg). Increase the PO quantity (Edit Purchase Order) or record an over-receipt override with a reason (Supply Chain approve permission).")
         try:
             self.repo.update("inward_lots", inward_id, {"supply_customer_order_id": order.get("id"), "supply_rm_purchase_order_id": po_id})
         except Exception as exc:
@@ -2385,7 +2643,7 @@ class SupplyChainService:
             "received_qty_kg":number(inward.get("steel_quantity_kg") or inward.get("quantity_received")),
             "supplier_challan":inward.get("grn_number"), "rmtc_number":rmtc.get("rmtc_number"),
             "rmtc_date":rmtc.get("certificate_date"), "rmtc_qty_kg":number(rmtc.get("certificate_quantity")),
-            "remarks":"Linked automatically from Material Inward",
+            "remarks":"Linked automatically from Material Inward" + (f" · Over-receipt {check['excess_kg']:,.3f} kg above PO ({check['status']}): {str(over_receipt_reason).strip()}" if check["status"] != "OK" else ""),
         }
         existing=self.repo.find_one("supply_rm_receipts",eq={"inward_lot_id":inward_id})
         saved=self.repo.update("supply_rm_receipts",str(existing["id"]),payload) if existing else self.repo.insert("supply_rm_receipts",payload)

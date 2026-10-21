@@ -221,6 +221,12 @@ def logo_data_uri() -> str:
     return "" if not path.exists() else "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
 
 
+@lru_cache(maxsize=1)
+def stawn_logo_data_uri() -> str:
+    path = Path(__file__).resolve().parents[1] / "assets" / "stawn_qcms_icon.png"
+    return "" if not path.exists() else "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+
+
 def safe(value: Any) -> str:
     return escape(str(value or ""))
 
@@ -1572,15 +1578,18 @@ def render_shell_header(
     # key="fsi_header_actions" key="fsi_header_actions_row"
     # st.columns([3.0, 5.4, 3.2]  a1, a2 = st.columns(2
     s = get_settings()
-    uri = logo_data_uri()
-    logo = f'<img class="fsi-logo" src="{uri}" alt="FSI">' if uri else '<b>FSI</b>'
+    # R35: STAWN QCMS branding first; the licensed company (from the online licence check) underneath.
+    uri = stawn_logo_data_uri() or logo_data_uri()
+    logo = f'<img class="fsi-logo" src="{uri}" alt="STAWN QCMS">' if uri else '<b>STAWN</b>'
+    licence = dict((st.session_state.get("_qcms_r35_licence_status") or {}).get("data") or {})
+    licensee = str(licence.get("company_name") or s.company_name or "")
     with st.container(border=False, key="fsi_shell"):
         c1, c2, c3 = st.columns([2.2, 7.4, 2.4], vertical_alignment="center", gap="small")
         with c1:
             st.markdown(
                 f'<div class="fsi-company-block"><div class="fsi-logo-card">{logo}</div>'
-                f'<div><div class="fsi-company-name">QCMS</div>'
-                f'<div class="fsi-company-sub">STAWN QCMS · QUALITY CONTROL MONITORING SYSTEM</div></div></div>',
+                f'<div><div class="fsi-company-name">STAWN QCMS</div>'
+                f'<div class="fsi-company-sub">{safe(licensee.upper())} · QUALITY CONTROL MONITORING SYSTEM</div></div></div>',
                 unsafe_allow_html=True,
             )
         with c2:

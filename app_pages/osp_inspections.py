@@ -1,5 +1,5 @@
 from __future__ import annotations
-from core.attachments import MICROSTRUCTURE_IMAGE_TYPES
+from core.attachments import MICROSTRUCTURE_IMAGE_TYPES, saved_photo_preview
 
 from datetime import date
 from typing import Any
@@ -175,6 +175,13 @@ def _render(report_type: str) -> None:
 
         plans = inspection.plans(report_type, str(job.get("part_id")), approved_only=True, process_id=str(job.get("process_id")), inward_type="OSP_PROCESS")
         if not plans:
+            # R35: an approved OSP layout of this part whose name carries the job's process name but was
+            # registered under another Process Master is offered, with a clear correction message.
+            named = OSPService.name_matched_layouts(inspection.plans(report_type, str(job.get("part_id")), approved_only=True, inward_type="OSP_PROCESS"), str(job.get("process_name") or ""))
+            if named:
+                st.warning(f"The approved OSP {report_type.title()} layout '{named[0].get('layout_name')}' is registered under a different Process in Layout Master than this OSP batch ({job.get('process_name')}). It is used here; please correct its Process in Inspection Layout Master.")
+                plans = named
+        if not plans:
             st.warning(f"No Approved OSP {report_type.title()} layout matches Part {job.get('part_number')} and Process {job.get('process_name')}.")
             st.page_link(st.session_state["_qsms_pages"]["inspection-layout-entry"], label="Create / Approve OSP Inspection Layout", icon=":material/add:", width="stretch")
             return
@@ -210,8 +217,7 @@ def _render(report_type: str) -> None:
             micro_cols = st.columns(4, gap="small")
             for slot, column in enumerate(micro_cols, start=1):
                 with column:
-                    if (existing or {}).get(f"microstructure_image_{slot}_path"):
-                        st.caption(f"Photo {slot} already uploaded · upload another file to replace it")
+                    saved_photo_preview(existing, slot)
                     micro_files.append(st.file_uploader(
                         f"Microstructure Photo {slot}", type=MICROSTRUCTURE_IMAGE_TYPES,
                         key=f"osp_metlab_micro_{scope}_{job_id}_{slot}",
@@ -257,6 +263,16 @@ def _render(report_type: str) -> None:
             })
 
         writable = (perms["can_edit"] if existing else perms["can_create"]) and str((existing or {}).get("status") or "DRAFT") != "FINAL"
+        save_reasons = []
+        if str((existing or {}).get("status") or "DRAFT").upper() == "FINAL":
+            save_reasons.append("Report is FINAL – photographs can be added below without reopening; use Reopen for Edit to change results.")
+        else:
+            if not (perms["can_edit"] if existing else perms["can_create"]):
+                save_reasons.append("Your role has no " + ("Edit" if existing else "Create") + " permission for this OSP report.")
+            if not prepared:
+                save_reasons.append("Prepared By – select the employee who prepared the report.")
+        if save_reasons:
+            st.info("Cannot save yet:\n\n" + "\n".join(f"- {r}" for r in save_reasons))
         if st.button(f"Save OSP {report_type.title()} Draft", type="primary", disabled=not writable or not prepared, width="stretch"):
             try:
                 final_number = report_no.strip() or inspection.next_number(report_type)
@@ -298,7 +314,7 @@ def _render(report_type: str) -> None:
                 save_success_popup(f"OSP {report_type.title()} Report {saved.get('report_number')} saved successfully.", queue_for_rerun=True)
                 st.rerun()
             except Exception as exc:
-                st.error(f"Unable to save OSP {report_type.title()} Draft: {exc}")
+                st.error(f"Unable to save OSP {report_type.title()} Draft: {db_message(exc)}")
 
         if existing:
             with stage_section("D", "EDIT / DELETE OSP INSPECTION RECORD", key=f"osp_inspection_manage_{report_type}_{scope}_{job_id}"):
@@ -330,11 +346,18 @@ def _render(report_type: str) -> None:
                 st.info("Finalize OSP Decision is not available yet:\n\n" + "\n".join(f"- {b}" for b in blockers))
             if c[2].button("Finalize OSP Decision", disabled=bool(blockers), width="stretch"):
                 try:
+                    if not is_dimensional:
+                        # R35: photographs chosen in the form are saved before finalizing (no re-upload needed).
+                        from app_pages.metlab_report import persist_pending_evidence
+                        persist_pending_evidence(inspection, report_id, micro_files, micro_titles, None, existing)
                     if is_dimensional: inspection.finalize_dimensional(report_id, disposition, reason, validator, approver)
                     else: inspection.finalize_metlab(report_id, disposition, reason, validator, approver)
                     save_success_popup("OSP inspection decision finalized and the OSP quality gate was refreshed.", queue_for_rerun=True); st.rerun()
                 except Exception as exc: st.error(db_message(exc))
 
+            if not is_dimensional:
+                from app_pages.metlab_report import final_photo_update
+                final_photo_update(inspection, existing, micro_files, micro_titles, None, key=f"osp_final_photos_{scope}_{report_id}")
             delete_table = "inspection_reports" if is_dimensional else "lab_tests"
             if password_delete_panel(
                 repo=inspection.repo, table=delete_table, rows=[existing],

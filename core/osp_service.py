@@ -320,6 +320,14 @@ class OSPService:
     def delete_transaction(self, osp_job_id: str) -> dict:
         return self.repo.rpc("qcms_delete_osp_transaction", {"p_osp_job_id": osp_job_id}) or {}
 
+    @staticmethod
+    def name_matched_layouts(layouts: list[dict], process_name: str) -> list[dict]:
+        """Approved OSP layouts whose layout name contains the OSP job's process name."""
+        name = " ".join(str(process_name or "").casefold().split())
+        if len(name) < 3:
+            return []
+        return [l for l in layouts if name in " ".join(str(l.get("layout_name") or "").casefold().split())]
+
     def jobs_for_inspection(self, scope: str, report_type: str) -> list[dict]:
         disposition_key = (
             "sample_dimensional_disposition" if scope == "OSP_SAMPLE" and report_type == "DIMENSIONAL" else
@@ -348,10 +356,25 @@ class OSPService:
                 if row.get("source_process_specification_id")
             }
 
+        # R35: an approved OSP layout for the same Part + Process (or, for a layout registered under the
+        # wrong Process Master, one whose name carries the job's process name) also makes the inspection
+        # required, so a received sample always reaches the Dimensional / MetLAB queue.
+        part_ids = sorted({str(row.get("part_id")) for row in register_rows if row.get("part_id")})
+        part_layouts: dict[str, list[dict]] = {}
+        if part_ids:
+            for layout in self.repo.select("inspection_plans", eq={"status": "APPROVED", "layout_type": report_type, "inward_type": "OSP_PROCESS"}, in_={"part_id": part_ids}, limit=max(1000, len(part_ids) * 6)):
+                part_layouts.setdefault(str(layout.get("part_id")), []).append(layout)
+
         rows: list[dict] = []
         for row in register_rows:
             required_by_flag = bool(row.get(requirement_flag))
+            candidates = part_layouts.get(str(row.get("part_id")), [])
             required_by_approved_layout = str(row.get("process_specification_id") or "") in approved_layout_specs
+            if not (required_by_flag or required_by_approved_layout) and str(row.get("status") or "").upper() not in {"COMPLETED", "CLOSED"}:
+                required_by_approved_layout = (
+                    any(str(l.get("process_id") or "") == str(row.get("process_id") or "") for l in candidates)
+                    or bool(self.name_matched_layouts(candidates, str(row.get("process_name") or "")))
+                )
             if not (required_by_flag or required_by_approved_layout):
                 continue
             ready = bool(row.get("sample_received_date")) if scope == "OSP_SAMPLE" else (

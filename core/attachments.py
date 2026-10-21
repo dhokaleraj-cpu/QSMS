@@ -51,6 +51,16 @@ class AttachmentService:
             limit=250,
         )
 
+    def existing_by_path(self, object_path: str) -> dict | None:
+        """Any attachment row (ACTIVE or archived) already holding this storage path."""
+        if not object_path:
+            return None
+        try:
+            rows = self.repo.select("document_attachments", eq={"object_path": object_path}, limit=1)
+        except Exception:
+            return None
+        return rows[0] if rows else None
+
     def _client(self):
         client = get_session_client()
         if client is None:
@@ -113,8 +123,12 @@ class AttachmentService:
             "checksum": hashlib.sha256(content).hexdigest(),
             "status": "ACTIVE",
         }
-        if existing:
-            saved = self.repo.update("document_attachments", str(existing["id"]), payload)
+        # R35: the storage path is fixed per record + slot, so a re-upload (for example at
+        # report finalization, or after an earlier file was archived) must reuse the same
+        # attachment row instead of inserting a duplicate object_path (unique per tenant).
+        row = existing or self.existing_by_path(object_path)
+        if row:
+            saved = self.repo.update("document_attachments", str(row["id"]), payload)
         else:
             saved = self.repo.insert("document_attachments", payload)
 
@@ -384,3 +398,33 @@ def render_attachment_manager(
                             st.rerun()
                         except Exception as exc:
                             st.error(db_message(exc))
+
+
+def saved_photo_preview(record: Mapping[str, Any] | None, slot: int, *, field_prefix: str = "microstructure_image_", caption_prefix: str = "microstructure_caption_") -> bool:
+    """R35: show the already-saved photograph of a report slot as a thumbnail.
+
+    Users no longer need to upload photographs again at finalization: the saved file is shown
+    here and is kept unless a new file is chosen to replace it. Returns True when a photo exists."""
+    path = str((record or {}).get(f"{field_prefix}{slot}_path") or "").strip()
+    if not path:
+        return False
+    cache = st.session_state.setdefault("_qcms_photo_preview_cache", {})
+    data = cache.get(path)
+    if data is None:
+        try:
+            data = AttachmentService().download({"object_path": path})
+            if len(cache) > 40:
+                cache.clear()
+            cache[path] = data
+        except Exception:
+            data = b""
+    title = str((record or {}).get(f"{caption_prefix}{slot}") or "").strip()
+    if data:
+        try:
+            st.image(data, caption=f"Saved · {title}" if title else "Saved photo", width="stretch")
+        except Exception:
+            st.caption(f"Photo {slot} saved" + (f" · {title}" if title else ""))
+    else:
+        st.caption(f"Photo {slot} saved" + (f" · {title}" if title else "") + " (preview not available)")
+    st.caption("Kept automatically – choose a new file only to replace it.")
+    return True
