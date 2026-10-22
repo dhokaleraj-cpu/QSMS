@@ -149,13 +149,12 @@ struct KpiDashboardView: View {
             .padding()
         }
         .background(Theme.bg)
-        .navigationTitle("STAWN QCMS")
+        .navigationTitle("Dashboard")
         .qcmsNavBar()
+        .qcmsBrand()
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Button { nav.push(.home) } label: { Image(systemName: "house") }.accessibilityLabel("Home")
-            }
-            ToolbarItem(placement: .navigationBarLeading) {
                 Button { Task { await load(dept, force: true) } } label: { Image(systemName: "arrow.clockwise") }
                     .accessibilityLabel("Refresh").disabled(loading)
             }

@@ -94,7 +94,7 @@ from core.ui import app_footer, apply_global_style, module_submenu, render_left_
 
 settings = get_settings()
 st.set_page_config(
-    page_title=f"STAWN QCMS · {settings.company_name}",
+    page_title="STAWN QCMS",
     page_icon=(str(Path(__file__).resolve().parent / "assets" / "stawn_qcms_favicon.png")
                if (Path(__file__).resolve().parent / "assets" / "stawn_qcms_favicon.png").exists() else "✅"),
     layout="wide",
@@ -553,6 +553,11 @@ if android_streamlit_nav:
 else:
     nav = st.navigation(PAGES, position="hidden")
 current_path = PAGE_TITLE_TO_PATH.get(nav.title, "dashboard")
+# R35b: the browser tab / address bar always shows the STAWN icon and "STAWN QCMS" (st.Page icons would
+# otherwise replace the favicon with the page's Material icon on every page).
+_STAWN_FAVICON = Path(__file__).resolve().parent / "assets" / "stawn_qcms_favicon.png"
+st.set_page_config(page_title=f"STAWN QCMS · {nav.title}" if nav.title and nav.title != "STAWN QCMS" else "STAWN QCMS",
+                   page_icon=str(_STAWN_FAVICON) if _STAWN_FAVICON.exists() else "✅")
 current_module = ROUTE_MODULE.get(current_path, "Dashboard")
 
 current_permission_module = ROUTE_PERMISSION_MODULE.get(current_path)
@@ -625,6 +630,9 @@ RAIL_NAV = (
     (None, "Administration", "", ""),
     (PAGE_BY_PATH["user-access"], "Admin", "Admin", ":material/groups:"),
 )
+if _licence.get("is_stawn_developer"):
+    # R35b: STAWN developer admin section with every right (licences, companies, admins, branding, all admin tools)
+    RAIL_NAV = RAIL_NAV + ((PAGE_BY_PATH["stawn-developer"], "STAWN Developer", "Admin", ":material/developer_mode:"),)
 
 if not native_mobile:
     if render_shell_header(profile, nav.title, current_module=current_module, nav_items=HEADER_NAV):

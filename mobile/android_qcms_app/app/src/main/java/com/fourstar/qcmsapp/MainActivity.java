@@ -420,8 +420,17 @@ public class MainActivity extends Activity {
         back.setTextSize(28);
         back.setOnClickListener(v -> onBackPressed());
         top.addView(back, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 48)));
+        // R35b: STAWN QCMS logo on the left of the top bar (tap = KPI start dashboard)
+        View brandLogo = logo();
+        brandLogo.setOnClickListener(v -> { if (!(stack.peek() instanceof KpiHomeScreen)) push(new KpiHomeScreen(this)); });
+        brandLogo.setContentDescription("STAWN QCMS");
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(Ui.dp(this, 38), Ui.dp(this, 38));
+        blp.gravity = Gravity.CENTER_VERTICAL;
+        blp.rightMargin = Ui.dp(this, 8);
+        top.addView(brandLogo, blp);
+        top.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout titles = Ui.vbox(this);
-        brandView = Ui.text(this, brandText(), 10, Color.parseColor("#BFE6E6"), true);
+        brandView = Ui.text(this, brandText(), 11, Color.WHITE, true);
         brandView.setSingleLine(true);
         brandView.setEllipsize(android.text.TextUtils.TruncateAt.END);
         titles.addView(brandView);

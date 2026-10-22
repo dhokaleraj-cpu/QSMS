@@ -1,3 +1,15 @@
+# STAWN QCMS v4.14.49 R35b (includes everything in R35)
+
+## R35b additions
+- Website: every browser tab and the address bar now show the STAWN icon and "STAWN QCMS · <page>". Before this, each page's own icon replaced the favicon.
+- Android and iPhone/iPad: the STAWN logo and "STAWN QCMS" sit on the left of the top bar.
+- STAWN Developer admin section (left menu → STAWN Developer, shown only to the STAWN developer login) holds every right:
+  - all companies and licences: issue, renew, suspend or revoke keys
+  - create companies and assign company admins
+  - edit any company's profile and logo
+  - STAWN-only branding
+  - one-click access to every admin tool
+
 # STAWN QCMS v4.14.49 R35: issue fixes, notifications, licensing, KPI start dashboard
 
 This release covers the website, Android app v3.4.0 and iPhone / iPad app v1.1.0. The database changes are live, and the updater re-applies them safely.

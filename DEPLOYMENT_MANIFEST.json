@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R35",
+  "release_revision": "R35b",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -612,5 +612,11 @@
     "android_app_v3_4_0_notifications_kpi_search_licence",
     "ios_app_v1_1_0_push_kpi_search_licence_signing_team_fix"
   ],
-  "r35_database": "auto_apply.json (scripts/apply_sql.py) - already live on xxrxopzxzyjnzumrwuwy except qcms_remove_po_source"
+  "r35_database": "auto_apply.json (scripts/apply_sql.py) - already live on xxrxopzxzyjnzumrwuwy except qcms_remove_po_source",
+  "r35b_changes": [
+    "stawn_qcms_browser_tab_title_and_stawn_favicon_every_page",
+    "stawn_logo_and_app_name_left_android_ios_top_bar",
+    "stawn_developer_console_all_rights_any_company_profile_branding_admin_tools",
+    "developer_console_in_left_rail"
+  ]
 }

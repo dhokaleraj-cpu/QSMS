@@ -100,3 +100,17 @@ licence_company.{fn}()
         assert not app.exception, fn
         text = " ".join(str(m.value) for m in app.markdown)
         assert ("ENTERPRISE" in text) if fn == "render" else ("STAWN DEVELOPER RIGHTS" in text or "LICENSED COMPANIES" in text), fn
+
+
+def test_r35b_stawn_brand_everywhere():
+    app = (ROOT / "streamlit_app.py").read_text()
+    assert 'page_title="STAWN QCMS"' in app and "_STAWN_FAVICON" in app and 'f"STAWN QCMS · {nav.title}"' in app
+    assert '"STAWN Developer", "Admin"' in app
+    dev = (ROOT / "app_pages/licence_company.py").read_text()
+    assert "ALL ADMINISTRATION TOOLS" in dev and "STAWN QCMS BRANDING (STAWN ONLY)" in dev and "OF ANY COMPANY" in dev
+    swift = (ROOT / "mobile/ios_stawn_qcms/STAWNQCMS/Core.swift").read_text()
+    assert "struct BrandMark" in swift and 'Image("STAWNLogo")' in swift
+    for f in ("KpiDashboardView.swift", "HomeView.swift", "MainView.swift"):
+        assert ".qcmsBrand()" in (ROOT / "mobile/ios_stawn_qcms/STAWNQCMS" / f).read_text(), f
+    java = (ROOT / "mobile/android_qcms_app/app/src/main/java/com/fourstar/qcmsapp/MainActivity.java").read_text()
+    assert "R35b: STAWN QCMS logo on the left of the top bar" in java

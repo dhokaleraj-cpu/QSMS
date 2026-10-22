@@ -161,6 +161,7 @@ struct SectionView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(Catalog.tabNames[tab])
         .qcmsNavBar()
+        .qcmsBrand()
         .qcmsBell()
     }
 

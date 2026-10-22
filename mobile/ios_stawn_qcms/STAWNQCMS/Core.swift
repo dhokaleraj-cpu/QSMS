@@ -228,4 +228,32 @@ extension View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
     }
+
+    /// R35b: STAWN logo + app name "STAWN QCMS" on the left of the bar (main screens); the screen name sits in the centre.
+    func qcmsBrand() -> some View {
+        self.navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { BrandMark() }
+            }
+    }
+}
+
+/// STAWN QCMS brand mark for the navigation bar.
+struct BrandMark: View {
+    var body: some View {
+        HStack(spacing: 7) {
+            Image("STAWNLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 28, height: 28)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+            Text("STAWN QCMS")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("STAWN QCMS")
+    }
 }

@@ -61,8 +61,9 @@ struct HomeView: View {
             .padding()
         }
         .background(Theme.bg)
-        .navigationTitle("STAWN QCMS")
+        .navigationTitle("Home")
         .qcmsNavBar()
+        .qcmsBrand()
         .qcmsBell()
         .task { await load() }
         .refreshable { await load() }

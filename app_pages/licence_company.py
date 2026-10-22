@@ -36,12 +36,13 @@ def _licence_card(status: dict) -> None:
                f"{str(status.get('last_validated_at') or 'now')[:16].replace('T', ' ')}")
 
 
-def _company_setup(profile: dict, status: dict, *, can_edit: bool) -> None:
-    company = lic.company_profile()
+def _company_setup(profile: dict, status: dict, *, can_edit: bool, tenant_id: str | None = None, letter: str = "B",
+                   kp: str = "qcms_lic") -> None:
+    company = lic.company_profile(tenant_id)
     done = bool(company.get("setup_complete"))
     note = ("Completed. The company administrator can still correct the details." if done else
             "One-time setup: fill the company details and upload the logo. They are printed on reports and shown in the app.")
-    with stage_section("B", "COMPANY PROFILE & LOGO", note, key="qcms_lic_company"):
+    with stage_section(letter, "COMPANY PROFILE & LOGO", note, key=f"{kp}_company"):
         logo = lic.company_logo_bytes(company.get("logo_path"))
         l1, l2 = st.columns([1, 3], gap="small")
         if logo:
@@ -49,20 +50,20 @@ def _company_setup(profile: dict, status: dict, *, can_edit: bool) -> None:
         else:
             l1.info("No logo yet")
         upload = l2.file_uploader("Company logo (PNG / JPG, max 2 MB)", type=["png", "jpg", "jpeg"], disabled=not can_edit,
-                                  key="qcms_lic_logo")
+                                  key=f"{kp}_logo")
         values: dict = {"tenant_id": company.get("tenant_id")}
         cols = st.columns(3, gap="small")
         for i, (field, label) in enumerate(lic.COMPANY_FIELDS):
             default = company.get(field) or (status.get("company_legal_name") if field == "legal_name" else "") or \
                 ("India" if field == "country" else "")
-            values[field] = cols[i % 3].text_input(label, value=str(default or ""), disabled=not can_edit, key=f"qcms_lic_cp_{field}")
+            values[field] = cols[i % 3].text_input(label, value=str(default or ""), disabled=not can_edit, key=f"{kp}_cp_{field}_{company.get('tenant_id')}")
         if not can_edit:
             st.caption("Only the company administrator (or STAWN) can change the company profile.")
             return
         b1, b2 = st.columns(2, gap="small")
-        save = b1.button("Save draft", width="stretch", key="qcms_lic_cp_save")
+        save = b1.button("Save draft", width="stretch", key=f"{kp}_cp_save")
         finish = b2.button("Save & complete company setup" if not done else "Save company details", type="primary",
-                           width="stretch", key="qcms_lic_cp_finish")
+                           width="stretch", key=f"{kp}_cp_finish")
         if save or finish:
             try:
                 if upload is not None:
@@ -267,6 +268,45 @@ def render_developer() -> None:
                     save_success_popup(f"{email} is now {role} of {target}.")
                 except Exception as exc:
                     st.error(db_message(exc))
+    if companies:
+        section_bar("COMPANY PROFILE & LOGO OF ANY COMPANY")
+        target_co = st.selectbox("Company to edit (STAWN can complete or correct any licensed company's details)", list(companies),
+                                 key="qcms_dev_profile_company")
+        _company_setup(current_profile() or {}, {"company_legal_name": companies[target_co].get("company_name")}, can_edit=True,
+                       tenant_id=str(companies[target_co]["tenant_id"]), letter="E", kp="qcms_dev")
+
+    with stage_section("F", "STAWN QCMS BRANDING (STAWN ONLY)",
+                       "The product name, icon and developer details are fixed by STAWN PRECISION PRIVATE LIMITED. Company "
+                       "administrators cannot change them; their company name and logo appear under the STAWN QCMS name.",
+                       key="qcms_dev_branding"):
+        from pathlib import Path
+        from core.config import get_settings
+        icon = Path(__file__).resolve().parents[1] / "assets" / "stawn_qcms_icon.png"
+        b1, b2 = st.columns([1, 4], gap="small")
+        if icon.exists():
+            b1.image(str(icon), width=96)
+        b2.markdown(f"**App name:** {about.PRODUCT} – {about.TAGLINE}  \n"
+                    f"**Website:** v{get_settings().version} R35 · STAWN icon in the browser tab and address bar  \n"
+                    f"**Android:** v{about.ANDROID_VERSION} · **iPhone / iPad:** v{about.IOS_VERSION} · STAWN logo on the left of the top bar  \n"
+                    f"**Developer:** {about.COMPANY} · {about.EMAIL}")
+
+    with stage_section("G", "ALL ADMINISTRATION TOOLS", "Every admin right in one place for the STAWN developer login.",
+                       key="qcms_dev_admin_tools"):
+        pages = st.session_state.get("_qcms_page_by_path") or {}
+        tools = (("user-access", "Users & Access", ":material/admin_panel_settings:"),
+                 ("licence-company", "Licence, Company & WhatsApp", ":material/verified_user:"),
+                 ("system-settings", "System Settings", ":material/tune:"),
+                 ("email-settings", "Email Server & Notifications", ":material/forward_to_inbox:"),
+                 ("print-designer", "Print Layout Designer", ":material/design_services:"),
+                 ("master-import", "Master Import", ":material/upload_file:"),
+                 ("employee-records", "Employees", ":material/groups:"),
+                 ("deployment-diagnostics", "Deployment Diagnostics", ":material/verified:"),
+                 ("records-center", "Records Centre / Delete", ":material/description:"))
+        cols = st.columns(3, gap="small")
+        for i, (route, label, icon_name) in enumerate(tools):
+            if route in pages:
+                cols[i % 3].page_link(pages[route], label=label, icon=icon_name, width="stretch")
+
     section_bar("STAWN DEVELOPER RIGHTS")
     st.caption("The STAWN developer login keeps ADMIN rights in its home company, is never counted as a licensed user, and can "
                "see and manage every company's licence. Company administrators only manage their own company.")

@@ -21,7 +21,8 @@ def test_android_name_and_icon():
 
 def test_website_brand_and_favicon():
     app = (ROOT / "streamlit_app.py").read_text()
-    assert 'page_title=f"STAWN QCMS · {settings.company_name}"' in app and "stawn_qcms_favicon.png" in app
+    assert 'page_title="STAWN QCMS"' in app and "stawn_qcms_favicon.png" in app  # R35b: STAWN QCMS on every tab
     assert (ROOT / "assets/stawn_qcms_favicon.png").exists() and (ROOT / "assets/stawn_qcms_icon.png").exists()
-    assert "STAWN QCMS · QUALITY CONTROL MONITORING SYSTEM" in (ROOT / "core/ui.py").read_text()
+    ui = (ROOT / "core/ui.py").read_text()
+    assert "STAWN QCMS</div>" in ui and "QUALITY CONTROL MONITORING SYSTEM" in ui
     assert "STAWN QCMS · Quality Control Monitoring System" in (ROOT / "core/auth.py").read_text()
