@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 from core.ui import portal_table
+from core.report_filters import report_register
 
 from core.access import current_permissions
 from core.attachments import AttachmentService, AttachmentSlot, new_attachment_uploaders, render_attachment_manager
@@ -442,4 +443,4 @@ def render_records() -> None:
         "Receipt Decision": row.get("receipt_disposition"), "MetLAB": row.get("metallurgical_status"),
         "Dimensional": row.get("dimensional_status"), "Quality Decision": row.get("quality_disposition"), "Status": row.get("status"),
     } for row in filtered])
-    portal_table(style_status_dataframe(df), hide_index=True, width="stretch", height=620)
+    report_register(df, "inward_register", "Material Inward Register", height=620, style=style_status_dataframe)  # R36b: filters + filtered exports

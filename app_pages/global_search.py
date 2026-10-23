@@ -420,15 +420,104 @@ _EDIT_ROUTED_TABLES = {
     "supply_forging_orders", "supply_forging_receipts", "supply_downstream_events",
 }
 
+# R36: detail / child rows open their parent record (child table -> (parent table, link column)).
+_CHILD_PARENT: dict[str, tuple[str, str]] = {
+    "part_supplier_links": ("parts", "part_id"), "part_process_specifications": ("parts", "part_id"),
+    "part_process_parameter_specifications": ("parts", "part_id"), "part_metallurgical_requirements": ("parts", "part_id"),
+    "part_heat_treatment_details": ("parts", "part_id"), "part_rmtc_requirements": ("parts", "part_id"),
+    "part_material_grade_links": ("parts", "part_id"), "part_jominy_requirements": ("parts", "part_id"),
+    "part_standard_links": ("parts", "part_id"), "material_grade_elements": ("material_grades", "material_grade_id"),
+    "inspection_plan_characteristics": ("inspection_plans", "inspection_plan_id"),
+    "inspection_results": ("inspection_reports", "inspection_report_id"),
+    "quality_complaint_actions": ("quality_complaints", "complaint_id"), "quality_complaint_followups": ("quality_complaints", "complaint_id"),
+    "npd_order_steps": ("npd_orders", "npd_order_id"), "npd_process_flow_steps": ("npd_process_flows", "flow_id"),
+    "ppap_documents": ("ppap_projects", "ppap_project_id"), "control_plan_headers": ("ppap_projects", "ppap_project_id"),
+    "pfd_headers": ("ppap_projects", "ppap_project_id"), "pfmea_headers": ("ppap_projects", "ppap_project_id"),
+    "msa_plans": ("ppap_projects", "ppap_project_id"), "spc_plans": ("ppap_projects", "ppap_project_id"),
+    "capacity_studies": ("ppap_projects", "ppap_project_id"), "balloon_characteristics": ("ppap_projects", "ppap_project_id"),
+    "rmtc_chemistry_results": ("rmtc_approvals", "rmtc_approval_id"), "rmtc_requirement_results": ("rmtc_approvals", "rmtc_approval_id"),
+    "rmtc_jominy_results": ("rmtc_approvals", "rmtc_approval_id"), "rmtc_decision_revisions": ("rmtc_approvals", "rmtc_approval_id"),
+    "osp_material_outs": ("osp_jobs", "osp_job_id"), "supply_purchase_order_sources": ("supply_purchase_orders", "purchase_order_id"),
+    "calibration_events": ("quality_assets", "asset_id"), "quality_asset_part_process_links": ("quality_assets", "asset_id"),
+}
+# document_attachments.entity_type -> owning table
+_ATTACHMENT_OWNER = {
+    "METLAB_REPORT": "lab_tests", "QUALITY_COMPLAINT": "quality_complaints", "PO_CONFIRMATION": "supply_po_confirmations",
+    "PART_MASTER": "parts", "RMTC": "rmtc_approvals", "CUSTOMER_STANDARD": "customer_standards", "MATERIAL_INWARD": "inward_lots",
+    "PART_PROCESS_SPEC": "part_process_specifications", "SUPPLY_CUSTOMER_ORDER": "supply_customer_orders",
+    "DIMENSIONAL_REPORT": "inspection_reports", "OSP_JOB": "osp_jobs", "NPD_ORDER": "npd_orders",
+}
+_HIDDEN_VIEW_FIELDS = {"tenant_id", "created_by", "updated_by", "checksum", "smtp_password"}
+
+
+def _fetch_row(repo: Repository, table: str, record_id: str) -> dict:
+    if not table or not record_id:
+        return {}
+    try:
+        rows = repo.select(table, eq={"id": record_id}, limit=1)
+    except Exception:
+        rows = []
+    return dict(rows[0]) if rows else {}
+
+
+def _resolve_target(repo: Repository, table: str, row: dict, depth: int = 0) -> tuple[str, dict]:
+    """Walk from a search hit to the record that has its own screen (detail row -> parent)."""
+    if depth > 3 or not row:
+        return table, row
+    if table in _EDIT_ROUTED_TABLES or table == "customer_standards":
+        return table, row
+    if table in _CHILD_PARENT:
+        parent, column = _CHILD_PARENT[table]
+        parent_row = _fetch_row(repo, parent, str(row.get(column) or ""))
+        if parent_row:
+            return _resolve_target(repo, parent, parent_row, depth + 1)
+    if table == "document_attachments":
+        owner = _ATTACHMENT_OWNER.get(str(row.get("entity_type") or "").upper())
+        owner_row = _fetch_row(repo, owner or "", str(row.get("entity_id") or ""))
+        if owner_row:
+            return _resolve_target(repo, str(owner), owner_row, depth + 1)
+    if table == "qcms_delete_requests":
+        target_row = _fetch_row(repo, str(row.get("table_name") or ""), str(row.get("record_id") or ""))
+        if target_row:
+            return _resolve_target(repo, str(row.get("table_name")), target_row, depth + 1)
+    return table, row
+
+
+@st.dialog("Record details", width="large")
+def _record_viewer(table: str, row: dict, record_type: str, route: str) -> None:
+    """R36: every search hit can be opened - records without their own entry screen are shown here in full."""
+    st.markdown(f"**{record_type}** · `{table}`")
+    items = [{"Field": str(k).replace("_", " ").title(), "Value": ("" if v is None else str(v))[:500]}
+             for k, v in row.items() if k not in _HIDDEN_VIEW_FIELDS and v not in (None, "", [], {})]
+    portal_table(pd.DataFrame(items), hide_index=True, width="stretch", height=min(560, 60 + 35 * len(items)))
+    if table == "document_attachments" and row.get("object_path"):
+        try:
+            from core.attachments import AttachmentService
+            data = AttachmentService().download(row)
+            st.download_button("Download file", data=data, file_name=str(row.get("file_name") or "attachment"),
+                               mime=str(row.get("mime_type") or "application/octet-stream"), icon=":material/download:")
+        except Exception as exc:
+            st.caption(f"File not available: {exc}")
+    pages = st.session_state.get("_qsms_pages") or {}
+    if route and route in pages and st.button("Open the module screen", icon=":material/open_in_new:", type="primary"):
+        st.switch_page(pages[route])
+
 
 def _open_record(repo: Repository, item: dict) -> None:
     table = str(item.get("table") or "")
-    if table in _EDIT_ROUTED_TABLES:
-        rows = repo.select(table, eq={"id": str(item.get("id") or "")}, limit=1)
-        if rows:
-            _open_result({"table": table, "record": rows[0]})
-            return
-    _open_route(str(item.get("route") or "records-center"))
+    row = _fetch_row(repo, table, str(item.get("id") or ""))
+    if not row:
+        _open_route(str(item.get("route") or "records-center"))
+        return
+    target_table, target_row = _resolve_target(repo, table, row)
+    if target_table == "customer_standards":
+        st.session_state["edit_customer_standard_id"] = str(target_row.get("id") or "")
+        _open_route("standards-entry")
+        return
+    if target_table in _EDIT_ROUTED_TABLES:
+        _open_result({"table": target_table, "record": target_row})
+        return
+    _record_viewer(table, row, str(item.get("record_type") or table), str(item.get("route") or ""))
 
 
 def _render_everything(repo: Repository, query: str, everything: dict) -> None:
@@ -491,15 +580,22 @@ def _field_table(fields: list[dict], key: str) -> None:
 
 
 def _record_table(repo: Repository, items: list[dict], key: str) -> None:
+    """R36: click any row to open that record (its entry screen, its parent record, or the full record view)."""
     frame = pd.DataFrame([{
         "Type": item["record_type"], "Reference": item["title"], "Details": item["subtitle"],
         "Found in": item["matched_field"], "Matched text": item["snippet"],
     } for item in items])
-    portal_table(frame, hide_index=True, width="stretch", height=min(520, 80 + 35 * len(items)))
-    choice = st.selectbox("Select a record to open", range(len(items)), key=f"gs_rec_pick_{key}",
-                          format_func=lambda i: f"{items[i]['record_type']} · {items[i]['title']} · {items[i]['subtitle']}"[:160])
-    if st.button("Open selected record", key=f"gs_rec_open_{key}", icon=":material/open_in_new:", type="primary"):
-        _open_record(repo, items[choice])
+    st.caption("Click a row to open the record.")
+    from core.ui import selectable_table
+    clicked = selectable_table(frame, key=f"gs_rec_grid_{key}", height=min(520, 80 + 35 * len(items)))
+    rows = [clicked] if clicked is not None else []
+    if rows and 0 <= rows[0] < len(items):
+        picked = f"{key}:{items[rows[0]].get('table')}:{items[rows[0]].get('id')}"
+        if st.session_state.get("_gs_last_opened") != picked:  # a closed record view must not re-open on every rerun
+            st.session_state["_gs_last_opened"] = picked
+            _open_record(repo, items[rows[0]])
+    else:
+        st.session_state.pop("_gs_last_opened", None)
 
 
 def _render_classic_results(last_query: str) -> None:

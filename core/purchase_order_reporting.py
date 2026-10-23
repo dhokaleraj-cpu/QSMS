@@ -382,7 +382,7 @@ def _draw_customer_reference(c: canvas.Canvas, item: Mapping[str, Any], *, top: 
     shown = rows[:4]
     height = _customer_reference_height(item)
     bottom = top - height
-    _bar(c, left, top, total_w, "PO SOURCE REFERENCE" + _line_suffix(item), height=15)
+    _bar(c, left, top, total_w, "PO SOURCE REFERENCE · INTERNAL COPY - CUSTOMER DETAILS - NOT FOR SUPPLIER" + _line_suffix(item), height=15)
     y = top - 15
     widths = [130, 55, 245, 72, total_w - 502]
     titles = ["CUSTOMER PO NO.", "POS", "PART DESCRIPTION", "QTY", "UOM"]
@@ -1085,7 +1085,8 @@ def purchase_order_excel_bytes(header: Mapping[str, Any], items: Mapping[str, An
         for cidx,val in enumerate(vals,1):
             cell=ws.cell(r,cidx,val or 0 if cidx in (3,5,6,7) else val or ""); cell.alignment=Alignment(vertical="top",wrap_text=True); cell.border=Border(bottom=border)
         # Supplier-safe source traceability: no customer part number or customer delivery date.
-        src=_customer_source_rows(item)
+        # R36b: customer PO references are internal - only on an internal copy (section ticked), never by default.
+        src=_customer_source_rows(item) if bool(((header.get("print_options") or {}) if isinstance(header, Mapping) else {}).get("show_source_reference", False)) else []
         if src:
             r+=1; ws.cell(r,1,"Source Ref").font=Font(bold=True,color=navy)
             refs=[]

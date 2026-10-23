@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 from core.ui import portal_table
+from core.report_filters import report_register
 
 from core.access import current_permissions
 from core.attachments import AttachmentService
@@ -395,4 +396,4 @@ def render_records() -> None:
         "Inspection Method": (service.plan_inspection_method(str(row.get("id"))).replace("_", " ").title() if str(row.get("layout_type")) == "METLAB" else "Dimensional"),
         "Samples": row.get("default_sample_size"), "Format": row.get("format_number"), "Status": row.get("status"),
     } for row in filtered])
-    portal_table(display, hide_index=True, width="stretch", height=520)
+    report_register(display, "inspection_layout_register", "Inspection Layout Register", height=520)  # R36b

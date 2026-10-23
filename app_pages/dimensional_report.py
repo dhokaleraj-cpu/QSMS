@@ -6,6 +6,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 from core.ui import portal_table
+from core.report_filters import report_register
 from core.selection_labels import part_label, with_status
 
 from core.access import current_permissions
@@ -544,4 +545,4 @@ def render_records() -> None:
                 st.rerun()
     section_bar("DIMENSIONAL REGISTER")
     display = pd.DataFrame([{"Report Number": row.get("report_number"), "Date": row.get("inspection_date"), "Part Number": (parts.get(str(row.get("part_id"))) or {}).get("part_number"), "FSI Part Number": (parts.get(str(row.get("part_id"))) or {}).get("fsi_part_number"), "Customer": (parties.get(str(row.get("customer_id") or (parts.get(str(row.get("part_id"))) or {}).get("customer_id"))) or {}).get("party_name"), "Supplier": (parties.get(str(row.get("supplier_id"))) or {}).get("party_name"), "Material Grade": (grades.get(str(row.get("material_grade_id") or (parts.get(str(row.get("part_id"))) or {}).get("material_grade_id"))) or {}).get("grade_code"), "Heat Number": row.get("heat_number"), "Batch Number": row.get("batch_number") or row.get("vendor_batch_number_snapshot"), "Layout": row.get("layout_name_snapshot"), "Report Stage": STANDALONE_STAGES.get(str(row.get("inspection_scope")), str(row.get("inspection_scope") or "MATERIAL_INWARD").replace("_", " ").title()), "Production pcs": row.get("production_quantity_pcs"), "Conclusion": row.get("remarks"), "Result": row.get("overall_result"), "Final Decision": row.get("disposition"), "Decision Reason": row.get("disposition_reason"), "Status": row.get("status")} for row in filtered])
-    portal_table(style_status_dataframe(display), hide_index=True, width="stretch", height=520)
+    report_register(display, "dimensional_register", "Dimensional Register", height=520, style=style_status_dataframe)  # R36b: filters + filtered exports

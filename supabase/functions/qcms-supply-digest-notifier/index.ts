@@ -3,10 +3,21 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import nodemailer from "npm:nodemailer@6.9.16";
 import * as XLSX from "npm:xlsx@0.18.5";
 import { Buffer } from "node:buffer";
+import { MAX_ATTACHMENT_BYTES, XLSX_MIME, clean, companyName, day, emailShell, htmlTable, poLineRows, poUpdatedAt, pruneColumns, removeGenerated, snapshotAttachments, storeGenerated, textTable, toNumber, type Cell, type Col, type PoLine, type SnapshotCache, type SnapshotRef } from "./reminder_kit.ts";
 
 const HEADERS = { "Content-Type": "application/json" };
 type Row = Record<string, any>;
-type DigestRow = { reference:string; part:string; party:string; due_date:string; status:string; quantity:string };
+type DigestRow = { reference:string; part:string; party:string; due_date:string; status:string; quantity:string;
+  // R36 detail columns (part number, customer, supplier, qty, price, delivery date) + PO PDF snapshot refs
+  part_number?:string; part_description?:string; customer?:string; supplier?:string; qty?:number|null; uom?:string; price?:number|null; value?:number|null; currency?:string; delivery_date?:string; details?:string; refs?:SnapshotRef[] };
+const DIGEST_HEADERS:Col[]=["Sr No","Reference","Part Number","Description","Customer","Supplier",{label:"Qty",kind:"number"},"UOM",{label:"Price",kind:"money"},{label:"Value",kind:"money"},"Currency",{label:"Due Date",kind:"date"},{label:"Delivery Date",kind:"date"},"Status","Quantity / Balance","Details"];
+const DIGEST_KEEP=["Sr No","Reference","Part Number","Due Date","Status"];
+function digestTable(rows:DigestRow[]):{headers:Col[];rows:Cell[][]} {
+  return pruneColumns(DIGEST_HEADERS,rows.map((r,i)=>[i+1,r.reference,r.part_number||(r.part&&r.part!=="-"?r.part:""),r.part_description,r.customer,r.supplier,r.qty??null,r.uom,r.price??null,r.value??null,r.currency,r.due_date&&r.due_date!=="-"?r.due_date:"",r.delivery_date,r.status,r.quantity,r.details]),DIGEST_KEEP);
+}
+function joinShort(values:string[],max=3):string {
+  const unique=[...new Set(values.map(clean).filter(Boolean))]; return unique.length>max?`${unique.slice(0,max).join(", ")} +${unique.length-max}`:unique.join(", ");
+}
 const KEYS = [
   "CUSTOMER_ORDER_OVERDUE_BIENNIAL",
   "RM_PENDING_BIENNIAL",
@@ -57,14 +68,13 @@ function html(value:string):string {
   const safe=String(value||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#273444;line-height:1.5">${safe.split("\n").join("<br>")}</div>`;
 }
-function workbook(title:string,reportDate:string,rows:DigestRow[]):Uint8Array {
-  const records=rows.map((r,i)=>({
-    "Sr No":i+1,"Reference":r.reference,"Part Number":r.part,"Supplier / Customer":r.party,
-    "Due Date":r.due_date,"Status":r.status,"Quantity / Balance":r.quantity,
-  }));
-  const ws=XLSX.utils.json_to_sheet(records.length?records:[{"Sr No":"","Reference":"No records","Part Number":"","Supplier / Customer":"","Due Date":reportDate,"Status":"","Quantity / Balance":""}]);
-  ws["!cols"]=[{wch:8},{wch:30},{wch:22},{wch:38},{wch:14},{wch:36},{wch:24}];
-  const summary=XLSX.utils.aoa_to_sheet([["FOUR STAR INDUSTRIES PVT. LTD. · QCMS"],[title],[`Report Date: ${reportDate}`],[`Records: ${rows.length}`]]);
+function workbook(title:string,reportDate:string,rows:DigestRow[],company="STAWN QCMS"):Uint8Array {
+  const table=digestTable(rows);
+  const labels=table.headers.map((h)=>typeof h==="string"?h:h.label);
+  const ws=XLSX.utils.aoa_to_sheet([labels,...(table.rows.length?table.rows.map((r)=>r.map((v)=>v??"")):[["","No records"]])]);
+  ws["!cols"]=labels.map((l,i)=>({wch:Math.min(48,Math.max(8,l.length+2,...table.rows.map((r)=>String(r[i]??"").length+2)))}));
+  if(table.rows.length) ws["!autofilter"]={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:table.rows.length,c:labels.length-1}})};
+  const summary=XLSX.utils.aoa_to_sheet([[`${company} · STAWN QCMS`],[title],[`Report Date: ${reportDate}`],[`Records: ${rows.length}`]]);
   summary["!cols"]=[{wch:72}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,summary,"Summary"); XLSX.utils.book_append_sheet(wb,ws,"QCMS Digest");
   return new Uint8Array(XLSX.write(wb,{bookType:"xlsx",type:"array"}) as ArrayBuffer);
@@ -78,7 +88,8 @@ async function gather(admin:any,tenantId:string,key:string,localDate:string,part
       if(["COMPLETED","CLOSED","CANCELLED"].includes(String(r.status||"").toUpperCase())) continue;
       const due=String(r.customer_delivery_date||"").slice(0,10); if(!due||due>=localDate) continue;
       const part=partMap.get(String(r.part_id))||{}, customer=partyMap.get(String(r.customer_id))||{};
-      out.push({reference:String(r.master_reference_no||r.customer_order_no||"-"),part:String(part.fsi_part_number||part.part_number||"-"),party:String(customer.party_name||customer.party_code||"-"),due_date:due,status:`OVERDUE · ${r.status||"OPEN"}`,quantity:`${n(r.order_qty_pcs)} pcs`});
+      out.push({reference:String(r.master_reference_no||r.customer_order_no||"-"),part:String(part.fsi_part_number||part.part_number||"-"),party:String(customer.party_name||customer.party_code||"-"),due_date:due,status:`OVERDUE · ${r.status||"OPEN"}`,quantity:`${n(r.order_qty_pcs)} pcs`,
+        part_number:clean(part.part_number)||clean(part.fsi_part_number),part_description:clean(part.part_name),customer:clean(customer.party_name)||clean(customer.party_code),supplier:clean(partyMap.get(String(r.forging_supplier_id||""))?.party_name),qty:toNumber(r.order_qty_pcs),uom:"PCS",delivery_date:due,details:clean(r.customer_order_no)?`Customer order ${clean(r.customer_order_no)}`:""});
     }
   } else if(key==="RM_PENDING_BIENNIAL") {
     const [{data:orders=[]},{data:rmPos=[]}]=await Promise.all([
@@ -94,7 +105,8 @@ async function gather(admin:any,tenantId:string,key:string,localDate:string,part
       const pending=Math.max(Number(r.required_rm_kg||0)-(ordered.get(String(r.id))||0),0); if(pending<=0.0001) continue;
       const part=partMap.get(String(r.part_id))||{}, customer=partyMap.get(String(r.customer_id))||{}, ld=lead.get(String(r.part_id))||0;
       const delivery=String(r.customer_delivery_date||"").slice(0,10), due=delivery?addDays(delivery,-ld):"";
-      out.push({reference:String(r.master_reference_no||r.customer_order_no||"-"),part:String(part.fsi_part_number||part.part_number||"-"),party:String(customer.party_name||customer.party_code||"-"),due_date:due||delivery||"-",status:`${due&&due<localDate?"OVERDUE":"PENDING"} · RM PO PENDING · lead ${ld}d`,quantity:`${n(pending)} kg pending`});
+      out.push({reference:String(r.master_reference_no||r.customer_order_no||"-"),part:String(part.fsi_part_number||part.part_number||"-"),party:String(customer.party_name||customer.party_code||"-"),due_date:due||delivery||"-",status:`${due&&due<localDate?"OVERDUE":"PENDING"} · RM PO PENDING · lead ${ld}d`,quantity:`${n(pending)} kg pending`,
+        part_number:clean(part.part_number)||clean(part.fsi_part_number),part_description:clean(part.part_name),customer:clean(customer.party_name)||clean(customer.party_code),qty:Math.round(pending*1000)/1000,uom:"KG",delivery_date:delivery});
     }
   } else if(key==="PO_PENDING_BIENNIAL") {
     const [{data:pos=[]},{data:confirmations=[]}]=await Promise.all([
@@ -102,6 +114,7 @@ async function gather(admin:any,tenantId:string,key:string,localDate:string,part
       admin.from("supply_po_confirmations").select("purchase_order_id,confirmation_status").eq("tenant_id",tenantId).limit(10000),
     ]);
     const confirmed=new Map<string,string>(); for(const c of confirmations) confirmed.set(String(c.purchase_order_id),String(c.confirmation_status||""));
+    const lines:PoLine[]=await poLineRows(admin,tenantId,pos.filter((r:Row)=>!["CLOSED","CANCELLED"].includes(String(r.status||"").toUpperCase())).map((r:Row)=>String(r.id)));
     for(const r of pos) {
       const status=String(r.status||"").toUpperCase(); if(["CLOSED","CANCELLED"].includes(status)) continue;
       const supplier=partyMap.get(String(r.supplier_id))||{}, due=String(r.delivery_date||r.order_date||"").slice(0,10);
@@ -109,20 +122,30 @@ async function gather(admin:any,tenantId:string,key:string,localDate:string,part
       if(String(r.approval_status||"").toUpperCase()==="PENDING_APPROVAL") action="PENDING APPROVAL";
       else if(String(confirmed.get(String(r.id))||"").toUpperCase()!=="CONFIRMED") action="SUPPLIER CONFIRMATION PENDING";
       const overdue=Boolean(due)&&due<localDate;
-      out.push({reference:String(r.po_number||"-"),part:String(r.po_type||"PURCHASE ORDER").replaceAll("_"," "),party:String(supplier.party_name||supplier.party_code||"-"),due_date:due||"-",status:`${overdue?"OVERDUE · ":""}${action}`,quantity:`${n(r.grand_total)} ${r.currency||""}`.trim()});
+      const pl=lines.filter((l)=>l.po_id===String(r.id)), uoms=[...new Set(pl.map((l)=>l.uom).filter(Boolean))];
+      out.push({reference:String(r.po_number||"-"),part:String(r.po_type||"PURCHASE ORDER").replaceAll("_"," "),party:String(supplier.party_name||supplier.party_code||"-"),due_date:due||"-",status:`${overdue?"OVERDUE · ":""}${action}`,quantity:`${n(r.grand_total)} ${r.currency||""}`.trim(),
+        part_number:joinShort(pl.map((l)=>l.part_number||l.fsi_part_number)),part_description:joinShort(pl.map((l)=>l.description||l.material),2),customer:joinShort(pl.map((l)=>l.customer)),supplier:clean(supplier.party_name)||clean(supplier.party_code),
+        qty:pl.length&&uoms.length<=1?pl.reduce((s,l)=>s+(l.qty||0),0):null,uom:uoms.length===1?uoms[0]:"",price:pl.length===1?pl[0].unit_price:null,value:toNumber(r.subtotal)??(pl.length?pl.reduce((s,l)=>s+(l.line_value||0),0):null),currency:clean(r.currency),
+        delivery_date:day(r.delivery_date),details:`${String(r.po_type||"PURCHASE ORDER").replaceAll("_"," ")} · grand total ${n(r.grand_total)} ${clean(r.currency)}`.trim(),
+        refs:[{source_table:"supply_purchase_orders",record_id:String(r.id),updated_at:poUpdatedAt(pl,String(r.id),String(r.updated_at||""))}]});
     }
   } else if(key==="FORGING_RECEIPT_OVERDUE_BIENNIAL") {
     const [{data:orders=[]},{data:receipts=[]}]=await Promise.all([
       admin.from("supply_forging_orders").select("*").eq("tenant_id",tenantId).limit(10000),
       admin.from("supply_forging_receipts").select("forging_order_id,received_qty_pcs").eq("tenant_id",tenantId).limit(20000),
     ]);
+    const fLines:PoLine[]=await poLineRows(admin,tenantId,orders.filter((r:Row)=>!["CLOSED","CANCELLED"].includes(String(r.status||"").toUpperCase())&&r.purchase_order_id).map((r:Row)=>String(r.purchase_order_id)));
     const received=new Map<string,number>(); for(const rec of receipts) received.set(String(rec.forging_order_id),(received.get(String(rec.forging_order_id))||0)+Number(rec.received_qty_pcs||0));
     for(const r of orders) {
       if(["CLOSED","CANCELLED"].includes(String(r.status||"").toUpperCase())) continue;
       const due=String(r.expected_date||"").slice(0,10); if(!due||due>=localDate) continue;
       const balance=Math.max(Number(r.order_qty_pcs||0)-(received.get(String(r.id))||0),0); if(balance<=0.0001) continue;
       const supplier=partyMap.get(String(r.forging_supplier_id))||{};
-      out.push({reference:String(r.supplier_order_no||r.id||"-"),part:"Forging Receipt",party:String(supplier.party_name||supplier.party_code||"-"),due_date:due,status:"OVERDUE · FORGING RECEIPT PENDING",quantity:`${n(balance)} pcs pending`});
+      const line=fLines.find((l)=>l.item_id===String(r.purchase_order_item_id||""))||fLines.find((l)=>l.po_id===String(r.purchase_order_id||""));
+      out.push({reference:String(r.supplier_order_no||r.id||"-"),part:"Forging Receipt",party:String(supplier.party_name||supplier.party_code||"-"),due_date:due,status:"OVERDUE · FORGING RECEIPT PENDING",quantity:`${n(balance)} pcs pending`,
+        part_number:clean(line?.part_number)||clean(line?.fsi_part_number),part_description:clean(line?.description),customer:clean(line?.customer),supplier:clean(supplier.party_name)||clean(supplier.party_code),qty:balance,uom:"PCS",
+        price:line?.unit_price??null,value:line?.unit_price!=null?Math.round(balance*line.unit_price*100)/100:null,currency:clean(line?.currency),delivery_date:due,details:[line?.po_number?`PO ${line.po_number}`:"",`ordered ${n(r.order_qty_pcs)} pcs`].filter(Boolean).join(" · "),
+        refs:r.purchase_order_id?[{source_table:"supply_purchase_orders",record_id:String(r.purchase_order_id),updated_at:line?poUpdatedAt(fLines,String(r.purchase_order_id)):""}]:[]});
     }
   }
   return out;
@@ -149,6 +172,7 @@ Deno.serve(async(req:Request)=>{
       ]);
       if(!settings?.enabled||!settings?.smtp_host||!settings?.sender_email) continue;
       const transporter=nodemailer.createTransport({host:settings.smtp_host,port:Number(settings.smtp_port||587),secure:Boolean(settings.use_ssl),requireTLS:Boolean(settings.use_tls)&&!Boolean(settings.use_ssl),auth:settings.smtp_username?{user:settings.smtp_username,pass:settings.smtp_password||""}:undefined,connectionTimeout:Number(settings.timeout_seconds||20)*1000,greetingTimeout:Number(settings.timeout_seconds||20)*1000,socketTimeout:Number(settings.timeout_seconds||20)*1000});
+      const company=await companyName(admin,tenantId,settings); const snapCache:SnapshotCache=new Map();
       const partMap=new Map<string,Row>(parts.map((r:Row)=>[String(r.id),r])), partyMap=new Map<string,Row>(parties.map((r:Row)=>[String(r.id),r])), profileMap=new Map<string,Row>(profiles.map((r:Row)=>[String(r.id),r])), templateMap=new Map<string,Row>(templates.map((r:Row)=>[String(r.template_key),r]));
       for(const schedule of schedules) {
         const clock=localClock(now,String(schedule.timezone||"Asia/Kolkata")); if(clock.hour!==Number(schedule.hour_local??8)) continue;
@@ -164,13 +188,22 @@ Deno.serve(async(req:Request)=>{
         const tpl=templateMap.get(String(schedule.template_key||schedule.event_key))||{}, overdue=rows.filter((r)=>r.status.startsWith("OVERDUE")).length;
         const ctx={report_date:clock.date,open_count:rows.length-overdue,overdue_count:overdue,department:schedule.recipient_department||"QCMS Team"};
         const subject=render(String(tpl.subject_template||`QCMS · ${schedule.schedule_label} · {{report_date}}`),ctx), bodyText=render(String(tpl.body_template||"Please find attached the QCMS Excel digest for {{report_date}}."),ctx);
-        const bytes=workbook(String(schedule.schedule_label||"QCMS Supply Chain Digest"),clock.date,rows), fileName=`QCMS_${String(schedule.schedule_key)}_${clock.date}.xlsx`;
+        const bytes=workbook(String(schedule.schedule_label||"QCMS Supply Chain Digest"),clock.date,rows,company), fileName=`QCMS_${String(schedule.schedule_key)}_${clock.date}.xlsx`;
+        // R36: same rows as an HTML table in the body (part number, customer, supplier, qty, price, delivery date) + PO PDFs (overdue first, max 10).
+        const table=digestTable(rows);
+        const bodyHtml=emailShell({title:String(schedule.schedule_label||"QCMS Supply Chain Digest"),company,intro:[...bodyText.split("\n"),"",`Report date: ${clock.date} · ${rows.length} record(s) · overdue ${overdue}`],sections:[htmlTable(table.headers,table.rows,{caption:`${String(schedule.schedule_label||"QCMS Supply Chain Digest")} · ${rows.length} record(s)`})]});
+        const fullText=`${bodyText}\n\n${textTable(table.headers,table.rows)}`;
+        const refs=[...rows.filter((r)=>r.status.startsWith("OVERDUE")),...rows.filter((r)=>!r.status.startsWith("OVERDUE"))].flatMap((r)=>r.refs||[]);
         for(const recipient of recipients.values()) {
           if(!rows.length) continue; const dedupe=`SUPPLY_DIGEST:${schedule.schedule_key}:${clock.date}:${recipient.email.toLowerCase()}`;
           const {data:existing}=await admin.from("qcms_notification_outbox").select("id").eq("tenant_id",tenantId).eq("dedupe_key",dedupe).maybeSingle(); if(existing?.id) continue;
-          const {data:outbox,error:insertErr}=await admin.from("qcms_notification_outbox").insert({tenant_id:tenantId,event_key:schedule.event_key,recipient_email:recipient.email,recipient_name:recipient.name||null,subject,body_text:bodyText,body_html:html(bodyText),context:{...ctx,schedule_key:schedule.schedule_key,record_count:rows.length,attachment_name:fileName,run_every_days:every,export_format:"XLSX"},template_key:schedule.template_key||schedule.event_key,attachment_manifest:[],dedupe_key:dedupe,is_automatic:true,scheduled_for:now.toISOString(),status:"SENDING",attempts:1}).select("id").single(); if(insertErr) throw insertErr;
+          const snaps=await snapshotAttachments(admin,tenantId,refs,10,MAX_ATTACHMENT_BYTES-bytes.byteLength,snapCache);
+          const excelEntry=await storeGenerated(admin,tenantId,`SUPPLY_DIGEST_${schedule.schedule_key}`,{filename:fileName,contentType:XLSX_MIME,bytes});
+          const manifest=[...(excelEntry?[excelEntry]:[]),...snaps.manifest];
+          const {data:outbox,error:insertErr}=await admin.from("qcms_notification_outbox").insert({tenant_id:tenantId,event_key:schedule.event_key,recipient_email:recipient.email,recipient_name:recipient.name||null,subject,body_text:fullText,body_html:bodyHtml,context:{...ctx,schedule_key:schedule.schedule_key,record_count:rows.length,attachment_name:fileName,run_every_days:every,export_format:"XLSX",attachments:[fileName,...snaps.attachments.map((a)=>a.filename)]},template_key:schedule.template_key||schedule.event_key,attachment_manifest:manifest,dedupe_key:dedupe,is_automatic:true,scheduled_for:now.toISOString(),status:"SENDING",attempts:1}).select("id").single(); if(insertErr){await removeGenerated(admin,manifest);throw insertErr;}
           try {
-            await transporter.sendMail({from:settings.sender_name?`"${String(settings.sender_name).replaceAll('"','')}" <${settings.sender_email}>`:settings.sender_email,to:recipient.name?`"${recipient.name.replaceAll('"','')}" <${recipient.email}>`:recipient.email,replyTo:settings.reply_to||undefined,subject,text:bodyText,html:html(bodyText),attachments:[{filename:fileName,content:Buffer.from(bytes),contentType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}]});
+            await transporter.sendMail({from:settings.sender_name?`"${String(settings.sender_name).replaceAll('"','')}" <${settings.sender_email}>`:settings.sender_email,to:recipient.name?`"${recipient.name.replaceAll('"','')}" <${recipient.email}>`:recipient.email,replyTo:settings.reply_to||undefined,subject,text:fullText,html:bodyHtml,attachments:[{filename:fileName,content:Buffer.from(bytes),contentType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},...snaps.attachments]});
+            await removeGenerated(admin,manifest);
             await admin.from("qcms_notification_outbox").update({status:"SENT",sent_at:new Date().toISOString(),last_error:null,updated_at:new Date().toISOString()}).eq("id",outbox.id); sent+=1;
           } catch(error) {
             const message=error instanceof Error?error.message:String(error); await admin.from("qcms_notification_outbox").update({status:"FAILED",last_error:message.slice(0,2000),updated_at:new Date().toISOString()}).eq("id",outbox.id); failed+=1;

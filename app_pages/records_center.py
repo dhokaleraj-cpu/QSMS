@@ -302,8 +302,9 @@ def _open_selected_record_for_edit(table: str, record: dict) -> None:
     elif table == "npd_process_flows":
         if record.get("part_id"): st.session_state["npd_flow_part"] = str(record.get("part_id"))
         route = "npd-process-flow"
-    elif table == "ppap_projects":
-        st.session_state["apqp_project_edit_request_id"] = record_id; route = "apqp"
+    elif table in {"ppap_projects", "ppap_documents"}:
+        project_id = record_id if table == "ppap_projects" else str(record.get("ppap_project_id") or "")
+        st.session_state["apqp_project_edit_request_id"] = project_id; route = "apqp"
     elif table == "qc_calculation_records":
         route = "qc-calculation-records"
     elif table == "quality_complaints":

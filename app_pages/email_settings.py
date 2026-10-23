@@ -300,3 +300,16 @@ def render() -> None:
             frame = pd.DataFrame([{ "Created": r.get("created_at"), "Event": r.get("event_key"), "Recipient": r.get("recipient_email"), "CC": "; ".join(r.get("cc_emails") or []), "Subject": r.get("subject"), "Attachments": len(r.get("attachment_manifest") or []), "Automatic": bool(r.get("is_automatic", False)), "Status": r.get("status"), "Attempts": r.get("attempts"), "Sent": r.get("sent_at"), "Last Error": r.get("last_error") } for r in outbox])
             portal_table(frame, hide_index=True, width="stretch", height=460)
         else: st.info("No notification outbox records yet.")
+
+    with stage_section("F", "REMINDER ATTACHMENTS", "Scheduled reminder e-mails (PO confirmation, PO approval overdue, open / overdue digests) carry a table of every record, an Excel sheet and the latest print-layout PDF of each Purchase Order / report. QCMS prepares these PDFs automatically in the background; use the button to prepare them now.", key="email_reminder_attachments"):
+        from core import document_snapshots
+        summary = document_snapshots.snapshot_summary(repo)
+        m = st.columns(3, gap="small")
+        m[0].metric("Prepared PDF attachments", int(summary.get("count") or 0))
+        m[1].metric("Last prepared", str(summary.get("last_generated_at") or "-")[:16].replace("T", " "))
+        m[2].metric("Waiting / outdated", "-" if summary.get("pending") is None else int(summary.get("pending") or 0))
+        if st.button("Prepare attachments now", key="email_prepare_reminder_attachments", width="stretch"):
+            with st.spinner("Preparing Purchase Order / report PDFs for the reminder e-mails…"):
+                prepared = document_snapshots.refresh_pending(25, repo=repo)
+            save_success_popup(f"Prepared {prepared} PDF attachment(s) for the reminder e-mails.", queue_for_rerun=True); st.rerun()
+        st.caption("A PDF is attached only while it matches the current record; after an edit it is prepared again automatically (within 30 minutes of QCMS use) or with the button above.")

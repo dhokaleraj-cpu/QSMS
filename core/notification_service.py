@@ -312,27 +312,37 @@ class NotificationService:
         )
         return {"bucket": self.bucket, "object_path": path, "file_name": safe_name, "mime_type": "application/pdf", "generated": True}
 
+    # R36b: customer details are internal - PDFs for an e-mail with any external recipient, and the reminder
+    # snapshots (which the scheduled reminders also send to suppliers), are rendered without customer data.
+    customer_safe: bool = False
+
+    def _safe_payload(self, payload: Any) -> Any:
+        if not self.customer_safe:
+            return payload
+        from core.customer_privacy import strip_customer
+        return strip_customer(payload)
+
     def _generated_report(self, related_table: str, related_id: str) -> tuple[str, bytes] | None:
         try:
             if related_table == "rmtc_approvals":
                 from core.reporting import rmtc_record_pdf_bytes
                 from core.rmtc_service import RMTCService
                 service = RMTCService(); service.repo = self.repo
-                payload = service.report_payload(related_id)
+                payload = self._safe_payload(service.report_payload(related_id))
                 number = (payload.get("rmtc") or {}).get("rmtc_number") or "RMTC"
                 return f"{number}.pdf", rmtc_record_pdf_bytes(payload)
             if related_table == "inspection_reports":
                 from core.inspection_service import InspectionService
                 from core.reporting import dimensional_record_pdf_bytes
                 service = InspectionService(); service.repo = self.repo
-                payload = service.dimensional_report_payload(related_id)
+                payload = self._safe_payload(service.dimensional_report_payload(related_id))
                 number = (payload.get("report") or {}).get("report_number") or "Dimensional_Report"
                 return f"{number}.pdf", dimensional_record_pdf_bytes(payload)
             if related_table == "lab_tests":
                 from core.inspection_service import InspectionService
                 from core.reporting import metlab_record_pdf_bytes
                 service = InspectionService(); service.repo = self.repo
-                payload = service.metlab_report_payload(related_id)
+                payload = self._safe_payload(service.metlab_report_payload(related_id))
                 number = (payload.get("report") or {}).get("report_number") or "MetLAB_Report"
                 return f"{number}.pdf", metlab_record_pdf_bytes(payload)
             if related_table == "supply_purchase_orders":
@@ -346,6 +356,9 @@ class NotificationService:
                 if getattr(self, "po_print_options", None):
                     # R24: sections chosen in the email panel for this send.
                     header = {**header, "print_options": dict(self.po_print_options)}
+                if self.customer_safe:
+                    from core.customer_privacy import supplier_safe_po
+                    header, items = supplier_safe_po(header, items)
                 return f"{header.get('po_number') or 'Purchase_Order'}.pdf", purchase_order_pdf_bytes(header, items)
             if related_table == "supply_po_confirmations":
                 from core.purchase_order_reporting import purchase_order_pdf_bytes
@@ -361,6 +374,9 @@ class NotificationService:
                     return None
                 if getattr(self, "po_print_options", None):
                     header = {**header, "print_options": dict(self.po_print_options)}
+                if self.customer_safe:
+                    from core.customer_privacy import supplier_safe_po
+                    header, items = supplier_safe_po(header, items)
                 return f"{header.get('po_number') or 'Purchase_Order'}.pdf", purchase_order_pdf_bytes(header, items)
             if related_table == "quality_complaints":
                 # Lazy import avoids a startup module cycle while reusing the exact
@@ -375,17 +391,33 @@ class NotificationService:
                 from core.inward_service import InwardService
                 from core.reporting import material_inward_record_pdf_bytes
                 service = InwardService(); service.repo = self.repo
-                payload = service.report_payload(related_id)
+                payload = self._safe_payload(service.report_payload(related_id))
                 number = (payload.get("inward") or {}).get("inward_number") or "Material_Inward"
                 return f"{number}.pdf", material_inward_record_pdf_bytes(payload)
         except Exception:
             return None
         return None
 
+    @staticmethod
+    def _mask_customer_text(text: str, safe_ctx: Mapping[str, Any], full_ctx: Mapping[str, Any]) -> str:
+        """Remove customer values that a free-typed subject / body may still carry (external e-mails)."""
+        out = str(text or "")
+        for key, value in full_ctx.items():
+            low = str(key).lower()
+            if (low.startswith("customer") or low in {"master_reference_no"}) and isinstance(value, (str, int, float)):
+                token = str(value).strip()
+                if len(token) >= 3:
+                    out = out.replace(token, "—")
+        return out
+
     def _record_attachments(self, related_table: str, related_id: str) -> list[dict]:
         entity_type = _ENTITY_TYPES.get(related_table)
         if not entity_type:
             return []
+        if self.customer_safe:
+            from core.customer_privacy import CUSTOMER_ONLY_ENTITY_TYPES
+            if entity_type in CUSTOMER_ONLY_ENTITY_TYPES:
+                return []
         try:
             rows = self.repo.select(
                 "document_attachments",
@@ -420,6 +452,9 @@ class NotificationService:
         manifest: list[dict] = []
         if include_generated_pdf:
             generated = self._generated_report(table, rid)
+            if generated and not self.__dict__.get("po_print_options"):
+                # R36: reuse this rendering as the record's reminder-attachment snapshot.
+                self._last_rendered = (table, rid, generated)
             if generated:
                 stored = self._persist_generated_pdf(generated[0], generated[1])
                 if stored:
@@ -532,13 +567,6 @@ class NotificationService:
         if not email:
             return None
 
-        template_subject = (template or {}).get("subject_template") or (route or {}).get("subject_template")
-        template_body = (template or {}).get("body_template")
-        final_subject = _template_text(template_subject, enriched) if template_subject else str(subject or f"QCMS · {event.replace('_', ' ').title()}").strip()
-        final_body = _template_text(template_body, enriched) if template_body else str(body_text or "").strip()
-        if not final_body:
-            final_body = f"QCMS workflow notification\nDocument: {enriched.get('document_no') or '-'}\nNext stage: {enriched.get('next_stage') or '-'}"
-
         cc = [str(v).strip() for v in (cc_emails or []) if str(v).strip()]
         if route and bool(route.get("department_cc")):
             cc.extend(self.department_emails(str(route.get("department") or ""), exclude=[email]))
@@ -559,9 +587,29 @@ class NotificationService:
             if value and value.casefold() != email.casefold() and value.casefold() not in {x.casefold() for x in final_cc}:
                 final_cc.append(value)
 
+        # R36b: customer details are internal. Any outside recipient (supplier, vendor, steel mill, OSP vendor, any
+        # non-company address) gets a customer-safe e-mail: customer fields blanked, customer-free PDFs, no customer documents.
+        from core.customer_privacy import external_recipients, internal_directory, scrub_context
+        outside = external_recipients([email, *final_cc], internal_directory(self.repo))
+        self.customer_safe = bool(outside)
+        render_ctx = scrub_context(enriched) if outside else enriched
+        if outside:
+            enriched = {**enriched, "customer_safe": True, "external_recipients": outside}
+        template_subject = (template or {}).get("subject_template") or (route or {}).get("subject_template")
+        template_body = (template or {}).get("body_template")
+        final_subject = _template_text(template_subject, render_ctx) if template_subject else str(subject or f"QCMS · {event.replace('_', ' ').title()}").strip()
+        final_body = _template_text(template_body, render_ctx) if template_body else str(body_text or "").strip()
+        if not final_body:
+            final_body = f"QCMS workflow notification\nDocument: {render_ctx.get('document_no') or '-'}\nNext stage: {render_ctx.get('next_stage') or '-'}"
+        if outside:
+            final_subject, final_body = self._mask_customer_text(final_subject, render_ctx, enriched), self._mask_customer_text(final_body, render_ctx, enriched)
+
         pdf_flag = bool((template or {}).get("include_generated_pdf", True)) if include_generated_pdf is None else bool(include_generated_pdf)
         docs_flag = bool((template or {}).get("include_record_attachments", True)) if include_record_attachments is None else bool(include_record_attachments)
-        manifest = self.attachment_manifest(related_table, related_id, include_generated_pdf=pdf_flag, include_record_attachments=docs_flag)
+        try:
+            manifest = self.attachment_manifest(related_table, related_id, include_generated_pdf=pdf_flag, include_record_attachments=docs_flag)
+        finally:
+            self.customer_safe = False
 
         payload = {
             "event_key": event,
@@ -581,12 +629,28 @@ class NotificationService:
             "status": "PENDING",
         }
         try:
-            return self.repo.insert("qcms_notification_outbox", payload)
+            row = self.repo.insert("qcms_notification_outbox", payload)
         except Exception as exc:
             # A scheduled dedupe key may already exist. Treat that as a safe skip.
             if dedupe_key and "duplicate" in str(exc).casefold():
                 return None
             raise
+        self._refresh_snapshot_async(related_table, related_id)
+        return row
+
+    def _refresh_snapshot_async(self, related_table: str | None, related_id: str | None) -> None:
+        """R36: keep the record's print-layout PDF snapshot current for the scheduled reminder
+        e-mails (edge functions attach it). Background thread; never blocks or raises."""
+        try:
+            table = str(related_table or "").strip(); rid = str(related_id or "").strip()
+            if not table or not rid:
+                return
+            # R36b: snapshots are always rendered customer-safe (never reuse an internal e-mail rendering).
+            rendered = None
+            from core import document_snapshots
+            document_snapshots.refresh_async(table, rid, repo=self.repo, rendered=rendered)
+        except Exception:
+            pass
 
     @staticmethod
     def _invoke(outbox_ids: list[str]) -> dict:

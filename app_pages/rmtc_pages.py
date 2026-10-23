@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 from core.ui import portal_table
+from core.report_filters import report_register
 
 from core.access import current_permissions
 from core.password_edit import password_reopen_for_edit
@@ -816,7 +817,7 @@ def render_records()->None:
 
     section_bar('RMTC REGISTER','The selected record and actions are placed above this full-width table.')
     df=pd.DataFrame([{'QCMS RMTC':r.get('rmtc_number'),'Supplier RMTC':r.get('certificate_reference'),'RMTC Date':r.get('certificate_date'),'Primary Part':(parts.get(str(r.get('part_id'))) or {}).get('part_number'),'Supplier':(suppliers.get(str(r.get('supplier_id'))) or {}).get('party_name'),'Steel Mill':(mills.get(str(r.get('steel_mill_id'))) or {}).get('party_name'),'Heat Number':r.get('heat_number'),'Internal Heat Code':r.get('heat_code'),'Steel Quantity kg':r.get('certificate_quantity'),'Validation':r.get('validation_result'),'Workflow':r.get('status'),'Disposition':r.get('disposition'),'Decision Date':r.get('decision_at')} for r in filtered])
-    portal_table(style_status_dataframe(df),hide_index=True,width='stretch',height=600)
+    report_register(df,'rmtc_register','RMTC Register',height=600,style=style_status_dataframe)  # R36b: filters + filtered exports
 
 
 def render_approval()->None:

@@ -62,6 +62,24 @@ LABEL_FIELDS: dict[str, tuple[str, tuple[str, ...]]] = {
     "approved_by_employee_id": ("employees", ("employee_code", "first_name", "last_name")),
 }
 
+# R36b: inventory / stock data sources for the Report Builder (security-invoker views, RLS applies).
+INVENTORY_SOURCES: tuple[dict[str, Any], ...] = (
+    {"table": "v_qcms_stock_by_stage", "record_type": "Stock by Stage (per part)", "module": "Inventory", "module_key": "SUPPLY_CHAIN",
+     "columns": ("part_number", "fsi_part_number", "customer_name", "material_grade", "rm_at_fsi_kg", "rm_at_forger_kg",
+                 "forging_pending_at_forger_pcs", "forging_received_pcs", "machining_wip_pcs", "machined_pending_fg_pcs", "fg_stock_pcs",
+                 "dispatched_pcs", "pending_order_pcs")},
+    {"table": "v_qcms_rm_stock_by_heat", "record_type": "RM Stock by Heat / Grade / Section", "module": "Inventory", "module_key": "SUPPLY_CHAIN",
+     "columns": ("heat_number", "material_grade", "rm_section", "supplier_name", "rmtc_number", "part_numbers", "opening_kg", "received_kg", "dispatched_kg", "balance_kg")},
+    {"table": "v_qcms_forging_stock_by_supplier", "record_type": "Forging Stock by Supplier", "module": "Inventory", "module_key": "SUPPLY_CHAIN",
+     "columns": ("supplier_name", "part_number", "fsi_part_number", "customer_name", "rm_sent_kg", "rm_at_forger_kg", "forging_ordered_pcs", "forging_received_pcs", "forging_pending_pcs")},
+    {"table": "v_qcms_stock_movement_ledger", "record_type": "Stock Movement Ledger", "module": "Inventory", "module_key": "SUPPLY_CHAIN",
+     "columns": ("movement_date", "movement_type", "stage", "direction", "part_number", "heat_number", "party_name", "reference_no", "qty_kg", "qty_pcs")},
+    {"table": "v_qsms_osp_register", "record_type": "OSP Stock at Vendors", "module": "Inventory", "module_key": "OSP_TRANSACTIONS",
+     "columns": ("osp_job_number", "vendor_name", "part_number", "heat_number", "process_name", "dispatch_date", "quantity_dispatched", "quantity_received", "quantity_outstanding", "status")},
+    {"table": "v_qsms_heat_global_balance_report", "record_type": "Heat Global Steel Balance", "module": "Inventory", "module_key": "MATERIAL_INWARD",
+     "columns": ("heat_number", "global_steel_quantity_kg", "inward_steel_quantity_kg", "committed_steel_quantity_kg", "available_unallocated_steel_quantity_kg", "osp_quantity_at_vendor_pcs")},
+)
+
 
 def pretty(column: str) -> str:
     text = str(column).replace("_id", "").replace("_", " ").strip()

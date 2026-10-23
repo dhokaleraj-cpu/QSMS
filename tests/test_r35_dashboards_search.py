@@ -162,6 +162,8 @@ kpi_dashboards.render()
 
 
 def test_global_search_page_renders_everything(monkeypatch):
+    import pytest
+    pytest.importorskip("pyarrow")  # R36 clickable result grid uses st.dataframe (pyarrow ships with Streamlit on the server)
     from streamlit.testing.v1 import AppTest
     from core.repository import Repository
 
@@ -187,6 +189,25 @@ global_search.render()
     assert not app.exception
     labels = [b.label for b in app.button]
     assert "Bend Test Report" in labels and "Bend Test Records" in labels
-    picker = app.selectbox(key="gs_rec_pick_all")
-    assert any("MLAB-D9-26-00219" in str(option) for option in picker.options)
+    # R36: results are a clickable grid (click a row = open the record)
+    assert any("MLAB-D9-26-00219" in df.value.to_csv() for df in app.dataframe)  # to_csv: str() truncates columns
     assert any("RECORDS" in str(m.value) for m in app.markdown)
+
+
+def test_r36_search_opens_every_record_and_masters_first():
+    src = (ROOT / "app_pages/global_search.py").read_text()
+    assert "selectable_table(" in src and 'on_select="rerun"' in (ROOT / "core/ui.py").read_text() and "_CHILD_PARENT" in src and "_record_viewer" in src and "_ATTACHMENT_OWNER" in src
+    sql = (ROOT / "supabase/migrations/20261022120000_qcms_r36_global_search_masters.sql").read_text()
+    for table in ("material_grade_elements", "test_plans", "gauge_fixture_assets", "part_standard_links", "pfmea_headers"):
+        assert f'"{table}"' in sql, table
+    assert "when cl.relname in ('parts', 'parties', 'material_grades'" in sql
+    from app_pages import global_search as gs
+
+    class Repo:
+        def select(self, table, eq=None, limit=None):
+            data = {("inspection_plan_characteristics", "c1"): {"id": "c1", "inspection_plan_id": "p1"},
+                    ("inspection_plans", "p1"): {"id": "p1", "part_id": "x"}}
+            row = data.get((table, (eq or {}).get("id")))
+            return [row] if row else []
+    table, row = gs._resolve_target(Repo(), "inspection_plan_characteristics", {"id": "c1", "inspection_plan_id": "p1"})
+    assert table == "inspection_plans" and row["id"] == "p1"

@@ -64,7 +64,7 @@ def default_layout(doc: str) -> dict[str, Any]:
     doc = str(doc or "").upper()
     layout: dict[str, Any] = {"preset": DEFAULT_PRESET, **PRESETS[DEFAULT_PRESET], "labels": {}, "company_name": "", "footer_text": ""}
     if doc == "PURCHASE_ORDER":
-        layout.update({"title": "PURCHASE ORDER", "show_approval_stamp": True, **{flag: True for flag in PO_SECTIONS.values()}})
+        layout.update({"title": "PURCHASE ORDER", "show_approval_stamp": True, **{flag: flag != "show_source_reference" for flag in PO_SECTIONS.values()}})  # R36b: customer refs internal
     else:
         # Quality reports keep the approved Design B (R17/R18) unless the designer changes it.
         layout.update({"preset": "B1", **PRESETS["B1"], "rule": "#9AA5A5", "body_pt": 8.6, "heading_pt": 10.5})

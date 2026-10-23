@@ -17,7 +17,7 @@ from core.ui import safe
 from core.repository import Repository
 from core.record_audit import annotate_transaction_rows
 from core.ui import kpi_grid, page_header, record_widget_token, save_success_popup, section_bar, stage_section, status_chip
-from core.db_errors import db_message
+from core.db_errors import db_message, missing_fields_message
 
 
 ORDER_STATUSES = ["OPEN", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"]
@@ -835,6 +835,69 @@ def _default_apqp_tasks() -> list[tuple[int, str, str]]:
     ]
 
 
+APQP_SUBMISSION_LEVELS = ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"]
+APQP_PROJECT_STATUSES = ["IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"]
+APQP_EDIT_REQUEST_KEY = "apqp_project_edit_request_id"
+APQP_SELECTOR_KEY = "apqp_project_selector"
+
+
+def apqp_resolve_selection(requested: Any, current: Any, options: list[str]) -> str:
+    """R36b: decide which APQP project the selector shows on this run.
+
+    The old code tested ``requested in options`` while ``requested`` defaulted to "" -
+    and "" (New APQP Project) is always an option - so every rerun forced the selector
+    back to New.  Existing projects could never be opened and every Save inserted again.
+    Only a real (non-empty) open/edit request may override the user's current choice.
+    """
+    requested = str(requested or "").strip()
+    current = str(current or "").strip()
+    if requested and requested in options:
+        return requested
+    return current if current in options else ""
+
+
+def apqp_project_errors(
+    *, project_code: str, part_id: str, customer_id: str, target_date: Any,
+    projects: list[dict], existing_id: str = "",
+) -> list[str]:
+    """Field-wise validation of the APQP project header before any database call."""
+    errors: list[str] = []
+    code = str(project_code or "").strip()
+    if not code:
+        errors.append("Project / NPD Number - required.")
+    else:
+        clash = next((row for row in projects if str(row.get("project_code") or "").strip().casefold() == code.casefold()
+                      and str(row.get("id")) != str(existing_id or "")), None)
+        if clash:
+            errors.append(f"Project / NPD Number - '{code}' already exists. Open it from the APQP Project Register and use Edit instead of creating a duplicate.")
+    if not str(part_id or "").strip():
+        errors.append("Part Number - select an active part.")
+    if not str(customer_id or "").strip():
+        errors.append("Customer - select an active customer.")
+    if not isinstance(target_date, date):
+        errors.append("Target PPAP Submission - select a valid date (DD-MM-YYYY).")
+    return errors
+
+
+def apqp_filter_projects(projects: list[dict], term: str, part_labels: Mapping[str, str], customer_labels: Mapping[str, str], status: str = "ALL") -> list[dict]:
+    needle = str(term or "").strip().casefold()
+    rows = []
+    for row in projects:
+        if status != "ALL" and str(row.get("status") or "") != status:
+            continue
+        haystack = " ".join(str(value or "") for value in (
+            row.get("project_code"), part_labels.get(str(row.get("part_id")), ""), customer_labels.get(str(row.get("customer_id")), ""),
+            row.get("submission_level"), row.get("reason"), row.get("coordinator"), row.get("status"), row.get("remarks"),
+        )).casefold()
+        if not needle or needle in haystack:
+            rows.append(row)
+    return rows
+
+
+def _apqp_open(project_id: str) -> None:
+    st.session_state[APQP_EDIT_REQUEST_KEY] = str(project_id or "")
+
+
 def render_apqp() -> None:
     page_header("APQP")
     repo = Repository(); perms = current_permissions("NPD_APQP")
@@ -842,21 +905,70 @@ def render_apqp() -> None:
     if not parts or not customers:
         st.info("Active Part and Customer records are required for APQP project tracking.")
         return
-    part_labels = {str(row["id"]): with_status(part_label(row), row) for row in parts}; customer_labels = {str(row["id"]): party_label(row) for row in customers}
     projects = repo.select("ppap_projects", order_by="target_submission_date", limit=2000)
+    # Saved projects keep their part/customer even when that master was later made inactive,
+    # so opening an old project never silently swaps it to the first active part on Save.
+    missing_parts = sorted({str(row.get("part_id")) for row in projects if row.get("part_id")} - {str(row["id"]) for row in parts})
+    missing_customers = sorted({str(row.get("customer_id")) for row in projects if row.get("customer_id")} - {str(row["id"]) for row in customers})
+    if missing_parts:
+        parts = parts + repo.select("parts", in_={"id": missing_parts}, limit=len(missing_parts))
+    if missing_customers:
+        customers = customers + repo.select("parties", in_={"id": missing_customers}, limit=len(missing_customers))
+    part_labels = {str(row["id"]): with_status(part_label(row), row) for row in parts}; customer_labels = {str(row["id"]): party_label(row) for row in customers}
     project_options = [""] + [str(row["id"]) for row in projects]
     project_labels = {str(row["id"]): with_status(f"{row.get('project_code')} · {part_labels.get(str(row.get('part_id')), '')}", row) for row in projects}
-    requested_project = str(st.session_state.pop("apqp_project_edit_request_id", "") or "")
-    if requested_project in project_options:
-        st.session_state["apqp_project_selector"] = requested_project
-    elif st.session_state.get("apqp_project_selector") not in project_options:
-        st.session_state["apqp_project_selector"] = ""
+
+    # Records Centre / Global Search / register Edit buttons / post-save reopen all use one key.
+    requested_project = st.session_state.pop(APQP_EDIT_REQUEST_KEY, "")
+    resolved = apqp_resolve_selection(requested_project, st.session_state.get(APQP_SELECTOR_KEY), project_options)
+    if st.session_state.get(APQP_SELECTOR_KEY) != resolved:
+        st.session_state[APQP_SELECTOR_KEY] = resolved
+
+    section_bar("APQP PROJECT REGISTER", "Search saved APQP projects and open one to view / edit")
+    f1, f2, f3 = st.columns([3, 1.4, 1.2], gap="small")
+    search_term = f1.text_input("Search APQP Projects", key="apqp_register_search", placeholder="Project / NPD number, part, customer, coordinator, remarks")
+    status_filter = f2.selectbox("Status", ["ALL", *APQP_PROJECT_STATUSES], key="apqp_register_status")
+    with f3:
+        st.write("")
+        if st.button("New APQP Project", icon=":material/add_circle:", width="stretch", key="apqp_new_project", disabled=not perms["can_create"]):
+            st.session_state[APQP_SELECTOR_KEY] = ""  # selector is created further down, so this is allowed
+            st.rerun()
+    filtered = apqp_filter_projects(projects, search_term, part_labels, customer_labels, status_filter)
+    if not projects:
+        st.caption("No APQP project saved yet. Create the first one in Section A.")
+    elif not filtered:
+        st.caption("No APQP project matches the search.")
+    else:
+        shown = filtered[:40]
+        head = st.columns([1.4, 2.6, 2.2, 1.1, 1.1, 0.9, 1.0], gap="small")
+        for col, label in zip(head, ["Project / NPD No.", "Part Number", "Customer", "PPAP Target", "Status", "Done %", ""]):
+            col.markdown(f"**{label}**")
+        for row in shown:
+            row_id = str(row["id"])
+            cols = st.columns([1.4, 2.6, 2.2, 1.1, 1.1, 0.9, 1.0], gap="small", vertical_alignment="center")
+            cols[0].markdown(safe(row.get("project_code") or ""))
+            cols[1].markdown(safe(part_labels.get(str(row.get("part_id")), "")))
+            cols[2].markdown(safe(customer_labels.get(str(row.get("customer_id")), "")))
+            target = _optional_date(row.get("target_submission_date"))
+            cols[3].markdown(target.strftime("%d-%m-%Y") if target else "")
+            cols[4].markdown(status_chip(row.get("status")), unsafe_allow_html=True)
+            cols[5].markdown(f"{float(row.get('completion_percent') or 0):.0f}%")
+            edit_label = "Edit" if perms["can_edit"] else "View"
+            if cols[6].button(edit_label, key=f"apqp_edit_{row_id}", icon=":material/edit:" if perms["can_edit"] else ":material/visibility:", width="stretch",
+                              type="primary" if row_id == resolved else "secondary"):
+                _apqp_open(row_id)
+                st.rerun()
+        if len(filtered) > len(shown):
+            st.caption(f"Showing {len(shown)} of {len(filtered)} matching projects. Refine the search to narrow the list.")
+
     selected_id = st.selectbox(
         "Open / Edit APQP Project", project_options,
-        format_func=lambda value: "New APQP Project" if not value else project_labels[value],
-        key="apqp_project_selector",
+        format_func=lambda value: "New APQP Project" if not value else project_labels.get(value, value),
+        key=APQP_SELECTOR_KEY,
     )
     existing = next((row for row in projects if str(row["id"]) == selected_id), None)
+    if existing:
+        st.caption(f"Editing saved APQP project **{safe(existing.get('project_code'))}** - Save updates this record (no new record is created).")
     default_part_id = str((existing or {}).get("part_id") or parts[0]["id"])
     linked_customer = str((next((row for row in parts if str(row["id"]) == default_part_id), {}) or {}).get("customer_id") or "")
     default_customer_id = str((existing or {}).get("customer_id") or linked_customer or customers[0]["id"])
@@ -864,6 +976,9 @@ def render_apqp() -> None:
     coordinator_options, coordinator_option_to_id = _employee_option_maps(employees, [str((existing or {}).get("coordinator") or "")])
     coordinator_id_to_option = {employee_id: label for label, employee_id in coordinator_option_to_id.items() if employee_id}
     existing_coordinator_option = coordinator_id_to_option.get(str((existing or {}).get("coordinator_employee_id") or "")) or (f"Legacy · {(existing or {}).get('coordinator')}" if (existing or {}).get("coordinator") else "— Not assigned —")
+    can_save = bool(perms["can_edit"]) if existing else bool(perms["can_create"])
+    existing_level = str((existing or {}).get("submission_level") or "Level 3")
+    existing_status = str((existing or {}).get("status") or "IN_PROGRESS")
 
     apqp_scope = record_widget_token("apqp-project-entry", existing or {}, selected=selected_id or "new")
     with stage_section("A", 'APQP PROJECT HEADER', key="npd_apqp_render_apqp_a"):
@@ -872,39 +987,54 @@ def render_apqp() -> None:
             project_code = c[0].text_input("Project / NPD Number", value=str((existing or {}).get("project_code") or ""))
             part_id = c[1].selectbox("Part Number", list(part_labels), index=list(part_labels).index(default_part_id) if default_part_id in part_labels else 0, format_func=lambda value: part_labels[value])
             customer_id = c[2].selectbox("Customer", list(customer_labels), index=list(customer_labels).index(default_customer_id) if default_customer_id in customer_labels else 0, format_func=lambda value: customer_labels[value])
-            submission_level = c[3].selectbox("PPAP Submission Level", ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"], index=max(0, ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"].index(str((existing or {}).get("submission_level") or "Level 3"))) if str((existing or {}).get("submission_level") or "Level 3") in ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"] else 2)
+            submission_level = c[3].selectbox("PPAP Submission Level", APQP_SUBMISSION_LEVELS, index=APQP_SUBMISSION_LEVELS.index(existing_level) if existing_level in APQP_SUBMISSION_LEVELS else 2)
             c = st.columns(4, gap="small")
             target_date = c[0].date_input("Target PPAP Submission", value=_parse_date((existing or {}).get("target_submission_date"), date.today() + timedelta(days=60)), format="DD-MM-YYYY")
             coordinator_option = c[1].selectbox("APQP Coordinator", coordinator_options, index=coordinator_options.index(existing_coordinator_option) if existing_coordinator_option in coordinator_options else 0)
             reason = c[2].text_input("Reason / Program", value=str((existing or {}).get("reason") or "New Product Development"))
-            status = c[3].selectbox("Project Status", ["IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"], index=["IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"].index(str((existing or {}).get("status") or "IN_PROGRESS")) if str((existing or {}).get("status") or "IN_PROGRESS") in ["IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"] else 0)
+            status = c[3].selectbox("Project Status", APQP_PROJECT_STATUSES, index=APQP_PROJECT_STATUSES.index(existing_status) if existing_status in APQP_PROJECT_STATUSES else 0)
             remarks = st.text_area("APQP Remarks", value=str((existing or {}).get("remarks") or ""), height=70)
-            save = st.form_submit_button("Save APQP Project", type="primary", width="stretch", disabled=not (perms["can_create"] or perms["can_edit"]))
+            save = st.form_submit_button("Update APQP Project" if existing else "Save APQP Project", type="primary", width="stretch", disabled=not can_save)
+        if not can_save:
+            st.caption("Edit permission for NPD / APQP is required to change this project." if existing else "Create permission for NPD / APQP is required to add a project.")
         if save:
+            errors = apqp_project_errors(project_code=project_code, part_id=part_id, customer_id=customer_id, target_date=target_date,
+                                         projects=projects, existing_id=str((existing or {}).get("id") or ""))
+            if errors:
+                st.error(missing_fields_message(errors))
+            else:
+                try:
+                    coordinator_employee_id = coordinator_option_to_id.get(coordinator_option)
+                    coordinator_snapshot = employee_labels.get(str(coordinator_employee_id)) if coordinator_employee_id else (coordinator_option.removeprefix("Legacy · ").strip() if coordinator_option.startswith("Legacy · ") else None)
+                    payload = {"project_code": project_code.strip(), "part_id": part_id, "customer_id": customer_id, "submission_level": submission_level, "reason": reason.strip() or None, "target_submission_date": target_date.isoformat(), "coordinator_employee_id": coordinator_employee_id, "coordinator": coordinator_snapshot, "status": status, "remarks": remarks.strip() or None}
+                    if existing:
+                        saved = repo.update("ppap_projects", str(existing["id"]), payload)
+                        message = f"APQP Project {payload['project_code']} updated successfully."
+                    else:
+                        saved = repo.insert("ppap_projects", {**payload, "completion_percent": 0})
+                        message = f"APQP Project {payload['project_code']} saved successfully. It is now open for editing and gate updates."
+                    save_success_popup(message, queue_for_rerun=True)
+                    _apqp_open(str((saved or {}).get("id") or (existing or {}).get("id") or ""))
+                    st.rerun()
+                except Exception as exc:
+                    st.error(db_message(exc))
+
+    project_id = str((existing or {}).get("id") or "")
+    if not project_id:
+        st.caption("Save the APQP project header to load and update its APQP gates / deliverables.")
+        return
+    project = repo.get("ppap_projects", project_id) or existing
+    tasks = repo.select("ppap_documents", eq={"ppap_project_id": project_id}, order_by="sequence_no", limit=500)
+    with stage_section("B", 'APQP PHASE STATUS', key="npd_apqp_render_apqp_b"):
+        if not tasks and st.button("Load Standard APQP Gates", width="stretch", disabled=not (perms["can_create"] or perms["can_edit"]), key=f"apqp_load_gates_{project_id}"):
             try:
-                if not project_code.strip():
-                    raise ValueError("Project / NPD Number is required.")
-                coordinator_employee_id = coordinator_option_to_id.get(coordinator_option)
-                coordinator_snapshot = employee_labels.get(str(coordinator_employee_id)) if coordinator_employee_id else (coordinator_option.removeprefix("Legacy · ").strip() if coordinator_option.startswith("Legacy · ") else None)
-                payload = {"project_code": project_code.strip(), "part_id": part_id, "customer_id": customer_id, "submission_level": submission_level, "reason": reason.strip() or None, "target_submission_date": target_date.isoformat(), "coordinator_employee_id": coordinator_employee_id, "coordinator": coordinator_snapshot, "status": status, "remarks": remarks.strip() or None}
-                saved = repo.update("ppap_projects", str(existing["id"]), payload) if existing else repo.insert("ppap_projects", {**payload, "completion_percent": 0})
-                save_success_popup("APQP Project saved successfully.", queue_for_rerun=True)
-                st.session_state["apqp_selected_project"] = str(saved["id"])
+                for sequence_no, phase, activity in _default_apqp_tasks():
+                    repo.insert("ppap_documents", {"ppap_project_id": project_id, "sequence_no": sequence_no, "apqp_phase": phase, "document_type": activity, "status": "NOT_STARTED"})
+                save_success_popup("Standard APQP gates loaded successfully.", queue_for_rerun=True)
+                _apqp_open(project_id)
                 st.rerun()
             except Exception as exc:
                 st.error(db_message(exc))
-
-        project_id = str((existing or {}).get("id") or st.session_state.get("apqp_selected_project") or "")
-        if not project_id:
-            return
-        project = repo.get("ppap_projects", project_id) or existing
-        tasks = repo.select("ppap_documents", eq={"ppap_project_id": project_id}, order_by="sequence_no", limit=500)
-    with stage_section("B", 'APQP PHASE STATUS', key="npd_apqp_render_apqp_b"):
-        if not tasks and st.button("Load Standard APQP Gates", width="stretch", disabled=not perms["can_create"]):
-            for sequence_no, phase, activity in _default_apqp_tasks():
-                repo.insert("ppap_documents", {"ppap_project_id": project_id, "sequence_no": sequence_no, "apqp_phase": phase, "document_type": activity, "status": "NOT_STARTED"})
-            save_success_popup("Standard APQP gates loaded successfully.", queue_for_rerun=True)
-            st.rerun()
         if tasks:
             completed = sum(str(row.get("status") or "") in {"COMPLETED", "APPROVED", "NOT_APPLICABLE"} for row in tasks)
             completion = round(completed * 100 / len(tasks)) if tasks else 0
@@ -929,7 +1059,7 @@ def render_apqp() -> None:
                 "Due Date": _parse_date(row.get("due_date")) if row.get("due_date") else None, "Status": str(row.get("status") or "NOT_STARTED"),
                 "Approved Date": _parse_date(row.get("approved_date")) if row.get("approved_date") else None, "Remarks": row.get("remarks") or "",
             } for row in tasks])
-            task_owner_options, task_owner_option_to_id = _employee_option_maps(employees, [str(row.get("owner") or "") for row in tasks if not row.get("owner_employee_id")])
+            task_owner_options, task_owner_option_to_id = _employee_option_maps(employees, [str(row.get("owner") or "") for row in tasks if str(row.get("owner_employee_id") or "") not in employee_labels])
             edited = st.data_editor(
                 task_frame, num_rows="dynamic", hide_index=True, width="stretch", height=430, key=f"apqp_tasks_{project_id}", disabled=not perms["can_edit"],
                 column_config={

@@ -13,7 +13,7 @@ SECTION_OPTIONS: tuple[tuple[str, str], ...] = (
     ("show_reference", "Reference Details"),
     ("show_old_po", "Old PO Details"),
     ("show_ship_to", "Ship To"),
-    ("show_source_reference", "PO Source Reference"),
+    ("show_source_reference", "PO Source Ref (internal only)"),
     ("show_technical", "RM Details & Technical Data"),
     ("show_price_history", "Price Revision History"),
     ("show_special_instructions", "Comments / Special Instructions"),
@@ -26,7 +26,8 @@ def effective_options(header: Mapping[str, Any] | None = None) -> dict[str, bool
     from core.print_designer import saved_layout
     layout = saved_layout("PURCHASE_ORDER")
     own = dict((header or {}).get("print_options") or {})
-    return {flag: bool(own.get(flag, layout.get(flag, True))) for flag, _ in SECTION_OPTIONS}
+    # R36b: customer PO references are internal - the source reference prints only when ticked for an internal copy.
+    return {flag: bool(own.get(flag, layout.get(flag, flag != "show_source_reference"))) for flag, _ in SECTION_OPTIONS}
 
 
 def section_checkboxes(key: str, current: Mapping[str, Any] | None = None, *, disabled: bool = False, columns: int = 3) -> dict[str, bool]:

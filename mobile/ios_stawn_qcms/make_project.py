@@ -5,6 +5,11 @@ SRC = os.path.join(ROOT, "STAWNQCMS")
 VERSION = sys.argv[1] if len(sys.argv) > 1 else "1.1.0"
 BUILD = sys.argv[2] if len(sys.argv) > 2 else "2"
 BUNDLE = "com.stawnprecision.qcms"
+# R36: free Apple ID ("Personal Team") build - no paid membership. Personal teams cannot sign Push Notifications,
+# so the push entitlement is left out and a separate bundle id is used (STAWN_PERSONAL_TEAM=1).
+PERSONAL = os.environ.get("STAWN_PERSONAL_TEAM", "") == "1"
+if PERSONAL:
+    BUNDLE = os.environ.get("STAWN_BUNDLE_ID", "") or "com.stawnprecision.qcms.free"
 # Apple Developer Team ID: argument 3, env STAWN_APPLE_TEAM_ID or ~/.stawn_apple_team_id (kept on every regeneration)
 TEAM = sys.argv[3] if len(sys.argv) > 3 else os.environ.get("STAWN_APPLE_TEAM_ID", "")
 if not TEAM:
@@ -71,11 +76,13 @@ target_common = {
     "PRODUCT_NAME": "STAWN QCMS", "CODE_SIGN_ENTITLEMENTS": "STAWNQCMS/" + ENTITLEMENTS, "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator", "SUPPORTS_MACCATALYST": "NO", "TARGETED_DEVICE_FAMILY": "1,2",
     "SWIFT_EMIT_LOC_STRINGS": "NO", "ENABLE_PREVIEWS": "YES",
 }
+if PERSONAL:
+    target_common.pop("CODE_SIGN_ENTITLEMENTS", None)
 td, tr = uid("targetdebug"), uid("targetrelease")
 P(td, "{isa = XCBuildConfiguration; buildSettings = " + settings(target_common) + "; name = Debug; }")
 # Release (Archive / TestFlight) signs with the Apple Distribution certificate + App Store profile:
 # no registered iPhone / iPad is needed for TestFlight.
-P(tr, "{isa = XCBuildConfiguration; buildSettings = " + settings({**target_common, "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Distribution"}) + "; name = Release; }")
+P(tr, "{isa = XCBuildConfiguration; buildSettings = " + settings(target_common if PERSONAL else {**target_common, "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Distribution"}) + "; name = Release; }")
 pl, tl = uid("projlist"), uid("targetlist")
 P(pl, "{isa = XCConfigurationList; buildConfigurations = (" + pd + ", " + pr + "); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; }")
 P(tl, "{isa = XCConfigurationList; buildConfigurations = (" + td + ", " + tr + "); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; }")

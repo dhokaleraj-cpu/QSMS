@@ -3,6 +3,8 @@
 #   ./BUILD_STAWN_QCMS_iOS.command              -> generate project, build check (simulator), open Xcode
 #   ./BUILD_STAWN_QCMS_iOS.command testflight   -> archive + upload to App Store Connect (TestFlight)
 #   ./BUILD_STAWN_QCMS_iOS.command adhoc        -> archive + export a signed .ipa to ~/Downloads (registered devices)
+#   ./BUILD_STAWN_QCMS_iOS.command free         -> FREE Apple ID (no paid membership): install on your own iPhone / iPad
+#                                                  by cable; app must be re-installed every 7 days; no push notifications
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
@@ -19,6 +21,33 @@ if ! xcodebuild -version >/dev/null 2>&1; then
   exit 1
 fi
 xcodebuild -version
+if [ "$MODE" = "free" ]; then
+  say "FREE APPLE ID BUILD (Personal Team)"
+  PTEAM="${STAWN_PERSONAL_TEAM_ID:-}"
+  [ -z "$PTEAM" ] && [ -f "$HOME/.stawn_apple_personal_team_id" ] && PTEAM="$(tr -d ' \n\r' < "$HOME/.stawn_apple_personal_team_id")"
+  if [ -z "$PTEAM" ]; then
+    # Xcode > Settings > Accounts stores the free "Personal Team" with isFreeProvisioningTeam = 1
+    PTEAM="$(defaults read com.apple.dt.Xcode IDEProvisioningTeams 2>/dev/null | tr -d '\n' | sed -n 's/.*isFreeProvisioningTeam = 1;[^}]*teamID = \([A-Z0-9]\{10\}\).*/\1/p' | head -1)"
+  fi
+  if [ -z "$PTEAM" ]; then
+    PTEAM="$(defaults read com.apple.dt.Xcode IDEProvisioningTeams 2>/dev/null | tr -d '\n' | sed -n 's/.*teamID = \([A-Z0-9]\{10\}\);[^}]*isFreeProvisioningTeam = 1.*/\1/p' | head -1)"
+  fi
+  if [ -n "$PTEAM" ]; then echo "$PTEAM" > "$HOME/.stawn_apple_personal_team_id"; echo "Personal Team: $PTEAM"; else
+    echo "Personal Team not found yet: Xcode > Settings > Accounts > + > Apple ID, sign in with your normal Apple ID, then run this again."
+    echo "(You can also pick 'Your Name (Personal Team)' in Signing & Capabilities after Xcode opens.)"
+  fi
+  STAWN_PERSONAL_TEAM=1 python3 make_project.py "$VERSION" "$BUILD_NO" "$PTEAM" || exit 1
+  open STAWNQCMS.xcodeproj
+  echo
+  echo "Install on your iPhone / iPad with a FREE Apple ID:"
+  echo "  1. Connect the iPhone / iPad by cable, unlock it, tap 'Trust This Computer'."
+  echo "  2. On the device: Settings > Privacy & Security > Developer Mode > On (it restarts)."
+  echo "  3. In Xcode choose the device at the top, then press Run (the play button)."
+  echo "  4. First launch on the device: Settings > General > VPN & Device Management > your Apple ID > Trust."
+  echo "Limits of a free Apple ID: the app stops opening after 7 days - connect and press Run again;"
+  echo "max 3 apps; no push notifications (the in-app bell and inbox still work)."
+  exit 0
+fi
 # ---- Apple Team ID: env > ~/.stawn_apple_team_id > signing certificate in the Keychain (saved once) ----
 TEAM_ID="${STAWN_APPLE_TEAM_ID:-}"
 if [ -z "$TEAM_ID" ] && [ -f "$HOME/.stawn_apple_team_id" ]; then TEAM_ID="$(tr -d ' \n\r' < "$HOME/.stawn_apple_team_id")"; fi

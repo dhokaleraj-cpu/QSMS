@@ -65,3 +65,14 @@ The build script now finds your Team ID from the signing certificate in the Keyc
 `~/.stawn_apple_team_id`, so the regenerated Xcode project keeps the Team.
 
 GitHub workflow **STAWN QCMS iOS iPadOS App Build** compiles the app on every push (no signing).
+
+## Without a paid Apple Developer membership (free Apple ID, R36)
+1. Xcode > Settings > Accounts > + > Apple ID: sign in with your normal Apple ID ("Your Name (Personal Team)" appears).
+2. `cd ~/QSMS/mobile/ios_stawn_qcms && ./BUILD_STAWN_QCMS_iOS.command free`
+3. Connect the iPhone / iPad by cable, Trust, turn on Developer Mode, pick the device in Xcode, press Run.
+4. On the device: Settings > General > VPN & Device Management > your Apple ID > Trust.
+Limits: re-install every 7 days (connect + Run), max 3 free apps per device, no push notifications (bundle id
+`com.stawnprecision.qcms.free`, push entitlement left out). The in-app bell / inbox, KPI dashboard and everything else work.
+
+## iPad
+The same app is universal (iPhone + iPad). Use any route above with the iPad connected / signed in to TestFlight.

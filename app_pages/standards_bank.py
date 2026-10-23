@@ -5,6 +5,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 from core.ui import portal_table
+from core.report_filters import report_register
 
 from core.access import current_permissions
 from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, AttachmentSlot, render_attachment_manager
@@ -308,4 +309,4 @@ def render_records() -> None:
         }
         for r in rows
     ])
-    portal_table(frame, hide_index=True, width="stretch", height=620)
+    report_register(frame, "standards_register", "Customer Standards Register", height=620)  # R36b

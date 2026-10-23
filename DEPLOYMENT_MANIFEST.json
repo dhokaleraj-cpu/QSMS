@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R35b",
+  "release_revision": "R36b",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -618,5 +618,19 @@
     "stawn_logo_and_app_name_left_android_ios_top_bar",
     "stawn_developer_console_all_rights_any_company_profile_branding_admin_tools",
     "developer_console_in_left_rail"
+  ],
+  "r36_changes": [
+    "reminder_emails_html_tables_part_customer_supplier_qty_price_delivery",
+    "reminder_emails_po_metlab_pdf_and_excel_attachments_via_document_snapshots",
+    "developer_only_trial_data_purge_with_linked_records_archive_backup",
+    "global_search_all_masters_ranked_first_click_row_opens_record_parent_or_record_view",
+    "ios_free_apple_id_personal_team_build_mode"
+  ],
+  "r36b_changes": [
+    "customer_details_internal_only_supplier_safe_emails_pdfs_reminders_po_print",
+    "apqp_open_save_edit_fix_register",
+    "inventory_stock_reports_five_views",
+    "filters_on_all_reports",
+    "report_builder_in_reports_with_inventory_sources"
   ]
 }

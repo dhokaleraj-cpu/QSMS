@@ -119,11 +119,16 @@ def test_po_print_omits_customer_identity_adds_part_description_and_compacts_ter
             "customer_delivery_date": "2026-09-30",
         }],
     }
+    # R36b: supplier copy (default) carries no customer PO reference at all
+    default_text = "\n".join((p.extract_text() or "") for p in PdfReader(BytesIO(purchase_order_pdf_bytes(header, [item]))).pages)
+    assert "CPO-778899" not in default_text and "SECRET CUSTOMER NAME MUST NOT PRINT" not in default_text
+    # internal copy (section ticked) shows the source reference, stamped NOT FOR SUPPLIER
+    header = {**header, "print_options": {"show_source_reference": True}}
     pdf = purchase_order_pdf_bytes(header, [item])
     reader = PdfReader(BytesIO(pdf))
     all_text = "\n".join((p.extract_text() or "") for p in reader.pages)
     first_text = reader.pages[0].extract_text() or ""
-    assert "SECRET CUSTOMER NAME MUST NOT PRINT" not in all_text
+    assert "SECRET CUSTOMER NAME MUST NOT PRINT" not in all_text and "NOT FOR SUPPLIER" in first_text
     assert "PO SOURCE REFERENCE" in first_text
     assert "CPO-778899" in first_text
     assert "40256626" in first_text

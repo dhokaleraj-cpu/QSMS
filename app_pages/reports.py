@@ -9,6 +9,7 @@ from core.ui import portal_table
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from core.reporting import report_pdf_bytes, safe_excel_sheet_name
+from core.report_filters import active_filter_text, render_filters, report_exports, totals_row
 from core.config import get_settings
 from core.repository import Repository
 from core.ui import disposition_cards, page_header, section_bar, stage_section, subpage_navigation
@@ -23,6 +24,12 @@ def _number(value: Any) -> float:
 
 def _normalize_heat(value: Any) -> str:
     return "".join(ch for ch in str(value or "").upper() if ch.isalnum())
+
+
+def _col_sum(frame: pd.DataFrame, column: str) -> float:
+    if frame is None or frame.empty or column not in frame.columns:
+        return 0.0
+    return float(pd.to_numeric(frame[column], errors="coerce").fillna(0).sum())
 
 
 def _frame(rows: Iterable[dict], columns: dict[str, str]) -> pd.DataFrame:
@@ -126,6 +133,20 @@ def render_home() -> None:
         },
     ])
 
+    section_bar("Inventory, Report Builder & Master Lists")
+    builder = (
+        ("inventory-reports", "Inventory & Stock Reports", "Stock by stage, RM stock by heat / grade / section, forging & OSP stock, FG & dispatch, stock movement ledger.", ":material/inventory_2:"),
+        ("report-builder", "Report Builder", "Build your own report from any QCMS or inventory dataset: columns, filters, group, totals, chart, Excel.", ":material/query_stats:"),
+        ("master-lists", "Master List Excel", "Clean Excel lists of every master: parts, customers, suppliers, grades, processes, employees…", ":material/table_chart:"),
+    )
+    cols = st.columns(3, gap="small")
+    for col, (path, title, desc, icon) in zip(cols, builder):
+        with col:
+            with st.container(border=True, key=f"report_card_{path}"):
+                st.markdown(f"#### {title}")
+                st.caption(desc)
+                st.page_link(st.session_state["_qsms_pages"][path], label="Open Report", icon=icon, width="stretch")
+
     section_bar("Operational & Supply Chain Reports")
     operational = (
         ("supply-chain-report", "Supply Chain Order / Dispatch MIS", "Customer, part, monthly schedule, dispatch, pending quantity and achievement.", ":material/analytics:"),
@@ -197,29 +218,6 @@ def render_heat_transactions() -> None:
     summary_rows = [row for row in summary if not selected_key or str(row.get("normalized_heat_number")) == selected_key]
     transaction_rows = [dict(row, fsi_part_number=part_fsi.get(str(row.get("part_number") or ""))) for row in transactions if not selected_key or str(row.get("normalized_heat_number")) == selected_key]
 
-    disposition_cards([
-        {
-            "label": "Global Heat Qty kg",
-            "value": f"{sum(_number(row.get('global_steel_quantity_kg')) for row in summary_rows):,.3f}",
-            "color": "#1D4ED8", "background": "#EFF6FF",
-        },
-        {
-            "label": "Committed Steel kg",
-            "value": f"{sum(_number(row.get('committed_steel_quantity_kg')) for row in summary_rows):,.3f}",
-            "color": "#C2410C", "background": "#FFF7ED",
-        },
-        {
-            "label": "Global Heat Balance kg",
-            "value": f"{sum(_number(row.get('available_unallocated_steel_quantity_kg')) for row in summary_rows):,.3f}",
-            "color": "#15803D", "background": "#F0FDF4",
-        },
-        {
-            "label": "Transactions",
-            "value": len(transaction_rows),
-            "color": "#7C3AED", "background": "#F5F3FF",
-        },
-    ])
-
     summary_frame = _frame(summary_rows, {
         "Heat Number": "heat_number",
         "Global Heat Qty kg": "global_steel_quantity_kg",
@@ -251,12 +249,22 @@ def render_heat_transactions() -> None:
         "Production Qty pcs": "production_quantity_pcs",
         "Status": "transaction_status",
     })
+    kpi_slot = st.container()
     with stage_section("A", "HEAT GLOBAL BALANCE", key="reports_heat_transactions_a"):
-        portal_table(summary_frame, hide_index=True, width="stretch", height=min(400, 100 + max(len(summary_frame), 1) * 36))
+        summary_frame = render_filters(summary_frame, "heat_global_balance", default_cols=["Heat Number", "Last Activity"])
+        portal_table(totals_row(summary_frame, "Heat Number"), hide_index=True, width="stretch", height=min(400, 100 + max(len(summary_frame) + 1, 1) * 36))
     with stage_section("B", "HEAT TRANSACTION HISTORY", "Chronological genealogy from RMTC planning through Material Inward and OSP movement.", key="reports_heat_transactions_b"):
+        transaction_frame = render_filters(transaction_frame, "heat_transactions", default_cols=["Transaction Type", "Part Number", "Supplier / OSP Vendor", "Status", "Transaction Date"])
         portal_table(transaction_frame, hide_index=True, width="stretch", height=560)
         suffix = selected_key or "ALL_HEATS"
         export_sections = {"Heat Balance": summary_frame, "Transactions": transaction_frame}
+        with kpi_slot:
+            disposition_cards([
+                {"label": "Global Heat Qty kg", "value": f"{_col_sum(summary_frame, 'Global Heat Qty kg'):,.3f}", "color": "#1D4ED8", "background": "#EFF6FF"},
+                {"label": "Committed Steel kg", "value": f"{_col_sum(summary_frame, 'Committed Steel kg'):,.3f}", "color": "#C2410C", "background": "#FFF7ED"},
+                {"label": "Global Heat Balance kg", "value": f"{_col_sum(summary_frame, 'Global Heat Balance kg'):,.3f}", "color": "#15803D", "background": "#F0FDF4"},
+                {"label": "Transactions", "value": len(transaction_frame), "color": "#7C3AED", "background": "#F5F3FF"},
+            ])
         c1, c2 = st.columns(2, gap="small")
         with c1:
             st.download_button(
@@ -272,7 +280,7 @@ def render_heat_transactions() -> None:
                 data=report_pdf_bytes(
                     "HEAT NUMBER GLOBAL BALANCE WITH TRANSACTIONS",
                     export_sections,
-                    subtitle=f"Heat filter: {selected}",
+                    subtitle=f"Heat filter: {selected}" + (f" · {active_filter_text('heat_transactions')}" if active_filter_text("heat_transactions") else ""),
                 ),
                 file_name=f"QCMS_Heat_Global_Balance_{suffix}.pdf",
                 mime="application/pdf",
@@ -309,34 +317,6 @@ def render_osp_balance() -> None:
     ]
     inward_ids = {str(row.get("inward_lot_id")) for row in filtered_balances}
     filtered_jobs = [row for row in jobs if str(row.get("source_inward_lot_id")) in inward_ids]
-
-    disposition_cards([
-        {
-            "label": "Released Material pcs",
-            "value": f"{sum(_number(row.get('released_quantity_pcs')) for row in filtered_balances):,.0f}",
-            "color": "#1D4ED8", "background": "#EFF6FF",
-        },
-        {
-            "label": "OSP Out pcs",
-            "value": f"{sum(_number(row.get('osp_out_quantity_pcs')) for row in filtered_balances):,.0f}",
-            "color": "#C2410C", "background": "#FFF7ED",
-        },
-        {
-            "label": "OSP Inward pcs",
-            "value": f"{sum(_number(row.get('osp_inward_quantity_pcs')) for row in filtered_balances):,.0f}",
-            "color": "#15803D", "background": "#F0FDF4",
-        },
-        {
-            "label": "Balance to Send OSP pcs",
-            "value": f"{sum(_number(row.get('balance_to_send_osp_pcs')) for row in filtered_balances):,.0f}",
-            "color": "#7C3AED", "background": "#F5F3FF",
-        },
-        {
-            "label": "At OSP Vendor pcs",
-            "value": f"{sum(_number(row.get('quantity_at_osp_vendor_pcs')) for row in filtered_balances):,.0f}",
-            "color": "#B45309", "background": "#FFFBEB",
-        },
-    ])
 
     balance_frame = _frame(filtered_balances, {
         "Heat Number": "heat_number",
@@ -376,12 +356,23 @@ def render_osp_balance() -> None:
         "Final Quality Decision": "receipt_quality_disposition",
         "Status": "status",
     })
+    kpi_slot = st.container()
     with stage_section("A", "HEAT / PART OSP BALANCE", key="reports_osp_balance_a"):
-        portal_table(balance_frame, hide_index=True, width="stretch", height=min(480, 100 + max(len(balance_frame), 1) * 36))
+        balance_frame = render_filters(balance_frame, "osp_heat_balance", default_cols=["Part Number", "FSI Part Number", "OSP Vendors", "Inward Date"])
+        portal_table(totals_row(balance_frame, "Heat Number"), hide_index=True, width="stretch", height=min(480, 100 + max(len(balance_frame) + 1, 1) * 36))
     with stage_section("B", "OSP TRANSACTION DETAILS", key="reports_osp_balance_b"):
+        job_frame = render_filters(job_frame, "osp_transactions_report", default_cols=["OSP Vendor", "OSP Process", "Status", "Material Out Date"])
         portal_table(job_frame, hide_index=True, width="stretch", height=540)
         suffix = (heat_key or "ALL_HEATS") + ("_" + selected_part.replace("/", "-") if selected_part != "All Part Numbers" else "")
         export_sections = {"OSP Balance": balance_frame, "OSP Transactions": job_frame}
+        with kpi_slot:
+            disposition_cards([
+                {"label": "Released Material pcs", "value": f"{_col_sum(balance_frame, 'Released Qty pcs'):,.0f}", "color": "#1D4ED8", "background": "#EFF6FF"},
+                {"label": "OSP Out pcs", "value": f"{_col_sum(balance_frame, 'OSP Out Qty pcs'):,.0f}", "color": "#C2410C", "background": "#FFF7ED"},
+                {"label": "OSP Inward pcs", "value": f"{_col_sum(balance_frame, 'OSP Inward Qty pcs'):,.0f}", "color": "#15803D", "background": "#F0FDF4"},
+                {"label": "Balance to Send OSP pcs", "value": f"{_col_sum(balance_frame, 'Balance to Send OSP pcs'):,.0f}", "color": "#7C3AED", "background": "#F5F3FF"},
+                {"label": "At OSP Vendor pcs", "value": f"{_col_sum(balance_frame, 'Qty at OSP Vendor pcs'):,.0f}", "color": "#B45309", "background": "#FFFBEB"},
+            ])
         c1, c2 = st.columns(2, gap="small")
         with c1:
             st.download_button(
@@ -403,3 +394,68 @@ def render_osp_balance() -> None:
                 mime="application/pdf",
                 icon=":material/picture_as_pdf:", width="stretch",
             )
+
+
+# ----------------------------------------------------------------------------- R36b NPD / APQP status reports
+def _status_register(table: str, columns: dict[str, str], *, order_by: str, key: str, title: str, date_cols: list[str], default_cols: list[str]) -> pd.DataFrame:
+    from core import report_builder as rb
+    repo = Repository()
+    try:
+        rows = repo.select(table, order_by=order_by, limit=5000)
+    except Exception as exc:
+        st.warning(f"{title} could not be read: {exc}")
+        rows = []
+    readable = rb.readable_frame(rows, lambda t: repo.select(t, limit=5000), keep_ids=True) if rows else pd.DataFrame()
+    frame = pd.DataFrame([{label: row.get(source) for label, source in columns.items()} for row in readable.to_dict("records")], columns=list(columns))
+    return render_filters(frame, key, date_cols=date_cols, default_cols=default_cols)
+
+
+def render_npd_report() -> None:
+    subpage_navigation(
+        ("reports-home", "Reports", ":material/arrow_back:"),
+        ("npd-status", "NPD Status Workspace", ":material/timeline:"),
+        ("apqp-report", "APQP Status Report", ":material/assignment_turned_in:"),
+    )
+    page_header("NPD Status Report", "NPD orders by customer, part, status and delivery date with filters and exports", "Reports")
+    frame = _status_register(
+        "npd_orders",
+        {"Order Number": "order_number", "Part": "part_id", "Customer": "customer_id", "Order Qty pcs": "order_qty", "Order Date": "order_date",
+         "Start Date": "start_date", "Delivery Date": "delivery_date", "Status": "status", "Remarks": "remarks"},
+        order_by="delivery_date", key="npd_status_report", title="NPD orders",
+        date_cols=["Order Date", "Start Date", "Delivery Date"], default_cols=["Customer", "Part", "Status", "Delivery Date"],
+    )
+    today = pd.Timestamp.today().normalize()
+    due = pd.to_datetime(frame["Delivery Date"], errors="coerce") if not frame.empty else pd.Series(dtype="datetime64[ns]")
+    open_mask = ~frame["Status"].astype(str).str.upper().isin({"COMPLETED", "CLOSED", "CANCELLED"}) if not frame.empty else pd.Series(dtype=bool)
+    disposition_cards([
+        {"label": "NPD Orders", "value": len(frame), "color": "#1D4ED8", "background": "#EFF6FF"},
+        {"label": "Open", "value": int(open_mask.sum()) if not frame.empty else 0, "color": "#C2410C", "background": "#FFF7ED"},
+        {"label": "Overdue", "value": int((open_mask & (due < today)).sum()) if not frame.empty else 0, "color": "#DC2626", "background": "#FEF2F2"},
+        {"label": "Order Qty pcs", "value": f"{_col_sum(frame, 'Order Qty pcs'):,.0f}", "color": "#15803D", "background": "#F0FDF4"},
+    ])
+    portal_table(totals_row(frame, "Order Number") if not frame.empty else frame, hide_index=True, width="stretch", height=560)
+    report_exports(frame, "NPD Status Report", "npd_status_report")
+
+
+def render_apqp_report() -> None:
+    subpage_navigation(
+        ("reports-home", "Reports", ":material/arrow_back:"),
+        ("apqp", "APQP Workspace", ":material/assignment_turned_in:"),
+        ("npd-report", "NPD Status Report", ":material/timeline:"),
+    )
+    page_header("APQP Status Report", "APQP / PPAP projects by customer, part, coordinator, status and target date with filters and exports", "Reports")
+    frame = _status_register(
+        "ppap_projects",
+        {"Project": "project_code", "Part": "part_id", "Customer": "customer_id", "Submission Level": "submission_level", "Reason": "reason",
+         "Target Submission": "target_submission_date", "Coordinator": "coordinator", "Completion %": "completion_percent", "Status": "status", "Remarks": "remarks"},
+        order_by="target_submission_date", key="apqp_status_report", title="APQP projects",
+        date_cols=["Target Submission"], default_cols=["Customer", "Part", "Coordinator", "Status", "Target Submission"],
+    )
+    completion = pd.to_numeric(frame["Completion %"], errors="coerce") if not frame.empty else pd.Series(dtype=float)
+    disposition_cards([
+        {"label": "APQP Projects", "value": len(frame), "color": "#1D4ED8", "background": "#EFF6FF"},
+        {"label": "Average Completion", "value": f"{completion.mean():,.1f}%" if len(completion.dropna()) else "0%", "color": "#15803D", "background": "#F0FDF4"},
+        {"label": "Below 50%", "value": int((completion < 50).sum()) if len(completion) else 0, "color": "#C2410C", "background": "#FFF7ED"},
+    ])
+    portal_table(frame, hide_index=True, width="stretch", height=560)
+    report_exports(frame, "APQP Status Report", "apqp_status_report")

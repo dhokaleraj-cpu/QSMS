@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 from openpyxl.styles import PatternFill, Font
 from core.ui import portal_table
+from core.report_filters import render_filters
 
 from core.access import current_permissions, section_permissions
 from core.auth import current_employee_id, current_profile
@@ -2582,7 +2583,11 @@ def render_traceability() -> None:
         ctx=service.order_context(order); blob=" ".join(str(v or "") for v in ctx.values())+" "+" ".join(str(v or "") for r in linked.get(str(order["id"]),[]) for v in r.values())
         if not search or search.casefold() in blob.casefold(): matches.append(order)
     with stage_section("A","GLOBAL ORDER SEARCH RESULTS","Matching orders are shown as colour status cards.",key="supply_trace_search"):
-        frame=_order_display_rows(service,matches); _order_cards(frame,key="trace_cards"); _exports(frame.drop(columns=["_id"],errors="ignore"),"Supply Chain Global Search Results","supply_trace_search_results") if not frame.empty else st.info("No matching Supply Chain record found.")
+        frame=_order_display_rows(service,matches)
+        if not frame.empty:  # R36b: report filters (customer, part, grade, status, delivery date…)
+            frame=render_filters(frame,"supply_traceability",exclude=["_id"],default_cols=[c for c in ("Customer","Part Number","Material Grade","Display Status","Delivery Date") if c in frame.columns])
+            keep={str(v) for v in frame["_id"].tolist()}; matches=[r for r in matches if str(r["id"]) in keep]
+        _order_cards(frame,key="trace_cards"); _exports(frame.drop(columns=["_id"],errors="ignore"),"Supply Chain Global Search Results","supply_trace_search_results") if not frame.empty else st.info("No matching Supply Chain record found.")
         parts,parties,_=_maps(service); labels={str(r["id"]):with_status(service.order_label(r,parts,parties), r) for r in matches}; selected=st.selectbox("Matched Customer Order",list(labels),format_func=lambda v:labels[v],key="supply_trace_selected") if labels else None
         if selected: order=next(r for r in matches if str(r["id"])==selected); workflow_progress(_order_progress(service,order))
     if selected:
@@ -2622,6 +2627,7 @@ def render_order_mis() -> None:
         if selected_types: filtered=filtered[filtered["Order Type"].astype(str).isin(selected_types)]
         if selected_flows: filtered=filtered[filtered["Supply Flow"].astype(str).isin(selected_flows)]
         if selected_status: filtered=filtered[filtered["Status"].astype(str).isin(selected_status)]
+        filtered=render_filters(filtered,"supply_order_mis",default_cols=[c for c in ("Delivery Date","Latest Dispatch Date") if c in filtered.columns])  # R36b: date range + search
         ordered=float(filtered["Order / Schedule Qty pcs"].fillna(0).sum()) if not filtered.empty else 0.0
         dispatched=float(filtered["Dispatched pcs"].fillna(0).sum()) if not filtered.empty else 0.0
         pending=max(ordered-dispatched,0)

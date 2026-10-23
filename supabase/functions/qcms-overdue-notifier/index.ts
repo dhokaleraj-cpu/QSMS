@@ -3,6 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import nodemailer from "npm:nodemailer@6.9.16";
 import { PDFDocument, StandardFonts, rgb } from "npm:pdf-lib@1.17.1";
 import { Buffer } from "node:buffer";
+import { MAX_ATTACHMENT_BYTES, PO_LINE_HEADERS, clean, companyName, day, emailShell, htmlTable, poLineCells, poLineRows, poLineTotals, poUpdatedAt, SUPPLIER_SAFE_HIDDEN, supplierSafeLine, pruneColumns, removeGenerated, selectIn, snapshotAttachments, storeGenerated, textTable, toNumber, xlsxAttachment, type Cell, type Col, type PoLine, type SnapshotCache, type SnapshotRef } from "./reminder_kit.ts";
 
 const jsonHeaders = { "Content-Type": "application/json" };
 const BUCKET = "quality-documents";
@@ -20,7 +21,58 @@ type DigestRow = {
   escalation_employee_ids?: string[];
   supplier_id?: string;
   order_id?: string;
+  // R36: detail columns for the e-mail table / Excel (part number, customer, supplier, qty, price, delivery date)
+  part_number?: string;
+  part_description?: string;
+  customer?: string;
+  supplier?: string;
+  qty?: number | null;
+  uom?: string;
+  price?: number | null;
+  value?: number | null;
+  currency?: string;
+  delivery_date?: string;
+  details?: string;
+  po_id?: string;
+  po_lines?: PoLine[];
+  refs?: SnapshotRef[];
 };
+
+// R36: one table layout for every schedule; empty columns are dropped per e-mail.
+const DIGEST_HEADERS: Col[] = ["#", "Reference", "Part Number", "Description", "Customer", "Supplier", { label: "Qty", kind: "number" }, "UOM", { label: "Price", kind: "money" }, { label: "Value", kind: "money" }, "Currency", { label: "Due Date", kind: "date" }, { label: "Delivery Date", kind: "date" }, "Status", "Details"];
+const DIGEST_KEEP = ["#", "Reference", "Part Number", "Due Date", "Status"];
+function digestCells(rows: DigestRow[], external = false): Cell[][] {
+  // R36b: external copies show the FSI part number (legacy `part` field), never the customer part number.
+  return rows.map((r, i) => [i + 1, r.reference, external ? (r.part && r.part !== "-" ? r.part : "") : (r.part_number || (r.part && r.part !== "-" ? r.part : "")), r.part_description, r.customer, r.supplier, r.qty ?? null, r.uom, r.price ?? null, r.value ?? null, r.currency, r.due_date && r.due_date !== "-" ? r.due_date : "", r.delivery_date, r.status, r.details || r.quantity]);
+}
+// External (supplier / customer party) copies never disclose other parties: Customer columns are hidden, like the PO print.
+// R36b: customer details are internal - external copies also hide the customer part number and delivery date
+// (the Part Number column shows the FSI part number instead).
+const EXTERNAL_HIDDEN = new Set(["Customer", "Customer Order No", "Delivery Date"]);
+function hideColumns(headers: Col[], rows: Cell[][], hidden: Set<string>): { headers: Col[]; rows: Cell[][] } {
+  const idx = headers.map((h, i) => ({ label: typeof h === "string" ? h : h.label, i })).filter((x) => !hidden.has(x.label)).map((x) => x.i);
+  return { headers: idx.map((i) => headers[i]), rows: rows.map((r) => idx.map((i) => r[i])) };
+}
+function joinShort(values: string[], max = 3): string {
+  const unique = Array.from(new Set(values.map(clean).filter(Boolean)));
+  return unique.length > max ? `${unique.slice(0, max).join(", ")} +${unique.length - max}` : unique.join(", ");
+}
+function poAggregate(lines: PoLine[]): Partial<DigestRow> {
+  if (!lines.length) return {};
+  const uoms = Array.from(new Set(lines.map((l) => l.uom).filter(Boolean)));
+  const currencies = Array.from(new Set(lines.map((l) => l.currency).filter(Boolean)));
+  return {
+    part_number: joinShort(lines.map((l) => l.part_number || l.fsi_part_number)),
+    part_description: joinShort(lines.map((l) => l.description || l.material), 2),
+    customer: joinShort(lines.map((l) => l.customer)),
+    qty: uoms.length <= 1 ? lines.reduce((s, l) => s + (l.qty || 0), 0) : null,
+    uom: uoms.length === 1 ? uoms[0] : "",
+    price: lines.length === 1 ? lines[0].unit_price : null,
+    value: currencies.length <= 1 ? lines.reduce((s, l) => s + (l.line_value || 0), 0) : null,
+    currency: currencies.length === 1 ? currencies[0] : "",
+    delivery_date: lines[0].delivery_date,
+  };
+}
 
 function hex(bytes: ArrayBuffer): string {
   return Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -122,6 +174,46 @@ async function digestPdf(title: string, localDate: string, rows: DigestRow[]): P
   return await pdf.save();
 }
 
+// R36: supplier / part / price details of RM and forging orders through their linked Purchase Order line and customer order.
+async function linkedOrderDetails(admin: any, tenantId: string, orders: Row[]) {
+  let lines: PoLine[] = []; let customerOrders: Row[] = [];
+  try {
+    lines = await poLineRows(admin, tenantId, orders.map((r) => String(r.purchase_order_id || "")).filter(Boolean));
+    customerOrders = await selectIn(admin, "supply_customer_orders", "id,customer_order_no,master_reference_no,customer_id,part_id,customer_delivery_date", tenantId, "id", orders.map((r) => String(r.customer_order_id || "")));
+  } catch (_e) { /* details are optional */ }
+  const byItem = new Map<string, PoLine>(lines.map((l) => [l.item_id, l]));
+  const coMap = new Map<string, Row>(customerOrders.map((o) => [String(o.id), o]));
+  return {
+    detail(r: Row, maps: { parties: Map<string, Row>; parts: Map<string, Row> }, qty: number | null, uom: string): Partial<DigestRow> {
+      const line = byItem.get(String(r.purchase_order_item_id || "")) || lines.find((l) => l.po_id === String(r.purchase_order_id || ""));
+      const co = coMap.get(String(r.customer_order_id || "")) || {};
+      const part = maps.parts.get(String(co.part_id || "")) || {};
+      const customer = maps.parties.get(String(co.customer_id || "")) || {};
+      const price = line?.unit_price ?? null; const priceApplies = !line?.uom || unitFamily(line.uom) === unitFamily(uom);
+      const out: Partial<DigestRow> = {
+        part_number: clean(line?.part_number) || clean(part.part_number) || clean(part.fsi_part_number),
+        part_description: [clean(line?.description) || clean(part.part_name), clean(line?.material) ? `RM ${clean(line?.material)}` : ""].filter(Boolean).join(" · "),
+        customer: clean(customer.party_name) || clean(line?.customer), qty, uom,
+        price: priceApplies ? price : null, value: priceApplies && price !== null && qty !== null ? Math.round(qty * price * 100) / 100 : null, currency: line?.currency || "",
+        details: [line?.po_number ? `PO ${line.po_number}` : "", clean(co.customer_order_no) ? `Customer order ${clean(co.customer_order_no)}` : ""].filter(Boolean).join(" · "),
+      };
+      if (r.purchase_order_id) out.refs = [{ source_table: "supply_purchase_orders", record_id: String(r.purchase_order_id), updated_at: line ? poUpdatedAt(lines, String(r.purchase_order_id)) : "" }];
+      return out;
+    },
+  };
+}
+function unitFamily(uom: string): string {
+  const u = clean(uom).toUpperCase().replace(/[^A-Z]/g, "");
+  if (["KG", "KGS", "KGM", "KILOGRAM", "KILOGRAMS"].includes(u)) return "KG";
+  if (["PCS", "PC", "NOS", "NO", "EA", "EACH", "NUMBERS", "PIECES", "UNIT", "UNITS"].includes(u)) return "PCS";
+  return u;
+}
+function complaintDetail(c: Row, part: Row, party: Row): Partial<DigestRow> {
+  const name = clean(party.party_name) || clean(party.party_code);
+  const isCustomer = String(c.complaint_type || "").toUpperCase() === "CUSTOMER";
+  return { part_number: clean(part.part_number) || clean(part.fsi_part_number), part_description: clean(part.part_name), customer: isCustomer ? name : "", supplier: isCustomer ? "" : name, qty: toNumber(c.affected_quantity), uom: toNumber(c.affected_quantity) !== null ? "PCS" : "" };
+}
+
 async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate: string, maps: { parties: Map<string, Row>; parts: Map<string, Row>; employees: Map<string, Row>; approvalRoutes?: Row[] }): Promise<DigestRow[]> {
   const daysAhead = Number(schedule.days_ahead || 0); const includeOpen = Boolean(schedule.include_open); const includeOverdue = Boolean(schedule.include_overdue);
   const result: DigestRow[] = [];
@@ -135,11 +227,14 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
     for (const r of data) {
       if (["COMPLETED", "CLOSED", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
       const part = maps.parts.get(String(r.part_id)) || {}; const customer = maps.parties.get(String(r.customer_id)) || {};
-      pushIf({ reference: String(r.master_reference_no || r.customer_order_no || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(customer.party_name || "-"), due_date: String(r.customer_delivery_date || "-"), status: String(r.status || "OPEN"), quantity: `${n(r.order_qty_pcs)} pcs` }, r.customer_delivery_date);
+      const forger = maps.parties.get(String(r.forging_supplier_id || "")) || {};
+      pushIf({ reference: String(r.master_reference_no || r.customer_order_no || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(customer.party_name || "-"), due_date: String(r.customer_delivery_date || "-"), status: String(r.status || "OPEN"), quantity: `${n(r.order_qty_pcs)} pcs`,
+        part_number: clean(part.part_number) || clean(part.fsi_part_number), part_description: clean(part.part_name), customer: clean(customer.party_name) || clean(customer.party_code), supplier: clean(forger.party_name), qty: toNumber(r.order_qty_pcs), uom: "PCS", delivery_date: day(r.customer_delivery_date), details: clean(r.customer_order_no) ? `Customer order ${clean(r.customer_order_no)}` : "" }, r.customer_delivery_date);
     }
   } else if (schedule.schedule_key === "PO_PENDING_APPROVAL") {
     const { data = [] } = await admin.from("supply_purchase_orders").select("*").eq("tenant_id", tenantId).eq("approval_status", "PENDING_APPROVAL").limit(5000);
     const routes = maps.approvalRoutes || [];
+    const poLines = await poLineRows(admin, tenantId, data.filter((x: Row) => String(x.status || "").toUpperCase() !== "CANCELLED").map((x: Row) => String(x.id)));
     for (const r of data) {
       if (String(r.status || "").toUpperCase() === "CANCELLED") continue;
       const supplier = maps.parties.get(String(r.supplier_id)) || {}; const submitter = maps.employees.get(String(r.submitted_by_employee_id || "")) || {};
@@ -153,7 +248,10 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
       if (pendingDays >= 3) { const r3 = routeFor(3); if (r3?.employee_id) escalations.push(String(r3.employee_id)); }
       const primary = String(level1?.employee_id || submitter.reports_to_employee_id || "") || undefined;
       const status = pendingDays >= 1 ? `OVERDUE · LEVEL ${overdueLevel} · ${pendingDays} DAY(S)` : "PENDING APPROVAL";
-      result.push({ reference: String(r.po_number || "-"), part: String(r.po_type || "PURCHASE ORDER").replaceAll("_", " "), party: String(supplier.party_name || supplier.party_code || "-"), due_date: submittedDate, status, quantity: `Approval pending · ${pendingDays} day(s)`, supplier_id: String(r.supplier_id || ""), responsible_employee_id: primary, escalation_employee_ids: escalations });
+      const lines = poLines.filter((l) => l.po_id === String(r.id));
+      result.push({ reference: String(r.po_number || "-"), part: String(r.po_type || "PURCHASE ORDER").replaceAll("_", " "), party: String(supplier.party_name || supplier.party_code || "-"), due_date: submittedDate, status, quantity: `Approval pending · ${pendingDays} day(s)`, supplier_id: String(r.supplier_id || ""), responsible_employee_id: primary, escalation_employee_ids: escalations,
+        ...poAggregate(lines), supplier: clean(supplier.party_name) || clean(supplier.party_code), currency: lines.length ? poAggregate(lines).currency : clean(r.currency), value: lines.length ? poAggregate(lines).value : toNumber(r.subtotal), delivery_date: day(r.delivery_date), details: `${String(r.po_type || "PURCHASE ORDER").replaceAll("_", " ")} · approval pending ${pendingDays} day(s)`,
+        po_id: String(r.id), po_lines: lines, refs: [{ source_table: "supply_purchase_orders", record_id: String(r.id), updated_at: poUpdatedAt(lines, String(r.id), String(r.updated_at || "")) }] });
     }
   } else if (schedule.schedule_key === "RM_PROCUREMENT_PENDING_DUE") {
     const { data: orders = [] } = await admin.from("supply_customer_orders").select("*").eq("tenant_id", tenantId).eq("rm_procurement_required", true).limit(5000);
@@ -169,28 +267,36 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
       const pending = Math.max(Number(r.required_rm_kg || 0) - (ordered.get(String(r.id)) || 0), 0); if (pending <= 0.0001) continue;
       const part = maps.parts.get(String(r.part_id)) || {}; const customer = maps.parties.get(String(r.customer_id)) || {}; const leadDays = leadByPart.get(String(r.part_id)) || 0;
       const procurementDue = r.customer_delivery_date ? addDays(String(r.customer_delivery_date).slice(0,10), -leadDays) : r.customer_delivery_date;
-      pushIf({ reference: String(r.master_reference_no || r.customer_order_no || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(customer.party_name || "-"), due_date: String(procurementDue || r.customer_delivery_date || "-"), status: `RM PO PENDING · lead ${leadDays}d`, quantity: `${n(pending)} kg pending` }, procurementDue || r.customer_delivery_date);
+      pushIf({ reference: String(r.master_reference_no || r.customer_order_no || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(customer.party_name || "-"), due_date: String(procurementDue || r.customer_delivery_date || "-"), status: `RM PO PENDING · lead ${leadDays}d`, quantity: `${n(pending)} kg pending`,
+        part_number: clean(part.part_number) || clean(part.fsi_part_number), part_description: clean(part.part_name), customer: clean(customer.party_name) || clean(customer.party_code), qty: Math.round(pending * 1000) / 1000, uom: "KG", delivery_date: day(r.customer_delivery_date), details: `RM pending for ${n(r.order_qty_pcs)} pcs · lead time ${leadDays} day(s)` }, procurementDue || r.customer_delivery_date);
     }
   } else if (schedule.schedule_key === "RM_PO_OPEN_OVERDUE") {
     const { data = [] } = await admin.from("supply_rm_purchase_orders").select("*").eq("tenant_id", tenantId).limit(5000);
+    const open = data.filter((r: Row) => !["COMPLETED", "CLOSED", "CANCELLED"].includes(String(r.status || "").toUpperCase()));
+    const linked = await linkedOrderDetails(admin, tenantId, open);
     for (const r of data) {
       if (["COMPLETED", "CLOSED", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
       const supplier = maps.parties.get(String(r.rm_supplier_id)) || {};
-      pushIf({ reference: String(r.supplier_order_no || "-"), part: "Raw Material", party: String(supplier.party_name || supplier.party_code || "-"), due_date: String(r.expected_date || "-"), status: String(r.status || "OPEN"), quantity: `${n(r.ordered_qty_kg)} kg`, supplier_id: String(r.rm_supplier_id || "") }, r.expected_date);
+      const extra = linked.detail(r, maps, toNumber(r.ordered_qty_kg), "KG");
+      pushIf({ reference: String(r.supplier_order_no || "-"), part: "Raw Material", party: String(supplier.party_name || supplier.party_code || "-"), due_date: String(r.expected_date || "-"), status: String(r.status || "OPEN"), quantity: `${n(r.ordered_qty_kg)} kg`, supplier_id: String(r.rm_supplier_id || ""), ...extra, supplier: clean(supplier.party_name) || clean(supplier.party_code), delivery_date: day(r.expected_date) }, r.expected_date);
     }
   } else if (schedule.schedule_key === "FORGING_ORDER_OPEN_OVERDUE") {
     const { data = [] } = await admin.from("supply_forging_orders").select("*").eq("tenant_id", tenantId).limit(5000);
+    const open = data.filter((r: Row) => !["COMPLETED", "CLOSED", "CANCELLED"].includes(String(r.status || "").toUpperCase()));
+    const linked = await linkedOrderDetails(admin, tenantId, open);
     for (const r of data) {
       if (["COMPLETED", "CLOSED", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
       const supplier = maps.parties.get(String(r.forging_supplier_id)) || {};
-      pushIf({ reference: String(r.supplier_order_no || "-"), part: "Forging", party: String(supplier.party_name || supplier.party_code || "-"), due_date: String(r.expected_date || "-"), status: String(r.status || "OPEN"), quantity: `${n(r.order_qty_pcs)} pcs`, supplier_id: String(r.forging_supplier_id || "") }, r.expected_date);
+      const extra = linked.detail(r, maps, toNumber(r.order_qty_pcs), "PCS");
+      pushIf({ reference: String(r.supplier_order_no || "-"), part: "Forging", party: String(supplier.party_name || supplier.party_code || "-"), due_date: String(r.expected_date || "-"), status: String(r.status || "OPEN"), quantity: `${n(r.order_qty_pcs)} pcs`, supplier_id: String(r.forging_supplier_id || ""), ...extra, supplier: clean(supplier.party_name) || clean(supplier.party_code), delivery_date: day(r.expected_date) }, r.expected_date);
     }
   } else if (schedule.schedule_key === "OSP_RETURN_OPEN_OVERDUE") {
     const { data = [] } = await admin.from("osp_jobs").select("*").eq("tenant_id", tenantId).limit(5000);
     for (const r of data) {
       if (["COMPLETED", "REJECTED", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
       const vendor = maps.parties.get(String(r.vendor_id)) || {}; const part = maps.parts.get(String(r.part_id)) || {};
-      pushIf({ reference: String(r.osp_job_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(vendor.party_name || vendor.party_code || "-"), due_date: String(r.expected_return_date || "-"), status: String(r.status || "AT_VENDOR"), quantity: `${n(Number(r.quantity_dispatched || 0) - Number(r.quantity_received || 0))} pcs pending`, supplier_id: String(r.vendor_id || "") }, r.expected_return_date);
+      pushIf({ reference: String(r.osp_job_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(vendor.party_name || vendor.party_code || "-"), due_date: String(r.expected_return_date || "-"), status: String(r.status || "AT_VENDOR"), quantity: `${n(Number(r.quantity_dispatched || 0) - Number(r.quantity_received || 0))} pcs pending`, supplier_id: String(r.vendor_id || ""),
+        part_number: clean(part.part_number) || clean(part.fsi_part_number), part_description: clean(part.part_name), supplier: clean(vendor.party_name) || clean(vendor.party_code), qty: Math.max(0, Number(r.quantity_dispatched || 0) - Number(r.quantity_received || 0)), uom: "PCS", delivery_date: day(r.expected_return_date), details: [clean(r.process_specification), clean(r.dispatch_challan) ? `Challan ${clean(r.dispatch_challan)}` : "", `dispatched ${n(r.quantity_dispatched)} · received ${n(r.quantity_received)}`].filter(Boolean).join(" · ") }, r.expected_return_date);
     }
   } else if (schedule.schedule_key === "CALIBRATION_VALIDATION_DUE") {
     const [{ data: links = [] }, { data: assets = [] }, { data: processes = [] }] = await Promise.all([
@@ -201,20 +307,22 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
     const assetMap = new Map<string, Row>(assets.map((r: Row) => [String(r.id), r])); const processMap = new Map<string, Row>(processes.map((r: Row) => [String(r.id), r]));
     for (const r of links) {
       const asset = assetMap.get(String(r.asset_id)) || {}; const part = maps.parts.get(String(r.part_id)) || {}; const process = processMap.get(String(r.process_id)) || {};
-      pushIf({ reference: `${asset.asset_code || "ASSET"} · ${asset.asset_name || "Gauge / Fixture"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: `${process.process_code || ""} ${process.process_name || "General"}`.trim(), due_date: String(r.next_due_date || "-"), status: String(r.service_type || "CALIBRATION"), quantity: `${r.frequency_days || 365} day frequency`, responsible_employee_id: String(r.responsible_employee_id || "") || undefined }, r.next_due_date);
+      pushIf({ reference: `${asset.asset_code || "ASSET"} · ${asset.asset_name || "Gauge / Fixture"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: `${process.process_code || ""} ${process.process_name || "General"}`.trim(), due_date: String(r.next_due_date || "-"), status: String(r.service_type || "CALIBRATION"), quantity: `${r.frequency_days || 365} day frequency`, responsible_employee_id: String(r.responsible_employee_id || "") || undefined,
+        part_number: clean(part.part_number) || clean(part.fsi_part_number), part_description: clean(part.part_name), details: [`Asset ${clean(asset.asset_code) || "-"} ${clean(asset.asset_name)}`.trim(), `${clean(process.process_code)} ${clean(process.process_name) || "General"}`.trim(), `${r.frequency_days || 365} day frequency`, clean(asset.location)].filter(Boolean).join(" · ") }, r.next_due_date);
     }
   } else if (["CUSTOMER_COMPLAINT_OPEN_OVERDUE","SUPPLIER_COMPLAINT_OPEN_OVERDUE","COMPLAINT_CUSTOMER_OPEN_OVERDUE","COMPLAINT_SUPPLIER_OPEN_OVERDUE"].includes(String(schedule.schedule_key))) {
     const complaintType = ["CUSTOMER_COMPLAINT_OPEN_OVERDUE","COMPLAINT_CUSTOMER_OPEN_OVERDUE"].includes(String(schedule.schedule_key)) ? "CUSTOMER" : "SUPPLIER";
-    const { data = [] } = await admin.from("quality_complaints").select("id,complaint_number,complaint_type,party_id,part_id,subject,severity,target_closure_date,status,fourstar_responsible_employee_id,external_responsible_email").eq("tenant_id", tenantId).eq("complaint_type", complaintType).limit(5000);
+    const { data = [] } = await admin.from("quality_complaints").select("id,complaint_number,complaint_type,party_id,part_id,subject,severity,target_closure_date,status,fourstar_responsible_employee_id,external_responsible_email,affected_quantity,updated_at").eq("tenant_id", tenantId).eq("complaint_type", complaintType).limit(5000);
     for (const r of data) {
       if (["CLOSED", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
       const part = maps.parts.get(String(r.part_id)) || {}; const party = maps.parties.get(String(r.party_id)) || {};
-      pushIf({ reference: String(r.complaint_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(party.party_name || party.party_code || "-"), due_date: String(r.target_closure_date || "-"), status: `${String(r.severity || "").toUpperCase()} · ${String(r.status || "OPEN")}`, quantity: String(r.subject || "Complaint action pending"), supplier_id: String(r.party_id || ""), responsible_employee_id: String(r.fourstar_responsible_employee_id || "") || undefined }, r.target_closure_date);
+      pushIf({ reference: String(r.complaint_number || "-"), part: String(part.fsi_part_number || part.part_number || "-"), party: String(party.party_name || party.party_code || "-"), due_date: String(r.target_closure_date || "-"), status: `${String(r.severity || "").toUpperCase()} · ${String(r.status || "OPEN")}`, quantity: String(r.subject || "Complaint action pending"), supplier_id: String(r.party_id || ""), responsible_employee_id: String(r.fourstar_responsible_employee_id || "") || undefined,
+        ...complaintDetail(r, part, party), details: clean(r.subject) || "Complaint action pending", refs: [{ source_table: "quality_complaints", record_id: String(r.id), updated_at: String(r.updated_at || "") }] }, r.target_closure_date);
     }
   } else if (schedule.schedule_key === "COMPLAINT_FOLLOWUP_DUE") {
     const [{ data: actions = [] }, { data: complaints = [] }] = await Promise.all([
       admin.from("quality_complaint_actions").select("id,complaint_id,action_no,action_type,action_description,owner_employee_id,target_date,status").eq("tenant_id", tenantId).limit(10000),
-      admin.from("quality_complaints").select("id,complaint_number,complaint_type,party_id,part_id,subject,severity,status,fourstar_responsible_employee_id").eq("tenant_id", tenantId).limit(5000),
+      admin.from("quality_complaints").select("id,complaint_number,complaint_type,party_id,part_id,subject,severity,status,fourstar_responsible_employee_id,affected_quantity,updated_at").eq("tenant_id", tenantId).limit(5000),
     ]);
     const complaintMap = new Map<string, Row>(complaints.map((r: Row) => [String(r.id), r]));
     for (const action of actions) {
@@ -222,16 +330,18 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
       const complaint = complaintMap.get(String(action.complaint_id)) || {};
       if (!complaint.id || ["CLOSED", "CANCELLED"].includes(String(complaint.status || "").toUpperCase())) continue;
       const part = maps.parts.get(String(complaint.part_id)) || {}; const party = maps.parties.get(String(complaint.party_id)) || {};
-      pushIf({ reference: `${complaint.complaint_number || "COMPLAINT"} · Action ${action.action_no || "-"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: String(party.party_name || party.party_code || "-"), due_date: String(action.target_date || "-"), status: `${String(action.action_type || "FOLLOW-UP")} · ${String(action.status || "OPEN")}`, quantity: String(action.action_description || complaint.subject || "Follow-up action pending"), supplier_id: String(complaint.party_id || ""), responsible_employee_id: String(action.owner_employee_id || complaint.fourstar_responsible_employee_id || "") || undefined }, action.target_date);
+      pushIf({ reference: `${complaint.complaint_number || "COMPLAINT"} · Action ${action.action_no || "-"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: String(party.party_name || party.party_code || "-"), due_date: String(action.target_date || "-"), status: `${String(action.action_type || "FOLLOW-UP")} · ${String(action.status || "OPEN")}`, quantity: String(action.action_description || complaint.subject || "Follow-up action pending"), supplier_id: String(complaint.party_id || ""), responsible_employee_id: String(action.owner_employee_id || complaint.fourstar_responsible_employee_id || "") || undefined,
+        ...complaintDetail(complaint, part, party), details: [clean(action.action_description), clean(complaint.subject)].filter(Boolean).join(" · ") || "Follow-up action pending", refs: [{ source_table: "quality_complaints", record_id: String(complaint.id), updated_at: String(complaint.updated_at || "") }] }, action.target_date);
     }
   } else if (schedule.schedule_key === "NPD_PROCESS_OPEN_OVERDUE") {
     const { data: steps = [] } = await admin.from("npd_order_steps").select("*").eq("tenant_id", tenantId).limit(5000);
-    const { data: orders = [] } = await admin.from("npd_orders").select("id,order_number,part_id,customer_id,delivery_date").eq("tenant_id", tenantId).limit(5000);
+    const { data: orders = [] } = await admin.from("npd_orders").select("id,order_number,part_id,customer_id,delivery_date,order_qty").eq("tenant_id", tenantId).limit(5000);
     const orderMap = new Map<string, Row>(orders.map((r: Row) => [String(r.id), r]));
     for (const r of steps) {
       if (["COMPLETED", "APPROVED", "NOT_APPLICABLE", "CANCELLED"].includes(String(r.status || "").toUpperCase())) continue;
       const order = orderMap.get(String(r.npd_order_id)) || {}; const part = maps.parts.get(String(order.part_id)) || {}; const emp = maps.employees.get(String(r.responsible_employee_id)) || {};
-      pushIf({ reference: `${order.order_number || "NPD"} · OP ${r.operation_no || "-"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || "Unassigned", due_date: String(r.target_date || "-"), status: String(r.status || "PENDING"), quantity: String(r.process_name_snapshot || r.process_name || r.responsible || ""), responsible_employee_id: String(r.responsible_employee_id || ""), order_id: String(r.npd_order_id || "") }, r.target_date);
+      pushIf({ reference: `${order.order_number || "NPD"} · OP ${r.operation_no || "-"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || "Unassigned", due_date: String(r.target_date || "-"), status: String(r.status || "PENDING"), quantity: String(r.process_name_snapshot || r.process_name || r.responsible || ""), responsible_employee_id: String(r.responsible_employee_id || ""), order_id: String(r.npd_order_id || ""),
+        part_number: clean(part.part_number) || clean(part.fsi_part_number), part_description: clean(part.part_name), customer: clean((maps.parties.get(String(order.customer_id || "")) || {}).party_name), qty: toNumber(order.order_qty), uom: toNumber(order.order_qty) !== null ? "PCS" : "", delivery_date: day(order.delivery_date), details: [`OP ${r.operation_no || "-"} ${clean(r.process_name_snapshot) || clean(r.process_name)}`.trim(), `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || "Unassigned"].join(" · ") }, r.target_date);
     }
   }
   return result;
@@ -267,6 +377,7 @@ Deno.serve(async (req: Request) => {
         admin.from("qcms_email_templates").select("*").eq("tenant_id", tenantId).eq("enabled", true).limit(500),
         admin.from("qcms_module_approval_routes").select("*").eq("tenant_id", tenantId).eq("module_key", "SUPPLY_CHAIN").eq("status", "ACTIVE").limit(500),
       ]);
+      const company = await companyName(admin, tenantId, settings); const snapCache: SnapshotCache = new Map();
       const maps = { parties: new Map<string, Row>(parties.map((r: Row) => [String(r.id), r])), parts: new Map<string, Row>(parts.map((r: Row) => [String(r.id), r])), employees: new Map<string, Row>(employees.map((r: Row) => [String(r.id), r])), approvalRoutes };
       const templateMap = new Map<string, Row>(templates.map((r: Row) => [String(r.template_key), r]));
 
@@ -283,7 +394,7 @@ Deno.serve(async (req: Request) => {
         const subject = renderTemplate(String(template.subject_template || `QCMS · ${schedule.schedule_label} · {{report_date}}`), baseCtx);
         const bodyText = renderTemplate(String(template.body_template || "Attached is the QCMS open / overdue report for {{report_date}}."), baseCtx);
 
-        const primaryRecipients: Array<{ email: string; name: string; rows: DigestRow[] }> = [];
+        const primaryRecipients: Array<{ email: string; name: string; rows: DigestRow[]; external?: boolean }> = [];
         if (["NPD_PROCESS_OPEN_OVERDUE", "PO_PENDING_APPROVAL", "CUSTOMER_COMPLAINT_OPEN_OVERDUE", "SUPPLIER_COMPLAINT_OPEN_OVERDUE", "COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "COMPLAINT_FOLLOWUP_DUE"].includes(String(schedule.schedule_key))) {
           const grouped = new Map<string, DigestRow[]>();
           for (const row of rows) {
@@ -333,7 +444,7 @@ Deno.serve(async (req: Request) => {
         const supplierGroups = new Map<string, DigestRow[]>();
         if (schedule.include_suppliers) for (const row of rows) if (row.supplier_id) supplierGroups.set(row.supplier_id, [...(supplierGroups.get(row.supplier_id) || []), row]);
         for (const [supplierId, supplierRows] of supplierGroups) {
-          const party = maps.parties.get(supplierId); for (const email of emailList(party)) primaryRecipients.push({ email, name: String(party?.party_name || "Supplier"), rows: supplierRows });
+          const party = maps.parties.get(supplierId); for (const email of emailList(party)) primaryRecipients.push({ email, name: String(party?.party_name || "Supplier"), rows: supplierRows, external: true });
         }
 
         for (const recipient of primaryRecipients) {
@@ -342,19 +453,32 @@ Deno.serve(async (req: Request) => {
           const { data: exists } = await admin.from("qcms_notification_outbox").select("id").eq("tenant_id", tenantId).eq("dedupe_key", dedupeKey).maybeSingle();
           if (exists?.id) continue;
           const pdfBytes = await digestPdf(String(schedule.schedule_label || "QCMS Open / Overdue Report"), clock.date, recipient.rows);
-          let bodyHtml = baseHtml(bodyText);
+          // R36: HTML table of every row (part number, customer, supplier, qty, price, delivery date) + Excel + record PDFs.
+          const pruned = pruneColumns(DIGEST_HEADERS, digestCells(recipient.rows, Boolean(recipient.external)), DIGEST_KEEP);
+          const table = recipient.external ? hideColumns(pruned.headers, pruned.rows, EXTERNAL_HIDDEN) : pruned;
+          let bodyHtml = htmlTable(table.headers, table.rows, { caption: `${String(schedule.schedule_label || "QCMS Open / Overdue Report")} · ${recipient.rows.length} record(s)` });
+          const recipientPoLines = recipient.rows.flatMap((r) => r.po_lines || []).map((l) => recipient.external ? supplierSafeLine(l) : l);
+          if (recipientPoLines.length) {
+            const poTable = recipient.external ? hideColumns(PO_LINE_HEADERS, [...recipientPoLines.map(poLineCells), poLineTotals(recipientPoLines)], SUPPLIER_SAFE_HIDDEN) : { headers: PO_LINE_HEADERS, rows: [...recipientPoLines.map(poLineCells), poLineTotals(recipientPoLines)] };
+            bodyHtml += htmlTable(poTable.headers, poTable.rows.slice(0, -1), { caption: "Purchase Order lines", totals: poTable.rows[poTable.rows.length - 1] });
+          }
           if (schedule.schedule_key === "NPD_PROCESS_OPEN_OVERDUE") bodyHtml += await npdCardsHtml(admin, tenantId, recipient.rows, maps, clock.date);
+          const fullHtml = emailShell({ title: String(schedule.schedule_label || "QCMS Open / Overdue Report"), company, intro: [...bodyText.split("\n"), "", `Report date: ${clock.date} · ${recipient.rows.length} record(s) · open ${recipient.rows.filter((r) => !r.status.startsWith("OVERDUE")).length} · overdue ${recipient.rows.filter((r) => r.status.startsWith("OVERDUE")).length}`], sections: [bodyHtml] });
+          const fullText = `${bodyText}\n\n${textTable(table.headers, table.rows)}`;
           const fileName = `QCMS_${String(schedule.schedule_key).replace(/[^A-Za-z0-9_-]+/g, "_")}_${clock.date}.pdf`;
+          const excel = xlsxAttachment(String(schedule.schedule_label || "QCMS Digest"), table.headers, table.rows, fileName.replace(/\.pdf$/, ".xlsx"), { title: `${company} · ${String(schedule.schedule_label || "QCMS Open / Overdue Report")}`, subtitle: `Report date: ${clock.date} · Records: ${recipient.rows.length}` });
+          const snaps = await snapshotAttachments(admin, tenantId, recipient.rows.flatMap((r) => r.refs || []), 10, MAX_ATTACHMENT_BYTES - pdfBytes.byteLength - excel.bytes.byteLength, snapCache);
           const path = `${tenantId}/notification_exports/automatic/${schedule.schedule_key}/${clock.date}/${crypto.randomUUID()}_${fileName}`;
           const upload = await admin.storage.from(BUCKET).upload(path, pdfBytes, { contentType: "application/pdf", upsert: false }); if (upload.error) throw upload.error;
-          const manifest = [{ bucket: BUCKET, object_path: path, file_name: fileName, mime_type: "application/pdf", generated: true }];
-          const { data: outbox, error: insertError } = await admin.from("qcms_notification_outbox").insert({ tenant_id: tenantId, event_key: schedule.event_key, recipient_email: recipient.email, recipient_name: recipient.name || null, subject, body_text: bodyText, body_html: bodyHtml, context: { ...baseCtx, schedule_key: schedule.schedule_key, record_count: recipient.rows.length }, template_key: schedule.template_key || schedule.event_key, attachment_manifest: manifest, dedupe_key: dedupeKey, is_automatic: true, scheduled_for: now.toISOString(), status: "PENDING" }).select("*").single();
+          const excelEntry = await storeGenerated(admin, tenantId, String(schedule.schedule_key), excel);
+          const manifest = [{ bucket: BUCKET, object_path: path, file_name: fileName, mime_type: "application/pdf", generated: true }, ...(excelEntry ? [excelEntry] : []), ...snaps.manifest];
+          const { data: outbox, error: insertError } = await admin.from("qcms_notification_outbox").insert({ tenant_id: tenantId, event_key: schedule.event_key, recipient_email: recipient.email, recipient_name: recipient.name || null, subject, body_text: fullText, body_html: fullHtml, context: { ...baseCtx, schedule_key: schedule.schedule_key, record_count: recipient.rows.length, attachments: [fileName, excel.filename, ...snaps.attachments.map((a) => a.filename)] }, template_key: schedule.template_key || schedule.event_key, attachment_manifest: manifest, dedupe_key: dedupeKey, is_automatic: true, scheduled_for: now.toISOString(), status: "PENDING" }).select("*").single();
           if (insertError) throw insertError;
           try {
             await admin.from("qcms_notification_outbox").update({ status: "SENDING", attempts: 1, updated_at: new Date().toISOString() }).eq("id", outbox.id);
-            await transporter.sendMail({ from: settings.sender_name ? `"${String(settings.sender_name).replaceAll('"', '')}" <${settings.sender_email}>` : settings.sender_email, to: recipient.name ? `"${recipient.name.replaceAll('"', '')}" <${recipient.email}>` : recipient.email, replyTo: settings.reply_to || undefined, subject, text: bodyText, html: bodyHtml, attachments: [{ filename: fileName, content: Buffer.from(pdfBytes), contentType: "application/pdf" }] });
+            await transporter.sendMail({ from: settings.sender_name ? `"${String(settings.sender_name).replaceAll('"', '')}" <${settings.sender_email}>` : settings.sender_email, to: recipient.name ? `"${recipient.name.replaceAll('"', '')}" <${recipient.email}>` : recipient.email, replyTo: settings.reply_to || undefined, subject, text: fullText, html: fullHtml, attachments: [{ filename: fileName, content: Buffer.from(pdfBytes), contentType: "application/pdf" }, { filename: excel.filename, content: excel.content, contentType: excel.contentType }, ...snaps.attachments] });
             await admin.from("qcms_notification_outbox").update({ status: "SENT", sent_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq("id", outbox.id);
-            await admin.storage.from(BUCKET).remove([path]).catch(() => undefined); sentMessages += 1;
+            await admin.storage.from(BUCKET).remove([path]).catch(() => undefined); if (excelEntry) await removeGenerated(admin, [excelEntry]); sentMessages += 1;
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error); await admin.from("qcms_notification_outbox").update({ status: "FAILED", last_error: message.slice(0, 2000), updated_at: new Date().toISOString() }).eq("id", outbox.id); failedMessages += 1;
           }

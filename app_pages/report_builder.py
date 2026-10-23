@@ -11,6 +11,7 @@ from core.auth import current_profile
 from core.repository import Repository
 from core.ui import page_header, portal_table, save_success_dialog, section_bar, stage_section
 from core import report_builder as rb
+from core.report_filters import render_filters
 from core.db_errors import db_message
 
 ROW_LIMIT = 10000
@@ -18,7 +19,8 @@ ROW_LIMIT = 10000
 
 def _sources():
     from app_pages.global_search import SEARCH_SOURCES
-    return SEARCH_SOURCES
+    # R36b: inventory / stock views are Report Builder datasets too (Inventory module).
+    return tuple(SEARCH_SOURCES) + tuple(rb.INVENTORY_SOURCES)
 
 
 def _can_view_factory(profile: dict, repo: Repository):
@@ -79,6 +81,8 @@ def render() -> None:
         columns = st.multiselect("Columns (in this order)", all_cols, default=default_cols, format_func=rb.pretty, key=f"rb_cols_{token}_{dataset}")
 
     with stage_section("C", "FILTERS", "Narrow the records. All filters must match.", key="rb_filters"):
+        # R36b: quick filters (multiselect / date range / number range / search) + the advanced condition rows below.
+        frame = render_filters(frame, f"rb_quick_{dataset}", title="Quick filters")
         start = [f for f in (spec0.filters if spec0.dataset == dataset else []) if f.get("column") in all_cols]
         n = int(st.number_input("Number of filters", min_value=0, max_value=8, value=len(start), step=1, key=f"rb_nf_{token}_{dataset}"))
         filters: list[dict] = []
@@ -227,11 +231,16 @@ def render_master_lists() -> None:
             sheets.append((item["label"], master_frame(item, rows, load)))
     section_bar("PREVIEW", " · ".join(f"{name}: {len(frame):,}" for name, frame in sheets))
     tabs = st.tabs([name for name, _ in sheets])
+    filtered_sheets: list[tuple[str, pd.DataFrame]] = []
     for tab, (name, frame) in zip(tabs, sheets):
         with tab:
+            # R36b: per-master filters; the workbook contains the filtered rows.
+            frame = render_filters(frame, f"ml_{name}", title=name)
+            filtered_sheets.append((name, frame))
             portal_table(frame.head(200), hide_index=True, width="stretch", height=min(480, 60 + 34 * min(len(frame), 200)))
             if len(frame) > 200:
                 st.caption(f"Showing first 200 of {len(frame):,}. The Excel file contains all rows.")
+    sheets = filtered_sheets
     stamp = date.today().isoformat()
     st.download_button(f"Download {len(sheets)} master list(s) as one Excel workbook", data=lambda: rb.excel_bytes(sheets, title="Master List", subtitle="Active only" if active_only else "All statuses"),
                        file_name=f"QCMS_Master_Lists_{stamp}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", width="stretch", key="ml_xlsx", on_click="ignore")

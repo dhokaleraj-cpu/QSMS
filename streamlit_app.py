@@ -49,6 +49,7 @@ from app_pages import (
     email_settings,
     global_search,
     inspection_home,
+    inventory_reports,
     inspection_layouts,
     kpi_dashboards,
     licence_company,
@@ -215,11 +216,12 @@ PAGE_ITEMS = (
     ("metlab-report", st.Page(metlab_report.render_records, title="MetLAB Reports", icon=":material/science:", url_path="metlab-report")),
     ("complaints-report", st.Page(complaints.render_records, title="Complaint Reports", icon=":material/support_agent:", url_path="complaints-report")),
     ("traceability-report", st.Page(supply_chain.render_traceability, title="Supply Chain Traceability Report", icon=":material/account_tree:", url_path="traceability-report")),
-    ("npd-report", st.Page(npd_apqp.render_npd_status, title="NPD Status Report", icon=":material/timeline:", url_path="npd-report")),
-    ("apqp-report", st.Page(npd_apqp.render_apqp, title="APQP Status Report", icon=":material/assignment_turned_in:", url_path="apqp-report")),
+    ("npd-report", st.Page(reports.render_npd_report, title="NPD Status Report", icon=":material/timeline:", url_path="npd-report")),
+    ("apqp-report", st.Page(reports.render_apqp_report, title="APQP Status Report", icon=":material/assignment_turned_in:", url_path="apqp-report")),
     ("qc-report", st.Page(qc_calculation_tools.render_records, title="QC Calculation Reports", icon=":material/calculate:", url_path="qc-report")),
     ("inspection-layout-report", st.Page(inspection_layouts.render_records, title="Inspection Layout Reports", icon=":material/view_list:", url_path="inspection-layout-report")),
     ("standards-report", st.Page(standards_bank.render_records, title="Customer Standards Reports", icon=":material/menu_book:", url_path="standards-report")),
+    ("inventory-reports", st.Page(inventory_reports.render, title="Inventory & Stock Reports", icon=":material/inventory_2:", url_path="inventory-reports")),
     ("templates", st.Page(template_center.render, title="Templates", icon=":material/download:", url_path="templates")),
 
     ("part-entry", st.Page(part_master.render_entry, title="Part Master Entry", icon=":material/edit_note:", url_path="part-entry")),
@@ -420,6 +422,7 @@ MODULE_SUBMENUS = {
         ("reports-home", "Reports Home", ":material/assessment:"),
         ("report-builder", "Report Builder", ":material/query_stats:"),
         ("master-lists", "Master List Excel", ":material/table_chart:"),
+        ("inventory-reports", "Inventory & Stock", ":material/inventory_2:"),
         ("supply-chain-report", "Supply Chain MIS", ":material/analytics:"),
         ("heat-transaction-report", "Heat Global Balance", ":material/monitoring:"),
         ("osp-balance-report", "OSP Heat Balance", ":material/factory:"),
@@ -472,7 +475,7 @@ ROUTE_MODULE = {
     "inspection-home": "Inspections", "inspection-layout-entry": "Inspections",
     "dimensional-entry": "Inspections", "metlab-entry": "Inspections", "bend-test-entry": "Bend Test", "bend-layout-entry": "Bend Test",
     "global-search": "Search",
-    "reports-home": "Reports", "report-builder": "Reports", "master-lists": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports", "supply-chain-report": "Reports", "rmtc-report": "Reports", "inward-report": "Reports", "dimensional-report": "Reports", "metlab-report": "Reports", "bend-test-report": "Reports", "complaints-report": "Reports", "traceability-report": "Reports", "npd-report": "Reports", "apqp-report": "Reports", "qc-report": "Reports", "inspection-layout-report": "Reports", "standards-report": "Reports",
+    "reports-home": "Reports", "inventory-reports": "Reports", "report-builder": "Reports", "master-lists": "Reports", "heat-transaction-report": "Reports", "osp-balance-report": "Reports", "supply-chain-report": "Reports", "rmtc-report": "Reports", "inward-report": "Reports", "dimensional-report": "Reports", "metlab-report": "Reports", "bend-test-report": "Reports", "complaints-report": "Reports", "traceability-report": "Reports", "npd-report": "Reports", "apqp-report": "Reports", "qc-report": "Reports", "inspection-layout-report": "Reports", "standards-report": "Reports",
     "templates": "Templates",
     **{path: "Records" for path in RECORD_ROUTES},
 }
@@ -506,7 +509,7 @@ PAGE_TITLE_TO_PATH = {
     "Bend Test Report": "bend-test-entry", "Bend Test Records": "bend-test-records", "Bend Test Reports": "bend-test-report", "Bend Test Layout Master": "bend-layout-entry",
     "Global Search": "global-search",
     "KPI Dashboards": "kpi-dashboards", "System Settings": "system-settings", "Print Layout Designer": "print-designer",
-    "Report Builder": "report-builder", "Master List Excel": "master-lists",
+    "Report Builder": "report-builder", "Master List Excel": "master-lists", "Inventory & Stock Reports": "inventory-reports",
     "Send Email": "email-send", "Email Groups": "email-groups", "My Email Settings": "email-my-settings", "My Sent Emails": "email-sent",
 }
 
@@ -582,6 +585,12 @@ if _lic.licence_blocks_use(_licence) and current_path not in _LICENCE_FREE_ROUTE
         logout()
     st.stop()
 _unread_notifications = _lic.unread_count()
+# R36: keep reminder e-mail PDF attachments current (daemon thread, at most every 30 min per session; never blocks).
+try:
+    from core import document_snapshots as _doc_snapshots
+    _doc_snapshots.schedule_pending_refresh(20)
+except Exception:
+    pass
 
 # QCMS v4.12.9 — hardened responsive enterprise navigation contract.
 # Legacy v4.12.8 marker: QCMS v4.12.8 — responsive enterprise navigation contract.

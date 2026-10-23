@@ -211,6 +211,16 @@ def render_send() -> None:
         section_bar("REVIEW & SEND", "Check the recipient list, then send.")
         for w in pending["warnings"]:
             st.warning(w)
+        # R36b: customer details are internal - warn before anything goes to a supplier / vendor / outside address.
+        try:
+            from core.customer_privacy import external_recipients, internal_directory
+            outside = external_recipients([r.email for r in pending["to"] + pending["cc"] + pending["bcc"]], internal_directory(repo))
+        except Exception:
+            outside = []
+        if outside:
+            st.warning("**External recipient(s): " + ", ".join(outside[:6]) + ("…" if len(outside) > 6 else "") + "**  \n"
+                       "Customer details are for internal use only. Do not include customer names, customer PO / order numbers, "
+                       "customer part numbers or customer documents in this e-mail or its attachments.", icon=":material/lock:")
         rows = [{"Type": t, "Name": r.name, "Email": r.email, "From": r.source} for t, lst in (("To", pending["to"]), ("CC", pending["cc"]), ("BCC", pending["bcc"])) for r in lst]
         st.markdown(f"**{len(rows)} recipient(s)** · Subject: **{pending['subject'] or '(no subject)'}** · {len(pending['attachments'])} attachment(s)")
         if rows:

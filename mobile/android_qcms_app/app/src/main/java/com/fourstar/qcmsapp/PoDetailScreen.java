@@ -24,7 +24,7 @@ public final class PoDetailScreen extends Screen {
     /** Same flags as the QCMS website (core/po_print_ui.SECTION_OPTIONS). */
     static final String[][] SECTIONS = {
         {"show_plant", "Plant / Company Branch"}, {"show_vendor", "Vendor"}, {"show_reference", "Reference Details"},
-        {"show_old_po", "Old PO Details"}, {"show_ship_to", "Ship To"}, {"show_source_reference", "PO Source Reference"},
+        {"show_old_po", "Old PO Details"}, {"show_ship_to", "Ship To"}, {"show_source_reference", "PO Source Ref (internal only)"},
         {"show_technical", "RM Details & Technical Data"}, {"show_price_history", "Price Revision History"},
         {"show_special_instructions", "Comments / Special Instructions"}, {"show_approval_stamp", "Approval Stamp"}};
 

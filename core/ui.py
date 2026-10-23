@@ -411,6 +411,14 @@ def portal_table(data: Any, *, hide_index: bool = True, width: Any = "stretch", 
 TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 
 
+def selectable_table(data: Any, *, key: str, height: int | None = None) -> int | None:
+    """R36: grid whose rows can be clicked; returns the clicked row index (Global Search "click to open")."""
+    event = st.dataframe(data, hide_index=True, width="stretch", height=height or "auto",
+                         on_select="rerun", selection_mode="single-row", key=key)
+    rows = list(getattr(getattr(event, "selection", None), "rows", None) or [])
+    return int(rows[0]) if rows else None
+
+
 def template_download_row(items: Sequence[tuple[str, str]], *, key_prefix: str, import_master_key: str | None = "") -> None:
     """Render local Excel templates as compact download buttons."""
     available = [(name, label, TEMPLATE_DIR / name) for name, label in items if (TEMPLATE_DIR / name).exists()]

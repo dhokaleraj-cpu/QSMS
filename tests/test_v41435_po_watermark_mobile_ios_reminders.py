@@ -54,7 +54,14 @@ def test_supplier_pdf_omits_customer_part_and_delivery_and_watermarks_every_page
     reader = PdfReader(BytesIO(pdf))
     assert len(reader.pages) >= 2
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert "CUST-PO-SECRET-55" in text
+    # R36b: customer details are internal - the supplier PO never shows the customer PO reference by default.
+    assert "CUST-PO-SECRET-55" not in text and "CUSTOMER-PART-SECRET-99" not in text and "15-10-2026" not in text
+    # An internal copy (section ticked) shows it, clearly stamped as not for the supplier.
+    header = {**header, "print_options": {"show_source_reference": True}}
+    pdf = purchase_order_pdf_bytes(header, items, terms_path=ROOT / "templates" / "FSI_STANDARD_PO_TERMS_2023.pdf")
+    reader = PdfReader(BytesIO(pdf))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "CUST-PO-SECRET-55" in text and "NOT FOR SUPPLIER" in text
     assert "CUSTOMER-PART-SECRET-99" not in text
     assert "15-10-2026" not in text
     first_text = reader.pages[0].extract_text() or ""
@@ -79,6 +86,10 @@ def test_excel_print_watermark_and_supplier_safe_source_reference():
     wb = load_workbook(BytesIO(data), data_only=False)
     ws = wb["Purchase Order"]
     assert "APPROVED" in str(ws.oddHeader.center.text)
+    values = "\n".join(str(cell.value or "") for row in ws.iter_rows() for cell in row)
+    assert "CUST-PO-SECRET-55" not in values  # R36b: customer reference only on an internal copy
+    data = purchase_order_excel_bytes({**header, "print_options": {"show_source_reference": True}}, items)
+    ws = load_workbook(BytesIO(data), data_only=False)["Purchase Order"]
     values = "\n".join(str(cell.value or "") for row in ws.iter_rows() for cell in row)
     assert "CUST-PO-SECRET-55" in values
     assert "CUSTOMER-PART-SECRET-99" not in values

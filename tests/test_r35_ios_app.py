@@ -107,3 +107,12 @@ def test_readme_push_section_has_no_secrets():
     assert "## Push notifications (APNs)" in readme and "v1.1.0" in readme
     assert 'supabase secrets set APNS_KEY_P8="$(cat AuthKey_XXXX.p8)" APNS_KEY_ID=XXXX APNS_TEAM_ID=XXXX --project-ref xxrxopzxzyjnzumrwuwy' in readme
     assert "BEGIN PRIVATE KEY" not in swift_all() + readme
+
+
+def test_r36_free_apple_id_mode():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1] / "mobile/ios_stawn_qcms"
+    mp = (root / "make_project.py").read_text()
+    assert "STAWN_PERSONAL_TEAM" in mp and "com.stawnprecision.qcms.free" in mp and 'target_common.pop("CODE_SIGN_ENTITLEMENTS"' in mp
+    cmd = (root / "BUILD_STAWN_QCMS_iOS.command").read_text()
+    assert 'if [ "$MODE" = "free" ]' in cmd and "isFreeProvisioningTeam" in cmd and "VPN & Device Management" in cmd

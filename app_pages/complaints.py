@@ -12,6 +12,7 @@ from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Font, PatternFill
 from PIL import Image as PILImage
 from core.ui import portal_table
+from core.report_filters import report_register
 
 from core.access import current_permissions
 from core.attachments import ALLOWED_ATTACHMENT_TYPES, AttachmentService, AttachmentSlot, render_attachment_manager
@@ -1466,7 +1467,7 @@ def render_records() -> None:
         }
         for row in filtered
     ])
-    portal_table(frame, hide_index=True, width="stretch", height=560)
+    report_register(frame, "complaint_register", "Complaint Register", height=560)  # R36b: filters + filtered exports
 
 
 def _latest_complaint_email_status(repo: Repository, complaint_ids: list[str]) -> dict[str, dict[str, Any]]:

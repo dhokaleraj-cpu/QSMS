@@ -307,6 +307,8 @@ def render_developer() -> None:
             if route in pages:
                 cols[i % 3].page_link(pages[route], label=label, icon=icon_name, width="stretch")
 
+    from app_pages import dev_purge
+    dev_purge.render_section()
     section_bar("STAWN DEVELOPER RIGHTS")
     st.caption("The STAWN developer login keeps ADMIN rights in its home company, is never counted as a licensed user, and can "
                "see and manage every company's licence. Company administrators only manage their own company.")

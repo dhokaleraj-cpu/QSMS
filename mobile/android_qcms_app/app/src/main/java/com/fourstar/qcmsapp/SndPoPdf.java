@@ -103,7 +103,11 @@ final class SndPoPdf {
     private int accent() { return color("accent", Color.parseColor("#0B6E70")); }
     private int ruleColor() { return color("rule", Color.parseColor("#C9D6D6")); }
     private int fillOrWhite(String key) { return color(key, WHITE); }
-    private boolean show(String flag) { return !layout.has(flag) || SndData.truthy(layout.opt(flag)); }
+    // R36b: customer PO references are internal - the source reference prints only when explicitly ticked (internal copy).
+    private boolean show(String flag) {
+        if ("show_source_reference".equals(flag)) return layout.has(flag) && SndData.truthy(layout.opt(flag));
+        return !layout.has(flag) || SndData.truthy(layout.opt(flag));
+    }
     private void rules() { g.stroke = ruleColor(); g.lw = 0.5f; }
 
     private String relabel(String title) {
@@ -654,7 +658,7 @@ final class SndPoPdf {
         List<JSONObject> shown = rows.subList(0, Math.min(4, rows.size()));
         float height = customerReferenceHeight(item);
         float bottom = top - height;
-        bar(left, top, totalW, "PO SOURCE REFERENCE" + lineSuffix(item), 15);
+        bar(left, top, totalW, "PO SOURCE REFERENCE · INTERNAL COPY - CUSTOMER DETAILS - NOT FOR SUPPLIER" + lineSuffix(item), 15);
         float y = top - 15;
         float[] widths = {130, 55, 245, 72, totalW - 502};
         String[] titles = {"CUSTOMER PO NO.", "POS", "PART DESCRIPTION", "QTY", "UOM"};

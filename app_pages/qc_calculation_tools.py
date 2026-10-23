@@ -6,6 +6,7 @@ from uuid import uuid4
 import pandas as pd
 import streamlit as st
 from core.ui import portal_table
+from core.report_filters import report_register
 
 from core.access import current_permissions
 from core.delete_service import password_delete_panel
@@ -191,7 +192,7 @@ def _render_records(repo: Repository | None = None) -> None:
         "Heat Number": row.get("heat_number"), "Primary": f"{row.get('primary_value') or ''} {row.get('primary_unit') or ''}".strip(),
         "Result": f"{row.get('result_value') or ''} {row.get('conversion_unit') or ''}".strip(), "Standard": row.get("standard_reference"), "User": row.get("Created By User"), "Data Entry Status": row.get("Data Entry Status"), "Status": row.get("status")
     } for row in filtered])
-    portal_table(display, hide_index=True, width="stretch", height=500)
+    report_register(display, "qc_calculation_register", "QC Calculation Register", height=500)  # R36b
 
 
 def render_records() -> None:
