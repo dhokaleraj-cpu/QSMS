@@ -56,15 +56,15 @@ def test_entitlements_and_background_mode():
 
 def test_make_project_version_entitlements_and_team_logic():
     mp = read(IOS / "make_project.py")
-    assert 'else "1.1.0"' in mp and 'else "2"' in mp
+    assert 'else "1.2.0"' in mp and 'else "3"' in mp
     assert '"CODE_SIGN_ENTITLEMENTS": "STAWNQCMS/" + ENTITLEMENTS' in mp and 'ENTITLEMENTS = "STAWNQCMS.entitlements"' in mp
     assert "STAWN_APPLE_TEAM_ID" in mp and "~/.stawn_apple_team_id" in mp and "Apple Distribution" in mp
     pbx = read(IOS / "STAWNQCMS.xcodeproj/project.pbxproj")
     assert pbx.count('CODE_SIGN_ENTITLEMENTS = "STAWNQCMS/STAWNQCMS.entitlements"') == 2
-    assert 'MARKETING_VERSION = "1.1.0"' in pbx and 'CURRENT_PROJECT_VERSION = "2"' in pbx
+    assert 'MARKETING_VERSION = "1.2.0"' in pbx and 'CURRENT_PROJECT_VERSION = "3"' in pbx
     assert pbx.count("{") == pbx.count("}") and pbx.count("(") == pbx.count(")")
-    assert 'VERSION="1.1.0"' in read(IOS / "BUILD_STAWN_QCMS_iOS.command")
-    assert '"1.1.0"' in read(SRC / "Core.swift")
+    assert 'VERSION="1.2.0"' in read(IOS / "BUILD_STAWN_QCMS_iOS.command")
+    assert '"1.2.0"' in read(SRC / "Core.swift")
 
 
 def test_kpi_dashboard_first_tab_with_auto_switch():

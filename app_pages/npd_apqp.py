@@ -429,6 +429,7 @@ def render_process_flow() -> None:
             c_pdf, c_del = st.columns([2, 1], gap="small")
             with c_pdf:
                 st.download_button("Download Process Flow PDF", pdf, file_name=f"Process_Flow_{part.get('part_number')}_Rev_{flow.get('revision')}.pdf", mime="application/pdf", width="stretch")
+                from core.pdf_preview import preview_button; preview_button("npd_process_flows", flow.get("id"), key="npd_flow", record=flow)  # R37
             with c_del:
                 if password_delete_panel(
                     repo=repo, table="npd_process_flows", rows=[flow],
@@ -537,6 +538,8 @@ def _render_pending_order_matrix(repo: Repository, orders: list[dict], part_by_i
 
 def render_npd_status() -> None:
     page_header("NPD Status")
+    from core.module_kpis import render_module_strip  # R37: module infographic KPI cards (click = records)
+    render_module_strip(home="npd-status", key="npd_status", origin="npd-status")
     repo = Repository(); perms = current_permissions("NPD_APQP")
     parts = _part_rows(repo); customers = _customer_rows(repo); employees = _employee_rows(repo)
     if not parts or not customers:
@@ -811,6 +814,7 @@ def render_npd_status() -> None:
             c_pdf, c_del = st.columns([2, 1], gap="small")
             with c_pdf:
                 st.download_button("Download NPD Order Status PDF", pdf, file_name=f"NPD_Order_Status_{order.get('order_number')}.pdf", mime="application/pdf", width="stretch")
+                from core.pdf_preview import preview_button; preview_button("npd_orders", order.get("id"), key="npd_order", record=order)  # R37
             with c_del:
                 if password_delete_panel(
                     repo=repo, table="npd_orders", rows=[order],
@@ -1122,6 +1126,7 @@ def render_apqp() -> None:
         c_pdf, c_del = st.columns([2, 1], gap="small")
         with c_pdf:
             st.download_button("Download APQP Project PDF", pdf, file_name=f"APQP_{project.get('project_code')}.pdf", mime="application/pdf", width="stretch")
+            from core.pdf_preview import preview_button; preview_button("ppap_projects", project.get("id"), key="apqp_project", record=project)  # R37
         with c_del:
             if password_delete_panel(
                 repo=repo, table="ppap_projects", rows=[project],

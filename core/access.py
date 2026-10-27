@@ -23,6 +23,7 @@ MODULES = (
     ("COMPLAINT_MANAGEMENT", "Complaint Management"),
     ("CALIBRATION_VALIDATION", "Calibration & Validation"),
     ("SUPPLY_CHAIN", "Supply Chain"),
+    ("INDIRECT_PURCHASE", "Indirect Purchase"),
     ("USER_ACCESS", "Users & Access"),
 )
 
@@ -69,6 +70,9 @@ def _legacy_role_permissions(profile: Mapping[str, Any] | None, module_key: str)
     quality_roles = {"QUALITY_MANAGER", "QUALITY_ENGINEER", "METLAB_APPROVER", "SQA"}
     if module_key == "SUPPLY_CHAIN":
         write = role in supply_roles | {"QUALITY_MANAGER", "MASTER_DATA"}
+    elif module_key == "INDIRECT_PURCHASE":
+        # R37: mirrors public.qcms_indirect_purchase_can (Purchase / Supply Chain / Management write; everyone else views).
+        write = role in {"PROCUREMENT", "SUPPLY_CHAIN", "MANAGEMENT"}
     elif module_key in {"RMTC_ENTRY", "MATERIAL_INWARD", "DIMENSIONAL_REPORT", "METLAB_REPORT", "OSP_TRANSACTIONS"}:
         write = role in quality_roles | {"PRODUCTION", "MANAGEMENT"}
     elif module_key == "NPD_APQP":
@@ -82,6 +86,8 @@ def _legacy_role_permissions(profile: Mapping[str, Any] | None, module_key: str)
         approve = role in {"QUALITY_MANAGER", "QUALITY_ENGINEER", "SQA", "MANAGEMENT"}
     elif module_key == "METLAB_REPORT":
         approve = role in {"QUALITY_MANAGER", "METLAB_APPROVER", "MANAGEMENT"}
+    elif module_key == "INDIRECT_PURCHASE":
+        approve = role in {"PROCUREMENT", "SUPPLY_CHAIN", "MANAGEMENT"}
     else:
         approve = role == "MANAGEMENT"
     return {

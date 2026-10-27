@@ -10,6 +10,12 @@ struct SearchView: View {
     @State private var running = false
     @State private var searched = ""
     @State private var error: String?
+    /// R37: Print PDF of a hit (touch and hold) - PdfViewer: preview, Save to Files, Print, Email, Share.
+    @State private var pdf: PdfItem?
+    @State private var printing = false
+    @State private var toast: String?
+    /// R37: "+" -> New query opens the search with the keyboard up.
+    @FocusState private var focused: Bool
 
     var body: some View {
         List {
@@ -17,6 +23,7 @@ struct SearchView: View {
                 HStack {
                     TextField("Part No, FSI Part No, Heat, RMTC, Batch, supplier, customer, PO, report…", text: $query)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().onSubmit { run() }
+                        .focused($focused)
                     Button { run() } label: { Image(systemName: "magnifyingglass") }.buttonStyle(.borderedProminent).tint(Theme.teal)
                 }
             }
@@ -45,7 +52,24 @@ struct SearchView: View {
                                 if !r.snippet.isEmpty { Text(r.snippet).font(.caption2).foregroundColor(Theme.muted).italic().lineLimit(2) }
                             }
                         }
+                        .contextMenu {
+                            Button { open(r) } label: { Label("Open record", systemImage: "doc.text") }
+                            Button { printPdf(r) } label: { Label("Print PDF · Preview / Save / Share", systemImage: "printer") }
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button { printPdf(r) } label: { Label("PDF", systemImage: "printer") }.tint(Theme.teal)
+                        }
                     }
+                }
+            }
+            if !results.isEmpty {
+                Section {
+                    Button { resultsPdf() } label: {
+                        Label("Results PDF · Preview · Download · Share", systemImage: "doc.richtext").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent).tint(Theme.teal).disabled(printing)
+                    Text("Tap a result to open the record (Print layout PDF on the record) · swipe left or touch and hold for its PDF")
+                        .font(.caption).foregroundColor(Theme.muted)
                 }
             }
         }
@@ -54,7 +78,18 @@ struct SearchView: View {
         .qcmsNavBar()
         .onAppear {
             if query.isEmpty && !initial.isEmpty { query = initial; run() }
+            else if initial.isEmpty && results.isEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { focused = true }
+            }
         }
+        .overlay(alignment: .bottom) {
+            if printing {
+                HStack(spacing: 8) { ProgressView(); Text("Preparing the PDF…").font(.footnote) }
+                    .padding(10).background(Color.white).clipShape(Capsule()).shadow(radius: 3).padding(.bottom, 16)
+            }
+        }
+        .sheet(item: $pdf) { PdfViewer(item: $0) }
+        .alert(toast ?? "", isPresented: Binding(get: { toast != nil }, set: { if !$0 { toast = nil } })) { Button("OK") { toast = nil } }
     }
 
     private var groups: [String] {
@@ -79,6 +114,29 @@ struct SearchView: View {
             self.error = results.isEmpty ? failure : nil
             searched = q
             running = false
+        }
+    }
+
+    /// R37: print-layout PDF of a hit (dedicated layout, else the Universal Record PDF for any table).
+    private func printPdf(_ r: SearchResult) {
+        guard !printing else { return }
+        printing = true
+        Task { @MainActor in
+            do { pdf = try await RecordPdf.make(table: r.table, id: r.id) } catch { toast = "Could not create the PDF: \(error.localizedDescription)" }
+            printing = false
+        }
+    }
+
+    /// R37: the search results as a print-layout list PDF (controlled register layout).
+    private func resultsPdf() {
+        guard !printing else { return }
+        printing = true
+        let lines = results.map { [$0.module, $0.recordType, $0.reference, $0.detail, $0.status] }
+        let title = "Global Search " + searched
+        Task { @MainActor in
+            let doc = await RptReports.register(title, columns: ["Module", "Record Type", "Reference", "Details", "Status / Result"], rows: lines)
+            pdf = PdfItem(title: doc.title, fileName: doc.fileBase, data: RptPdf.render(doc))
+            printing = false
         }
     }
 

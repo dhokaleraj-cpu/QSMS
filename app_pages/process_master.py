@@ -203,6 +203,7 @@ def render_records() -> None:
                 record_number=str(selected_row.get("process_code") or ""),
             )
             st.download_button("Download Process PDF", pdf, file_name=f"Process_{selected_row.get('process_code')}.pdf", mime="application/pdf", width="stretch")
+            from core.pdf_preview import preview_button; preview_button("processes", selected, key="process_records", record=selected_row)  # R37
         with c3:
             delete_clicked = password_delete_panel(
                 repo=service.repo,

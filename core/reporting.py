@@ -2058,3 +2058,230 @@ material_inward_record_pdf_bytes = _layout_aware(material_inward_record_pdf_byte
 controlled_record_pdf_bytes = _layout_aware(controlled_record_pdf_bytes, "QUALITY_RECORD")
 npd_pending_status_pdf_bytes = _session_memo_bytes(npd_pending_status_pdf_bytes)
 qc_calculation_pdf_bytes = _session_memo_bytes(qc_calculation_pdf_bytes)
+
+
+# ----------------------------------------------------------------------------- R37 generic transaction print
+# PO-style "Design B" print for every transaction / master record that has no dedicated controlled layout:
+# company block + logo top-left, document title + number / date boxes top-right, two-column details,
+# child tables as ruled grids, attachments, status / approval stamp, "Page x of y" footer on every page.
+_TX_GOOD = {"APPROVED", "RELEASED", "ACCEPTED", "CLOSED", "COMPLETED", "PASS", "ACTIVE", "CONFIRMED", "RECEIVED", "DISPATCHED"}
+_TX_BAD = {"REJECTED", "CANCELLED", "FAIL", "FAILED", "INACTIVE", "VOID"}
+
+
+class _TransactionCanvas(canvas.Canvas):
+    def __init__(self, *args, doc_title: str = "", doc_number: str = "", doc_date: str = "", doc_status: str = "",
+                 company: Mapping[str, object] | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states: list[dict] = []
+        self._doc_title = str(doc_title or "RECORD").upper()
+        self._doc_number = str(doc_number or "")
+        self._doc_date = str(doc_date or "")
+        self._doc_status = str(doc_status or "")
+        self._company = dict(company or {})
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        page_count = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self._draw_page(page_count)
+            super().showPage()
+        super().save()
+
+    def _fit(self, text: str, font: str, size: float, width: float, minimum: float = 9.0) -> float:
+        while size > minimum and self.stringWidth(text, font, size) > width:
+            size -= 0.5
+        return size
+
+    def _draw_page(self, page_count: int) -> None:
+        width, height = self._pagesize
+        edge = 10 * mm
+        top = height - edge
+        logo = _logo_path()
+        if logo.exists():
+            try:
+                self.drawImage(str(logo), edge, top - 14 * mm, 36 * mm, 14 * mm, preserveAspectRatio=True, anchor="sw", mask="auto")
+            except Exception:
+                pass
+        company = self._company
+        name = str(company.get("name") or company.get("branch_name") or COMPANY_HEADER or "FOUR STAR INDUSTRIES")
+        lines = [str(company.get(k) or "").strip() for k in ("address1", "address2", "address3")]
+        locality = ", ".join(str(company.get(k) or "").strip() for k in ("city", "state", "postal_code", "country") if str(company.get(k) or "").strip())
+        if not any(lines) and company.get("address"):
+            lines = [str(company.get("address") or "")]
+        elif locality and not any(locality.split(",")[0] in v for v in lines if v):
+            lines.append(locality)
+        gstin = str(company.get("gstin") or company.get("tax_identifier") or "").strip()
+        contact = " · ".join(v for v in (str(company.get("phone") or "").strip(), str(company.get("email") or "").strip()) if v)
+        y = top - 18.5 * mm
+        self.setFillColor(INK)
+        self.setFont("Helvetica-Bold", self._fit(name, "Helvetica-Bold", 9.4, 92 * mm, 6.5))
+        self.drawString(edge, y, name[:70])
+        self.setFont("Helvetica", 7.2)
+        self.setFillColor(colors.HexColor("#333333"))
+        for text in [*(v for v in lines if v), f"GSTIN: {gstin}" if gstin else "", contact]:
+            if not text:
+                continue
+            y -= 3.3 * mm
+            if y < top - 34 * mm:
+                break
+            self.drawString(edge, y, text[:90])
+
+        # Title + document number / date boxes (top right, like the Purchase Order header).
+        right = width - edge
+        title = self._doc_title
+        size = self._fit(title, "Helvetica-Bold", 17.0, 100 * mm, 10.0)
+        self.setFillColor(TEAL)
+        self.setFont("Helvetica-Bold", size)
+        if self.stringWidth(title, "Helvetica-Bold", size) > 100 * mm and " " in title:
+            cut = title.rfind(" ", 0, len(title) // 2 + 8)
+            cut = cut if cut > 0 else title.find(" ")
+            self.drawRightString(right, top - 5.5 * mm, title[:cut].strip())
+            self.drawRightString(right, top - 10.5 * mm, title[cut:].strip())
+        else:
+            self.drawRightString(right, top - 8 * mm, title)
+        box_w = 52 * mm; box_h = 5.4 * mm; box_x = right - box_w
+        rows = [("DOC NO.", self._doc_number or "-"), ("DATE", self._doc_date or "-")]
+        if self._doc_status:
+            rows.append(("STATUS", self._doc_status))
+        by = top - 18 * mm
+        self.setLineWidth(0.6)
+        for label, value in rows:
+            self.setStrokeColor(RULE)
+            self.rect(box_x, by, box_w, box_h, stroke=1, fill=0)
+            self.setFillColor(colors.HexColor("#333333"))
+            self.setFont("Helvetica-Bold", 7.4)
+            self.drawRightString(box_x - 2 * mm, by + 1.6 * mm, label)
+            self.setFillColor(INK)
+            self.setFont("Helvetica-Bold" if label == "DOC NO." else "Helvetica", 7.8)
+            text = str(value)
+            fsize = self._fit(text, "Helvetica", 7.8, box_w - 3 * mm, 5.5)
+            self.setFont("Helvetica-Bold" if label == "DOC NO." else "Helvetica", fsize)
+            self.drawString(box_x + 1.6 * mm, by + 1.6 * mm, text[:60])
+            by -= box_h + 1.2 * mm
+        self.setStrokeColor(TEAL)
+        self.setLineWidth(1.6)
+        self.line(edge, top - 37 * mm, right, top - 37 * mm)
+
+        # Footer on every page.
+        settings = get_settings()
+        self.setStrokeColor(BORDER)
+        self.setLineWidth(0.45)
+        self.line(edge, 10.5 * mm, right, 10.5 * mm)
+        self.setFillColor(MUTED)
+        self.setFont("Helvetica", 6.8)
+        footer = f"Generated by STAWN QCMS · {name} · Printed {datetime.now().strftime('%d-%m-%Y %I:%M %p')} · App {settings.version}"
+        if FOOTER_OVERRIDE:
+            footer = f"Generated by STAWN QCMS · {FOOTER_OVERRIDE}"
+        self.drawString(edge, 6.4 * mm, footer[:150])
+        self.drawRightString(right, 6.4 * mm, f"Page {self._pageNumber} of {page_count}")
+
+
+def _tx_frame(raw: object) -> pd.DataFrame:
+    if isinstance(raw, pd.DataFrame):
+        frame = raw.copy()
+    elif isinstance(raw, Mapping):
+        frame = pd.DataFrame([{"Field": key, "Value": value} for key, value in raw.items()])
+    elif isinstance(raw, (list, tuple)):
+        frame = pd.DataFrame([dict(r) for r in raw]) if raw and isinstance(raw[0], Mapping) else pd.DataFrame({"Value": list(raw)})
+    elif raw is None:
+        frame = pd.DataFrame()
+    else:
+        frame = pd.DataFrame([{"Information": raw}])
+    return frame
+
+
+def _transaction_record_pdf_bytes(
+    title: str,
+    fields: Mapping[str, object] | Sequence[tuple[str, object]],
+    sections: Mapping[str, object] | None = None,
+    *,
+    document_number: str = "",
+    document_date: object = "",
+    company: Mapping[str, object] | None = None,
+    status: str = "",
+    approval: Mapping[str, object] | None = None,
+    attachments: Sequence[Mapping[str, object]] | None = None,
+    subtitle: str = "",
+) -> bytes:
+    """R37 generic PO-style transaction print (A4 portrait, Design B) used for every record type."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4, leftMargin=10 * mm, rightMargin=10 * mm, topMargin=50 * mm, bottomMargin=15 * mm,
+        title=f"{title} {document_number}".strip(), author="STAWN QCMS",
+    )
+    styles = _controlled_styles()
+    content_width = A4[0] - 20 * mm
+    story: list[object] = []
+    if subtitle:
+        story.append(_paragraph(subtitle, ParagraphStyle("TxSubtitle", parent=styles["cell"], fontSize=7.4, leading=9, textColor=MUTED)))
+
+    items = list(fields.items()) if isinstance(fields, Mapping) else [tuple(pair) for pair in (fields or [])]
+    items = [(str(k), v) for k, v in items if str(k).strip()]
+    if items:
+        story.append(_rmtc_section_bar("DETAILS", content_width, styles["section"]))
+        rows: list[list[object]] = []
+        for index in range(0, len(items), 2):
+            left = items[index]
+            right = items[index + 1] if index + 1 < len(items) else ("", "")
+            rows.append([left[0], _pdf_cell(left[1]), right[0], _pdf_cell(right[1])])
+        story.append(_rmtc_labeled_grid(rows, [36 * mm, content_width / 2 - 36 * mm, 36 * mm, content_width / 2 - 36 * mm], styles["label"], styles["cell"]))
+
+    for section_name, raw in (sections or {}).items():
+        frame = _tx_frame(raw)
+        story.append(Spacer(1, 2.4 * mm))
+        story.append(_rmtc_section_bar(f"{section_name} ({len(frame)})" if not frame.empty else section_name, content_width, styles["section"]))
+        if frame.empty:
+            frame = pd.DataFrame([{"Information": "No records available."}])
+        frame = frame.fillna("")
+        columns = [str(c) for c in frame.columns]
+        frame.columns = columns
+        groups = [columns] if len(columns) <= MAX_PDF_COLUMNS else [
+            [columns[0], *columns[1:][i:i + MAX_PDF_COLUMNS - 1]] for i in range(0, len(columns) - 1, MAX_PDF_COLUMNS - 1)]
+        for group_index, group in enumerate(groups):
+            if len(groups) > 1:
+                story.append(_rmtc_section_bar(f"{section_name} · columns {group_index + 1} of {len(groups)}", content_width, styles["section"], light=True))
+            table_rows: list[list[object]] = [group]
+            table_rows.extend([[_pdf_cell(_display_value(v)) for v in row] for row in frame[group].itertuples(index=False, name=None)])
+            widths = [content_width / max(1, len(group))] * max(1, len(group))
+            status_columns = tuple(i for i, n in enumerate(group) if any(t in n.casefold() for t in ("status", "result", "decision")))
+            story.append(_rmtc_grid(table_rows, widths, styles["header"], styles["cell"], status_columns=status_columns))
+
+    attachment_rows = [dict(a) for a in (attachments or [])]
+    if attachment_rows:
+        story.append(Spacer(1, 2.4 * mm))
+        story.append(_rmtc_section_bar(f"ATTACHMENTS ({len(attachment_rows)})", content_width, styles["section"]))
+        grid = [["#", "File", "Document / Title", "Uploaded"]] + [
+            [str(i + 1), _pdf_cell(a.get("file_name") or "-"), _pdf_cell(a.get("document_title") or a.get("title") or "-"), _display_value(a.get("created_at") or "")]
+            for i, a in enumerate(attachment_rows)]
+        story.append(_rmtc_grid(grid, [10 * mm, (content_width - 50 * mm) / 2, (content_width - 50 * mm) / 2, 40 * mm], styles["header"], styles["cell"]))
+
+    # Status / approval stamp.
+    status_text = str(status or "").strip()
+    approval = dict(approval or {})
+    if status_text or approval:
+        key = status_text.upper().replace(" ", "_")
+        tone = STATUS_TEXT["good"] if key in _TX_GOOD else (STATUS_TEXT["bad"] if key in _TX_BAD else STATUS_TEXT["hold"])
+        stamp_style = ParagraphStyle("TxStamp", parent=styles["cell"], fontName="Helvetica-Bold", fontSize=12, leading=14, alignment=TA_CENTER, textColor=tone)
+        small = ParagraphStyle("TxStampSmall", parent=styles["cell"], fontSize=7.4, leading=9, alignment=TA_CENTER, textColor=colors.HexColor("#333333"))
+        lines = [[_paragraph(status_text.replace("_", " ").upper() or "STATUS", stamp_style)]]
+        for label, value in approval.items():
+            if value not in (None, "", "-"):
+                lines.append([_paragraph(f"{label}: {_display_value(value)}", small)])
+        stamp = Table(lines, colWidths=[72 * mm], hAlign="RIGHT")
+        stamp.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 1.4, tone), ("TOPPADDING", (0, 0), (-1, -1), 2.4), ("BOTTOMPADDING", (0, 0), (-1, -1), 2.4)]))
+        story.append(Spacer(1, 4 * mm))
+        story.append(KeepTogether([stamp]))
+
+    if not story:
+        story.append(_paragraph("No printable data.", styles["cell"]))
+    doc.build(story, canvasmaker=lambda *args, **kwargs: _TransactionCanvas(
+        *args, doc_title=title, doc_number=document_number, doc_date=_display_value(document_date),
+        doc_status=status_text.replace("_", " ").title(), company=company, **kwargs))
+    return buffer.getvalue()
+
+
+transaction_record_pdf_bytes = _layout_aware(_transaction_record_pdf_bytes, "QUALITY_RECORD")

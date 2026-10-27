@@ -202,7 +202,7 @@ def search_everywhere(repo: Repository, profile: dict, query: str, *, per_source
     return found
 
 
-def _open_result(result: dict) -> None:
+def _open_result(result: dict, *, warn: bool = True) -> bool:
     # Records Centre keeps the controlled edit routing for every supported source
     # table; Bend Test is routed explicitly to its dedicated report entry page.
     table = str(result.get("table") or "")
@@ -216,9 +216,9 @@ def _open_result(result: dict) -> None:
             st.session_state["edit_metlab_id"] = str(row.get("id") or "")
             if "bend-test-entry" in pages:
                 st.switch_page(pages["bend-test-entry"])
-                return
+                return True
     from app_pages.records_center import _open_selected_record_for_edit
-    _open_selected_record_for_edit(table, row)
+    return bool(_open_selected_record_for_edit(table, row, warn=warn))
 
 
 AI_EXAMPLE_PROMPTS: tuple[str, ...] = (
@@ -334,7 +334,11 @@ def render() -> None:
         st.caption("AI Assistant is switched off by the System Administrator. Keyword Search is available below.")
         _render_keyword_search(repo, profile)
         return
-    keyword_tab, ai_tab = st.tabs(["🔎 Search Everything", "✨ AI Assistant"])
+    # R37: "+ → New query" opens the AI Assistant tab first.
+    if st.session_state.pop("_qcms_global_search_open_ai", False):
+        ai_tab, keyword_tab = st.tabs(["✨ AI Assistant", "🔎 Search Everything"])
+    else:
+        keyword_tab, ai_tab = st.tabs(["🔎 Search Everything", "✨ AI Assistant"])
     with keyword_tab:
         _render_keyword_search(repo, profile)
     with ai_tab:
@@ -418,6 +422,8 @@ _EDIT_ROUTED_TABLES = {
     "standard_room_inspection_records", "supply_customer_orders", "supply_purchase_orders", "supply_purchase_order_items",
     "supply_po_confirmations", "supply_opening_stock", "supply_rm_purchase_orders", "supply_rm_receipts", "supply_rm_dispatches",
     "supply_forging_orders", "supply_forging_receipts", "supply_downstream_events",
+    "indirect_purchase_orders", "indirect_purchase_order_items", "indirect_grns", "indirect_grn_items", "indirect_items",
+    "indirect_purchase_requisitions",
 }
 
 # R36: detail / child rows open their parent record (child table -> (parent table, link column)).
@@ -499,8 +505,15 @@ def _record_viewer(table: str, row: dict, record_type: str, route: str) -> None:
         except Exception as exc:
             st.caption(f"File not available: {exc}")
     pages = st.session_state.get("_qsms_pages") or {}
-    if route and route in pages and st.button("Open the module screen", icon=":material/open_in_new:", type="primary"):
+    if not route or route not in pages:
+        from core.universal_pdf import record_route
+        route = record_route(table, pages) or ""
+    if route and route in pages and st.button("Open the module register", icon=":material/open_in_new:", type="primary"):
         st.switch_page(pages[route])
+    # R37: print layout of this record (dedicated controlled layout or the generic PO-style transaction print).
+    section_bar("PRINT LAYOUT PDF")
+    from core.record_print import print_panel
+    print_panel(table, str(row.get("id") or ""), key="gs_viewer", record=row)
 
 
 def _open_record(repo: Repository, item: dict) -> None:
@@ -514,10 +527,14 @@ def _open_record(repo: Repository, item: dict) -> None:
         st.session_state["edit_customer_standard_id"] = str(target_row.get("id") or "")
         _open_route("standards-entry")
         return
-    if target_table in _EDIT_ROUTED_TABLES:
-        _open_result({"table": target_table, "record": target_row})
+    if target_table in _EDIT_ROUTED_TABLES and _open_result({"table": target_table, "record": target_row}, warn=False):
         return
-    _record_viewer(table, row, str(item.get("record_type") or table), str(item.get("route") or ""))
+    record_type = str(item.get("record_type") or table)
+    if target_table != table and target_row and target_table in _EDIT_ROUTED_TABLES and table != "document_attachments":
+        # R37: the entry screen is not available for this login - show the parent record (with its print layout)
+        from core.universal_pdf import record_label
+        table, row, record_type = target_table, target_row, record_label(target_table)
+    _record_viewer(table, row, record_type, str(item.get("route") or ""))
 
 
 def _render_everything(repo: Repository, query: str, everything: dict) -> None:
@@ -596,6 +613,48 @@ def _record_table(repo: Repository, items: list[dict], key: str) -> None:
             _open_record(repo, items[rows[0]])
     else:
         st.session_state.pop("_gs_last_opened", None)
+    _result_print_area(repo, items, key, clicked)
+
+
+def _print_target(repo: Repository, item: dict) -> tuple[str, dict]:
+    """The record a search hit prints: the hit itself, or its parent for detail rows / attachments."""
+    table = str(item.get("table") or "")
+    row = dict(item.get("record") or {}) or _fetch_row(repo, table, str(item.get("id") or ""))
+    if not row:
+        return table, {}
+    return _resolve_target(repo, table, row)
+
+
+def _result_print_area(repo: Repository, items: list[dict], key: str, clicked: int | None = None) -> None:
+    """R37: Preview / Download the print-layout PDF of a result without leaving Global Search."""
+    if not items:
+        return
+    with st.container(border=True, key=f"gs_print_area_{key}"):
+        st.markdown("**Print layout PDF** · preview or download any result in its print layout")
+        labels = {i: " · ".join(v for v in (str(it.get("record_type") or it.get("table") or ""), str(it.get("title") or it.get("reference") or ""),
+                                             str(it.get("subtitle") or it.get("detail") or "")[:80]) if v) for i, it in enumerate(items)}
+        default = clicked if clicked is not None and clicked in labels else None
+        choice = st.selectbox("Result to print", list(labels), index=default, format_func=lambda i: labels[i],
+                              key=f"gs_print_pick_{key}", placeholder="Choose a result to preview / download its print PDF")
+        if choice is None:
+            return
+        table, row = _print_target(repo, items[choice])
+        if not row:
+            st.caption("This record is no longer available.")
+            return
+        c1, c2 = st.columns(2, gap="small")
+        if c1.button("Open record", key=f"gs_print_open_{key}", icon=":material/open_in_new:", width="stretch",
+                     help="Opens the entry screen of this record (or its full record view)."):
+            _open_record(repo, {**items[choice], "table": table, "id": str(row.get("id") or ""),
+                                "route": items[choice].get("route") or ""})
+        from core.universal_pdf import record_route
+        pages = st.session_state.get("_qsms_pages") or {}
+        register = record_route(table, pages)
+        if c2.button("Open module register", key=f"gs_print_register_{key}", icon=":material/table_view:", width="stretch",
+                     disabled=not register):
+            _open_route(str(register))
+        from core.record_print import print_panel
+        print_panel(table, str(row.get("id") or ""), key=f"gs_{key}", repo=repo, record=row)
 
 
 def _render_classic_results(last_query: str) -> None:
@@ -636,3 +695,8 @@ def _render_classic_results(last_query: str) -> None:
         )
         if st.button("Open Selected Record", icon=":material/open_in_new:", type="primary", width="stretch"):
             _open_result(by_key[selected])
+        if selected:
+            # R37: print layout of the selected result.
+            from core.record_print import print_panel
+            item = by_key[selected]
+            print_panel(str(item.get("table") or ""), str((item.get("record") or {}).get("id") or ""), key="gs_classic", record=dict(item.get("record") or {}))

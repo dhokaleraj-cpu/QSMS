@@ -793,6 +793,7 @@ def render_records()->None:
             )
         except Exception as exc:
             st.warning(f'RMTC PDF could not be prepared: {exc}')
+        from core.pdf_preview import preview_button; preview_button('rmtc_approvals', selected, key='rmtc_records', record=selected_row)  # R37
         record_email_sender(
             NotificationService(svc.repo), 'RMTC_APPROVAL_PENDING',
             related_table='rmtc_approvals', related_id=selected, key=f'rmtc_record_email_{selected}',

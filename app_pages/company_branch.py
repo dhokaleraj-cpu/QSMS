@@ -117,6 +117,7 @@ def render_records() -> None:
     if rows:
         labels = {str(r["id"]): with_status(branch_label(r), r) for r in rows}
         selected = st.selectbox("Select Branch to Edit", list(labels), format_func=lambda v: labels[v])
+        from core.pdf_preview import pdf_actions; pdf_actions("company_branches", selected, key="branch_records")  # R37
         if st.button("Edit Selected Company Branch", type="primary", width="stretch"):
             st.session_state["company_branch_edit_select"] = selected
             st.switch_page(st.session_state["_qsms_pages"]["company-branch-entry"])

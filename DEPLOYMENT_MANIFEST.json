@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R36b",
+  "release_revision": "R37b",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -632,5 +632,22 @@
     "inventory_stock_reports_five_views",
     "filters_on_all_reports",
     "report_builder_in_reports_with_inventory_sources"
+  ],
+  "r37_changes": [
+    "kpi_cards_click_to_drilldown_records_open_record",
+    "module_infographic_kpi_cards_28_modules_clickable",
+    "quick_add_plus_button_new_transaction_email_query_dashboard",
+    "print_layout_pdf_preview_download_every_record_register_search_result",
+    "osp_material_out_returnable_delivery_challan_print_with_vendor_return_section",
+    "osp_dimensional_layout_fallback_save_fix_osp_metlab_pending_fix",
+    "indirect_purchase_module_items_requisition_po_approval_grn_stock",
+    "android_3_5_0_ios_1_2_0_kpi_drill_plus_menu_pdf"
+  ],
+  "r37b_changes": [
+    "part_price_history_grid_saves_by_row_id_no_overlap_error",
+    "po_amendment_number_date_effective_date_price_qty",
+    "po_print_amendment_caption_every_page_and_amendment_history",
+    "po_print_all_price_revision_rows",
+    "updater_r8_test_timeout_fix"
   ]
 }

@@ -444,6 +444,8 @@ final class SndPoPdf {
         text(w - 137, h - 65, "PO #", 7.4f, false, TEXT);
         g.rect(w - 91, h - 72, 62, 12, true, false);
         fit(w - 86, h - 69, SndData.s(header, "po_number"), 7.2f, false, TEXT, 54);
+        String amendment = amendmentCaption(header);
+        if (!amendment.isEmpty()) g.right(w - right - 1, h - 81, amendment, 6.3f, true, accent());   // R37b
 
         float colW = 230, leftX = left, rightX = w - right - 184, y0 = h - 62;
         JSONObject plant = plantSnapshot();
@@ -871,6 +873,18 @@ final class SndPoPdf {
         rules();
         text(W - 176, H - 51, "PO # " + SndData.s(header, "po_number"), 7.2f, true, TEXT, 148);
         text(W - 176, H - 64, "DATE " + date(SndData.s(header, "order_date")), 7.2f, false, TEXT);
+        String amendment = amendmentCaption(header);
+        if (!amendment.isEmpty()) g.right(W - 28, H - 76, amendment, 6.0f, true, accent());   // R37b
+    }
+
+    /** R37b: "Amendment No. N  ·  Amendment Date dd-mm-yyyy  ·  Effective Date dd-mm-yyyy" or "" when not amended. */
+    static String amendmentCaption(JSONObject header) {
+        int no = (int) Math.round(SndData.n(header, "amendment_no"));
+        if (no <= 0) return "";
+        StringBuilder out = new StringBuilder("Amendment No. ").append(no);
+        if (!SndData.s(header, "amendment_date").isEmpty()) out.append("  \u00b7  Amendment Date ").append(date(SndData.s(header, "amendment_date")));
+        if (!SndData.s(header, "amendment_effective_date").isEmpty()) out.append("  \u00b7  Effective Date ").append(date(SndData.s(header, "amendment_effective_date")));
+        return out.toString();
     }
 
     private void footer(String text) { g.centre(W / 2, 27, text, 5.8f, false, GREY); }

@@ -14,6 +14,8 @@ enum Route: Hashable {
     case history(String, String)   // module key, id
     case notifications
     case home
+    case kpiRecords(String, String, String, String)   // R37: card key, department, title, fallback route
+    case kpiDrill(String, String, String, String)     // R37: drill table, encoded PostgREST filter, title, fallback route
 }
 
 /// Navigation path of one tab (lets screens push / pop programmatically).
@@ -103,6 +105,9 @@ struct RouteView: View {
             if let m = Catalog.shared.module(key) { HistoryView(module: m, id: id) } else { ErrorBox(message: "Module not available.") }
         case .notifications: NotificationsView()
         case .home: HomeView()
+        case .kpiRecords(let key, let dept, let title, let route): KpiRecordsView(key: key, department: dept, title: title, route: route)
+        case .kpiDrill(let table, let query, let title, let route):
+            KpiRecordsView(key: "", department: "", title: title, route: route, drillTable: table, drillQuery: query)
         }
     }
 }
@@ -132,9 +137,17 @@ struct ModuleEntry: View {
 struct SectionView: View {
     let tab: Int
     @EnvironmentObject var app: AppState
+    /// R37: module infographic cards of this tab (qcms_module_cards; hidden when missing).
+    @State private var modules: [ModuleCard] = []
 
     var body: some View {
         List {
+            if !modules.isEmpty {
+                Section {
+                    ModuleCardsStrip(cards: modules, department: QuickActions.departments(tab: tab).first ?? "QUALITY", onTap: nil)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 0))
+                }
+            }
             if tab == 4 {
                 Section("Reports & records") {
                     NavigationLink(value: Route.reportsCentre) { ModuleRow(title: "Reports Centre", detail: "Supply chain, heat, quality, complaints, NPD, APQP", icon: "chart.bar.doc.horizontal") }
@@ -163,6 +176,26 @@ struct SectionView: View {
         .qcmsNavBar()
         .qcmsBrand()
         .qcmsBell()
+        .task { await loadModules() }
+        .refreshable { await loadModules() }
+    }
+
+    /// Module cards of the tab's departments, merged without duplicates (each tap opens the records list).
+    @MainActor private func loadModules() async {
+        var out: [ModuleCard] = []
+        var seen = Set<String>()
+        for d in QuickActions.departments(tab: tab) {
+            guard let raw = try? await Api.shared.rpc("qcms_module_cards", ["p_department": d]) else { continue }
+            for c in ModuleCard.parse(raw) {
+                let k = c.key.isEmpty ? c.title : c.key
+                if seen.contains(k) { continue }
+                seen.insert(k)
+                var card = c
+                card.id = out.count
+                out.append(card)
+            }
+        }
+        modules = out
     }
 
     private func hidden(_ m: QModule) -> Bool { ["global_search", "reports_centre", "records_centre", "about", "my_account"].contains(m.key) }

@@ -2,8 +2,8 @@
 import hashlib, os, sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, "STAWNQCMS")
-VERSION = sys.argv[1] if len(sys.argv) > 1 else "1.1.0"
-BUILD = sys.argv[2] if len(sys.argv) > 2 else "2"
+VERSION = sys.argv[1] if len(sys.argv) > 1 else "1.2.0"
+BUILD = sys.argv[2] if len(sys.argv) > 2 else "3"
 BUNDLE = "com.stawnprecision.qcms"
 # R36: free Apple ID ("Personal Team") build - no paid membership. Personal teams cannot sign Push Notifications,
 # so the push entitlement is left out and a separate bundle id is used (STAWN_PERSONAL_TEAM=1).

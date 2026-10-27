@@ -5,8 +5,8 @@ PRODUCT = "STAWN QCMS"
 TAGLINE = "Quality Control Monitoring System"
 COMPANY = "STAWN PRECISION PRIVATE LIMITED"
 EMAIL = "business@stawnprecision.com"
-ANDROID_VERSION = "3.4.0"
-IOS_VERSION = "1.1.0"
+ANDROID_VERSION = "3.5.0"
+IOS_VERSION = "1.2.0"
 COPYRIGHT = f"© 2026 {COMPANY}. All rights reserved."
 DEVELOPER = (
     ("Developed by", COMPANY),

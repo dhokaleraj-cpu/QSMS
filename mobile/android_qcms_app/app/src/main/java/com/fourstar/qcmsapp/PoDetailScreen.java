@@ -20,7 +20,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /** Purchase Order preview with print-section choice, send / do-not-send choice, approve and cancel. */
-public final class PoDetailScreen extends Screen {
+public final class PoDetailScreen extends Screen implements ExportKit.RecordPrint {
     /** Same flags as the QCMS website (core/po_print_ui.SECTION_OPTIONS). */
     static final String[][] SECTIONS = {
         {"show_plant", "Plant / Company Branch"}, {"show_vendor", "Vendor"}, {"show_reference", "Reference Details"},
@@ -34,6 +34,10 @@ public final class PoDetailScreen extends Screen {
     private final Map<String, CheckBox> sectionBoxes = new LinkedHashMap<>();
 
     public PoDetailScreen(MainActivity a, String id) { super(a); this.id = id; }
+
+    // R37: the PO PDF viewer (Preview · Save to Downloads · Share) from the top-bar ⇩ too
+    @Override public boolean layoutReady() { return id != null && !id.isEmpty(); }
+    @Override public void printLayout() { SndPdfView.forPo(a, id); }
 
     @Override public String title() { return number.isEmpty() ? "Purchase Order" : number; }
     @Override public String subtitle() { return "Preview · print sections · approval"; }
@@ -157,7 +161,7 @@ public final class PoDetailScreen extends Screen {
             send.setOnClickListener(v -> SndPoSend.open(a, id));
             add(send, 14);
         }
-        Button web = Ui.outline(a, "Open PO PDF (print sections as saved)", Ui.TEAL);
+        Button web = Ui.outline(a, "🖨 Open PO PDF (print sections as saved) · Preview · Save · Share", Ui.TEAL);
         web.setOnClickListener(v -> SndPdfView.forPo(a, id));
         add(web, 10);
         if (!cancelled) {

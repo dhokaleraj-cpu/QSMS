@@ -36,11 +36,17 @@ final class ExportKit {
 
     private ExportKit() { }
 
+    /** R37: a record screen with a print-layout PDF (Preview / Save / Share from the top-bar ⇩ too). */
+    interface RecordPrint {
+        boolean layoutReady();
+        void printLayout();
+    }
+
     // ------------------------------------------------------------------ entry point (top-bar ⇩ button)
     static void show(MainActivity a, Screen screen, View content) {
         if (screen == null) return;
-        if (screen instanceof RecordScreen && ((RecordScreen) screen).layoutReady()) {
-            RecordScreen rs = (RecordScreen) screen;
+        if (screen instanceof RecordPrint && ((RecordPrint) screen).layoutReady()) {
+            RecordPrint rs = (RecordPrint) screen;
             new AlertDialog.Builder(a).setTitle(screen.title())
                 .setItems(new String[]{"Print layout PDF (same as website)", "Data export: PDF / Excel / Print / Email"}, (d, w) -> {
                     if (w == 0) rs.printLayout(); else showData(a, screen, content);

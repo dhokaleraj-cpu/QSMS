@@ -27,17 +27,32 @@ def _map(rows: list[dict], key: str, value: str) -> dict[str, str]:
     return {str(row.get(key)): str(row.get(value) or "") for row in rows}
 
 
-def _table(frame: pd.DataFrame, *, height: int = 560, pdf_title: str = "QCMS Record Register", pdf_key: str = "register") -> None:
+def _table(frame: pd.DataFrame, *, height: int = 560, pdf_title: str = "QCMS Record Register", pdf_key: str = "register",
+           sources: list[tuple[str, str]] | None = None) -> None:
+    """Register grid. R37: with ``sources`` (table, id per row) rows are clickable - the clicked record gets
+    Open record + Preview / Download print PDF; the register itself has Preview PDF + Download PDF."""
     if frame.empty:
         st.info("No records are available for this register.")
         return
-    portal_table(style_status_dataframe(frame), hide_index=True, width="stretch", height=height)
+    from core.record_print import print_panel, register_print_panel
+    clicked = None
+    if sources and len(sources) == len(frame):
+        from core.ui import selectable_table
+        st.caption("Click a row to open the record or preview / download its print PDF.")
+        clicked = selectable_table(style_status_dataframe(frame), key=f"records_grid_{pdf_key}", height=height)
+    else:
+        portal_table(style_status_dataframe(frame), hide_index=True, width="stretch", height=height)
+    if clicked is not None and sources and 0 <= clicked < len(sources):
+        table, record_id = sources[clicked]
+        with st.container(border=True, key=f"records_pick_{pdf_key}"):
+            st.markdown(f"**Selected record** · {' · '.join(str(v) for v in frame.iloc[clicked].tolist()[:3] if str(v or '').strip() and str(v) != 'None')}")
+            if st.button("Open record", key=f"records_open_{pdf_key}_{record_id}", icon=":material/open_in_new:", type="primary"):
+                rows = _rows(Repository(), table, eq={"id": record_id})
+                if rows:
+                    _open_selected_record_for_edit(table, rows[0])
+            print_panel(table, record_id, key=f"records_{pdf_key}")
     # PDF print is intentionally available to every user who can view the register.
-    pdf_bytes = controlled_record_pdf_bytes(pdf_title, {"Record Count": len(frame)}, {pdf_title: frame})
-    st.download_button(
-        "Print / Download PDF", data=pdf_bytes, file_name=f"{pdf_key}.pdf",
-        mime="application/pdf", icon=":material/picture_as_pdf:", width="stretch", key=f"records_pdf_{pdf_key}",
-    )
+    register_print_panel(frame, pdf_title, key=f"records_pdf_{pdf_key}", pdf_label="Print / Download PDF")
 
 
 
@@ -193,6 +208,23 @@ UNIVERSAL_RECORD_TABLES: dict[str, tuple[str, str]] = {
     "Forging Orders": ("supply_forging_orders", "SUPPLY_CHAIN"),
     "Forging Receipts": ("supply_forging_receipts", "SUPPLY_CHAIN"),
     "Supply Chain Downstream Events": ("supply_downstream_events", "SUPPLY_CHAIN"),
+    # R37: every business table has a print layout
+    "OSP Material Out (multi-heat)": ("osp_material_outs", "OSP_TRANSACTIONS"),
+    "OSP Delivery Challans": ("osp_challans", "OSP_TRANSACTIONS"),
+    "Indirect Purchase Requisitions": ("indirect_purchase_requisitions", "INDIRECT_PURCHASE"),
+    "Indirect Purchase Orders": ("indirect_purchase_orders", "INDIRECT_PURCHASE"),
+    "Indirect GRNs": ("indirect_grns", "INDIRECT_PURCHASE"),
+    "Indirect Items": ("indirect_items", "INDIRECT_PURCHASE"),
+    "Process Flow Diagrams (PFD)": ("pfd_headers", "NPD_APQP"),
+    "PFMEA": ("pfmea_headers", "NPD_APQP"),
+    "Control Plans": ("control_plan_headers", "NPD_APQP"),
+    "SPC Studies": ("spc_studies", "NPD_APQP"),
+    "MSA Studies": ("msa_studies", "NPD_APQP"),
+    "Capacity Studies": ("capacity_studies", "NPD_APQP"),
+    "Gauges / Fixtures / Quality Assets": ("quality_assets", "CALIBRATION_VALIDATION"),
+    "Calibration / Validation Records": ("quality_asset_calibration_records", "CALIBRATION_VALIDATION"),
+    "Standard Room Inspections": ("standard_room_inspection_records", "CALIBRATION_VALIDATION"),
+    "Customer Standards": ("customer_standards", "REFERENCE_MASTERS"),
 }
 
 MASTER_DELETE_TABLES: dict[str, tuple[str, str]] = {
@@ -250,7 +282,7 @@ def _reference_key_for_party(record: dict) -> str:
     return next((mapping[value] for value in values if value in mapping), "suppliers")
 
 
-def _open_selected_record_for_edit(table: str, record: dict) -> None:
+def _open_selected_record_for_edit(table: str, record: dict, *, warn: bool = True) -> bool:
     """Route a Records Centre selection to its controlled source editor.
 
     This is deliberately navigation-only: each source module keeps its own workflow,
@@ -285,6 +317,8 @@ def _open_selected_record_for_edit(table: str, record: dict) -> None:
         st.session_state["edit_inward_id"] = record_id; route = "inward-entry"
     elif table == "osp_jobs":
         st.session_state["osp_material_out_manage_id"] = record_id; route = "osp-material-out"
+    elif table in {"osp_material_outs", "osp_challans"}:
+        route = "osp-material-out"
     elif table == "osp_receipts":
         st.session_state["osp_inward_manage_id"] = record_id; route = "osp-inward"
     elif table == "production_batches":
@@ -338,10 +372,23 @@ def _open_selected_record_for_edit(table: str, record: dict) -> None:
         st.session_state["supply_forging_receipt_edit_edit_select"] = record_id; route = "supply-forging"
     elif table == "supply_downstream_events":
         st.session_state["supply_downstream_edit_edit_select"] = record_id; route = "supply-downstream"
+    # R37: Indirect Purchase records open their own screens
+    elif table in {"indirect_purchase_orders", "indirect_purchase_order_items"}:
+        po_id = record_id if table == "indirect_purchase_orders" else str(record.get("purchase_order_id") or record.get("indirect_purchase_order_id") or "")
+        st.session_state["indirect_po_open_id"] = po_id; route = "indirect-po-list"
+    elif table in {"indirect_grns", "indirect_grn_items"}:
+        grn_id = record_id if table == "indirect_grns" else str(record.get("grn_id") or record.get("indirect_grn_id") or "")
+        st.session_state["igrn_open_id"] = grn_id; route = "indirect-inward"
+    elif table == "indirect_items":
+        st.session_state["indirect_item_edit_id"] = record_id; route = "indirect-items"
+    elif table in {"indirect_purchase_requisitions", "indirect_purchase_requisition_items"}:
+        route = "indirect-requisition"
     if route and route in pages:
         st.switch_page(pages[route])
-    else:
+        return True
+    if warn:
         st.warning("This child/detail record is edited through its parent source module. Open the related module from the main navigation.")
+    return False
 
 
 def _generic_record_label(row: dict) -> str:
@@ -382,30 +429,22 @@ def render_universal_pdf_center(repo: Repository) -> None:
         st.info("No records are available for this selection.")
         return
     register = pd.DataFrame([{key: _pdf_safe_value(value) for key, value in row.items() if key not in {"tenant_id"}} for row in rows])
-    portal_table(register, hide_index=True, width="stretch", height=420)
-    register_pdf = controlled_record_pdf_bytes(
-        f"{selected_name.upper()} REGISTER", {"Record Count": len(register)}, {selected_name: register}
-    )
-    st.download_button(
-        "Download Full Register PDF", register_pdf, file_name=f"QCMS_{table}_Register.pdf",
-        mime="application/pdf", width="stretch", key=f"universal_register_pdf_{table}",
-    )
+    st.caption("Click a row to preview / download that record's print PDF.")
+    from core.record_print import print_panel, register_print_panel
+    from core.ui import selectable_table
+    clicked = selectable_table(register, key=f"universal_grid_{table}", height=420)
+    register_print_panel(register, f"{selected_name.upper()} REGISTER", key=f"universal_register_pdf_{table}", pdf_label="Download Full Register PDF")
     labels = {str(row.get("id")): _generic_record_label(row) for row in rows if row.get("id")}
     if labels:
-        selected_id = st.selectbox("Selected Record", list(labels), format_func=lambda value: labels[value], key=f"universal_record_{table}")
+        ids = list(labels)
+        clicked_id = str(rows[clicked].get("id")) if clicked is not None and 0 <= clicked < len(rows) else None
+        if clicked_id in labels and st.session_state.get(f"_universal_last_click_{table}") != clicked_id:
+            st.session_state[f"_universal_last_click_{table}"] = clicked_id
+            st.session_state[f"universal_record_{table}"] = clicked_id
+        selected_id = st.selectbox("Selected Record", ids, format_func=lambda value: labels[value], key=f"universal_record_{table}")
         record = next(row for row in rows if str(row.get("id")) == selected_id)
-        header = {
-            str(key).replace("_", " ").title(): _pdf_safe_value(value)
-            for key, value in record.items()
-            if key not in {"tenant_id"} and value not in (None, "", [], {})
-        }
-        record_pdf = controlled_record_pdf_bytes(
-            f"{selected_name.upper()} RECORD", header, record_number=_generic_record_label(record)
-        )
-        st.download_button(
-            "Download Selected Record PDF", record_pdf, file_name=f"QCMS_{table}_{selected_id}.pdf",
-            mime="application/pdf", width="stretch", key=f"universal_record_pdf_{table}_{selected_id}",
-        )
+        # R37: one print path for every record - dedicated controlled layout or the PO-style transaction print.
+        print_panel(table, selected_id, key="universal", repo=repo, pdf_label="Download Selected Record PDF")
         if perms.get("can_edit", False):
             if st.button(
                 "Open Selected Record for Controlled Edit", icon=":material/edit:", width="stretch",
@@ -607,7 +646,7 @@ def render() -> None:
             "Workflow": r.get("status"),
             "Final Decision": r.get("disposition"),
             "Created": r.get("created_at"),
-        } for r in rows]), pdf_title="RMTC Register", pdf_key="QCMS_RMTC_Register")
+        } for r in rows]), pdf_title="RMTC Register", pdf_key="QCMS_RMTC_Register", sources=[("rmtc_approvals", str(r.get("id"))) for r in rows])
         st.page_link(st.session_state["_qsms_pages"]["rmtc-records"], label="Open RMTC Records and Actions", icon=":material/open_in_new:", width="stretch")
 
     with tabs[1]:
@@ -633,7 +672,7 @@ def render() -> None:
             "Dimensional": r.get("dimensional_status"),
             "Quality Decision": r.get("quality_disposition"),
             "Status": r.get("status"),
-        } for r in rows]), pdf_title="Material Inward Register", pdf_key="QCMS_Material_Inward_Register")
+        } for r in rows]), pdf_title="Material Inward Register", pdf_key="QCMS_Material_Inward_Register", sources=[("inward_lots", str(r.get("id"))) for r in rows])
         st.page_link(st.session_state["_qsms_pages"]["inward-records"], label="Open Material Inward Records and Actions", icon=":material/open_in_new:", width="stretch")
 
 
@@ -654,7 +693,7 @@ def render() -> None:
             "Sample Gate": r.get("sample_gate_status"), "OSP Inward": r.get("receipt_number"),
             "Inward Qty pcs": r.get("quantity_received"), "Receipt Decision": r.get("receipt_quality_disposition"),
             "Production Available pcs": r.get("production_available_quantity"), "Status": r.get("status"),
-        } for r in rows]), pdf_title="OSP Transaction Register", pdf_key="QCMS_OSP_Transaction_Register")
+        } for r in rows]), pdf_title="OSP Transaction Register", pdf_key="QCMS_OSP_Transaction_Register", sources=[("osp_jobs", str(r.get("id"))) for r in rows])
         st.page_link(st.session_state["_qsms_pages"]["osp-records"], label="Open OSP Records and Actions", icon=":material/open_in_new:", width="stretch")
 
     with tabs[3]:
@@ -670,7 +709,7 @@ def render() -> None:
             "Disposition": r.get("disposition"),
             "Workflow": r.get("status"),
             "Reason": r.get("disposition_reason"),
-        } for r in rows]), pdf_title="Dimensional Inspection Register", pdf_key="QCMS_Dimensional_Inspection_Register")
+        } for r in rows]), pdf_title="Dimensional Inspection Register", pdf_key="QCMS_Dimensional_Inspection_Register", sources=[("inspection_reports", str(r.get("id"))) for r in rows])
         st.page_link(st.session_state["_qsms_pages"]["dimensional-records"], label="Open Dimensional Records and Actions", icon=":material/open_in_new:", width="stretch")
 
     with tabs[4]:
@@ -686,7 +725,7 @@ def render() -> None:
             "Disposition": r.get("disposition"),
             "Workflow": r.get("status"),
             "Reason": r.get("disposition_reason"),
-        } for r in rows]), pdf_title="MetLAB Register", pdf_key="QCMS_MetLAB_Register")
+        } for r in rows]), pdf_title="MetLAB Register", pdf_key="QCMS_MetLAB_Register", sources=[("lab_tests", str(r.get("id"))) for r in rows])
         st.page_link(st.session_state["_qsms_pages"]["metlab-records"], label="Open MetLAB Records and Actions", icon=":material/open_in_new:", width="stretch")
 
     with tabs[5]:
@@ -700,7 +739,7 @@ def render() -> None:
             "Part Number": part_map.get(str(r.get("part_id"))), "FSI Part Number": fsi_part_map.get(str(r.get("part_id"))),
             "Status": r.get("status"),
             "Effective Date": r.get("effective_date"),
-        } for r in rows]), pdf_title="Inspection Layout Register", pdf_key="QCMS_Inspection_Layout_Register")
+        } for r in rows]), pdf_title="Inspection Layout Register", pdf_key="QCMS_Inspection_Layout_Register", sources=[("inspection_plans", str(r.get("id"))) for r in rows])
         st.page_link(st.session_state["_qsms_pages"]["inspection-layout-records"], label="Open Inspection Layout Records and Actions", icon=":material/open_in_new:", width="stretch")
 
     with tabs[6]:
@@ -716,7 +755,9 @@ def render() -> None:
             {"Module": "Reference Master", "Code / Number": r.get("party_code"), "Name": r.get("party_name"), "Status": r.get("status")} for r in reference_rows
         ] + [
             {"Module": "Employee Master", "Code / Number": r.get("employee_code"), "Name": f"{r.get('first_name') or ''} {r.get('last_name') or ''}".strip(), "Status": r.get("status")} for r in employee_rows
-        ]), height=620, pdf_title="Master Record Status", pdf_key="QCMS_Master_Record_Status")
+        ]), height=620, pdf_title="Master Record Status", pdf_key="QCMS_Master_Record_Status",
+            sources=[("parts", str(r.get("id"))) for r in parts] + [("material_grades", str(r.get("id"))) for r in grade_rows]
+            + [("parties", str(r.get("id"))) for r in reference_rows] + [("employees", str(r.get("id"))) for r in employee_rows])
         c1, c2, c3, c4 = st.columns(4, gap="small")
         with c1: st.page_link(st.session_state["_qsms_pages"]["part-records"], label="Part Records", width="stretch")
         with c2: st.page_link(st.session_state["_qsms_pages"]["grade-records"], label="Grade Records", width="stretch")

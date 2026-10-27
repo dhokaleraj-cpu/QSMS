@@ -1,7 +1,21 @@
-# STAWN QCMS for iPhone and iPad (native SwiftUI app) — v1.1.0 (build 2)
+# STAWN QCMS for iPhone and iPad (native SwiftUI app) — v1.2.0 (build 3)
 
 Universal native app (iPhone + iPad, iOS / iPadOS 16 or newer). Same Supabase login, data, permissions (RLS) and
 print layouts as the website and the Android app. Only the publishable key is in the app.
+
+## New in v1.2.0 (build 3, R37)
+- **KPI drill-down**: tap any KPI card to list the records behind the number (`qcms_kpi_records`); tap a record to open it
+  (native record screen, else the module / website page); touch and hold (or swipe) for **Print PDF**. Pending tasks open their record.
+- **Module infographic cards** per department on the dashboard (`qcms_module_cards`), each opens its records list.
+- **"+" at the top right** of the main screens: New transaction (native form where the app has one, else the website entry
+  page), New e-mail, New query (Global Search) and Ask QCMS AI (Search & AI).
+- **Print PDF from Global Search** (touch and hold a result): print layout or Universal Record PDF for any table, shown in the
+  PDF viewer with Save to Files, Print, Email and Share. Every record screen keeps its Print layout PDF (preview + save + share).
+- If the new server functions are not there yet, the cards open their module like before.
+- Cards honour a server `drill` object (table + filter); without keys the label maps to the card key; on older databases the
+  Quality cards query their table with the register status filter. Supply / Quality / Masters / More tabs show the module cards.
+- New transaction lists only modules with Create permission; New query opens Global Search with the keyboard up; search
+  results can be printed as one Results PDF (swipe a result for its own PDF).
 
 ## New in v1.1.0
 - **KPI start dashboard** (first tab after login, `qcms_kpi_dashboard`): pending tasks first, KPI cards and charts (Swift Charts)
@@ -47,7 +61,7 @@ The app already contains the Push Notifications entitlement (`STAWNQCMS/STAWNQCM
    (APNs production — Xcode re-signs `aps-environment` to *production* when distributing). Keep the `.p8` file private.
 
 ## Build and install (Mac with Xcode 15 or newer)
-1. `cd ~/QSMS/mobile/ios_stawn_qcms && ./BUILD_STAWN_QCMS_iOS.command` (or `python3 make_project.py 1.1.0 2` to only regenerate) → generates the Xcode project, runs a build check and opens Xcode.
+1. `cd ~/QSMS/mobile/ios_stawn_qcms && ./BUILD_STAWN_QCMS_iOS.command` (or `python3 make_project.py 1.2.0 3` to only regenerate) → generates the Xcode project, runs a build check and opens Xcode.
 2. Xcode → target **STAWNQCMS** → Signing & Capabilities → Team = your Apple Developer team (bundle id `com.stawnprecision.qcms`).
 3. Connect the iPhone / iPad, choose it at the top, press **Run**. (First time on the device: Settings → Privacy & Security → Developer Mode → On.)
 4. For colleagues: create the app in App Store Connect (bundle id `com.stawnprecision.qcms`, name STAWN QCMS), then

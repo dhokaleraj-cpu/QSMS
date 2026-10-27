@@ -13,11 +13,15 @@ import java.util.List;
 import java.util.Locale;
 
 /** One Quality Asset with its calibration / validation history. */
-public final class AssetDetailScreen extends Screen {
+public final class AssetDetailScreen extends Screen implements ExportKit.RecordPrint {
     private final String id;
     private String name = "";
 
     public AssetDetailScreen(MainActivity a, String id) { super(a); this.id = id; }
+
+    // R37: print PDF of the asset (Universal Record PDF): Preview / Save / Share
+    @Override public boolean layoutReady() { return id != null && !id.isEmpty(); }
+    @Override public void printLayout() { KpiDetails.printRecord(a, "quality_assets", id, "calibration-validation"); }
 
     @Override public String title() { return name.isEmpty() ? "Quality Asset" : name; }
     @Override public String subtitle() { return "Calibration status & history"; }
@@ -89,5 +93,8 @@ public final class AssetDetailScreen extends Screen {
             if (m != null) a.push(EditScreen.open(a, m, id, null));
         });
         add(edit, 10);
+        Button print = Ui.outline(a, "🖨 Print PDF · Preview · Download · Share", Ui.TEAL_DARK);
+        print.setOnClickListener(v -> printLayout());
+        add(print, 10);
     }
 }

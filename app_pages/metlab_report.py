@@ -1186,6 +1186,7 @@ def _render_records(required_inspection_method: str | None = None) -> None:
                 st.download_button("Download Excel Report", data=quality_record_excel_bytes(selected_payload, "METLAB"), file_name=f"{selected_row.get('report_number') or 'MetLAB_Report'}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"metlab_xlsx_{selected}", icon=":material/download:", width="stretch")
         except Exception as exc:
             st.error(report_generation_error(exc))
+        from core.pdf_preview import preview_button; preview_button("lab_tests", selected, key="metlab_records", record=selected_row)  # R37
         record_email_sender(
             NotificationService(service.repo), "METLAB_APPROVAL_PENDING",
             related_table="lab_tests", related_id=selected, key=f"metlab_record_email_{selected}",

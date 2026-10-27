@@ -132,6 +132,7 @@ def render_records()->None:
                 record_number=str(selected_row.get('employee_code') or ''),
             )
             st.download_button('Download Employee PDF',pdf,file_name=f"Employee_{selected_row.get('employee_code')}.pdf",mime='application/pdf',width='stretch')
+            from core.pdf_preview import preview_button; preview_button("employees", selected, key="employee_records", record=selected_row)  # R37
         with c3:
             if password_delete_panel(repo=svc.repo,table='employees',rows=[selected_row],labeler=lambda r:f"{r.get('employee_code')} · {r.get('first_name')} {r.get('last_name')}",key=f"delete_employee_{selected}",can_delete=perms['can_archive'],title='Delete Selected Employee',help_text='Permanent deletion requires your current password. Employees linked to users or approvals may need to be set Inactive instead.'):
                 st.rerun()

@@ -1192,7 +1192,8 @@ def render_entry() -> None:
                     "ICC/Rej.": r.get("icc_rejection"),
                     "Currency": r.get("currency") or "INR", "UOM": r.get("uom") or "KGS",
                     "Remark": r.get("remarks") or "", "Status": r.get("status") or "ACTIVE",
-                } for r in price_rows], columns=["Start Date", "End Date", "Basic Rate", "Freight", "Tool Cost", "P&F", "Profit", "ICC/Rej.", "Currency", "UOM", "Remark", "Status"])
+                    "_id": str(r.get("id") or ""),
+                } for r in price_rows], columns=["Start Date", "End Date", "Basic Rate", "Freight", "Tool Cost", "P&F", "Profit", "ICC/Rej.", "Currency", "UOM", "Remark", "Status", "_id"])
                 st.caption("Prices are controlled per Supplier + Raw Material record + UOM. Add a new row with a new Start Date and leave End Date blank: QCMS closes the previous open price automatically (End Date = new Start Date - 1).")
                 with st.form(f"price_history_form_{selected_raw_id}"):
                     price_edit = st.data_editor(
@@ -1210,38 +1211,40 @@ def render_entry() -> None:
                             "UOM": st.column_config.SelectboxColumn(options=["KGS", "NOS", "PCS"], required=True),
                             "Remark": st.column_config.TextColumn(help="Reason / commercial note for this price revision; printed in the PO Price Revision History table."),
                             "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
+                            # R37b: hidden database id - an edited Start Date / UOM now updates the SAME row
+                            # instead of inserting an overlapping duplicate (live P0001 overlap error).
+                            "_id": None,
                         },
                     )
                     save_price = st.form_submit_button("Save Supplier / FSI Part Price History", type="primary", width="stretch", disabled=not writable)
                 if save_price:
                     try:
-                        # Old period rows are saved first so a newly-added current period can pass the non-overlap guard.
-                        frame = price_edit.copy()
-                        if not frame.empty: frame = frame.sort_values("Start Date", na_position="last")
-                        def date_text(value):
-                            if value is None or pd.isna(value): return None
-                            if hasattr(value, "date"): value = value.date()
-                            return value.isoformat() if hasattr(value, "isoformat") else str(value)[:10]
-                        def price_mapper(row, index):
-                            start = date_text(row.get("Start Date")); end = date_text(row.get("End Date"))
-                            if not start and (row.get("Basic Rate") is None or pd.isna(row.get("Basic Rate"))): return {}
-                            if not start: raise ValueError("Start Date is required for every price-history row.")
-                            if end and end < start: raise ValueError("Price History End Date cannot be earlier than Start Date.")
-                            def money_value(key):
-                                value = row.get(key)
-                                return None if value is None or pd.isna(value) else float(value)
-                            price = money_value("Basic Rate") or 0.0
-                            return {
-                                "supplier_id": selected_supplier_id, "raw_material_detail_id": selected_raw_id,
-                                "start_date": start, "end_date": end, "price": price,
-                                "freight": money_value("Freight"), "tool_cost": money_value("Tool Cost"),
-                                "packing_forwarding": money_value("P&F"), "profit": money_value("Profit"),
-                                "icc_rejection": money_value("ICC/Rej."),
-                                "currency": str(row.get("Currency") or "INR"), "uom": str(row.get("UOM") or "KGS"),
-                                "remarks": str(row.get("Remark") or "").strip() or None, "status": str(row.get("Status") or "ACTIVE")
-                            }
-                        _save_rows(repo, "part_supplier_price_history", part_id, frame, ("part_id", "supplier_id", "raw_material_detail_id", "uom", "start_date"), price_mapper)
-                        save_success_popup("Supplier / FSI Part price history saved successfully.", queue_for_rerun=True); st.rerun()
+                        from core.price_history_service import save_price_history_grid
+                        # R37b: a row is identified by its hidden _id; the legacy natural key
+                        # ("part_id", "supplier_id", "raw_material_detail_id", "uom", "start_date") is only the fallback.
+
+                        def grid_value(row, key):
+                            value = row.get(key)
+                            try:
+                                if value is None or pd.isna(value): return None
+                            except (TypeError, ValueError):
+                                pass
+                            if hasattr(value, "date") and not isinstance(value, str): value = value.date()
+                            return value
+
+                        edited_rows = [{
+                            "id": str(grid_value(row, "_id") or "").strip() or None,
+                            "start_date": grid_value(row, "Start Date"), "end_date": grid_value(row, "End Date"),
+                            "price": grid_value(row, "Basic Rate"), "freight": grid_value(row, "Freight"),
+                            "tool_cost": grid_value(row, "Tool Cost"), "packing_forwarding": grid_value(row, "P&F"),
+                            "profit": grid_value(row, "Profit"), "icc_rejection": grid_value(row, "ICC/Rej."),
+                            "currency": grid_value(row, "Currency") or "INR", "uom": grid_value(row, "UOM") or "KGS",
+                            "remarks": grid_value(row, "Remark"), "status": grid_value(row, "Status") or "ACTIVE",
+                        } for _, row in price_edit.iterrows()]
+                        plan = save_price_history_grid(repo, part_id=part_id, supplier_id=selected_supplier_id, raw_material_detail_id=selected_raw_id, edited=edited_rows)
+                        note = (" Previous period(s) closed automatically: " + "; ".join(plan.auto_closed) + ".") if plan.auto_closed else ""
+                        message = f"Supplier / FSI Part price history saved successfully ({plan.changed} row(s) changed).{note}" if plan.changed else "No price-history change to save."
+                        save_success_popup(message, queue_for_rerun=True); st.rerun()
                     except Exception as exc: st.error(db_message(exc))
             else:
                 st.info("Supplier Price History is hidden by your section permission.")
@@ -1335,6 +1338,7 @@ def render_records() -> None:
                 record_number=str(selected_row.get("part_number") or ""),
             )
             st.download_button("Download Part Master PDF", pdf, file_name=f"Part_Master_{selected_row.get('part_number')}.pdf", mime="application/pdf", width="stretch")
+            from core.pdf_preview import preview_button; preview_button("parts", selected, key="part_records", record=selected_row)  # R37 - all part detail tables
         with c3:
             if _admin_part_delete_panel(repo, selected_row, key=f"delete_part_{selected}"):
                 st.rerun()

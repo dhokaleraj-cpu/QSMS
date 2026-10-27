@@ -420,6 +420,7 @@ def render_records() -> None:
                 st.download_button("Download Inward PDF", data=pdf_bytes, file_name=f"{selected_row.get('inward_number') or 'Material_Inward'}.pdf", mime="application/pdf", key=f"inward_pdf_{selected}", width="stretch")
             except Exception as exc:
                 st.error(f"PDF could not be generated: {exc}")
+            from core.pdf_preview import preview_button; preview_button("inward_lots", selected, key="inward_records", record=selected_row)  # R37
         with c5:
             if password_delete_panel(repo=service.repo, table="inward_lots", rows=[selected_row], labeler=lambda row: f"{row.get('inward_number')} · {row.get('grn_number')}", key=f"delete_inward_{selected}", can_delete=perms["can_archive"], title="Delete Selected Material Inward", help_text="Current password and Material Inward Delete permission are required."):
                 st.rerun()

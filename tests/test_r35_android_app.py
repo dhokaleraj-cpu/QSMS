@@ -18,7 +18,7 @@ def all_sources() -> str:
 
 def test_version_340():
     gradle = read(APP / "app/build.gradle")
-    assert "versionCode 340" in gradle and "versionName '3.4.0'" in gradle
+    assert "versionCode 350" in gradle and "versionName '3.5.0'" in gradle  # R37 bump
     assert "3.3.0" not in gradle
     assert "implementation" not in gradle  # still framework only (no AndroidX / Firebase SDK)
     assert "service_role" not in gradle

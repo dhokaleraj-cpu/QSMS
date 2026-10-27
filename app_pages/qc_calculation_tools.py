@@ -178,6 +178,7 @@ def _render_records(repo: Repository | None = None) -> None:
     c_pdf, c_delete = st.columns(2, gap="small")
     with c_pdf:
         st.download_button("Download Selected Calculation PDF", pdf, file_name=f"{record.get('calculation_number')}.pdf", mime="application/pdf", width="stretch")
+        from core.pdf_preview import preview_button; preview_button("qc_calculation_records", selected_id, key="qct_record", record=record)  # R37
     with c_delete:
         if password_delete_panel(
             repo=repo, table="qc_calculation_records", rows=[record],

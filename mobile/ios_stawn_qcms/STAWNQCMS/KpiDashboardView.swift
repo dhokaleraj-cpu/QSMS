@@ -26,6 +26,9 @@ struct KpiCard: Identifiable {
     let unit: String
     let tone: String
     let route: String
+    var key: String = ""    // R37: qcms_kpi_records card key
+    var drillTable: String = ""   // R37: card "drill" object (table + filter)
+    var drillQuery: String = ""
 }
 
 struct KpiSeries {
@@ -76,6 +79,7 @@ struct KpiTask: Identifiable {
     let relatedId: String
     let due: String
     let webRoute: String
+    var relatedTable: String = ""
 
     var overdue: Bool { due.count >= 10 && String(due.prefix(10)) < Fmt.today() }
 }
@@ -89,8 +93,12 @@ struct KpiData {
     init(_ row: Row) {
         var cards: [KpiCard] = []
         for (i, c) in J.rows(row["cards"]).enumerated() {
-            cards.append(KpiCard(id: i, label: J.str(c["label"]), value: J.str(c["value"]), unit: J.str(c["unit"]),
-                                 tone: J.str(c["tone"]).lowercased(), route: J.str(c["route"])))
+            var card = KpiCard(id: i, label: J.str(c["label"]), value: J.str(c["value"]), unit: J.str(c["unit"]),
+                               tone: J.str(c["tone"]).lowercased(), route: J.str(c["route"]), key: J.str(c["key"]))
+            let drill = J.obj(c["drill"])
+            card.drillTable = J.str(drill["table"])
+            card.drillQuery = QuickActions.filterQuery(J.obj(drill["filter"]))
+            cards.append(card)
         }
         var charts: [KpiChart] = []
         for (i, c) in J.rows(row["charts"]).enumerated() {
@@ -104,7 +112,7 @@ struct KpiData {
         var tasks: [KpiTask] = []
         for (i, t) in J.rows(row["pending_tasks"]).enumerated() {
             tasks.append(KpiTask(id: i, title: J.str(t["title"]), moduleKey: J.str(t["module_key"]), relatedId: J.str(t["related_id"]),
-                                 due: J.str(t["due"]), webRoute: J.str(t["web_route"])))
+                                 due: J.str(t["due"]), webRoute: J.str(t["web_route"]), relatedTable: J.str(t["related_table"])))
         }
         self.cards = cards
         self.charts = charts
@@ -122,6 +130,8 @@ struct KpiDashboardView: View {
     /// When each department was last fetched (in-memory cache, reused for cacheSeconds).
     @State private var loadedAt: [String: Date] = [:]
     @State private var errors: [String: String] = [:]
+    /// R37: module infographic cards per department (qcms_module_cards; hidden when missing).
+    @State private var moduleCards: [String: [ModuleCard]] = [:]
     @State private var loading = false
     @State private var pausedUntil = Date.distantPast
 
@@ -138,7 +148,8 @@ struct KpiDashboardView: View {
                 }
                 .pickerStyle(.segmented)
                 ZStack(alignment: .top) {
-                    KpiPage(title: KpiDept.titleFor(dept), data: cache[dept], error: errors[dept])
+                    KpiPage(title: KpiDept.titleFor(dept), data: cache[dept], error: errors[dept], dept: dept,
+                            modules: moduleCards[dept] ?? [], onTap: { pausedUntil = Date().addingTimeInterval(KpiDashboardView.pauseSeconds) })
                         .id(dept)
                         .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
                 }
@@ -238,6 +249,9 @@ struct KpiDashboardView: View {
         } catch {
             if !Task.isCancelled && cache[d] == nil { errors[d] = error.localizedDescription }
         }
+        if let raw = try? await Api.shared.rpc("qcms_module_cards", ["p_department": d]) {
+            moduleCards[d] = ModuleCard.parse(raw)
+        }
         loading = false
     }
 }
@@ -247,6 +261,9 @@ struct KpiPage: View {
     let title: String
     let data: KpiData?
     let error: String?
+    var dept: String = ""
+    var modules: [ModuleCard] = []
+    var onTap: (() -> Void)?
     @EnvironmentObject var nav: TabNav
 
     var body: some View {
@@ -268,13 +285,15 @@ struct KpiPage: View {
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line))
                 }
 
+                if !modules.isEmpty { ModuleCardsStrip(cards: modules, department: dept, onTap: onTap) }
+
                 SectionLabel(text: "\(title) KPIs")
                 if data.cards.isEmpty {
                     Text("No KPI figures yet.").font(.footnote).foregroundColor(Theme.muted)
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
                         ForEach(data.cards) { c in
-                            Button { openRoute(c.route, c.label) } label: { cardView(c) }.buttonStyle(.plain)
+                            Button { openCard(c) } label: { cardView(c) }.buttonStyle(.plain)
                         }
                     }
                 }
@@ -332,8 +351,20 @@ struct KpiPage: View {
         }
     }
 
+    /// R37: a pending task opens its record (related table / module key), else the module or website page.
     private func openTask(_ t: KpiTask) {
-        if let r = AppLinks.route(title: t.title, table: "", id: t.relatedId, moduleKey: t.moduleKey, webRoute: t.webRoute) { nav.push(r) }
+        onTap?()
+        if let r = AppLinks.route(title: t.title, table: t.relatedTable, id: t.relatedId, moduleKey: t.moduleKey, webRoute: t.webRoute) { nav.push(r) }
+    }
+
+    /// R37: tap a KPI card = list of the records behind the number (qcms_kpi_records), else the module.
+    private func openCard(_ c: KpiCard) {
+        onTap?()
+        // drill object -> card key -> key of the label (older databases) -> the module route
+        let key = c.key.isEmpty ? QuickActions.keyForLabel(c.label) : c.key
+        if key.isEmpty && c.drillTable.isEmpty { openRoute(c.route, c.label); return }
+        QuickActions.openCard(nav: nav, key: key, department: dept, title: c.label, route: c.route,
+                              drillTable: c.drillTable, drillQuery: c.drillQuery)
     }
 
     private func openRoute(_ route: String, _ title: String) {

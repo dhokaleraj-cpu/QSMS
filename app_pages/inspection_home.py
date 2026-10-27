@@ -41,6 +41,8 @@ def _worklist_frame(rows: list[dict], parts: dict[str, dict], parties: dict[str,
 def render() -> None:
     subpage_navigation(("dashboard", "Dashboard", ":material/dashboard:"), ("masters", "Masters", ":material/dataset:"), ("inward-records", "Material Inward", ":material/input:"))
     page_header("Inspection & Validation", context="Post-inward quality gate")
+    from core.module_kpis import render_module_strip  # R37: module infographic KPI cards (click = records)
+    render_module_strip(home="inspection-home", key="inspection_home", origin="inspection-home")
 
     repo = Repository()
     service = InspectionService()

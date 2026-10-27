@@ -492,3 +492,144 @@ DASHBOARDS: list[tuple[str, str, str, tuple[str, ...], Callable[[Mapping[str, li
     ("calibration", "Gauge Calibration Compliance", "CALIBRATION_VALIDATION", ("quality_assets",), calibration),
     ("npd", "NPD & APQP Health", "NPD_APQP", ("npd_orders", "ppap_projects"), npd_apqp),
 ]
+
+
+# =============================================================================================
+# R37 · KPI drill-down: stable card keys, record type / register per source table, grid frame.
+# The database RPC public.qcms_kpi_records(card_key, department, limit) returns the records behind
+# every card of qcms_kpi_dashboard / qcms_module_cards (same filter as the count).
+# =============================================================================================
+DRILL_STATE_KEY = "_qcms_kpi_drill"
+DRILL_ROUTE = "kpi-details"
+DRILL_COLUMNS: tuple[str, ...] = ("Type", "Reference", "Part", "Customer / supplier", "Status", "Date", "Detail")
+
+# Fallback when an older database returns cards without "key" (label -> key, same as the R37 migration).
+CARD_KEYS_BY_LABEL: dict[str, str] = {
+    "Inward on quality hold": "inward_hold", "MetLAB pending": "metlab_pending", "Bend Test pending": "bend_pending",
+    "Dimensional pending": "dimensional_pending", "Reports finalized this month": "reports_final_month",
+    "Rejection (180 days)": "rejection_180d", "RMTC pending": "rmtc_pending", "Complaints open": "complaints_open",
+    "Calibration overdue": "calibration_overdue", "Calibration due ≤ 30 days": "calibration_due_30",
+    "Open customer orders": "customer_orders_open", "Open order quantity": "customer_order_qty_open",
+    "PO pending approval": "po_pending_approval", "Open purchase orders": "po_open", "RM on order": "rm_on_order",
+    "RM received this month": "rm_received_month", "Forging orders open": "forging_orders_open",
+    "Dispatched this month": "dispatched_month", "Pieces available in batches": "batch_pcs_available",
+    "Active production batches": "batches_active", "OSP at vendor": "osp_at_vendor", "OSP sample pending": "osp_sample_pending",
+    "OSP receipt quality pending": "osp_receipt_pending", "Machined this month": "machined_month",
+    "Finished goods this month": "fg_month", "NPD open": "npd_open", "NPD in progress": "npd_in_progress", "NPD late": "npd_late",
+    "APQP / PPAP active": "apqp_active", "APQP average completion": "apqp_completion", "NPD steps open": "npd_steps_open",
+    "NPD steps overdue": "npd_steps_overdue", "First-pass yield (final reports)": "fpy_final_reports",
+    "Open PO value": "po_open_value", "Heats released this month": "heats_released_month",
+}
+
+# Every key the drill-down RPC understands -> (title, full register route). Used by the KPI Details picker.
+CARD_CATALOG: dict[str, tuple[str, str]] = {
+    "inward_hold": ("Inward on quality hold", "inward-records"), "inward_released": ("Released heats", "inward-records"),
+    "inward_all": ("All material inward", "inward-records"), "inward_accepted_pcs": ("Inward with accepted production", "inward-records"),
+    "inward_rejected_pcs": ("Inward with rejected production", "inward-records"), "inward_hold_pcs": ("Inward with production on hold", "inward-records"),
+    "heats_released_month": ("Heats released this month", "inward-records"), "rejection_180d": ("Inward lots (180 days) – rejection", "inward-records"),
+    "metlab_pending": ("MetLAB pending", "metlab-records"), "bend_pending": ("Bend Test pending", "bend-test-records"),
+    "dimensional_pending": ("Dimensional pending", "dimensional-records"), "reports_final_month": ("Reports finalized this month", "records-center"),
+    "fpy_final_reports": ("Final quality reports", "records-center"), "rmtc_pending": ("RMTC pending", "rmtc-records"),
+    "rmtc_draft": ("RMTC draft", "rmtc-records"), "rmtc_approval_pending": ("RMTC approval pending", "rmtc-records"),
+    "rmtc_accepted": ("RMTC accepted", "rmtc-records"), "rmtc_under_reserve": ("RMTC under reserve", "rmtc-records"), "rmtc_all": ("All RMTC", "rmtc-records"),
+    "complaints_open": ("Complaints open", "complaint-records"), "calibration_overdue": ("Calibration overdue", "calibration-validation"),
+    "calibration_due_30": ("Calibration due ≤ 30 days", "calibration-validation"),
+    "customer_orders_open": ("Open customer orders", "supply-customer-orders"), "customer_order_qty_open": ("Open order quantity", "supply-order-mis"),
+    "po_pending_approval": ("PO pending approval", "supply-po-approval"), "po_open": ("Open purchase orders", "supply-po-order-list"),
+    "po_open_value": ("Open PO value", "supply-po-order-list"), "rm_on_order": ("RM on order", "supply-rm-procurement"),
+    "rm_received_month": ("RM received this month", "supply-rm-receipt"), "forging_orders_open": ("Forging orders open", "supply-forging"),
+    "dispatched_month": ("Dispatched this month", "supply-downstream"), "machined_month": ("Machined this month", "supply-downstream"),
+    "fg_month": ("Finished goods this month", "supply-downstream"), "batch_pcs_available": ("Batches with pieces available", "osp-records"),
+    "batches_active": ("Active production batches", "osp-records"), "osp_at_vendor": ("OSP at vendor", "osp-records"),
+    "osp_sample_pending": ("OSP sample pending", "osp-sample-receipt"), "osp_receipt_pending": ("OSP receipt quality pending", "osp-dimensional"),
+    "npd_open": ("NPD open", "npd-status"), "npd_in_progress": ("NPD in progress", "npd-status"), "npd_late": ("NPD late", "npd-status"),
+    "apqp_active": ("APQP / PPAP active", "apqp"), "apqp_completion": ("APQP / PPAP projects", "apqp"),
+    "npd_steps_open": ("NPD steps open", "npd-status"), "npd_steps_overdue": ("NPD steps overdue", "npd-status"),
+    "mod_rmtc": ("RMTC pending decision", "rmtc-records"), "mod_inward": ("Material inward on quality hold", "inward-records"),
+    "mod_metlab": ("MetLAB reports pending", "metlab-records"), "mod_bend": ("Bend Test reports pending", "bend-test-records"),
+    "mod_dimensional": ("Dimensional reports pending", "dimensional-records"), "mod_osp_dimensional": ("OSP Dimensional pending", "osp-records"),
+    "mod_osp_metlab": ("OSP MetLAB pending", "osp-records"), "mod_customer_complaints": ("Customer complaints open", "customer-complaint-register"),
+    "mod_supplier_complaints": ("Supplier complaints open", "supplier-complaint-register"), "mod_capa": ("CAPA actions open", "complaint-analysis"),
+    "mod_calibration": ("Calibration / validation due ≤ 30 days", "calibration-validation"), "mod_standard_room": ("Standard room pending / hold", "standard-room-inspection"),
+    "mod_layouts": ("Inspection layouts in draft / approval", "inspection-layout-records"), "mod_customer_orders": ("Open customer orders", "supply-customer-orders"),
+    "mod_customer_orders_overdue": ("Customer orders past delivery", "supply-customer-orders"), "mod_rm_procurement": ("RM orders open", "supply-rm-procurement"),
+    "mod_po_approval": ("PO pending approval", "supply-po-approval"), "mod_po_confirmation": ("PO pending supplier confirmation", "supply-po-order-list"),
+    "mod_po_open": ("Open purchase orders", "supply-po-order-list"), "mod_rm_receipt": ("RM receipts this month", "supply-rm-receipt"),
+    "mod_rm_dispatch": ("RM to forging this month", "supply-rm-dispatch"), "mod_forging": ("Forging orders open", "supply-forging"),
+    "mod_forging_receipts": ("Forging receipts this month", "supply-forging"), "mod_downstream": ("Machining / FG / dispatch this month", "supply-downstream"),
+    "mod_osp_jobs": ("OSP jobs at vendor", "osp-records"), "mod_indirect_po": ("Indirect purchase orders open", "indirect-po"),
+    "mod_batches": ("Active production batches", "osp-records"), "mod_npd_orders": ("NPD orders open", "npd-status"),
+    "mod_npd_steps": ("NPD steps open", "npd-status"), "mod_apqp": ("APQP / PPAP projects active", "apqp"),
+    "mod_quality_reports": ("Quality reports pending", "records-center"),
+}
+
+# source table -> (record type shown in the grid, register route)
+SOURCE_TABLES: dict[str, tuple[str, str]] = {
+    "inward_lots": ("Material Inward", "inward-records"), "lab_tests": ("MetLAB / Bend Test", "metlab-records"),
+    "inspection_reports": ("Dimensional", "dimensional-records"), "rmtc_approvals": ("RMTC", "rmtc-records"),
+    "quality_complaints": ("Complaint", "complaint-records"), "quality_complaint_actions": ("CAPA action", "complaint-analysis"),
+    "quality_assets": ("Gauge / instrument", "calibration-validation"), "standard_room_inspection_records": ("Standard room", "standard-room-inspection"),
+    "inspection_plans": ("Inspection layout", "inspection-layout-records"), "supply_customer_orders": ("Customer order", "supply-customer-orders"),
+    "supply_purchase_orders": ("Purchase order", "supply-po-order-list"), "supply_po_confirmations": ("PO confirmation", "supply-po-order-list"),
+    "supply_rm_purchase_orders": ("RM order", "supply-rm-procurement"), "supply_rm_receipts": ("RM receipt", "supply-rm-receipt"),
+    "supply_rm_dispatches": ("RM to forging", "supply-rm-dispatch"), "supply_forging_orders": ("Forging order", "supply-forging"),
+    "supply_forging_receipts": ("Forging receipt", "supply-forging"), "supply_downstream_events": ("Machining / FG / dispatch", "supply-downstream"),
+    "production_batches": ("Production batch", "osp-records"), "osp_jobs": ("OSP job", "osp-records"), "npd_orders": ("NPD order", "npd-status"),
+    "npd_order_steps": ("NPD step", "npd-status"), "ppap_projects": ("APQP / PPAP project", "apqp"),
+    # R37 module infographic KPIs (core/module_kpis.py)
+    "qc_calculation_records": ("QC calculation", "qc-calculation-records"), "supply_opening_stock": ("Opening stock", "supply-opening-stock"),
+    "indirect_purchase_orders": ("Indirect PO", "indirect-po-list"), "indirect_purchase_requisitions": ("Indirect requisition", "indirect-requisition"),
+    "parts": ("Part", "part-records"), "parties": ("Customer / supplier", "reference-records"),
+}
+
+_REFERENCE_FIELDS: tuple[str, ...] = (
+    "report_number", "rmtc_number", "inward_number", "po_number", "complaint_number", "osp_job_number", "order_number", "customer_order_no",
+    "master_reference_no", "supplier_order_no", "receipt_number", "dispatch_number", "batch_code", "project_code", "plan_number", "asset_code",
+    "reference_no", "heat_number",
+)
+_PARTY_FIELDS: tuple[str, ...] = ("supplier_id", "customer_id", "party_id", "vendor_id", "forging_supplier_id", "rm_supplier_id", "osp_vendor_id", "steel_mill_id")
+
+
+def card_key(card: Mapping[str, Any]) -> str:
+    """Stable drill-down key of a dashboard card ("key" from the RPC; label fallback for older databases)."""
+    return str(card.get("key") or CARD_KEYS_BY_LABEL.get(str(card.get("label") or "").strip(), "") or "")
+
+
+def card_route(card: Mapping[str, Any]) -> str:
+    return str(card.get("route") or card.get("web_route") or CARD_CATALOG.get(card_key(card), ("", ""))[1] or "")
+
+
+def local_drill_rows(table: str, rows: Iterable[Mapping[str, Any]], *, date_field: str = "",
+                     labels: Mapping[str, Mapping[str, str]] | None = None) -> list[dict]:
+    """Rows already in memory (custom dashboards) -> the qcms_kpi_records row shape."""
+    labels = labels or {}
+    parts = labels.get("parts") or {}
+    parties = labels.get("parties") or {}
+    out: list[dict] = []
+    for row in rows:
+        reference = next((str(row.get(f)) for f in _REFERENCE_FIELDS if str(row.get(f) or "").strip()), "")
+        party_id = next((str(row.get(f)) for f in _PARTY_FIELDS if row.get(f)), "")
+        day = _d(row.get(date_field)) if date_field else None
+        out.append({
+            "source_table": table, "record_id": str(row.get("id") or ""), "reference": reference or str(row.get("id") or "")[:8],
+            "part": parts.get(str(row.get("part_id") or ""), "") or "", "party": parties.get(party_id, "") if party_id else "",
+            "status": str(row.get("status") or row.get("inspection_status") or row.get("event_type") or ""),
+            "record_date": day.isoformat() if day else "", "detail": "",
+        })
+    return out
+
+
+def drill_frame(rows: Sequence[Mapping[str, Any]]) -> pd.DataFrame:
+    """Drill-down rows -> display grid (same order as ``rows`` so a clicked row index maps back)."""
+    data = []
+    for row in rows:
+        table = str(row.get("source_table") or "")
+        day = _d(row.get("record_date"))
+        data.append({
+            "Type": SOURCE_TABLES.get(table, (table.replace("_", " ").title(), ""))[0],
+            "Reference": str(row.get("reference") or ""), "Part": str(row.get("part") or ""),
+            "Customer / supplier": str(row.get("party") or ""),
+            "Status": str(row.get("status") or "").replace("_", " ").title(),
+            "Date": day.strftime("%d-%b-%Y") if day else "", "Detail": str(row.get("detail") or ""),
+        })
+    return pd.DataFrame(data, columns=list(DRILL_COLUMNS))

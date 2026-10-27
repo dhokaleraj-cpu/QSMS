@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** One record: details, actions (edit / workflow / delete), child tables, photos & documents, history. */
-public final class RecordScreen extends Screen {
+public final class RecordScreen extends Screen implements ExportKit.RecordPrint {
     static final Set<String> HIDDEN = new HashSet<>(Arrays.asList("id", "tenant_id", "created_by", "updated_by", "search_vector", "search_text"));
     /** Same lists as core/delete_service.py. */
     static final Set<String> TRANSACTION_TABLES = new HashSet<>(Arrays.asList(
@@ -35,10 +35,10 @@ public final class RecordScreen extends Screen {
     private final Module m;
     private final String id;
 
-    boolean layoutReady() { return row != null && !m.idField.isEmpty(); }
+    @Override public boolean layoutReady() { return row != null && !m.idField.isEmpty(); }
 
     /** Website print layout of this record (dedicated report or Universal Record PDF). */
-    void printLayout() { ExportKit.layoutMenu(a, () -> RptReports.forRecord(api, m, id)); }
+    @Override public void printLayout() { ExportKit.layoutMenu(a, () -> RptReports.forRecord(api, m, id)); }
 
     private void addFullReport() {
         add(Ui.label(a, "Full report (as printed)"), 10);
@@ -130,7 +130,7 @@ public final class RecordScreen extends Screen {
             b.setOnClickListener(v -> act.action.run(a, row, this::reload));
             actions.addView(b, Ui.matchWrap(a, 8));
         }
-        Button layout = Ui.primary(a, "🖨 Print layout PDF · Download · Print · Email");
+        Button layout = Ui.primary(a, "🖨 Print layout PDF · Preview · Download · Share · Email");
         layout.setOnClickListener(v -> printLayout());
         actions.addView(layout, Ui.matchWrap(a, actions.getChildCount() > 0 ? 8 : 0));
         Button export = Ui.outline(a, "⇩ Data export: PDF / Excel", Ui.TEAL_DARK);

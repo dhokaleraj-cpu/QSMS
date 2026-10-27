@@ -328,7 +328,62 @@ class OSPService:
             return []
         return [l for l in layouts if name in " ".join(str(l.get("layout_name") or "").casefold().split())]
 
+    @staticmethod
+    def fallback_layouts(layouts: list[dict], job: Mapping[str, Any], part_osp_process_ids: set[str] | None = None, osp_stage_ids: set[str] | None = None) -> list[dict]:
+        """R37 mirror of DB qcms_osp_layout_acceptable for layouts registered under the wrong Process:
+        (a) layout name contains the batch's process name, else (b) the only approved OSP layout of the
+        Part, at an OSP inspection stage, whose Process is not one of the Part's own OSP processes."""
+        named = OSPService.name_matched_layouts(layouts, str(job.get("process_name") or ""))
+        if named:
+            return named
+        if len(layouts) == 1:
+            only = layouts[0]
+            stage_ok = osp_stage_ids is None or str(only.get("inspection_stage_id") or "") in osp_stage_ids
+            process_ok = str(only.get("process_id") or "") not in (part_osp_process_ids or set())
+            if stage_ok and process_ok:
+                return [only]
+        return []
+
+    @staticmethod
+    def inspection_gate_closed(row: Mapping[str, Any], scope: str) -> bool:
+        """R37: the OSP quality gate of this stage is already decided (batch released / rejected / cancelled),
+        so the batch must not stay in the Pending / New inspection queue."""
+        status = str(row.get("status") or "").upper()
+        if status in {"CANCELLED", "REJECTED"}:
+            return True
+        if scope == "OSP_SAMPLE":
+            return str(row.get("sample_gate_status") or "").upper() in {"ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"}
+        return status in {"COMPLETED", "CLOSED"} or str(row.get("receipt_quality_disposition") or "").upper() in {"ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED"}
+
+    def latest_reports(self, report_type: str, scope: str, job_ids: list[str]) -> dict[str, dict]:
+        """Latest OSP report per job for one stage: report number, status (DRAFT / FINAL) and decision."""
+        ids = [str(v) for v in job_ids if v]
+        if not ids:
+            return {}
+        table = "inspection_reports" if report_type == "DIMENSIONAL" else "lab_tests"
+        try:
+            rows = self.repo.select(table, eq={"inspection_scope": scope}, in_={"osp_job_id": ids}, order_by="updated_at", desc=True, limit=max(200, len(ids) * 4))
+        except Exception:
+            return {}
+        latest: dict[str, dict] = {}
+        for row in rows:
+            key = str(row.get("osp_job_id") or "")
+            if key and key not in latest:
+                latest[key] = row
+        return latest
+
+    def released_without_report(self, scope: str, report_type: str) -> list[dict]:
+        """Batches whose gate is already decided but that have no report of this stage (e.g. a draft report
+        was deleted after release). Shown separately so QA can still record the report."""
+        rows = [r for r in self._inspection_candidates(scope, report_type) if self.inspection_gate_closed(r, scope)]
+        reports = self.latest_reports(report_type, scope, [str(r.get("id")) for r in rows])
+        return [r for r in rows if str(r.get("id")) not in reports]
+
     def jobs_for_inspection(self, scope: str, report_type: str) -> list[dict]:
+        rows = self._inspection_candidates(scope, report_type)
+        return [r for r in rows if not self.inspection_gate_closed(r, scope)]
+
+    def _inspection_candidates(self, scope: str, report_type: str) -> list[dict]:
         disposition_key = (
             "sample_dimensional_disposition" if scope == "OSP_SAMPLE" and report_type == "DIMENSIONAL" else
             "sample_metlab_disposition" if scope == "OSP_SAMPLE" else

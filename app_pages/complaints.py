@@ -808,6 +808,8 @@ def _complaint_excel(repo: Repository, complaint: Mapping[str, Any]) -> bytes:
 
 def render_home() -> None:
     page_header("Complaint Management", "Customer and supplier complaints, follow-ups, closure and debit-note settlement.", "Complaints")
+    from core.module_kpis import render_module_strip  # R37: module infographic KPI cards (click = records)
+    render_module_strip(home="complaints-home", key="complaints_home", origin="complaints-home")
     _complaint_entry_styles()
     repo = Repository()
     rows = annotate_transaction_rows(repo, repo.select("quality_complaints", order_by="complaint_date", desc=True, limit=5000))
@@ -1115,6 +1117,7 @@ def _render_entry(complaint_type: str) -> None:
             p1, p2, p3 = st.columns(3, gap="small")
             p1.download_button("Download Complaint PDF", data=pdf, file_name=f"{existing.get('complaint_number')}.pdf", mime="application/pdf", width="stretch", key=f"pdf_{complaint_type}_{selected_id}")
             p2.download_button("Download Complaint Excel", data=excel, file_name=f"{existing.get('complaint_number')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch", key=f"xlsx_{complaint_type}_{selected_id}")
+            from core.pdf_preview import preview_button; preview_button("quality_complaints", selected_id, key=f"complaint_{complaint_type}", record=existing)  # R37
             with p3:
                 if password_delete_panel(repo=repo, table="quality_complaints", rows=[existing], labeler=lambda row: _complaint_label(row), key=f"delete_{complaint_type}_{selected_id}", can_delete=perms["can_archive"], title="Delete Selected Complaint", help_text="Permanent deletion of the complaint and its follow-up history requires your current QCMS password."):
                     st.session_state.pop(f"selected_{complaint_type.lower()}_complaint", None)
@@ -1439,6 +1442,7 @@ def render_records() -> None:
     p1, p2, p3, p4 = st.columns(4, gap="small")
     p1.download_button("Download Selected Complaint PDF", _complaint_pdf(repo, selected), file_name=f"{selected.get('complaint_number')}.pdf", mime="application/pdf", width="stretch")
     p2.download_button("Download Excel + Photos", _complaint_excel(repo, selected), file_name=f"{selected.get('complaint_number')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch", key=f"record_xlsx_{selected_id}")
+    from core.pdf_preview import preview_button; preview_button("quality_complaints", selected_id, key="complaint_records", record=selected)  # R37
     analysis_page = (st.session_state.get("_qsms_pages") or {}).get("complaint-analysis")
     if p3.button("Open Detailed Analysis & CAPA", width="stretch", disabled=analysis_page is None, key=f"record_analysis_{selected_id}"):
         st.session_state["complaint_analysis_id"] = selected_id
@@ -1566,6 +1570,7 @@ def _render_register(complaint_type: str) -> None:
         st.switch_page(analysis_page)
     c3.download_button("PDF", _complaint_pdf(repo, selected), file_name=f"{selected.get('complaint_number')}.pdf", mime="application/pdf", width="stretch", key=f"{complaint_type}_reg_pdf")
     c4.download_button("Excel", _complaint_excel(repo, selected), file_name=f"{selected.get('complaint_number')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch", key=f"{complaint_type}_reg_xlsx")
+    from core.pdf_preview import preview_button; preview_button("quality_complaints", selected_id, key=f"{complaint_type}_reg", record=selected)  # R37
 
     with stage_section("E", "CONFIRMED EMAIL SENDING", "Select whether the Customer / Supplier receives a copy. The controlled Complaint PDF and configured complaint documents are attached before the final confirmation popup.", key=f"{complaint_type.lower()}_register_email_send"):
         register_external_copy = st.toggle(f"Send copy to {party_word}", value=False, key=f"{complaint_type}_register_external_copy_{selected_id}")

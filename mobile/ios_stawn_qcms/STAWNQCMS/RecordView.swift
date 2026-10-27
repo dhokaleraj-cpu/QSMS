@@ -127,7 +127,7 @@ struct RecordView: View {
         }
 
         Button { printLayout() } label: {
-            Label(busy ? "Preparing PDF…" : "Print layout PDF · Download · Print · Email", systemImage: "printer.fill")
+            Label(busy ? "Preparing PDF…" : "Print layout PDF · Preview · Save · Share · Email", systemImage: "printer.fill")
                 .frame(maxWidth: .infinity).padding(.vertical, 12)
         }
         .buttonStyle(.borderedProminent).tint(Theme.teal)

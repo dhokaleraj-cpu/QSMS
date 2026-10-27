@@ -242,10 +242,11 @@ struct BellButton: View {
 }
 
 extension View {
-    /// Notification bell at the trailing side of the navigation bar.
+    /// Notification bell at the trailing side of the navigation bar; R37: "+" quick actions at the top right.
     func qcmsBell() -> some View {
         self.toolbar {
             ToolbarItem(placement: .navigationBarTrailing) { BellButton() }
+            ToolbarItem(placement: .navigationBarTrailing) { QuickAddMenu() }
         }
     }
 }

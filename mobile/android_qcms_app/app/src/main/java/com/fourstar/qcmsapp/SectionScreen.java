@@ -38,6 +38,10 @@ public final class SectionScreen extends Screen {
         cards.clear();
         EditText search = Ui.input(a, "Find a module…", false);
         add(search, 0);
+        // R37: module infographic cards (RMTC, Inward, MetLAB, Dimensional, Bend Test, complaints…) - tap = records
+        LinearLayout highlights = Ui.vbox(a);
+        add(highlights, 8);
+        KpiDetails.sectionModuleCards(a, highlights, tab);
         for (Map.Entry<String, List<Module>> e : Catalog.sections(tab).entrySet()) {
             TextView head = Ui.label(a, e.getKey());
             add(head, 10);

@@ -240,6 +240,7 @@ def render_calibration_validation() -> None:
             x1,x2=st.columns(2,gap="small")
             x1.download_button("Download Calibration / Validation PDF",_calibration_pdf(selected_rec,asset=a,part=p,process=pr,employee=e),file_name=f"{selected_rec.get('report_number') or selected_rec.get('certificate_number') or selected_rec.get('id')}.pdf",mime="application/pdf",width="stretch",key=f"cal_pdf_{selected_rec['id']}")
             x2.download_button("Download Calibration / Validation Excel",_excel_bytes("Calibration Record",[{"asset_number":a.get("asset_number"),"asset_code":a.get("asset_code"),**selected_rec}]),file_name=f"{selected_rec.get('report_number') or selected_rec.get('id')}.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",width="stretch",key=f"cal_xlsx_{selected_rec['id']}")
+            from core.pdf_preview import preview_button; preview_button("quality_asset_calibration_records",str(selected_rec["id"]),key="cal_record",record=selected_rec)  # R37
             if password_delete_panel(repo=repo,table="quality_asset_calibration_records",rows=[selected_rec],labeler=lambda r:record_labels.get(str(r.get("id")),str(r.get("id"))),key=f"cal_delete_{selected_rec['id']}",can_delete=perms["can_archive"],title="Delete Calibration / Validation Record",help_text="Permanent deletion requires your current QCMS password. Linked genealogy blocks unsafe deletion."):
                 st.rerun()
 
@@ -300,6 +301,7 @@ def render_standard_room() -> None:
             z1,z2=st.columns(2,gap="small")
             z1.download_button("Download Standard Room Inspection PDF",_standard_room_pdf(selected,asset=a,part=p,process=pr,employee=e),file_name=f"{selected.get('report_number') or selected.get('id')}.pdf",mime="application/pdf",width="stretch")
             z2.download_button("Download Standard Room Inspection Excel",_excel_bytes("Standard Room",[selected]),file_name=f"{selected.get('report_number') or selected.get('id')}.xlsx",mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",width="stretch")
+            from core.pdf_preview import preview_button; preview_button("standard_room_inspection_records",str(selected["id"]),key="std_room",record=selected)  # R37
             if password_delete_panel(repo=repo,table="standard_room_inspection_records",rows=[selected],labeler=lambda r:labels.get(str(r.get("id")),str(r.get("id"))),key=f"std_delete_{selected['id']}",can_delete=perms["can_archive"],title="Delete Standard Room Inspection",help_text="Permanent deletion requires your current QCMS password and is blocked when genealogy depends on this record."):
                 st.rerun()
 

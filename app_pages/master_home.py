@@ -15,6 +15,8 @@ def _count(repo: Repository, table: str) -> int:
 def render() -> None:
     subpage_navigation(("dashboard", "Dashboard", ":material/dashboard:"))
     page_header("Master Data Centre", context="Controlled data")
+    from core.module_kpis import render_module_strip  # R37: module infographic KPI cards (click = records)
+    render_module_strip(home="masters", key="master_home", origin="masters")
     repo = Repository()
     counts = {
         "branches": _count(repo, "company_branches"),

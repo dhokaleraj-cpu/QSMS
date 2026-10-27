@@ -11,8 +11,8 @@ enum AppConfig {
     static let webURL = "https://vf6fa9hrhxquqxmfgyy4wf.streamlit.app"
     static let bucket = "quality-documents"
     static let webVersion = "4.14.49"
-    static var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1.0" }
-    static var appBuild: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "2" }
+    static var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.0" }
+    static var appBuild: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "3" }
 }
 
 enum Theme {

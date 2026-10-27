@@ -79,6 +79,7 @@ from app_pages.osp_transactions import _render_material_out_entry
 from core.osp_service import OSPService
 class Repo:
  def rpc(self,name,args):
+  if name=='qcms_next_osp_challan_number': return 'JWCD9TEST'  # R37 challan series suggestion
   st.session_state['submitted_rpc']={'name':name,'args':args}
   return {'id':'doc','material_out_number':'OUT-TEST','lines':[{'id':str(i),**r} for i,r in enumerate(args['p_lines'])]}
 class Service(OSPService):
@@ -91,7 +92,7 @@ _render_material_out_entry(Service(),{'can_create':True})
 '''
     app=AppTest.from_string(script).run(timeout=20)
     assert not app.exception
-    app.multiselect[0].select('INWARD:a').select('INWARD:b').run()
+    app.multiselect[0].select('INWARD:a').select('INWARD:b').run(timeout=30)
     assert not app.exception
     next(x for x in app.text_input if x.label=='Material Out Challan Number').set_value('CH-MULTI')
     next(x for x in app.button if x.label=='Create OSP Material Out').click().run(timeout=20)

@@ -31,6 +31,7 @@ import java.util.Map;
  * Pending tasks first, then number cards and charts (GenChart) per department. Departments switch by
  * themselves every 20 s with a slide + fade animation; tapping a tab pauses that until 60 s without a tap.
  * The previous Home overview stays one tap away ("Home" button / More tab).
+ * R37 (v3.5.0): cards open the records behind the number (KpiDetails), module infographic cards strip.
  */
 final class KpiHomeScreen extends Screen {
     static final String[] DEPARTMENTS = {"QUALITY", "SUPPLY_CHAIN", "PRODUCTION", "NPD", "MANAGEMENT"};
@@ -67,7 +68,7 @@ final class KpiHomeScreen extends Screen {
     @Override
     public View build() {
         generation++;
-        if (!api.userId.equals(cacheUser)) { CACHE.clear(); CACHED_AT.clear(); cacheUser = api.userId; }
+        if (!api.userId.equals(cacheUser)) { CACHE.clear(); CACHED_AT.clear(); MODULE_CACHE.clear(); MODULE_AT.clear(); cacheUser = api.userId; }
         LinearLayout root = Ui.vbox(a);
         root.setBackgroundColor(Ui.BG);
 
@@ -216,6 +217,8 @@ final class KpiHomeScreen extends Screen {
     private void refresh() {
         CACHE.clear();
         CACHED_AT.clear();
+        MODULE_CACHE.clear();
+        MODULE_AT.clear();
         pauseAuto();
         if (stage != null) { stage.removeAllViews(); shown = null; show(current, true); }
         a.refreshBell();
@@ -259,12 +262,25 @@ final class KpiHomeScreen extends Screen {
             if (!detail.isEmpty()) text.addView(Ui.text(a, detail, 11.5f, Ui.MUTED, false));
             row.addView(text, Ui.weight(1));
             row.addView(Ui.text(a, "›", 22, Ui.TEAL, true));
-            row.setOnClickListener(v -> { pauseAuto(); Notif.open(a, "", s(t, "related_id"), s(t, "web_route"), s(t, "title")); });
+            // R37: a pending task opens its record (table from the related table / module key, else the route)
+            String taskTable = s(t, "related_table");
+            if (taskTable.isEmpty()) taskTable = KpiDetails.tableForModuleKey(mod);
+            final String table = taskTable;
+            row.setOnClickListener(v -> { pauseAuto(); Notif.open(a, table, s(t, "related_id"), s(t, "web_route"), s(t, "title")); });
+            row.setOnLongClickListener(v -> {
+                if (table.isEmpty() || s(t, "related_id").isEmpty()) return false;
+                pauseAuto(); KpiDetails.rowMenu(a, s(t, "title"), table, s(t, "related_id"), s(t, "web_route")); return true;
+            });
             taskCard.addView(Ui.divider(a));
             taskCard.addView(row);
         }
         if (n > 12) taskCard.addView(Ui.text(a, "+ " + (n - 12) + " more", 11.5f, Ui.MUTED, false), Ui.matchWrap(a, 4));
         body.addView(taskCard, Ui.matchWrap(a, 8));
+
+        // ---- R37: module infographic cards (qcms_module_cards), each opens the records behind it
+        LinearLayout modules = Ui.vbox(a);
+        body.addView(modules, Ui.matchWrap(a, 10));
+        moduleCards(dept.isEmpty() ? DEPARTMENTS[current] : dept, modules);
 
         // ---- number cards
         JSONArray cards = d.optJSONArray("cards");
@@ -277,7 +293,16 @@ final class KpiHomeScreen extends Screen {
             try { value = GenChart.fmt(Double.parseDouble(value)); } catch (Exception ignored) { }
             View tile = GenUtil.tile(a, "", s(c, "label"), value + (unit.isEmpty() ? "" : " " + unit), "", status(s(c, "tone")));
             String route = s(c, "route");
-            if (!route.isEmpty()) tile.setOnClickListener(v -> { pauseAuto(); Notif.open(a, "", "", route, s(c, "label")); });
+            // R37: tap = card "drill" (table + filter) when present, else the records behind the number
+            // (qcms_kpi_records by card key; label -> key for older databases), else the module
+            String key = s(c, "key").isEmpty() ? KpiDetails.keyForLabel(s(c, "label")) : s(c, "key");
+            JSONObject drill = c.optJSONObject("drill");
+            boolean hasDrill = drill != null && !s(drill, "table").isEmpty();
+            if (hasDrill || !key.isEmpty() || !route.isEmpty()) tile.setOnClickListener(v -> {
+                pauseAuto();
+                if (hasDrill) KpiDetails.openDrill(a, drill, s(c, "label"), route);
+                else KpiDetails.openCard(a, key, dept.isEmpty() ? DEPARTMENTS[current] : dept, s(c, "label"), route);
+            });
             tiles.add(tile);
         }
         if (!tiles.isEmpty()) GenUtil.grid2(a, body, tiles, 12);
@@ -300,6 +325,30 @@ final class KpiHomeScreen extends Screen {
         Button all = Ui.outline(a, "All KPI dashboards", Ui.TEAL);
         all.setOnClickListener(v -> a.push(new GenKpiScreen(a)));
         body.addView(all, Ui.matchWrap(a, 14));
+    }
+
+    // R37: module infographic cards per department (optional RPC: hidden when missing / failing)
+    private static final Map<String, JSONArray> MODULE_CACHE = new HashMap<>();
+    private static final Map<String, Long> MODULE_AT = new HashMap<>();
+
+    private void moduleCards(String dept, LinearLayout holder) {
+        JSONArray cached = MODULE_CACHE.get(dept);
+        Long at = MODULE_AT.get(dept);
+        if (cached != null) fillModules(holder, cached, dept);
+        if (cached != null && at != null && System.currentTimeMillis() - at < FRESH_MS) return;
+        Api.async(() -> KpiDetails.cardsOf(api.rpcValue("qcms_module_cards", new JSONObject().put("p_department", dept))), (cards, err) -> {
+            if (err != null || cards == null) return;
+            MODULE_CACHE.put(dept, cards);
+            MODULE_AT.put(dept, System.currentTimeMillis());
+            if (holder.isAttachedToWindow()) fillModules(holder, cards, dept);
+        });
+    }
+
+    private void fillModules(LinearLayout holder, JSONArray cards, String dept) {
+        holder.removeAllViews();
+        if (cards.length() == 0) return;
+        holder.addView(Ui.text(a, "Modules · tap a card for its records", 12.5f, Ui.TEAL_DARK, true));
+        holder.addView(KpiDetails.moduleStrip(a, cards, dept, this::pauseAuto), Ui.matchWrap(a, 6));
     }
 
     /** Server chart JSON -> GenKpi.Chart (donut is drawn as GenChart's share view). */

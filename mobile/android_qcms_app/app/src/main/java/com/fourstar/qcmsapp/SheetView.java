@@ -40,6 +40,7 @@ public final class SheetView extends View {
     private float scrollX, scrollY, scale = 1f;
     private int maxHeightPx;
     private RowClick click;
+    private RowClick longClick;
     private int selected = -1;
     private final float density;
 
@@ -68,6 +69,15 @@ public final class SheetView extends View {
                 scroller.fling((int) scrollX, (int) scrollY, (int) -vx, (int) -vy, 0, (int) maxScrollX(), 0, (int) maxScrollY());
                 postInvalidateOnAnimation();
                 return true;
+            }
+            @Override public void onLongPress(MotionEvent e) {
+                int row = rowAt(e.getY());
+                if (row >= 0 && longClick != null) {
+                    selected = row;
+                    invalidate();
+                    performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                    longClick.onRow(row);
+                }
             }
             @Override public boolean onSingleTapUp(MotionEvent e) {
                 int row = rowAt(e.getY());
@@ -108,6 +118,8 @@ public final class SheetView extends View {
     }
 
     public void setOnRowClick(RowClick c) { click = c; }
+    /** R37: long-press on a row (e.g. Print PDF of a search result). */
+    public void setOnRowLongClick(RowClick c) { longClick = c; }
     /** Copies of the grid content (for PDF / Excel export). */
     public List<String> columnsData() { return new ArrayList<>(columns); }
     public List<String[]> rowsData() { return new ArrayList<>(rows); }

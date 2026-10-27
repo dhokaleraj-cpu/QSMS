@@ -158,6 +158,7 @@ def render_records() -> None:
                 record_number=f"{selected_row.get('grade_code')}-REV-{selected_row.get('revision')}",
             )
             st.download_button("Download Grade PDF", pdf, file_name=f"Material_Grade_{selected_row.get('grade_code')}_Rev_{selected_row.get('revision')}.pdf", mime="application/pdf", width="stretch")
+            from core.pdf_preview import preview_button; preview_button("material_grades", selected, key="grade_records", record=selected_row)  # R37
         with c3:
             if password_delete_panel(
                 repo=repo,

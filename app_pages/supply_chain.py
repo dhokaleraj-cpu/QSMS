@@ -500,12 +500,16 @@ def _edit_delete_panel(
                 save_success_popup("Supply Chain entry updated successfully.",queue_for_rerun=True); st.rerun()
             except Exception as exc: st.error(db_message(exc))
         _exports(pd.DataFrame([{k:v for k,v in row.items() if not str(k).startswith("_")}]),f"Selected {title}",f"{key}_{selected}")
+        from core.pdf_preview import pdf_actions; pdf_actions(table,selected,key=key,record=row,customer_safe=None)  # R37 print layout
         if password_delete_panel(repo=service.repo,table=table,rows=[row],labeler=labeler,key=f"{key}_delete_{selected}",can_delete=perms.get("can_archive",False),title="Delete Selected Entry",help_text="Permanent deletion requires your current QCMS password. Linked downstream records will block deletion."):
             st.rerun()
 
 
 def render_home() -> None:
     page_header("Supply Chain", "Master-linked Customer Order to final dispatch genealogy", "Supply Chain")
+    from core.module_kpis import render_module_strip  # R37: module infographic KPI cards (click = records)
+    render_module_strip(home="supply-chain-home", key="supply_home", origin="supply-chain-home")
+    _indirect_purchase_link()
     service=SupplyChainService(); perms=current_permissions("SUPPLY_CHAIN"); orders=service.customer_orders(); active=[r for r in orders if str(r.get("status")) not in {"COMPLETED","CANCELLED"}]
     overdue=[r for r in active if _due_status(r.get("status"),r.get("customer_delivery_date"))=="OVERDUE"]
     if overdue:
@@ -928,6 +932,7 @@ def render_opening_stock() -> None:
             labels={str(r["id"]):with_status(f"{part_labels.get(str(r.get('part_id')),'Part')} · {OPENING_STOCK_STAGES.get(str(r.get('stage')),r.get('stage'))} · {number(r.get('available_quantity_pcs')):,.0f} pcs", r) for r in rows}
             selected_id=st.selectbox("Opening Stock Record",list(labels),format_func=lambda v:labels[v],key="opening_stock_edit_select")
             record=next(r for r in rows if str(r.get("id"))==selected_id)
+            from core.pdf_preview import pdf_actions; pdf_actions("supply_opening_stock",selected_id,key="opening_stock",record=record)  # R37 print layout
             opening_scope=record_widget_token("supply-opening-stock-edit",record,selected=selected_id)
             with st.form(f"opening_stock_edit_form_{opening_scope}"):
                 c=st.columns(4,gap="small")
@@ -981,6 +986,15 @@ def render_rm_procurement() -> None:
 
 
 
+def _indirect_purchase_link() -> None:
+    """R37: Direct POs (RM / forging) live here; indirect buying (consumables, tools, spares, services) has its own module."""
+    pages = st.session_state.get("_qsms_pages") or {}
+    if "indirect-purchase" in pages:
+        c1, c2 = st.columns([1.2, 3], gap="small", vertical_alignment="center")
+        c1.page_link(pages["indirect-purchase"], label="Indirect Purchase →", icon=":material/shopping_basket:", width="stretch")
+        c2.caption("Consumables, tools, spares, services, office / IT and maintenance are bought in the separate Indirect Purchase module (own IPO series, inward and stock).")
+
+
 def _purchase_order_subnav() -> None:
     """Dedicated Purchase Order workspace tabs (v4.14.31)."""
     module_submenu(
@@ -1012,7 +1026,7 @@ def _purchase_order_selector_labels(service: SupplyChainService, headers: Mappin
         if extra:
             source_text += f" · +{extra} source(s)"
         labels[str(po_id)] = (
-            f"{header.get('po_number') or '-'} · {supplier_labels.get(str(header.get('supplier_id') or ''), 'Supplier')}"
+            f"{header.get('po_number') or '-'}{(' · Amd ' + str(int(number(header.get('amendment_no'))))) if number(header.get('amendment_no')) > 0 else ''} · {supplier_labels.get(str(header.get('supplier_id') or ''), 'Supplier')}"
             f" · {source_text or 'No source details'} [{str(header.get('status') or '-').replace('_', ' ')}]"
             + (f" · Approval {str(header.get('approval_status')).replace('_', ' ')}" if header.get('approval_status') and header.get('approval_status') != header.get('status') else "")
         )
@@ -1109,6 +1123,99 @@ def _render_po_remove_order(service: SupplyChainService, *, purchase_order_id: s
                 st.error(db_message(exc))
 
 
+def _render_po_amendment(service: SupplyChainService, *, purchase_order_id: str, header: Mapping[str, Any], parts: Mapping[str, Mapping[str, Any]],
+                         supplier_labels: Mapping[str, str], perms: Mapping[str, bool], login_employee_id: str | None) -> None:
+    """R37b: Amend PO - new price / quantity / commercial terms from an Effective Date with Amendment No."""
+    from core.supply_chain_service import po_display_number
+    if str(header.get("status") or "").upper() == "CANCELLED":
+        return
+    current_no = int(number(header.get("amendment_no")))
+    expanded = st.session_state.pop("supply_po_amend_open", "") == purchase_order_id
+    title = f"Amend Purchase Order · next = Amendment {current_no + 1}" + (f" (current {po_display_number(header)})" if current_no else "")
+    with st.expander(title, icon=":material/edit_note:", expanded=expanded):
+        if not perms.get("can_edit", False):
+            st.info("Purchase Order Edit permission is required to amend a PO.")
+            return
+        st.caption("The PO number stays the same; the amendment number, amendment date and Effective Date print in the PO header and in the "
+                   "AMENDMENT HISTORY page. A changed price is added to Part Master price history from the Effective Date so later POs use it. "
+                   "Quantity can never go below the quantity already received. The amended PO returns to approval; on approval it is e-mailed "
+                   "to the supplier through the normal PO e-mail.")
+        amendments = header.get("amendments") or []
+        if amendments:
+            portal_table(pd.DataFrame([{
+                "Amd No.": a.get("amendment_no"), "Amendment Date": a.get("amendment_date"), "Effective Date": a.get("effective_date"),
+                "Reason": a.get("reason"), "Lines Changed": len(a.get("lines") or []), "Status": str(a.get("status") or "").replace("_", " "),
+            } for a in amendments]), hide_index=True, width="stretch", height=min(260, 78 + len(amendments) * 36))
+        effective = st.date_input("Effective Date (prices / quantities apply from)", value=date.today(), format="DD-MM-YYYY", key=f"po_amd_eff_{purchase_order_id}",
+                                  help="Can differ from the PO date. The default new unit price is the Part Master price-history revision effective on this date.")
+        items = service.purchase_order_items(purchase_order_id)
+        rows = []
+        for index, item in enumerate(items, start=1):
+            suggestion = service.amendment_price_suggestion(purchase_order_id, item, effective)
+            current_price = number(item.get("unit_price"))
+            suggested = number(suggestion.get("price")) if suggestion.get("price") else current_price
+            rows.append({
+                "_id": str(item.get("id") or ""), "Line": index,
+                "Item": " · ".join(v for v in (str(item.get("item_no") or ""), str(item.get("item_description") or "")) if v),
+                "UOM": item.get("uom"), "Received Qty": service.purchase_order_item_received_qty(str(item.get("id") or "")),
+                "Current Qty": number(item.get("quantity")), "New Qty": number(item.get("quantity")),
+                "Current Unit Price": current_price,
+                "Price History (Effective)": (f"{number(suggestion.get('price')):,.2f} from {suggestion.get('start_date')}" + ("" if suggestion.get("covering") else " (latest)")) if suggestion else "No price history",
+                "New Unit Price": suggested,
+            })
+        frame = pd.DataFrame(rows)
+        with st.form(f"po_amend_form_{purchase_order_id}_{effective.isoformat()}"):
+            edited = st.data_editor(
+                frame, hide_index=True, width="stretch", height=min(380, 90 + len(frame) * 38), key=f"po_amd_grid_{purchase_order_id}_{effective.isoformat()}",
+                disabled=["_id", "Line", "Item", "UOM", "Received Qty", "Current Qty", "Current Unit Price", "Price History (Effective)"],
+                column_config={"_id": None, "Received Qty": st.column_config.NumberColumn(format="%.3f"), "Current Qty": st.column_config.NumberColumn(format="%.3f"),
+                               "New Qty": st.column_config.NumberColumn(min_value=0.001, format="%.3f", required=True),
+                               "Current Unit Price": st.column_config.NumberColumn(format="%.4f"),
+                               "New Unit Price": st.column_config.NumberColumn(min_value=0.0001, format="%.4f", required=True)},
+            )
+            c = st.columns(4, gap="small")
+            delivery = c[0].date_input("Delivery Date", value=_iso_date(header.get("delivery_date")), format="DD-MM-YYYY")
+            payment = c[1].text_input("Payment Term", value=str(header.get("payment_term") or ""))
+            incoterm = c[2].text_input("Incoterm", value=str(header.get("incoterm") or ""))
+            ship_via = c[3].text_input("Ship Via", value=str(header.get("ship_via") or ""))
+            c = st.columns([1, 3], gap="small")
+            other_amount = c[0].number_input("Other Charges", min_value=0.0, value=float(number(header.get("other_amount"))), step=100.0, format="%.2f")
+            remarks = c[1].text_input("PO Remarks", value=str(header.get("remarks") or ""))
+            reason = st.text_area("Amendment Reason (mandatory, printed on the PO)", height=70, key=f"po_amd_reason_{purchase_order_id}")
+            password = st.text_input("Current QCMS password", type="password", key=f"po_amd_pwd_{purchase_order_id}")
+            submitted = st.form_submit_button(f"Save Amendment {current_no + 1} & Submit for Approval", type="primary", width="stretch", disabled=not bool(login_employee_id))
+        if submitted:
+            try:
+                if not reason.strip():
+                    raise ValueError("Amendment Reason is required.")
+                from core.auth import verify_current_password
+                verify_current_password(password)
+                lines = [{"id": r.get("_id"), "unit_price": r.get("New Unit Price"), "quantity": r.get("New Qty")} for _, r in edited.iterrows()]
+                result = service.amend_purchase_order(purchase_order_id, {
+                    "reason": reason, "effective_date": effective.isoformat(), "lines": lines, "delivery_date": delivery.isoformat(),
+                    "payment_term": payment, "incoterm": incoterm, "ship_via": ship_via, "other_amount": other_amount, "remarks": remarks,
+                })
+                supplier_id = str(header.get("supplier_id") or "")
+                target = service.purchase_order_approval_target(purchase_order_id)
+                NotificationService(service.repo).notify(
+                    "PO_APPROVAL_PENDING", related_table="supply_purchase_orders", related_id=purchase_order_id,
+                    recipient_email=str(target.get("email") or "").strip() or None, recipient_name=str(target.get("employee_name") or "").strip() or None,
+                    context={"po_number": result.get("display_number") or header.get("po_number"), "supplier_name": supplier_labels.get(supplier_id, "Supplier"),
+                             "supplier_id": supplier_id, "next_stage": str(target.get("level_name") or "Amendment Approval")},
+                )
+                warn = (" Note: " + " ".join(result.get("warnings") or [])) if result.get("warnings") else ""
+                save_success_popup(f"{result.get('display_number')} saved (Effective {effective.strftime('%d-%m-%Y')}) and sent for approval. "
+                                   f"Price history updated for changed prices.{warn}", queue_for_rerun=True)
+                st.session_state["supply_po_approval_request_id"] = purchase_order_id
+                target_page = st.session_state.get("_qsms_pages", {}).get("supply-po-approval")
+                if target_page:
+                    st.switch_page(target_page)
+                else:
+                    st.rerun()
+            except Exception as exc:
+                st.error(db_message(exc))
+
+
 def _render_purchase_order_edit(
     service: SupplyChainService, *, purchase_order_id: str, header: Mapping[str, Any],
     parts: Mapping[str, Mapping[str, Any]], parties: Mapping[str, Mapping[str, Any]],
@@ -1132,6 +1239,7 @@ def _render_purchase_order_edit(
         "A Supplier change uses **Cancel & Reissue with New Supplier** (Order List) so the RM / forging details of the new supplier are applied. "
         "Supplier Confirmation is a separate downstream stage and NEVER blocks PO editing."
     )
+    _render_po_amendment(service, purchase_order_id=purchase_order_id, header=header, parts=parts, supplier_labels=supplier_labels, perms=perms, login_employee_id=login_employee_id)
     _render_po_add_orders(service, purchase_order_id=purchase_order_id, header=header, parts=parts, login_employee_id=login_employee_id, scope_hint=str(header.get("po_number") or purchase_order_id))
     _render_po_remove_order(service, purchase_order_id=purchase_order_id, header=header, parts=parts)
     st.caption(
@@ -1774,6 +1882,7 @@ def render_purchase_orders() -> None:
 def render_purchase_order_list() -> None:
     page_header("Purchase Order · Order List", "All controlled Purchase Orders with Customer PO, PO Position, Part Number, quantity, approval and Supplier Confirmation status", "Supply Chain")
     _purchase_order_subnav()
+    _indirect_purchase_link()
     service = SupplyChainService(); perms = current_permissions("SUPPLY_CHAIN")
     parts, parties, grades = _maps(service)
     supplier_labels = {str(r["id"]): with_status(party_label(r), r) for r in service.suppliers()}
@@ -1795,7 +1904,7 @@ def render_purchase_order_list() -> None:
         if selected_status != "ALL": filtered = filtered[filtered["Approval Status"].astype(str) == selected_status]
         if selected_confirmation != "ALL": filtered = filtered[filtered["Supplier Confirmation"].astype(str) == selected_confirmation]
         preferred = [
-            "PO Number", "PO Type", "PO Date", "Supplier", "Customer", "Customer PO Number", "PO Position",
+            "PO Number", "Amendment", "PO Type", "PO Date", "Supplier", "Customer", "Customer PO Number", "PO Position",
             "Part Number", "FSI Part Number", "PO Source Qty", "UOM", "Delivery Date", "Approval Status",
             "Supplier Confirmation", "Status",
         ]
@@ -1812,14 +1921,21 @@ def render_purchase_order_list() -> None:
         _render_purchase_order_key_information(service, selected, key="po_list_source")
         from core.po_print_ui import po_sections_panel
         po_sections_panel(service, selected, service.purchase_order(selected) or {}, perms, key="po_list_sections")
-        c = st.columns(3, gap="small")
+        c = st.columns(4, gap="small")
         if c[0].button("Open Edit Purchase Order", type="primary", width="stretch", disabled=not perms.get("can_edit", False), key="po_list_open_edit"):
             st.session_state["supply_po_edit_request_id"] = selected
             st.switch_page(st.session_state["_qsms_pages"]["supply-po-edit"])
-        if c[1].button("Open Purchase Order PDF", width="stretch", key="po_list_open_pdf"):
+        selected_header = headers.get(str(selected)) or {}
+        if c[1].button("Amend PO", icon=":material/edit_note:", width="stretch", key="po_list_open_amend",
+                       disabled=(not perms.get("can_edit", False)) or str(selected_header.get("status") or "").upper() == "CANCELLED",
+                       help="R37b: new price / quantity / terms from an Effective Date with the next Amendment No."):
+            st.session_state["supply_po_edit_request_id"] = selected
+            st.session_state["supply_po_amend_open"] = selected
+            st.switch_page(st.session_state["_qsms_pages"]["supply-po-edit"])
+        if c[2].button("Open Purchase Order PDF", width="stretch", key="po_list_open_pdf"):
             st.session_state["supply_po_pdf_request_id"] = selected
             st.switch_page(st.session_state["_qsms_pages"]["supply-po-pdf"])
-        if c[2].button("Open Approval / Confirmation", width="stretch", key="po_list_open_approval"):
+        if c[3].button("Open Approval / Confirmation", width="stretch", key="po_list_open_approval"):
             st.session_state["supply_po_approval_request_id"] = selected
             st.switch_page(st.session_state["_qsms_pages"]["supply-po-approval"])
 
@@ -1902,7 +2018,8 @@ def _po_approval_release_panel(service: SupplyChainService, po_id: str, header: 
     supplier = service.repo.get("parties", str(header.get("supplier_id") or "")) or {}
     release_event = "RM_PO_CREATED" if str(header.get("po_type") or "").upper() == "RAW_MATERIAL" else "FORGING_PO_CREATED"
     release_next_stage = "Raw Material Receipt" if release_event == "RM_PO_CREATED" else "Forging Receipt"
-    context = {"po_number": header.get("po_number"), "supplier_id": str(header.get("supplier_id") or ""), "supplier_name": supplier.get("party_name"),
+    from core.supply_chain_service import po_display_number
+    context = {"po_number": po_display_number(header), "supplier_id": str(header.get("supplier_id") or ""), "supplier_name": supplier.get("party_name"),
                "delivery_date": header.get("delivery_date"), "next_stage": release_next_stage}
     notifier = NotificationService(service.repo)
     send_now = st.toggle("Send the approved PO to the supplier by email now", value=True, key=f"{key}_send_{po_id}",
@@ -1933,7 +2050,7 @@ def _po_approval_release_panel(service: SupplyChainService, po_id: str, header: 
                 row = notifier.enqueue(release_event, related_table="supply_purchase_orders", related_id=po_id,
                                        recipient_email=to_email, recipient_name=str(supplier.get("party_name") or "").strip() or None,
                                        cc_emails=cc_emails, include_supplier=False,
-                                       context={**context, "po_number": approved.get("po_number"), "delivery_date": approved.get("delivery_date")})
+                                       context={**context, "po_number": po_display_number({**dict(header), **dict(approved or {})}), "delivery_date": approved.get("delivery_date")})
                 result = notifier.dispatch([row] if row else [])
                 sent = bool(row) and not result.get("error")
             service.ensure_purchase_order_confirmation(po_id)
@@ -2437,6 +2554,7 @@ def render_rm_receipt() -> None:
         if rows:
             linked={str(r["id"]):r for r in rows}; opts={rid:f"{r.get('receipt_number')} · Heat {r.get('heat_number')}" for rid,r in linked.items()}; chosen=st.selectbox("Open Linked Material Inward",list(opts),format_func=lambda v:opts[v],key="supply_open_linked_inward"); inward_id=str(linked[chosen].get("inward_lot_id") or "")
             if st.button("Edit Selected in Material Inward Module",width="stretch",disabled=not inward_id): st.session_state["edit_inward_id"]=inward_id; st.switch_page(st.session_state["_qsms_pages"]["inward-entry"])
+            from core.pdf_preview import pdf_actions; pdf_actions("supply_rm_receipts",chosen,key="supply_rm_receipt",record=linked[chosen],customer_safe=None)  # R37 print layout
             if password_delete_panel(repo=service.repo,table="supply_rm_receipts",rows=[linked[chosen]],labeler=lambda r:f"{r.get('receipt_number')} · Heat {r.get('heat_number')}",key=f"supply_rm_receipt_delete_{chosen}",can_delete=perms["can_archive"],title="Delete Supply Chain RM Receipt Link",help_text="This removes the Supply Chain link only after password confirmation. The original Material Inward record remains controlled in Material Inward."): st.rerun()
 
 

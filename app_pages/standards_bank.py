@@ -280,6 +280,7 @@ def render_records() -> None:
                 record_number=str(selected.get("standard_code") or ""),
             )
             st.download_button("Download Record PDF", pdf, file_name=f"Customer_Standard_{selected.get('standard_code')}_Rev_{selected.get('revision_number')}.pdf", mime="application/pdf", width="stretch")
+            from core.pdf_preview import preview_button; preview_button("customer_standards", selected_id, key="standard_records", record=selected)  # R37
         with c[3]:
             if password_delete_panel(
                 repo=repo,

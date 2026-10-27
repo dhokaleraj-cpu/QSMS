@@ -10,7 +10,7 @@ from core.ui import portal_table
 
 from core.inspection_queue import build_inspection_queue, pending_count
 from core.repository import Repository
-from core.ui import dashboard_card, kpi_grid, page_header, section_bar, stage_section, style_status_dataframe
+from core.ui import dashboard_card, kpi_grid, kpi_grid_clickable, page_header, section_bar, stage_section, style_status_dataframe
 from core.config import get_settings
 
 
@@ -98,20 +98,27 @@ def render() -> None:
     rejected_pcs = _sum(inward_rows, "rejected_production_quantity_pcs")
     hold_pcs = sum(float(row.get("on_hold_production_quantity_pcs") or row.get("hold_production_quantity_pcs") or 0) for row in inward_rows)
 
-    kpi_grid([
-        {"label": "RMTC Draft", "value": counts["rmtc_draft"], "foot": "Entry", "color": "#64748B", "background": "#F8FAFC"},
-        {"label": "RMTC Pending", "value": counts["rmtc_pending"], "foot": "Validation", "color": "#D97706", "background": "#FFF7ED"},
-        {"label": "RMTC Accepted", "value": counts["rmtc_accepted"], "foot": "Inward eligible", "color": "#15803D", "background": "#F0FDF4"},
-        {"label": "Under Reserve", "value": counts["rmtc_reserve"], "foot": "Controlled", "color": "#C2410C", "background": "#FFF7ED"},
-        {"label": "RMTC Steel kg", "value": f"{rmtc_steel:,.2f}", "foot": "All heats", "color": "#2563EB", "background": "#EFF6FF"},
-        {"label": "Inward Steel kg", "value": f"{inward_steel:,.2f}", "foot": "Received", "color": "#0F766E", "background": "#F0FDFA"},
-        {"label": "Planned Production", "value": f"{planned_pcs:,.0f}", "foot": "Pieces", "color": "#7C3AED", "background": "#F5F3FF"},
-        {"label": "Accepted Production", "value": f"{accepted_pcs:,.0f}", "foot": "Pieces", "color": "#15803D", "background": "#F0FDF4"},
-        {"label": "Rejected Production", "value": f"{rejected_pcs:,.0f}", "foot": "Pieces", "color": "#B91C1C", "background": "#FEF2F2"},
-        {"label": "On Hold Production", "value": f"{hold_pcs:,.0f}", "foot": "Pieces", "color": "#D97706", "background": "#FFF7ED"},
-        {"label": "Quality Holds", "value": counts["quality_hold"], "foot": "Awaiting reports", "color": "#D97706", "background": "#FFF7ED"},
-        {"label": "Released Heats", "value": counts["released"], "foot": "Next process", "color": "#15803D", "background": "#F0FDF4"},
-    ])
+    kpi_items = [
+        {"drill": "rmtc_draft", "label": "RMTC Draft", "value": counts["rmtc_draft"], "foot": "Entry", "color": "#64748B", "background": "#F8FAFC"},
+        {"drill": "rmtc_approval_pending", "label": "RMTC Pending", "value": counts["rmtc_pending"], "foot": "Validation", "color": "#D97706", "background": "#FFF7ED"},
+        {"drill": "rmtc_accepted", "label": "RMTC Accepted", "value": counts["rmtc_accepted"], "foot": "Inward eligible", "color": "#15803D", "background": "#F0FDF4"},
+        {"drill": "rmtc_under_reserve", "label": "Under Reserve", "value": counts["rmtc_reserve"], "foot": "Controlled", "color": "#C2410C", "background": "#FFF7ED"},
+        {"drill": "rmtc_all", "label": "RMTC Steel kg", "value": f"{rmtc_steel:,.2f}", "foot": "All heats", "color": "#2563EB", "background": "#EFF6FF"},
+        {"drill": "inward_all", "label": "Inward Steel kg", "value": f"{inward_steel:,.2f}", "foot": "Received", "color": "#0F766E", "background": "#F0FDFA"},
+        {"drill": "inward_all", "label": "Planned Production", "value": f"{planned_pcs:,.0f}", "foot": "Pieces", "color": "#7C3AED", "background": "#F5F3FF"},
+        {"drill": "inward_accepted_pcs", "label": "Accepted Production", "value": f"{accepted_pcs:,.0f}", "foot": "Pieces", "color": "#15803D", "background": "#F0FDF4"},
+        {"drill": "inward_rejected_pcs", "label": "Rejected Production", "value": f"{rejected_pcs:,.0f}", "foot": "Pieces", "color": "#B91C1C", "background": "#FEF2F2"},
+        {"drill": "inward_hold_pcs", "label": "On Hold Production", "value": f"{hold_pcs:,.0f}", "foot": "Pieces", "color": "#D97706", "background": "#FFF7ED"},
+        {"drill": "inward_hold", "label": "Quality Holds", "value": counts["quality_hold"], "foot": "Awaiting reports", "color": "#D97706", "background": "#FFF7ED"},
+        {"drill": "inward_released", "label": "Released Heats", "value": counts["released"], "foot": "Next process", "color": "#15803D", "background": "#F0FDF4"},
+    ]
+    # R37: every KPI card opens the records behind its number (KPI Details) - click a record to open it.
+    clicked_kpi = kpi_grid_clickable(kpi_items, key="quality_dashboard_kpis", columns=6)
+    if clicked_kpi is not None:
+        from app_pages.kpi_drilldown import open_kpi_details
+        item = kpi_items[clicked_kpi]
+        open_kpi_details(key=item["drill"], label=f'Quality Dashboard · {item["label"]}', value=item["value"], department="QUALITY",
+                         origin="dashboard")
 
     with stage_section("A", "QUICK ACTIONS", key="dashboard_render_a"):
         cards = [

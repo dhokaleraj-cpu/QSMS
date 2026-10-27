@@ -11,6 +11,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from core.reporting import report_pdf_bytes, safe_excel_sheet_name
 from core.report_filters import active_filter_text, render_filters, report_exports, totals_row
 from core.config import get_settings
+from core.record_print import preview_toggle, register_pdf
 from core.repository import Repository
 from core.ui import disposition_cards, page_header, section_bar, stage_section, subpage_navigation
 
@@ -92,6 +93,9 @@ def _excel_bytes(sheets: dict[str, pd.DataFrame], report_title: str = "QUALITY C
 def render_home() -> None:
     """Central report hub for every major QCMS module."""
     page_header("Reports Centre", "Supply Chain, material, quality and complaint reports", "Reports")
+    from core.module_kpis import render_module_strip  # R37: module infographic KPI cards (click = records)
+    render_module_strip(modules=("metlab", "dimensional", "bend", "rmtc", "inward", "customer_complaints", "purchase_orders", "customer_orders"),
+                        key="reports_home", origin="reports-home")
     repo = Repository()
     try:
         heat_rows = repo.select("v_qsms_heat_global_balance_report", limit=5000)
@@ -265,7 +269,12 @@ def render_heat_transactions() -> None:
                 {"label": "Global Heat Balance kg", "value": f"{_col_sum(summary_frame, 'Global Heat Balance kg'):,.3f}", "color": "#15803D", "background": "#F0FDF4"},
                 {"label": "Transactions", "value": len(transaction_frame), "color": "#7C3AED", "background": "#F5F3FF"},
             ])
-        c1, c2 = st.columns(2, gap="small")
+        heat_pdf = report_pdf_bytes(
+            "HEAT NUMBER GLOBAL BALANCE WITH TRANSACTIONS",
+            export_sections,
+            subtitle=f"Heat filter: {selected}" + (f" · {active_filter_text('heat_transactions')}" if active_filter_text("heat_transactions") else ""),
+        )
+        c1, c2, c3 = st.columns(3, gap="small")
         with c1:
             st.download_button(
                 "Download Excel Report",
@@ -277,15 +286,13 @@ def render_heat_transactions() -> None:
         with c2:
             st.download_button(
                 "Download Print PDF",
-                data=report_pdf_bytes(
-                    "HEAT NUMBER GLOBAL BALANCE WITH TRANSACTIONS",
-                    export_sections,
-                    subtitle=f"Heat filter: {selected}" + (f" · {active_filter_text('heat_transactions')}" if active_filter_text("heat_transactions") else ""),
-                ),
+                data=heat_pdf,
                 file_name=f"QCMS_Heat_Global_Balance_{suffix}.pdf",
                 mime="application/pdf",
                 icon=":material/picture_as_pdf:", width="stretch",
             )
+        # R37: inline print preview next to the downloads.
+        preview_toggle(heat_pdf, key="report_heat_transactions", container=c3)
 
 
 def render_osp_balance() -> None:
@@ -373,7 +380,12 @@ def render_osp_balance() -> None:
                 {"label": "Balance to Send OSP pcs", "value": f"{_col_sum(balance_frame, 'Balance to Send OSP pcs'):,.0f}", "color": "#7C3AED", "background": "#F5F3FF"},
                 {"label": "At OSP Vendor pcs", "value": f"{_col_sum(balance_frame, 'Qty at OSP Vendor pcs'):,.0f}", "color": "#B45309", "background": "#FFFBEB"},
             ])
-        c1, c2 = st.columns(2, gap="small")
+        osp_pdf = report_pdf_bytes(
+            "HEAT-WISE OSP INWARD, OUTWARD AND BALANCE",
+            export_sections,
+            subtitle=f"Heat: {selected_heat} · Part: {selected_part}",
+        )
+        c1, c2, c3 = st.columns(3, gap="small")
         with c1:
             st.download_button(
                 "Download Excel Report",
@@ -385,15 +397,13 @@ def render_osp_balance() -> None:
         with c2:
             st.download_button(
                 "Download Print PDF",
-                data=report_pdf_bytes(
-                    "HEAT-WISE OSP INWARD, OUTWARD AND BALANCE",
-                    export_sections,
-                    subtitle=f"Heat: {selected_heat} · Part: {selected_part}",
-                ),
+                data=osp_pdf,
                 file_name=f"QCMS_OSP_Heat_Balance_{suffix}.pdf",
                 mime="application/pdf",
                 icon=":material/picture_as_pdf:", width="stretch",
             )
+        # R37: inline print preview next to the downloads.
+        preview_toggle(osp_pdf, key="report_osp_balance", container=c3)
 
 
 # ----------------------------------------------------------------------------- R36b NPD / APQP status reports
@@ -435,6 +445,8 @@ def render_npd_report() -> None:
     ])
     portal_table(totals_row(frame, "Order Number") if not frame.empty else frame, hide_index=True, width="stretch", height=560)
     report_exports(frame, "NPD Status Report", "npd_status_report")
+    if not frame.empty:  # R37: preview of the same filtered register PDF
+        preview_toggle(lambda: register_pdf("NPD Status Report", frame, active_filter_text("npd_status_report")), key="report_npd_status")
 
 
 def render_apqp_report() -> None:
@@ -459,3 +471,5 @@ def render_apqp_report() -> None:
     ])
     portal_table(frame, hide_index=True, width="stretch", height=560)
     report_exports(frame, "APQP Status Report", "apqp_status_report")
+    if not frame.empty:  # R37: preview of the same filtered register PDF
+        preview_toggle(lambda: register_pdf("APQP Status Report", frame, active_filter_text("apqp_status_report")), key="report_apqp_status")

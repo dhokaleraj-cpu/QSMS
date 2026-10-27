@@ -8,7 +8,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
-VERSION="1.1.0"
+VERSION="1.2.0"
 BUILD_NO="$(date +%Y%m%d%H%M)"
 MODE="${1:-check}"
 LOG="$HOME/Downloads/STAWN_QCMS_iOS_build_log.txt"

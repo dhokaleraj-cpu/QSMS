@@ -18,7 +18,7 @@ import java.util.Map;
  * R35: also lists matching app modules / screens and the server-wide qcms_global_search rows
  * (every table and field), merged with the local field search.
  */
-final class GenSearchScreen extends Screen {
+final class GenSearchScreen extends Screen implements ExportDoc.Source {
     private static String lastQuery = "";
     private static List<GenSearch.Result> lastResults = null;
 
@@ -27,6 +27,15 @@ final class GenSearchScreen extends Screen {
     private LinearLayout results;
     private EditText input;
     private Button go;
+    private boolean focusInput = false;
+    private List<GenSearch.Result> current = null;
+
+    /** R37 "+" -> New query: empty Global Search with the keyboard up. */
+    static GenSearchScreen newQuery(MainActivity a) {
+        GenSearchScreen s = new GenSearchScreen(a, "");
+        s.focusInput = true;
+        return s;
+    }
 
     GenSearchScreen(MainActivity a) { this(a, null); }
 
@@ -64,6 +73,15 @@ final class GenSearchScreen extends Screen {
         if (lastResults != null && query.equals(lastQuery)) render(lastResults);
         else if (query.length() >= 2) run();
         else intro();
+        if (focusInput) {
+            focusInput = false;
+            input.requestFocus();
+            input.postDelayed(() -> {
+                android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager) a.getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+                if (imm != null) imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+            }, 250);
+        }
         return scroll;
     }
 
@@ -137,8 +155,22 @@ final class GenSearchScreen extends Screen {
         GenUtil.openRecord(a, r.table, r.record);
     }
 
+    /** R37: long-press a hit -> Open / Print PDF (print layout, Universal Record PDF fallback). */
+    private void longPress(GenSearch.Result r) {
+        if (GenSearch.Result.MODULE.equals(r.kind)) { a.openModule(r.appModule); return; }
+        String id = GenSearch.Result.SERVER.equals(r.kind) ? r.recordId : (r.record == null ? "" : r.record.optString("id", ""));
+        String title = r.reference == null || r.reference.isEmpty() ? r.recordType : r.reference;
+        new android.app.AlertDialog.Builder(a).setTitle(title)
+            .setItems(new String[]{"Open record", "Print PDF · Preview / Save / Share"}, (d, w) -> {
+                if (w == 0) open(r);
+                else KpiDetails.printRecord(a, r.table, id, r.route);
+            })
+            .setNegativeButton("Close", null).show();
+    }
+
     private void render(List<GenSearch.Result> found) {
         results.removeAllViews();
+        current = found;
         Map<String, List<GenSearch.Result>> byModule = new LinkedHashMap<>();
         for (GenSearch.Result r : found) byModule.computeIfAbsent(r.module, k -> new ArrayList<>()).add(r);
 
@@ -173,7 +205,7 @@ final class GenSearchScreen extends Screen {
 
         int visible = 0;
         for (String k : keys) if (module.isEmpty() || module.equals(k)) visible += byModule.get(k).size();
-        results.addView(Ui.text(a, visible + " match(es) · tap a row to open it" + (searchingMore ? " · searching more registers…" : ""), 11.5f, Ui.MUTED, false), Ui.matchWrap(a, 8));
+        results.addView(Ui.text(a, visible + " match(es) · tap a row to open it · hold for Print PDF" + (searchingMore ? " · searching more registers…" : ""), 11.5f, Ui.MUTED, false), Ui.matchWrap(a, 8));
 
         for (String k : keys) {
             if (!module.isEmpty() && !module.equals(k)) continue;
@@ -184,8 +216,14 @@ final class GenSearchScreen extends Screen {
             for (GenSearch.Result r : rows) data.add(GenUtil.listOf(r.reference, r.recordType, r.detail, r.status));
             results.addView(new DataGrid(a, "Global Search · " + k, cols, data, 360, index -> {
                 if (index >= 0 && index < rows.size()) open(rows.get(index));
+            }).onLongRow(index -> {
+                if (index >= 0 && index < rows.size()) longPress(rows.get(index));
             }), Ui.matchWrap(a, 2));
         }
+        // R37: search results as a print-layout PDF (View / Download / Print / Email / Share) - also from the top-bar ⇩
+        Button pdf = Ui.primary(a, "🖨 Results PDF · Preview · Download · Share");
+        pdf.setOnClickListener(v -> ExportKit.showData(a, this, null));
+        results.addView(pdf, Ui.matchWrap(a, 14));
         Button csv = Ui.outline(a, "Export results (CSV)", Ui.TEAL);
         csv.setOnClickListener(v -> {
             List<String[]> rows = new ArrayList<>();
@@ -194,6 +232,21 @@ final class GenSearchScreen extends Screen {
                 GenUtil.csv(GenUtil.listOf("Module", "Record Type", "Reference", "Details", "Status / Result"), rows));
         });
         results.addView(csv, Ui.matchWrap(a, 14));
+    }
+
+    /** R37: the visible search results (module filter applied) as a printable document. */
+    @Override public ExportDoc export() {
+        ExportDoc doc = new ExportDoc("Global Search · " + query).subtitle("Search results").file("QCMS_Global_Search_" + GenUtil.safeName(query));
+        doc.kind = "Global Search";
+        doc.section("Search").pair("Query", query).pair("Module filter", module.isEmpty() ? "All modules" : module)
+            .pair("Matches", String.valueOf(current == null ? 0 : current.size()));
+        List<List<String>> rows = new ArrayList<>();
+        if (current != null) for (GenSearch.Result r : current) {
+            if (!module.isEmpty() && !module.equals(r.module)) continue;
+            rows.add(GenUtil.listOf(r.module, r.recordType, r.reference, r.detail, r.status));
+        }
+        doc.table("Results", GenUtil.listOf("Module", "Record Type", "Reference", "Details", "Status / Result"), rows);
+        return doc;
     }
 
     @Override public void reload() { lastResults = null; a.rebuild(); }

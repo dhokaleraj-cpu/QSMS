@@ -10,6 +10,11 @@
     "supabase/migrations/20261022100000_qcms_r36_dev_purge.sql",
     "supabase/migrations/20261022120000_qcms_r36_global_search_masters.sql",
     "supabase/migrations/20261023100000_qcms_r36b_apqp_fix.sql",
-    "supabase/migrations/20261023110000_qcms_r36b_inventory_reports.sql"
+    "supabase/migrations/20261023110000_qcms_r36b_inventory_reports.sql",
+    "supabase/migrations/20261024110000_qcms_r37_osp.sql",
+    "supabase/migrations/20261024100000_qcms_r37_kpi_drilldown.sql",
+    "supabase/migrations/20261024120000_qcms_r37_indirect_purchase.sql",
+    "supabase/migrations/20261024120000_qcms_r37_module_kpis.sql",
+    "supabase/migrations/20261027100000_qcms_r37b_po_amendment.sql"
   ]
 }

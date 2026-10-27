@@ -278,6 +278,16 @@ def compute(rows: Sequence[Mapping[str, Any]], widget: Mapping[str, Any], *, tod
     return round(total, 2), frame.reset_index(drop=True)
 
 
+def drill_rows(rows: Sequence[Mapping[str, Any]], widget: Mapping[str, Any], *, today: date | None = None,
+               labels: Mapping[str, Mapping[str, str]] | None = None) -> list[dict]:
+    """R37: the records behind a widget's number (same period + filter as ``compute``) in the KPI Details row shape."""
+    from core.kpi_service import local_drill_rows
+    widget = normalize_widget(widget)
+    source = DATA_SOURCES[widget["source"]]
+    data = filter_rows(rows, widget, today=today, labels=labels or {})
+    return local_drill_rows(source["table"], data, date_field=source["date"], labels=labels or {})
+
+
 def starter_widgets() -> list[dict]:
     return [
         new_widget(type="kpi", title="MetLAB / Bend reports (30 days)", source="lab_tests", period_days=30, width=1, height="S"),

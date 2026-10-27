@@ -117,6 +117,112 @@ def _money(value: Any) -> str:
     return f"{_n(value):,.2f}"
 
 
+def amendment_caption(header: Mapping[str, Any] | None) -> str:
+    """R37b: "Amendment No. N  ·  Amendment Date dd-mm-yyyy  ·  Effective Date dd-mm-yyyy" ("" when not amended)."""
+    data = dict(header or {})
+    try:
+        number = int(float(data.get("amendment_no") or 0))
+    except (TypeError, ValueError):
+        number = 0
+    if number <= 0:
+        return ""
+    parts = [f"Amendment No. {number}"]
+    if data.get("amendment_date"):
+        parts.append(f"Amendment Date {_date(data.get('amendment_date'))}")
+    if data.get("amendment_effective_date"):
+        parts.append(f"Effective Date {_date(data.get('amendment_effective_date'))}")
+    return "  \u00b7  ".join(parts)
+
+
+def _amendment_rows(header: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Flatten header["amendments"] into printable rows (one per changed line, or one header-only row)."""
+    rows: list[dict[str, Any]] = []
+    amendments = header.get("amendments") if isinstance(header, Mapping) else None
+    if not isinstance(amendments, (list, tuple)):
+        return rows
+    for amd in sorted((a for a in amendments if isinstance(a, Mapping)), key=lambda a: int(_n(a.get("amendment_no")))):
+        lines = [l for l in (amd.get("lines") or []) if isinstance(l, Mapping)]
+        header_changes = amd.get("header_changes") if isinstance(amd.get("header_changes"), Mapping) else {}
+        terms = "; ".join(
+            f"{str(k).replace('_', ' ').title()}: {_date(v.get('old')) if 'date' in str(k) else _s(v.get('old')) or '-'} -> {_date(v.get('new')) if 'date' in str(k) else _s(v.get('new')) or '-'}"
+            for k, v in header_changes.items() if isinstance(v, Mapping))
+        base = {"no": int(_n(amd.get("amendment_no"))), "date": _date(amd.get("amendment_date")), "effective": _date(amd.get("effective_date")),
+                "reason": _s(amd.get("reason")) + (f" | {terms}" if terms else ""), "status": _s(amd.get("status")).replace("_", " ")}
+        if not lines:
+            rows.append({**base, "item": "PO terms", "price": "-", "qty": "-"})
+            continue
+        for index, line in enumerate(lines):
+            qty_fmt = lambda v: f"{_n(v):,.3f}".rstrip("0").rstrip(".")
+            old_p, new_p = _n(line.get("old_unit_price")), _n(line.get("new_unit_price"))
+            old_q, new_q = _n(line.get("old_quantity")), _n(line.get("new_quantity"))
+            rows.append({**(base if index == 0 else {**base, "reason": "", "date": "", "effective": "", "status": ""}),
+                         "first": index == 0, "item": _s(line.get("item_no")) or "-",
+                         "price": f"{_money(old_p)} -> {_money(new_p)}" if abs(old_p - new_p) > 1e-9 else _money(new_p),
+                         "qty": f"{qty_fmt(old_q)} -> {qty_fmt(new_q)} {_s(line.get('uom'))}".strip() if abs(old_q - new_q) > 1e-9 else f"{qty_fmt(new_q)} {_s(line.get('uom'))}".strip()})
+        rows[-len(lines)]["first"] = True
+    return rows
+
+
+def _wrap_words(text: str, width: float, *, size: float, bold: bool = False) -> list[str]:
+    font = "Helvetica-Bold" if bold else "Helvetica"
+    words = _s(text).split()
+    lines: list[str] = []; current = ""
+    for word in words:
+        trial = f"{current} {word}".strip()
+        if stringWidth(trial, font, size) <= width or not current:
+            current = trial
+        else:
+            lines.append(current); current = word
+    if current:
+        lines.append(current)
+    return lines or [""]
+
+
+def _amendment_history_pages(c: canvas.Canvas, header: Mapping[str, Any]) -> int:
+    """R37b: AMENDMENT HISTORY pages - every amendment (no., date, effective date, reason, line old -> new)."""
+    rows = _amendment_rows(header)
+    if not rows:
+        return 0
+    pages = 0
+    widths = [36, 54, 54, 0, 92, 96, 92]
+    titles = ["AMD NO.", "AMD DATE", "EFFECTIVE", "REASON / TERMS CHANGED", "ITEM", "UNIT PRICE OLD -> NEW", "QTY OLD -> NEW"]
+    index = 0
+    while index < len(rows):
+        w, h, left, right = _draw_continuation_header(c, header, title="PURCHASE ORDER · AMENDMENT HISTORY")
+        total_w = w - left - right
+        widths[3] = total_w - sum(v for i, v in enumerate(widths) if i != 3)
+        top = h - 96
+        _bar(c, left, top, total_w, "AMENDMENT HISTORY · PO NUMBER UNCHANGED · LATEST AMENDMENT PRINTED IN THE PO HEADER", height=15)
+        y = top - 15; x = left
+        for sw, title in zip(widths, titles):
+            _rules(c); c.setFillColor(_fill_or_white("head_fill")); c.rect(x, y-15, sw, 15, stroke=1, fill=1)
+            _draw_text(c, x+3, y-10.4, title, size=5.3, bold=True, color=HexColor("#111827"), max_width=sw-6)
+            x += sw
+        y -= 15
+        while index < len(rows):
+            row = rows[index]
+            reason_lines = _wrap_words(row.get("reason") or "", widths[3]-6, size=5.4)[:8]
+            row_h = max(15.0, 6.0 + 7.2 * len(reason_lines))
+            if y - row_h < 50:
+                break
+            values = [str(row.get("no") or "") if row.get("first", True) else "", row.get("date"), row.get("effective"), None, row.get("item"), row.get("price"), row.get("qty")]
+            x = left
+            for col, (sw, value) in enumerate(zip(widths, values)):
+                c.setFillColor(white); _rules(c); c.rect(x, y-row_h, sw, row_h, stroke=1, fill=1)
+                if col == 3:
+                    for li, text in enumerate(reason_lines):
+                        _draw_text(c, x+3, y-8.6-li*7.2, text, size=5.4, max_width=sw-6)
+                else:
+                    _draw_text(c, x+3, y-9.6, value, size=5.6, bold=(col == 0), color=_accent() if col == 0 else TEXT, max_width=sw-6)
+                x += sw
+            y -= row_h
+            index += 1
+        c.setFillColor(HexColor("#6B7280")); c.setFont("Helvetica", 5.8)
+        c.drawCentredString(w/2, 27, "QCMS controlled Purchase Order amendment record · prices and quantities apply from the Effective Date.")
+        c.showPage(); pages += 1
+    return pages
+
+
 def _approval_datetime(value: Any) -> str:
     """Format stored PO approval time for the controlled first-page approval stamp."""
     text = _s(value)
@@ -487,7 +593,12 @@ def _draw_price_history(c: canvas.Canvas, item: Mapping[str, Any], history: Sequ
     The approved print contract follows the supplied table: Start Date / End Date / Price /
     Remark. Closed revisions remain visible and the open-ended row prints as CURRENT.
     """
-    _bar(c, left, top, page_width-left-right, f"PRICE REVISION HISTORY · FSI PART {_s(item.get('item_no') or item.get('fsi_part_number_snapshot'))}{_line_suffix(item)}", height=15)
+    # R37b: ALL revision rows print - rows that do not fit continue on PRICE HISTORY CONTINUED pages;
+    # the bar states the total so the reader knows more rows follow.
+    fits = max(int((top - 30 - bottom) // 15), 0)
+    more = len(history) > min(max_rows, fits)
+    suffix = f" · {len(history)} REVISIONS · CONTINUED ON NEXT PAGE" if more else ""
+    _bar(c, left, top, page_width-left-right, f"PRICE REVISION HISTORY · FSI PART {_s(item.get('item_no') or item.get('fsi_part_number_snapshot'))}{_line_suffix(item)}{suffix}", height=15)
     y = top - 15
     total_w = page_width-left-right
     widths = [92, 92, 100, total_w-284]
@@ -533,6 +644,9 @@ def _draw_continuation_header(c: canvas.Canvas, header: Mapping[str, Any], *, ti
     c.setFillColor(_accent()); c.setFont("Helvetica-Bold", 16.5); c.drawRightString(w-right, h-33, title); _rules(c)
     _draw_text(c, w-176, h-51, f"PO # {_s(header.get('po_number'))}", size=7.2, bold=True)
     _draw_text(c, w-176, h-64, f"DATE {_date(header.get('order_date'))}", size=7.2)
+    caption = amendment_caption(header)
+    if caption:   # R37b: every page header that prints PO # and date also prints the amendment
+        c.setFillColor(_accent()); c.setFont("Helvetica-Bold", 6.0); c.drawRightString(w-right, h-76, caption); _rules(c)
     return w, h, left, right
 
 
@@ -559,6 +673,9 @@ def _first_page_bytes(header: Mapping[str, Any], items: Sequence[Mapping[str, An
     c.setFillColor(_accent()); c.setFont("Helvetica-Bold", 24); c.drawRightString(w-right, h-34, _ACTIVE.get("title") or "PURCHASE ORDER"); _rules(c)
     _draw_text(c, w-137, h-51, "DATE", size=7.4); c.rect(w-91, h-58, 62, 12, stroke=1, fill=0); _draw_text(c, w-86, h-55, _date(header.get("order_date")), size=7.2)
     _draw_text(c, w-137, h-65, "PO #", size=7.4); c.rect(w-91, h-72, 62, 12, stroke=1, fill=0); _draw_text(c, w-86, h-69, header.get("po_number"), size=7.2)
+    caption = amendment_caption(header)
+    if caption:   # R37b: amendment identity directly under PO # / DATE
+        c.setFillColor(_accent()); c.setFont("Helvetica-Bold", 6.3); c.drawRightString(w-right-1, h-81, caption); _rules(c)
 
     col_w = 230; left_x = left; right_x = w-right-184; y0 = h-62
     plant = dict(header.get("plant_snapshot") or PLANT)
@@ -765,7 +882,7 @@ def _stamped_terms_pdf_bytes(terms_path: Path, *, po_number: str, order_date: st
     out = BytesIO(); writer.write(out); return out.getvalue()
 
 
-def _compact_terms_portrait(terms_path: Path, *, po_number: str, order_date: str) -> list[Any]:
+def _compact_terms_portrait(terms_path: Path, *, po_number: str, order_date: str, amendment: str = "") -> list[Any]:
     """Compact the controlled terms into portrait A4 pages without changing clause wording.
 
     v4.14.33 removes blank vertical space by clipping the visible text blocks from the
@@ -877,6 +994,8 @@ def _compact_terms_portrait(terms_path: Path, *, po_number: str, order_date: str
         target_page.insert_text((237.0, fy), "FSI/703/F04", fontsize=6.3, fontname="helv")
         target_page.insert_text((315.0, fy), "1st April 2023", fontsize=6.3, fontname="helv")
         target_page.insert_text((500.0, fy), f"Terms {idx + 1} of {total_pages}", fontsize=6.3, fontname="helv")
+        if amendment:   # R37b: amended PO identity on every terms page
+            target_page.insert_text((18.0, 10.5), f"PO # {po_number} · {amendment}".replace("\u00b7", "-"), fontsize=5.6, fontname="helv")
 
     packed = out.tobytes(garbage=3, deflate=True)
     out.close(); src.close()
@@ -1069,6 +1188,9 @@ def purchase_order_excel_bytes(header: Mapping[str, Any], items: Mapping[str, An
         ("Supplier", (header.get("supplier_snapshot") or {}).get("party_name") or header.get("supplier_name"), "PO Type", _s(header.get("po_type")).replace("_", " ")),
         ("Approval Status", watermark, "Currency", header.get("currency") or "INR"),
     ]
+    if amendment_caption(header):   # R37b
+        header_rows.append(("Amendment No.", f"Amd {int(_n(header.get('amendment_no')))}", "Amendment Date", _date(header.get("amendment_date"))))
+        header_rows.append(("Effective Date", _date(header.get("amendment_effective_date")), "Amendment Reason", _s(header.get("amendment_reason"))))
     r=3
     for l1,v1,l2,v2 in header_rows:
         ws[f"A{r}"]=l1; ws[f"B{r}"]=v1 or ""; ws.merge_cells(start_row=r,start_column=2,end_row=r,end_column=3)
@@ -1094,10 +1216,33 @@ def purchase_order_excel_bytes(header: Mapping[str, Any], items: Mapping[str, An
                 refs.append("PO {po} | Pos {pos} | {desc} | Qty {qty} {uom}".format(po=_s(row.get("customer_po_number")) or "-", pos=_s(row.get("po_position")) or "-", desc=_s(row.get("part_description")) or "-", qty=f"{_n(row.get('quantity')):g}", uom=_s(row.get("uom"))))
             ws.merge_cells(start_row=r,start_column=2,end_row=r,end_column=7); ws.cell(r,2,"\n".join(refs)); ws.cell(r,2).alignment=Alignment(wrap_text=True,vertical="top")
         r+=1
+    # R37b: complete price revision history per line and the amendment history (supplier-safe).
+    if _show("show_price_history"):
+        for item in normalized:
+            history=_price_history_rows(item)
+            if not history: continue
+            r+=1; ws.cell(r,1,f"Price Revision History · {_s(item.get('item_no') or item.get('fsi_part_number_snapshot'))}").font=Font(bold=True,color=navy); r+=1
+            for cidx,title in enumerate(["Start Date","End Date","Price","Currency","UOM","Remark"],1):
+                cell=ws.cell(r,cidx,title); cell.font=Font(bold=True,color="FFFFFF"); cell.fill=PatternFill("solid",fgColor=navy)
+            for row in history:
+                r+=1
+                for cidx,val in enumerate([_date(row.get("start_date")), _date(row.get("end_date")) if row.get("end_date") else "CURRENT", _n(row.get("price")), row.get("currency"), row.get("uom"), _s(row.get("remarks"))],1):
+                    ws.cell(r,cidx,val).border=Border(bottom=border)
+            r+=1
+    amd_rows=_amendment_rows(header)
+    if amd_rows:
+        r+=1; ws.cell(r,1,"Amendment History").font=Font(bold=True,color=navy); r+=1
+        for cidx,title in enumerate(["Amd No.","Amd Date","Effective Date","Reason / Terms","Item","Unit Price Old -> New","Qty Old -> New"],1):
+            cell=ws.cell(r,cidx,title); cell.font=Font(bold=True,color="FFFFFF"); cell.fill=PatternFill("solid",fgColor=navy)
+        for row in amd_rows:
+            r+=1
+            for cidx,val in enumerate([row.get("no") if row.get("first", True) else "", row.get("date"), row.get("effective"), row.get("reason"), row.get("item"), row.get("price"), row.get("qty")],1):
+                cell=ws.cell(r,cidx,val); cell.alignment=Alignment(wrap_text=True,vertical="top"); cell.border=Border(bottom=border)
+        r+=1
     r+=1; ws.cell(r,1,"Special Instructions").font=Font(bold=True,color=navy); ws.merge_cells(start_row=r,start_column=2,end_row=r,end_column=7); ws.cell(r,2,_s(header.get("special_instructions") or DEFAULT_SPECIAL_INSTRUCTIONS)); ws.cell(r,2).alignment=Alignment(wrap_text=True,vertical="top")
     widths={"A":22,"B":34,"C":12,"D":13,"E":15,"F":10,"G":16}
     for col,width in widths.items(): ws.column_dimensions[col].width=width
-    ws.freeze_panes="A8"; ws.print_area=f"A1:G{r}"
+    ws.freeze_panes=f"A{len(header_rows)+5}"; ws.print_area=f"A1:G{r}"
     out=BytesIO(); wb.save(out); return out.getvalue()
 
 
@@ -1143,9 +1288,14 @@ def _purchase_order_pdf(header: Mapping[str, Any], normalized: list[dict], *, te
     if drawn < len(normalized):
         continuation = PdfReader(BytesIO(_continuation_items_bytes(header, normalized[drawn:], all_items=normalized, grand_total=not first_grand)))
         for page in continuation.pages: writer.add_page(page)
+    if _show("show_amendment_history") and _amendment_rows(header):
+        amd_out = BytesIO(); amd_canvas = canvas.Canvas(amd_out, pagesize=A4)
+        _amendment_history_pages(amd_canvas, header)
+        amd_canvas.save(); amd_out.seek(0)
+        for page in PdfReader(amd_out).pages: writer.add_page(page)
     path = Path(terms_path) if terms_path else Path(__file__).resolve().parent.parent / "templates" / "FSI_STANDARD_PO_TERMS_2023.pdf"
     if path.exists():
-        for page in _compact_terms_portrait(path, po_number=_s(header.get("po_number")), order_date=_s(header.get("order_date"))):
+        for page in _compact_terms_portrait(path, po_number=_s(header.get("po_number")), order_date=_s(header.get("order_date")), amendment=amendment_caption(header)):
             writer.add_page(page)
     out = BytesIO(); writer.write(out)
     return _watermark_pdf_bytes(out.getvalue(), _po_approval_watermark(header))

@@ -12,9 +12,9 @@ import streamlit as st
 
 from core.access import module_permissions
 from core.auth import current_profile
-from core.kpi_service import DASHBOARDS, SERIES, STATUS, Chart, Dashboard, KPIContext
+from core.kpi_service import DASHBOARDS, SERIES, STATUS, Chart, Dashboard, KPIContext, card_key, card_route
 from core.repository import Repository
-from core.ui import page_header, portal_table, section_bar
+from core.ui import clickable_cards, page_header, portal_table, section_bar, selectable_table
 
 PERIODS = {
     "Last 30 days": 30, "Last 90 days": 90, "Last 6 months": 182, "Last 12 months": 365,
@@ -156,10 +156,12 @@ def _render_detailed(repo: Repository, profile: dict) -> None:
             boards.append(Dashboard(key, title, module_key, f"Could not be calculated: {exc}", empty=True))
 
     section_bar("KPI OVERVIEW")
-    cards = "".join(_tile_html(b.tiles[0].label, b.tiles[0].value, b.tiles[0].foot, b.tiles[0].status, b.title) if b.tiles else "" for b in boards)
-    st.markdown(f'<div class="kpi-grid kpi-overview">{cards}</div>', unsafe_allow_html=True)
-
+    with_tiles = [b for b in boards if b.tiles]
+    picked = clickable_cards([_tile_html(b.tiles[0].label, b.tiles[0].value, b.tiles[0].foot, b.tiles[0].status, b.title) for b in with_tiles],
+                             key="kpi_overview", columns=5, help_text="Open this dashboard", labels=[f"Open {b.title}" for b in with_tiles])
     titles = [b.title for b in boards]
+    if picked is not None:
+        st.session_state["kpi_dashboard_choice"] = with_tiles[picked].title
     chosen = st.pills("Dashboard", titles, selection_mode="single", default=titles[0], key="kpi_dashboard_choice", label_visibility="collapsed") or titles[0]
     board = next(b for b in boards if b.title == chosen)
     section_bar(board.title.upper())
@@ -196,7 +198,7 @@ DEPARTMENTS: tuple[tuple[str, str], ...] = (
     ("QUALITY", "Quality"), ("SUPPLY_CHAIN", "Supply Chain"), ("PRODUCTION", "Production"),
     ("NPD", "NPD / APQP"), ("MANAGEMENT", "Management"),
 )
-VIEWS: tuple[str, ...] = ("Live KPI", "My Dashboards", "Detailed KPIs")
+VIEWS: tuple[str, ...] = ("Live KPI", "Modules", "My Dashboards", "Detailed KPIs")  # R37: Modules = infographic cards per module
 ROTATE_SECONDS: tuple[int, ...] = (10, 20, 30, 60)
 TONE_TO_STATUS = {"good": "good", "warning": "warning", "critical": "critical", "serious": "serious", "neutral": "neutral"}
 CATEGORY_ICON = {"APPROVAL": "✅", "TASK": "📌", "UPDATE": "🔔", "INFO": "ℹ️", "ALERT": "⚠️"}
@@ -215,6 +217,14 @@ def _anim_css() -> None:
         .kpi-task .tt{font-weight:700;color:#173233;font-size:13px}.kpi-task .td{font-size:11.5px;color:#5C7778}
         .kpi-bignum{font-size:46px;font-weight:800;color:#0B6E70;line-height:1.05;font-variant-numeric:tabular-nums}
         .kpi-bigsub{font-size:12px;color:#5C7778}
+        .qcms-mod-card{background:#fff;border:1px solid #D5E4E4;border-top:4px solid var(--mc,#5C7778);border-radius:14px;padding:10px 12px 10px;min-width:0}
+        .qcms-mod-card .mc-h{display:flex;gap:6px;align-items:center;font-size:12px;font-weight:800;color:#173233;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .qcms-mod-card .mc-row{display:flex;justify-content:space-between;align-items:flex-end;gap:6px;margin:2px 0}
+        .qcms-mod-card .mc-v{font-size:32px;font-weight:800;color:var(--mc,#173233);line-height:1.05;font-variant-numeric:tabular-nums}
+        .qcms-mod-card .mc-l{font-size:11px;color:#5C7778;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .qcms-mod-card .mc-subs{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;color:#5C7778;margin-top:4px}
+        .qcms-mod-card .mc-s b{color:#173233;font-variant-numeric:tabular-nums}.qcms-mod-card .mc-bad b{color:#d03b3b}
+        .qcms-mod-card .mc-bar{height:5px;background:#E3EEEE;border-radius:5px;overflow:hidden;margin-top:6px}.qcms-mod-card .mc-bar i{display:block;height:5px;border-radius:5px}
         @media (prefers-reduced-motion: reduce){.st-key-kpi_anim_0,.st-key-kpi_anim_1,.kpi-timer{animation:none!important}}
         </style>""",
         unsafe_allow_html=True,
@@ -301,38 +311,140 @@ def _open_task(repo: Repository, task: dict) -> None:
         st.switch_page(pages[route])
 
 
-def _render_tasks(repo: Repository, tasks: list[dict], unread: int, *, expanded: bool) -> None:
+def _open_card(card: dict, department: str, origin: str = "kpi-dashboards") -> None:
+    """KPI card click -> KPI Details (records behind the number); older databases without keys open the module page."""
+    key = card_key(card)
+    route = card_route(card)
+    if key:
+        from app_pages.kpi_drilldown import open_kpi_details
+        label = str(card.get("label") or card.get("title") or "")
+        open_kpi_details(key=key, label=label, value=_fmt_value(card.get("value"), str(card.get("unit") or "")),
+                         department=department, route=route, origin=origin)
+        return
+    pages = st.session_state.get("_qsms_pages") or {}
+    if route in pages:
+        st.switch_page(pages[route])
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_modules(user_key: str, department: str, _repo: Repository) -> list[dict]:
+    """R37: one RPC per department (qcms_module_cards). [] when unavailable."""
+    try:
+        data = _repo.rpc("qcms_module_cards", {"p_department": department})
+    except Exception:
+        return []
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    modules = (data or {}).get("modules") if isinstance(data, dict) else None
+    return [dict(m) for m in (modules or []) if isinstance(m, dict) and m.get("key")]
+
+
+TONE_COLOR = {"good": "#0ca30c", "warning": "#E29A00", "critical": "#d03b3b", "serious": "#ec835a", "neutral": "#5C7778"}
+
+
+def _sparkline(values: list[Any], color: str) -> str:
+    numbers = []
+    for v in values or []:
+        try:
+            numbers.append(float(v))
+        except (TypeError, ValueError):
+            numbers.append(0.0)
+    if len(numbers) < 2:
+        return ""
+    top = max(numbers) or 1.0
+    width, height = 96.0, 26.0
+    step = width / (len(numbers) - 1)
+    points = " ".join(f"{i * step:.1f},{height - 2 - (n / top) * (height - 4):.1f}" for i, n in enumerate(numbers))
+    return (f'<svg class="mc-spark" viewBox="0 0 {width:.0f} {height:.0f}" width="96" height="26" aria-label="6-month trend">'
+            f'<polyline fill="none" stroke="{color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="{points}"/></svg>')
+
+
+def _module_card_html(m: dict) -> str:
+    tone = str(m.get("tone") or "neutral")
+    color = TONE_COLOR.get(tone, TONE_COLOR["neutral"])
+    subs = []
+    if m.get("overdue") is not None:
+        subs.append(f'<span class="mc-s{" mc-bad" if float(m.get("overdue") or 0) > 0 else ""}"><b>{_fmt_value(m.get("overdue"), "")}</b> {escape(str(m.get("overdue_label") or "overdue"))}</span>')
+    if m.get("month") is not None:
+        subs.append(f'<span class="mc-s"><b>{_fmt_value(m.get("month"), "")}</b> new this month</span>')
+    if m.get("done") is not None:
+        subs.append(f'<span class="mc-s"><b>{_fmt_value(m.get("done"), "")}</b> {escape(str(m.get("done_label") or "done"))}</span>')
+    progress = m.get("progress")
+    bar = (f'<div class="mc-bar" title="{float(progress):.0f}% done this month"><i style="width:{max(0.0, min(100.0, float(progress))):.0f}%;background:{color}"></i></div>'
+           if progress is not None else "")
+    return (f'<div class="qcms-mod-card" style="--mc:{color}">'
+            f'<div class="mc-h"><span class="mc-i">{escape(str(m.get("icon") or ""))}</span><span class="mc-t">{escape(str(m.get("title") or ""))}</span></div>'
+            f'<div class="mc-row"><div><div class="mc-v">{_fmt_value(m.get("value"), "")}</div><div class="mc-l">{escape(str(m.get("value_label") or ""))}</div></div>'
+            f'{_sparkline(list(m.get("spark") or []), color)}</div>'
+            f'<div class="mc-subs">{"".join(subs)}</div>{bar}</div>')
+
+
+def _render_modules(repo: Repository, profile: dict | None, code: str) -> None:
+    """R37: module infographic strip - big open/pending number, overdue / this month / done, progress, 6-month sparkline."""
+    profile = profile or {}
+    modules = _cached_modules(_user_key(profile), code, repo)
+    if not modules:
+        return
+    try:
+        from core.quick_add import permission_checker
+        can = permission_checker(profile)
+        modules = [m for m in modules if not m.get("module_key") or can(str(m.get("module_key")), "can_view")]
+    except Exception:
+        pass
+    if not modules:
+        return
+    st.markdown('<div class="kpi-dept-title" style="margin-top:6px">Modules · click a card for its pending records</div>', unsafe_allow_html=True)
+    clicked = clickable_cards([_module_card_html(m) for m in modules], key=f"kpi_modules_{code}", columns=4,
+                              help_text="Open the pending records of this module", labels=[f"Open {m.get('title')}" for m in modules])
+    if clicked is not None:
+        m = modules[clicked]
+        _open_card({"key": m.get("key"), "label": f"{m.get('title')} · {m.get('value_label')}", "value": m.get("value"), "unit": "",
+                    "route": m.get("route")}, code)
+
+
+def _render_tasks(repo: Repository, tasks: list[dict], unread: int, *, expanded: bool, key_suffix: str = "main") -> None:
     head = f"MY PENDING TASKS · {len(tasks)}" + (f" · 🔔 {unread} unread notification(s)" if unread else "")
     with st.expander(head, expanded=expanded):
         if not tasks:
             st.caption("Nothing is waiting for you. Approvals, validations and work assigned to you appear here first.")
             return
-        for index, task in enumerate(tasks[:12]):
-            c1, c2 = st.columns([10, 1.6], gap="small", vertical_alignment="center")
+        # R37: the whole task row is clickable and opens the record (approval / entry screen).
+        rows_html = []
+        for task in tasks[:12]:
             due = str(task.get("due") or "")
-            c1.markdown(
+            rows_html.append(
                 f'<div class="kpi-task"><div>{CATEGORY_ICON.get(str(task.get("category") or "").upper(), "📌")}</div>'
                 f'<div><div class="tt">{escape(str(task.get("title") or ""))}</div>'
-                f'<div class="td">{escape(str(task.get("category") or "").title())}{" · due " + escape(due) if due else ""}</div></div></div>',
-                unsafe_allow_html=True,
+                f'<div class="td">{escape(str(task.get("category") or "").title())}{" · due " + escape(due) if due else ""} · click to open</div></div></div>'
             )
-            if c2.button("Open", key=f"kpi_task_open_{index}_{task.get('related_id')}", width="stretch", icon=":material/open_in_new:"):
-                _open_task(repo, task)
+        clicked = clickable_cards(rows_html, key=f"kpi_tasks_{key_suffix}", columns=1, help_text="Open this record",
+                                  labels=[f"Open {t.get('title') or 'task'}" for t in tasks[:12]])
+        if clicked is not None:
+            _open_task(repo, tasks[clicked])
         if len(tasks) > 12:
-            portal_table(pd.DataFrame([{"Task": t.get("title"), "Type": t.get("category"), "Due": t.get("due")} for t in tasks[12:]]),
-                         hide_index=True, width="stretch", height=min(360, 80 + 35 * (len(tasks) - 12)))
+            rest = tasks[12:]
+            st.caption(f"{len(rest)} more task(s) – click a row to open it")
+            picked = selectable_table(pd.DataFrame([{"Task": t.get("title"), "Type": t.get("category"), "Due": t.get("due")} for t in rest]),
+                                      key=f"kpi_tasks_more_{key_suffix}", height=min(360, 80 + 35 * len(rest)))
+            if picked is not None and 0 <= picked < len(rest):
+                _open_task(repo, rest[picked])
 
 
-def _render_department(repo: Repository, payload: dict, code: str) -> None:
+def _render_department(repo: Repository, payload: dict, code: str, profile: dict | None = None) -> None:
     if payload.get("error"):
         st.warning(f"Some KPIs could not be calculated: {payload['error']}")
-    _render_tasks(repo, list(payload.get("pending_tasks") or []), int(payload.get("unread_notifications") or 0), expanded=code == "QUALITY")
+    _render_tasks(repo, list(payload.get("pending_tasks") or []), int(payload.get("unread_notifications") or 0), expanded=code == "QUALITY",
+                  key_suffix=code)
     cards = list(payload.get("cards") or [])
     if cards:
-        tiles = "".join(_tile_html(str(c.get("label") or ""), _fmt_value(c.get("value"), str(c.get("unit") or "")),
-                                   str(c.get("unit") or "") if c.get("unit") not in ("%", "INR") else "",
-                                   TONE_TO_STATUS.get(str(c.get("tone") or "neutral"), "neutral")) for c in cards)
-        st.markdown(f'<div class="kpi-grid">{tiles}</div>', unsafe_allow_html=True)
+        # R37: every card opens the records behind its number (KPI Details).
+        tiles = [_tile_html(str(c.get("label") or ""), _fmt_value(c.get("value"), str(c.get("unit") or "")),
+                            (str(c.get("unit") or "") if c.get("unit") not in ("%", "INR") else "") + " · click for details",
+                            TONE_TO_STATUS.get(str(c.get("tone") or "neutral"), "neutral")) for c in cards]
+        clicked = clickable_cards(tiles, key=f"kpi_cards_{code}", columns=4, labels=[f"Open {c.get('label')}" for c in cards])
+        if clicked is not None:
+            _open_card(cards[clicked], code)
+    _render_modules(repo, profile, code)
     charts = list(payload.get("charts") or [])
     for start in range(0, len(charts), 2):
         cols = st.columns(2, gap="medium")
@@ -374,7 +486,7 @@ def _live_fragment(repo: Repository, profile: dict, auto: bool, interval: int) -
             st.info("Live department KPIs are not available yet.")
             return
         st.markdown(f'<div class="kpi-dept-title">{escape(current)} dashboard</div>', unsafe_allow_html=True)
-        _render_department(repo, payload, code)
+        _render_department(repo, payload, code, profile)
 
 
 def _render_live(repo: Repository, profile: dict, auto: bool, interval: int) -> None:
@@ -393,6 +505,8 @@ def render() -> None:
     repo = Repository()
     profile = current_profile() or {}
     c1, c2, c3 = st.columns([5.2, 2.4, 1.4], gap="small", vertical_alignment="center")
+    if st.session_state.pop("_kpi_open_view", None) in VIEWS:  # R37 header "+" → New dashboard
+        st.session_state["kpi_view"] = VIEWS[2]
     view = c1.segmented_control("View", list(VIEWS), default=VIEWS[0], key="kpi_view", label_visibility="collapsed") or VIEWS[0]
     if view == VIEWS[0]:
         auto = c2.toggle("Auto switch departments", value=True, key="kpi_auto_rotate",
@@ -401,6 +515,10 @@ def render() -> None:
                                 key="kpi_rotate_seconds", label_visibility="collapsed", disabled=not auto)
         _render_live(repo, profile, bool(auto), int(interval or 20))
     elif view == VIEWS[1]:
+        # R37: tabs per department, every module group with 3-6 clickable KPI cards + my pending tasks
+        from core.module_kpis import render_modules_view
+        render_modules_view(repo, profile, key="kpi_modules_view")
+    elif view == VIEWS[2]:
         _render_my_dashboards(repo, profile)
     else:
         _render_detailed(repo, profile)
@@ -474,6 +592,15 @@ def _widget_editor(prefix: str, widget: dict) -> dict | None:
     return None
 
 
+def _open_widget_records(widget: dict, rows: list[dict], labels: dict, value: str) -> None:
+    from app_pages.kpi_drilldown import open_kpi_details
+    from core import dashboard_builder as db
+    from core.kpi_service import SOURCE_TABLES
+    table = db.DATA_SOURCES[widget["source"]]["table"]
+    open_kpi_details(label=str(widget.get("title") or db.DATA_SOURCES[widget["source"]]["label"]), value=value,
+                     route=SOURCE_TABLES.get(table, ("", ""))[1], rows=db.drill_rows(rows, widget, labels=labels), origin="kpi-dashboards")
+
+
 def _render_widget(widget: dict, rows: list[dict], labels: dict, *, allowed: bool) -> None:
     import plotly.express as px
     from core import dashboard_builder as db
@@ -487,9 +614,14 @@ def _render_widget(widget: dict, rows: list[dict], labels: dict, *, allowed: boo
         kind = widget["type"]
         if kind == "kpi":
             unit = db.DATA_SOURCES[widget["source"]]["numbers"].get(widget["value_field"], "records") if widget["agg"] != "count" else "records"
-            st.markdown(f'<div class="kpi-bignum">{_fmt_value(value, "")}</div><div class="kpi-bigsub">{escape(db.AGGREGATES[widget["agg"]])} · {escape(unit)} · '
-                        f'{escape(db.PERIODS.get(widget["period_days"], ""))}</div>', unsafe_allow_html=True)
+            html = (f'<div class="kpi-bignum">{_fmt_value(value, "")}</div><div class="kpi-bigsub">{escape(db.AGGREGATES[widget["agg"]])} · {escape(unit)} · '
+                    f'{escape(db.PERIODS.get(widget["period_days"], ""))} · click for records</div>')
+            # R37: the KPI card opens the records behind its number (same period + filter).
+            if clickable_cards([html], key=f"mydash_kpi_{widget['id']}", columns=1, labels=[f"Open {widget['title']}"]) is not None:
+                _open_widget_records(widget, rows, labels, _fmt_value(value, ""))
             return
+        if st.button("Records", key=f"mydash_records_{widget['id']}", icon=":material/table_rows:", help="Open the records behind this widget"):
+            _open_widget_records(widget, rows, labels, _fmt_value(value, ""))
         if frame.empty:
             st.caption("No data for this selection.")
             return

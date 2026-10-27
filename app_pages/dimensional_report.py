@@ -535,6 +535,7 @@ def render_records() -> None:
                 st.download_button("Download Excel Report", data=quality_record_excel_bytes(selected_payload, "DIMENSIONAL"), file_name=f"{selected_row.get('report_number') or 'Dimensional_Report'}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"dimensional_xlsx_{selected}", icon=":material/download:", width="stretch")
         except Exception as exc:
             st.error(report_generation_error(exc))
+        from core.pdf_preview import preview_button; preview_button("inspection_reports", selected, key="dimensional_records", record=selected_row)  # R37
         record_email_sender(
             NotificationService(service.repo), "DIMENSIONAL_APPROVAL_PENDING",
             related_table="inspection_reports", related_id=selected, key=f"dimensional_record_email_{selected}",

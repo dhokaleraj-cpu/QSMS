@@ -112,20 +112,60 @@ def _source_rows(service: InspectionService, plan_id: str, existing_rows: list[d
     return rows
 
 
-def _pending_table(rows: list[dict], report_type: str, scope: str) -> None:
-    disposition_key = (
-        "sample_dimensional_disposition" if scope == "OSP_SAMPLE" and report_type == "DIMENSIONAL" else
-        "sample_metlab_disposition" if scope == "OSP_SAMPLE" else
-        "receipt_dimensional_disposition" if report_type == "DIMENSIONAL" else
-        "receipt_metlab_disposition"
-    )
+def decision_text(row: dict, report: dict | None, scope: str) -> str:
+    """R37: the actual decision of this stage's report (number · decision · DRAFT/FINAL), else 'No report'."""
+    if report:
+        disposition = str(report.get("disposition") or "PENDING").upper()
+        status = str(report.get("status") or "DRAFT").upper()
+        return f"{disposition} · {status} · {report.get('report_number') or '-'}"
+    gate = str((row.get("sample_gate_status") if scope == "OSP_SAMPLE" else row.get("receipt_quality_disposition")) or "").upper()
+    if OSPService.inspection_gate_closed(row, scope) and gate:
+        return f"No report · gate {gate}"
+    return "No report yet"
+
+
+def _pending_table(rows: list[dict], report_type: str, scope: str, reports: dict[str, dict] | None = None) -> None:
+    reports = reports or {}
     frame = pd.DataFrame([{
         "Material Out":r.get("material_out_number"), "RMTC":r.get("rmtc_number"), "OSP Job": r.get("osp_job_number"), "Heat Number": r.get("heat_number"), "Part Number": r.get("part_number"), "FSI Part Number": r.get("fsi_part_number"),
         "OSP Vendor": r.get("vendor_name"), "Process": r.get("process_name"), "FSI Batch Number": r.get("osp_batch_code"), "Vendor Batch": r.get("vendor_batch_number"),
         "Quantity pcs": r.get("sample_quantity") if scope == "OSP_SAMPLE" else r.get("quantity_received"),
-        "Decision": r.get(disposition_key) or "PENDING", "Status": r.get("status"),
+        "Decision": decision_text(r, reports.get(str(r.get("id"))), scope),
+        "Gate": (r.get("sample_gate_status") if scope == "OSP_SAMPLE" else r.get("receipt_quality_disposition")) or "PENDING",
+        "Status": r.get("status"),
     } for r in rows])
     portal_table(style_status_dataframe(frame), hide_index=True, width="stretch", height=min(320, 86 + max(len(frame), 1) * 36))
+
+
+def _layout_process_fix(inspection: InspectionService, plan: dict, job: dict, report_type: str) -> None:
+    """R37: admins can correct a layout registered under the wrong Process (permission + current password)."""
+    try:
+        from core.auth import current_profile
+        is_admin = str((current_profile() or {}).get("role") or "").upper() == "ADMIN"
+    except Exception:
+        is_admin = False
+    layout_perms = current_permissions("INSPECTION_LAYOUTS")
+    if not is_admin:
+        st.caption("An Administrator can correct the layout Process here, or in Inspection Layout Master.")
+        return
+    # Rendered inside stage_section (an expander) -> a bordered container, never a nested expander.
+    if not st.toggle(f"Correct layout process to {job.get('process_name')}", key=f"osp_layout_fix_toggle_{report_type}_{plan.get('id')}"):
+        return
+    with st.container(border=True):
+        st.caption(f"Changes the Process of approved layout '{plan.get('layout_name')}' ({plan.get('plan_number')}) to {job.get('process_name')}. Requires Inspection Layouts Edit permission and your current QCMS password.")
+        key = f"osp_layout_fix_{report_type}_{plan.get('id')}"
+        password = st.text_input("Current QCMS Password", type="password", key=f"{key}_pwd")
+        if st.button(f"Correct layout process to {job.get('process_name')}", key=f"{key}_btn", type="primary", disabled=not layout_perms.get("can_edit") or not password, width="stretch"):
+            try:
+                if not layout_perms.get("can_edit"):
+                    raise PermissionError("Inspection Layouts Edit permission is required.")
+                from core.auth import verify_current_password
+                verify_current_password(password)
+                inspection.repo.update("inspection_plans", str(plan["id"]), {"process_id": job.get("process_id")})
+                save_success_popup(f"Layout '{plan.get('layout_name')}' now belongs to Process {job.get('process_name')}.", queue_for_rerun=True)
+                st.rerun()
+            except Exception as exc:
+                st.error(db_message(exc))
 
 
 def _existing_report(service: InspectionService, report_type: str, job_id: str, scope: str) -> dict | None:
@@ -161,11 +201,20 @@ def _render(report_type: str) -> None:
     _apply_saved_mode(st.session_state, mode_key)
     mode = st.radio("Record Mode", ["Pending / New", "Edit Existing"], horizontal=True, key=f"osp_{report_type}_{scope}_mode")
     active_rows = pending if mode == "Pending / New" else existing_jobs
+    if mode == "Pending / New":
+        released = osp.released_without_report(scope, report_type)
+        if released and st.checkbox(
+            f"Show {len(released)} released batch(es) without a {_scope_label(scope)} {report_type.title()} report",
+            key=f"osp_{report_type}_{scope}_released",
+            help="These batches already passed the OSP quality gate (status Completed), but no report of this stage is on file "
+                 "(for example a draft report was deleted after release). They are not pending; open one only to record the missing report.",
+        ):
+            active_rows = [*active_rows, *released]
     with stage_section("A", f'{_scope_label(scope).upper()} · {mode.upper()}', key="osp_inspections__render_a"):
         if not active_rows:
             st.info(f"No {_scope_label(scope)} {report_type.title()} records are available for {mode.lower()}.")
             return
-        _pending_table(active_rows, report_type, scope)
+        _pending_table(active_rows, report_type, scope, osp.latest_reports(report_type, scope, [str(r.get("id")) for r in active_rows]))
 
         labels = {str(r["id"]): _job_label(r) for r in active_rows}
         requested_job = str(st.session_state.get("osp_inspection_job_id") or "")
@@ -175,11 +224,18 @@ def _render(report_type: str) -> None:
 
         plans = inspection.plans(report_type, str(job.get("part_id")), approved_only=True, process_id=str(job.get("process_id")), inward_type="OSP_PROCESS")
         if not plans:
-            # R35: an approved OSP layout of this part whose name carries the job's process name but was
-            # registered under another Process Master is offered, with a clear correction message.
-            named = OSPService.name_matched_layouts(inspection.plans(report_type, str(job.get("part_id")), approved_only=True, inward_type="OSP_PROCESS"), str(job.get("process_name") or ""))
+            # R35/R37: an approved OSP layout of this part whose name carries the job's process name (or the only
+            # OSP layout of the part, registered under a Process the part does not use) is offered; the DB save
+            # trigger (qcms_osp_layout_acceptable) accepts the same fallback for Sample and Receipt reports.
+            part_layouts = inspection.plans(report_type, str(job.get("part_id")), approved_only=True, inward_type="OSP_PROCESS")
+            named = OSPService.name_matched_layouts(part_layouts, str(job.get("process_name") or ""))
+            if not named:
+                part_processes = {str(s.get("process_id")) for s in osp.specifications(str(job.get("part_id")))}
+                osp_stages = {str(s.get("id")) for s in inspection.stages() if "OSP" in f"{s.get('stage_code') or ''} {s.get('stage_name') or ''}".upper()}
+                named = OSPService.fallback_layouts(part_layouts, job, part_processes, osp_stages)
             if named:
-                st.warning(f"The approved OSP {report_type.title()} layout '{named[0].get('layout_name')}' is registered under a different Process in Layout Master than this OSP batch ({job.get('process_name')}). It is used here; please correct its Process in Inspection Layout Master.")
+                st.warning(f"The approved OSP {report_type.title()} layout '{named[0].get('layout_name')}' is registered under a different Process in Layout Master than this OSP batch ({job.get('process_name')}). It is used here and can be saved; please correct its Process in Inspection Layout Master.")
+                _layout_process_fix(inspection, named[0], job, report_type)
                 plans = named
         if not plans:
             st.warning(f"No Approved OSP {report_type.title()} layout matches Part {job.get('part_number')} and Process {job.get('process_name')}.")
@@ -322,6 +378,9 @@ def _render(report_type: str) -> None:
                     password_reopen_for_edit(repo=inspection.repo, table=report_table, record=existing, entity_type=f"OSP {report_type}", can_edit=perms["can_edit"], key=f"osp_reopen_{report_type}_{scope}_{report_id}", title=f"Reopen OSP {report_type.title()} for Edit")
                 else:
                     st.caption("This record is editable with your assigned module Edit permission.")
+                if OSPService.inspection_gate_closed(job, scope):
+                    st.warning("This OSP batch has already passed / closed its quality gate (production release). Deleting this report "
+                               "does not reverse the release - the batch will then show as 'released without report'. Correct the report instead where possible.")
                 if password_delete_panel(repo=inspection.repo, table=report_table, rows=[existing], labeler=lambda row:f"{row.get('report_number')} · {_scope_label(scope)}", key=f"osp_delete_{report_type}_{scope}_{report_id}", can_delete=perms["can_archive"], title=f"Delete OSP {report_type.title()} Record", help_text="Requires current QCMS password and Delete/Archive permission. Downstream dependencies can block unsafe deletion."):
                     st.rerun()
             disposition_cards([{"label": "Report", "value": existing.get("status"), "foot": existing.get("report_number")}, {"label": "Decision", "value": existing.get("disposition")}, {"label": "Gate", "value": _scope_label(scope)}])

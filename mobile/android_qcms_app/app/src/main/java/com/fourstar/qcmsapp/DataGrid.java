@@ -49,11 +49,23 @@ public final class DataGrid extends LinearLayout {
         addView(frame, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         full.setOnClickListener(v -> {
-            if (c instanceof MainActivity) ((MainActivity) c).push(new SheetScreen((MainActivity) c, title.isEmpty() ? "Grid" : title, columns, data, click));
+            if (c instanceof MainActivity) {
+                SheetScreen screen = new SheetScreen((MainActivity) c, title.isEmpty() ? "Grid" : title, columns, data, click);
+                screen.longClick = longClick;
+                ((MainActivity) c).push(screen);
+            }
         });
     }
 
     public SheetView sheet() { return sheet; }
+
+    /** R37: long-press on a row (also in the full-screen view). */
+    public DataGrid onLongRow(RowClick longClick) {
+        this.longClick = longClick;
+        sheet.setOnRowLongClick(longClick == null ? null : longClick::onRow);
+        return this;
+    }
+    private RowClick longClick;
     public String title() { return title; }
 
     /** Full-screen spreadsheet view of the same rows. */
@@ -62,6 +74,7 @@ public final class DataGrid extends LinearLayout {
         private final List<String> columns;
         private final List<String[]> rows;
         private final RowClick click;
+        RowClick longClick;
 
         SheetScreen(MainActivity a, String title, List<String> columns, List<String[]> rows, RowClick click) {
             super(a);
@@ -77,6 +90,7 @@ public final class DataGrid extends LinearLayout {
             SheetView s = new SheetView(a);
             s.setData(columns, rows);
             if (click != null) s.setOnRowClick(click::onRow);
+            if (longClick != null) s.setOnRowLongClick(longClick::onRow);
             return s;
         }
     }

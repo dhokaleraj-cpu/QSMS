@@ -31,7 +31,8 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 
 /**
- * QCMS native Android app (v2.0.0, QCMS R29; v3.4.0 R35: KPI start dashboard, notifications, licence).
+ * QCMS native Android app (v2.0.0, QCMS R29; v3.4.0 R35: KPI start dashboard, notifications, licence;
+ * v3.5.0 R37: KPI drill-down lists, module cards, "+" quick actions, Print PDF of any record).
  * Single activity: Login / biometric unlock, then Home · Orders · Inspect · Assets · More.
  */
 public class MainActivity extends Activity {
@@ -441,6 +442,12 @@ public class MainActivity extends Activity {
         titles.addView(titleView);
         titles.addView(subtitleView);
         top.addView(titles, Ui.weight(1));
+        // R37: "+" quick actions (New transaction · New e-mail · New query / AI)
+        Button plus = barButton("+");
+        plus.setTextSize(28);
+        plus.setContentDescription("Quick actions: new transaction, e-mail, query");
+        plus.setOnClickListener(v -> KpiDetails.quickActions(this));
+        top.addView(plus, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 48)));
         top.addView(bell(), new LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 48)));
         Button export = barButton("⇩");
         export.setOnClickListener(v -> exportCurrent());
@@ -576,6 +583,9 @@ public class MainActivity extends Activity {
         stack.push(s);
         render();
     }
+
+    /** R37: "+" → Ask QCMS AI: the website Search & AI page (AI assistant is web-only). */
+    void openSearchAi() { openWeb("Search & AI", "global-search"); }
 
     void openWeb(String title, String path) {
         push(new WebScreen(this, title, path));

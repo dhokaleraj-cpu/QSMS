@@ -419,6 +419,60 @@ def selectable_table(data: Any, *, key: str, height: int | None = None) -> int |
     return int(rows[0]) if rows else None
 
 
+_CLICK_CARD_CSS = """<style>
+[class*="st-key-qcms_click_card_"]{position:relative;gap:0!important}
+[class*="st-key-qcms_click_card_"] [data-testid="stElementContainer"]:has(.stButton){position:absolute;inset:0;z-index:3;margin:0!important;width:100%!important;height:100%!important}
+[class*="st-key-qcms_click_card_"] .stButton,[class*="st-key-qcms_click_card_"] .stButton>div,[class*="st-key-qcms_click_card_"] .stButton button{width:100%!important;height:100%!important;min-height:0!important}
+[class*="st-key-qcms_click_card_"] .stButton button{background:transparent!important;border:2px solid transparent!important;color:transparent!important;box-shadow:none!important;cursor:pointer;border-radius:14px!important}
+[class*="st-key-qcms_click_card_"] .stButton button p{color:transparent!important}
+[class*="st-key-qcms_click_card_"] .stButton button:focus-visible{border-color:#0B6E70!important}
+[class*="st-key-qcms_click_card_"]:hover .kpi-tile,[class*="st-key-qcms_click_card_"]:hover .fsi-kpi,[class*="st-key-qcms_click_card_"]:hover .qcms-mod-card,[class*="st-key-qcms_click_card_"]:hover .kpi-task{box-shadow:0 4px 14px rgba(11,110,112,.18);transform:translateY(-1px)}
+[class*="st-key-qcms_click_card_"] .kpi-tile,[class*="st-key-qcms_click_card_"] .fsi-kpi,[class*="st-key-qcms_click_card_"] .qcms-mod-card{transition:box-shadow .15s,transform .15s;margin:0 0 10px}
+@media (prefers-reduced-motion: reduce){[class*="st-key-qcms_click_card_"]:hover *{transform:none!important}}
+</style>"""
+
+
+def clickable_cards(cards_html: Sequence[str], *, key: str, columns: int = 4, help_text: str = "Open the records behind this number",
+                    labels: Sequence[str] | None = None) -> int | None:
+    """R37: render HTML cards in a grid; the whole card is a button. Returns the index of the clicked card.
+
+    Each card sits in a keyed container (``st-key-qcms_click_card_<key>_<i>``) with a transparent full-size
+    button on top, so a click anywhere on the card (or Enter on keyboard focus) opens its details.
+    """
+    if not cards_html:
+        return None
+    st.markdown(_CLICK_CARD_CSS, unsafe_allow_html=True)
+    slug = re.sub(r"[^a-z0-9_]+", "_", str(key).casefold())
+    clicked: int | None = None
+    columns = max(1, int(columns))
+    for start in range(0, len(cards_html), columns):
+        cols = st.columns(columns, gap="small")
+        for offset, (col, html) in enumerate(zip(cols, cards_html[start:start + columns])):
+            index = start + offset
+            with col:
+                with st.container(border=False, key=f"qcms_click_card_{slug}_{index}"):
+                    st.markdown(html, unsafe_allow_html=True)
+                    label = str((labels or [])[index] if labels and index < len(labels) else "Open details") or "Open details"
+                    if st.button(label, key=f"{slug}_open_{index}", help=help_text, width="stretch"):
+                        clicked = index
+    return clicked
+
+
+def kpi_grid_clickable(items: Sequence[Mapping[str, Any]], *, key: str, columns: int = 6) -> int | None:
+    """R37: ``kpi_grid`` look (fsi-kpi cards) where every card opens its drill-down. Returns the clicked index."""
+    cards = []
+    for item in items:
+        color = str(item.get("color") or "#1469A8")
+        background = str(item.get("background") or "#FFFFFF")
+        cards.append(
+            f'<div class="fsi-kpi" style="border-left-color:{safe(color)};background:{safe(background)}">'
+            f'<div class="fsi-kpi-label" style="color:{safe(color)}">{safe(item.get("label"))}</div>'
+            f'<div class="fsi-kpi-value">{safe(item.get("value"))}</div>'
+            f'<div class="fsi-kpi-foot">{safe(item.get("foot"))}</div></div>'
+        )
+    return clickable_cards(cards, key=key, columns=columns, labels=[f"Open {item.get('label')}" for item in items])
+
+
 def template_download_row(items: Sequence[tuple[str, str]], *, key_prefix: str, import_master_key: str | None = "") -> None:
     """Render local Excel templates as compact download buttons."""
     available = [(name, label, TEMPLATE_DIR / name) for name, label in items if (TEMPLATE_DIR / name).exists()]
@@ -1592,7 +1646,7 @@ def render_shell_header(
     licence = dict((st.session_state.get("_qcms_r35_licence_status") or {}).get("data") or {})
     licensee = str(licence.get("company_name") or s.company_name or "")
     with st.container(border=False, key="fsi_shell"):
-        c1, c2, c3 = st.columns([2.2, 7.4, 2.4], vertical_alignment="center", gap="small")
+        c1, c2, c3 = st.columns([2.2, 7.0, 2.8], vertical_alignment="center", gap="small")
         with c1:
             st.markdown(
                 f'<div class="fsi-company-block"><div class="fsi-logo-card">{logo}</div>'
@@ -1613,7 +1667,15 @@ def render_shell_header(
                 st.markdown(f'<div class="fsi-company-name">{safe(active_page)}</div>', unsafe_allow_html=True)
         with c3:
             initials = "".join(part[:1] for part in str(profile.get("full_name") or "QCMS User").split()[:2]).upper() or "Q"
-            u1, u2 = st.columns([5.0, 1.0], gap="small", vertical_alignment="center")
+            # R37: "＋" quick-add (new transaction / new e-mail / new query) at the top right, next to the user.
+            u0, u1, u2 = st.columns([1.15, 5.0, 1.0], gap="small", vertical_alignment="center")
+            with u0:
+                with st.container(border=False, key="qcms_header_quick_add"):
+                    try:
+                        from core.quick_add import render_quick_add
+                        render_quick_add(profile)
+                    except Exception:
+                        pass
             with u1:
                 try:
                     branch = resolve_current_branch(Repository(), profile)

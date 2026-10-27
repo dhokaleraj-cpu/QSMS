@@ -16,8 +16,12 @@ from core.notification_ui import notification_confirmation, notification_overrid
 from core.inspection_service import InspectionService
 from core.reporting import controlled_record_pdf_bytes, dimensional_record_pdf_bytes, metlab_record_pdf_bytes
 from core.selection_labels import party_label, process_label, with_status
-from core.ui import kpi_grid, page_header, record_widget_token, save_success_popup, section_bar, stage_section, style_status_dataframe, subpage_navigation, workflow_progress
+from core.ui import kpi_grid, page_header, record_widget_token, save_success_popup, section_bar, selectable_table, stage_section, style_status_dataframe, subpage_navigation, workflow_progress
 from core.db_errors import db_message
+from core.osp_challan import (INCOTERM_OPTIONS, PAYMENT_TERM_OPTIONS, SHIP_VIA_OPTIONS, OSPChallanService, balance_summary, challan_notifier,
+                              email_body, merge_returns, osp_challan_pdf_bytes, vendor_emails)
+from core.osp_challan_pdf import osp_challan_excel_bytes, osp_challan_pdf_bytes as challan_pdf_for_job
+from core.record_print import show_pdf_preview
 
 
 def _label(row: dict) -> str:
@@ -43,6 +47,8 @@ def _job_selector(rows: list[dict], label: str, key: str) -> dict | None:
 
 def render_home() -> None:
     page_header("OSP Transactions", "Heat-wise outsourced processing with sample approval, controlled inward and production release.", "Live genealogy")
+    from core.module_kpis import render_module_strip  # R37: module infographic KPI cards (click = records)
+    render_module_strip(home="osp-home", key="osp_home", origin="osp-home")
     service = OSPService(); rows = service.register()
     kpi_grid([
         {"label": "At OSP Vendor", "value": sum(str(r.get("status")) == "AT_VENDOR" for r in rows), "foot": "Material dispatched", "color": "#2563EB", "background": "#EFF6FF"},
@@ -65,12 +71,14 @@ def render_home() -> None:
 
 
 def render_material_out() -> None:
-    subpage_navigation(("osp-home", "OSP Home", ":material/arrow_back:"), ("osp-records", "OSP Records", ":material/table_view:"))
-    page_header("OSP Material Out", "Dispatch released material by Part and Heat Number to an approved OSP vendor.", "Heat genealogy")
+    subpage_navigation(("osp-home", "OSP Home", ":material/arrow_back:"), ("osp-records", "OSP Records", ":material/table_view:"), ("osp-inward", "OSP Inward", ":material/input:"))
+    page_header("OSP Material Out", "Dispatch released material by Part and Heat Number to an approved OSP vendor · Returnable Delivery Challan with vendor return tracking.", "Heat genealogy")
     service = OSPService(); perms = current_permissions("OSP_TRANSACTIONS")
+    section_bar("NEW MATERIAL OUT · RETURNABLE DELIVERY CHALLAN")
     _render_material_out_entry(service, perms)
+    _render_challan_module(service, perms)
     _render_grouped_material_outs(service, perms)
-    with stage_section("B", "EDIT / DELETE MATERIAL OUT", "Controlled changes are allowed only while downstream OSP receipt/inspection genealogy permits them.", key="osp_material_out_manage"):
+    with stage_section("E", "EDIT / DELETE MATERIAL OUT", "Controlled changes are allowed only while downstream OSP receipt/inspection genealogy permits them.", key="osp_material_out_manage"):
         managed = [r for r in service.register() if not r.get("material_out_id")]
         if managed:
             mlabels = {str(r["id"]): with_status(_label(r), r) for r in managed}
@@ -141,34 +149,382 @@ def _render_material_out_entry(service, perms):
     scope=hashlib.sha256((part_id+spec_id+"|".join(sorted(selected_keys))).encode()).hexdigest()[:20]
     request_key=f"osp_material_out_request_{scope}"
     if request_key not in st.session_state: st.session_state[request_key]=str(uuid4())
+    # R37: Returnable Delivery Challan details are captured with the Material Out (plant, ship-to, transport, prices).
+    challans=OSPChallanService(getattr(service,"repo",None)); branches=challans.branches(); ship_parties=challans.ship_to_parties()
+    branch_labels={str(b["id"]):f"{b.get('branch_name')} · {b.get('plant_code') or b.get('branch_code') or ''}" for b in branches}
+    branch_ids=list(branch_labels) or [""]
+    default_branch=next((str(b["id"]) for b in branches if b.get("is_default")), branch_ids[0])
+    branch_id=st.selectbox("Plant / Company Branch (challan series)",branch_ids,index=branch_ids.index(default_branch),format_func=lambda v:branch_labels.get(v,"Default plant"),key=f"osp_out_branch_{scope}")
+    process_name=str((processes.get(str(spec.get("process_id"))) or {}).get("process_name") or "")
+    prices=challans.default_prices(part_id,None,str(spec.get("process_id") or ""))
+    ship_labels={"":"Same as OSP Vendor",**{str(p["id"]):party_label(p,include_type=True) for p in ship_parties}}
     with st.form(f"osp_material_out_form_{scope}_{st.session_state[request_key]}"):
         c=st.columns(4,gap="small")
         vendor_id=c[0].selectbox("OSP Vendor",list(vendor_labels),format_func=lambda v:vendor_labels[v])
         dispatch_date=c[1].date_input("Material Out Date",value=date.today(),format="DD-MM-YYYY")
         expected_date=c[2].date_input("Expected Return Date",value=date.today()+timedelta(days=7),format="DD-MM-YYYY")
-        challan=c[3].text_input("Material Out Challan Number")
-        grid=pd.DataFrame([{"Source":r["candidate_key"],"RMTC":r.get("rmtc_number") or "Opening / legacy","Supplier RMTC":r.get("supplier_rmtc_number") or "-","Heat Number":r.get("heat_number"),"Inward / Lot":r.get("inward_number"),"Available pcs":float(r.get("osp_available_quantity_pcs") or 0),"Out Qty pcs":float(r.get("osp_available_quantity_pcs") or 0),"Sample Qty pcs":min(float(spec.get("sample_quantity") or 1),float(r.get("osp_available_quantity_pcs") or 0))} for r in selected])
-        edited=st.data_editor(grid,hide_index=True,width="stretch",key=f"osp_out_lines_{scope}_{st.session_state[request_key]}",disabled=["Source","RMTC","Supplier RMTC","Heat Number","Inward / Lot","Available pcs"],column_config={"Source":None,"Out Qty pcs":st.column_config.NumberColumn(min_value=1.0,step=1.0,required=True),"Sample Qty pcs":st.column_config.NumberColumn(min_value=1.0,max_value=20.0,step=1.0,required=True)})
-        st.caption("One Material Out document; a separate FSI batch is generated for each heat line. Samples and inward quantities remain independent for each batch.")
+        challan=c[3].text_input("Material Out Challan Number",value=challans.next_number(branch_id or None),help="Suggested from the branch challan series (JWC + plant + number). You can overwrite it.")
+        c=st.columns(4,gap="small")
+        ship_to=c[0].selectbox("Ship To",list(ship_labels),format_func=lambda v:ship_labels[v])
+        user_name=c[1].text_input("User",value=_profile_name())
+        ship_via=c[2].selectbox("Ship Via",list(SHIP_VIA_OPTIONS))
+        incoterm=c[3].selectbox("Incoterm",list(INCOTERM_OPTIONS))
+        c=st.columns(4,gap="small")
+        delivery_date=c[0].date_input("Delivery Date",value=date.today()+timedelta(days=7),format="DD-MM-YYYY")
+        payment_term=c[1].selectbox("Payment Term",list(PAYMENT_TERM_OPTIONS))
+        vehicle_no=c[2].text_input("Vehicle No")
+        transporter=c[3].text_input("Transporter / E-way Bill")
+        c=st.columns(3,gap="small")
+        reference=c[0].text_input("Reference Details")
+        old_po=c[1].text_input("Old PO Details")
+        process_text=c[2].text_input("Process To Be Done",value=process_name.upper())
+        grid=pd.DataFrame([{"Source":r["candidate_key"],"RMTC":r.get("rmtc_number") or "Opening / legacy","Supplier RMTC":r.get("supplier_rmtc_number") or "-","Heat Number":r.get("heat_number"),"Inward / Lot":r.get("inward_number"),"Available pcs":float(r.get("osp_available_quantity_pcs") or 0),"Out Qty pcs":float(r.get("osp_available_quantity_pcs") or 0),"Sample Qty pcs":min(float(spec.get("sample_quantity") or 1),float(r.get("osp_available_quantity_pcs") or 0)),"Unit Price":float(prices["unit_price"]),"GST %":float(prices["gst_percent"]),"UOM":prices["uom"],"Batch Code":""} for r in selected])
+        edited=st.data_editor(grid,hide_index=True,width="stretch",key=f"osp_out_lines_{scope}_{st.session_state[request_key]}",disabled=["Source","RMTC","Supplier RMTC","Heat Number","Inward / Lot","Available pcs"],column_config={"Source":None,"Out Qty pcs":st.column_config.NumberColumn(min_value=1.0,step=1.0,required=True),"Sample Qty pcs":st.column_config.NumberColumn(min_value=1.0,max_value=20.0,step=1.0,required=True),"Unit Price":st.column_config.NumberColumn(min_value=0.0,step=0.5,format="%.2f"),"GST %":st.column_config.NumberColumn(min_value=0.0,max_value=100.0,step=1.0)})
+        st.caption("One Material Out document; a separate FSI batch is generated for each heat line. Samples and inward quantities remain independent for each batch. "
+                   "Unit Price / GST % / Batch Code print on the Returnable Delivery Challan (blank Batch Code prints the FSI batch).")
         remarks=st.text_area("Dispatch Remarks",height=70)
         submitted=st.form_submit_button("Create OSP Material Out",type="primary",disabled=not perms["can_create"],width="stretch")
     if submitted:
         try:
-            source_map={str(r["candidate_key"]):r for r in selected}; lines=[]
-            for row in edited.to_dict("records"):
+            source_map={str(r["candidate_key"]):r for r in selected}; lines=[]; records=edited.to_dict("records")
+            for row in records:
                 source=source_map[str(row["Source"])]
                 if float(row["Out Qty pcs"])>float(source["osp_available_quantity_pcs"]): raise ValueError(f"Heat {source.get('heat_number')}: quantity exceeds displayed balance. Refresh the source list.")
                 lines.append({"inward_lot_id":source.get("inward_lot_id"),"opening_stock_id":source.get("opening_stock_id"),"quantity_dispatched":row["Out Qty pcs"],"sample_quantity":row["Sample Qty pcs"]})
             saved=service.create_material_out({"vendor_id":vendor_id,"process_id":spec["process_id"],"process_specification_id":spec_id,"dispatch_date":dispatch_date.isoformat(),"dispatch_challan":challan,"expected_return_date":expected_date.isoformat(),"remarks":remarks},lines,st.session_state[request_key])
             st.session_state[request_key]=str(uuid4())
-            save_success_popup(f"Material Out {saved['material_out_number']} saved · {len(saved['lines'])} separately traceable heat batches.",queue_for_rerun=True); st.rerun()
+            note=""
+            try:
+                challans.save({"is_group":True,"material_out_id":saved["id"]},{
+                    "challan_number":challan,"challan_date":dispatch_date,"branch_id":branch_id or None,"vendor_id":vendor_id,"ship_to_party_id":ship_to or None,
+                    "user_name":user_name,"ship_via":ship_via,"incoterm":incoterm,"delivery_date":delivery_date,"payment_term":payment_term,
+                    "vehicle_number":vehicle_no,"transporter_name":transporter,"reference_details":reference,"old_po_details":old_po,
+                    "process_text":process_text,"remarks":remarks},
+                    [{"osp_job_id":job.get("id"),"line_no":index,"item_code":None,"unit_price":row.get("Unit Price") or 0,"gst_percent":row.get("GST %") if row.get("GST %") is not None else 18,
+                      "uom":row.get("UOM") or "NOS","batch_code":row.get("Batch Code")} for index,(job,row) in enumerate(zip(saved.get("lines") or [],records),start=1)])
+                st.session_state["osp_mo_open"]=str(saved["id"])
+                note=" · Returnable Delivery Challan ready (Preview / Download / E-mail below)."
+            except Exception as challan_exc:
+                note=f" · Challan details were not saved ({db_message(challan_exc)}) - open the Material Out below and save the challan."
+            save_success_popup(f"Material Out {saved['material_out_number']} saved · {len(saved['lines'])} separately traceable heat batches{note}",queue_for_rerun=True); st.rerun()
         except Exception as exc: st.error(db_message(exc))
+
+
+def _profile_name() -> str:
+    try:
+        from core.auth import current_profile
+        profile = current_profile() or {}
+        return str(profile.get("full_name") or profile.get("display_name") or profile.get("name") or "").strip()
+    except Exception:
+        return ""
+
+
+def material_out_register(documents: list[dict], challans: list[dict], entries: list[dict]) -> list[dict]:
+    """R37 register rows: one per Material Out document with challan, returned and balance quantities."""
+    by_key = {str(c.get("material_out_id") or c.get("osp_job_id")): c for c in challans}
+    standalone: dict[str, float] = {}; rejected: dict[str, float] = {}
+    for e in entries:
+        cid = str(e.get("challan_id"))
+        rejected[cid] = rejected.get(cid, 0.0) + float(e.get("quantity_rejected") or 0)
+        if not e.get("osp_receipt_id"):
+            standalone[cid] = standalone.get(cid, 0.0) + float(e.get("quantity_returned") or 0)
+    rows = []
+    for doc in documents:
+        ch = by_key.get(str(doc["id"])) or {}
+        cid = str(ch.get("id") or "")
+        returned = float(doc.get("quantity_received") or 0) + standalone.get(cid, 0.0)
+        rej = rejected.get(cid, 0.0)
+        dispatched = float(doc.get("quantity_dispatched") or 0)
+        rows.append({"_key": str(doc["id"]), "Material Out": doc.get("material_out_number"), "Challan No": ch.get("challan_number") or doc.get("dispatch_challan"),
+                     "Challan Date": ch.get("challan_date") or doc.get("dispatch_date"), "OSP Vendor": doc.get("vendor_name"),
+                     "FSI Part": doc.get("fsi_part_number"), "Process": doc.get("process_name"), "Heat Numbers": doc.get("heat_numbers"),
+                     "Out Qty pcs": dispatched, "Returned pcs": returned, "Rejected pcs": rej, "Balance pcs": max(dispatched - returned - rej, 0.0),
+                     "Challan": "Saved" if ch else "Not created", "E-mailed": str(ch.get("emailed_at") or "")[:10] or "-", "Status": doc.get("status")})
+    return rows
+
+
+def _render_challan_module(service, perms) -> None:
+    challans = OSPChallanService(getattr(service, "repo", None))
+    documents = OSPService.material_out_documents(service.register())
+    if not documents:
+        return
+    all_challans = challans.challans()
+    entries = challans._select("osp_challan_returns", limit=5000)
+    rows = material_out_register(documents, all_challans, entries)
+    with stage_section("A", "MATERIAL OUT REGISTER · CHALLANS", "Filter, click a row to open its Returnable Delivery Challan and vendor returns.", key="osp_mo_register"):
+        c = st.columns(4, gap="small")
+        start = c[0].date_input("From", value=date.today() - timedelta(days=180), format="DD-MM-YYYY", key="osp_mo_from")
+        end = c[1].date_input("To", value=date.today(), format="DD-MM-YYYY", key="osp_mo_to")
+        vendors = sorted({str(r["OSP Vendor"] or "-") for r in rows})
+        vendor_filter = c[2].multiselect("OSP Vendor", vendors, key="osp_mo_vendor")
+        balance_filter = c[3].selectbox("Balance", ["All", "Open at vendor", "Fully returned", "Challan not created"], key="osp_mo_balance")
+        search = st.text_input("Search challan, Material Out, FSI part, heat or process", key="osp_mo_search")
+        def keep(r):
+            day = str(r.get("Challan Date") or "")[:10]
+            if day and not (start.isoformat() <= day <= end.isoformat()): return False
+            if vendor_filter and str(r["OSP Vendor"] or "-") not in vendor_filter: return False
+            if balance_filter == "Open at vendor" and r["Balance pcs"] <= 0: return False
+            if balance_filter == "Fully returned" and r["Balance pcs"] > 0: return False
+            if balance_filter == "Challan not created" and r["Challan"] != "Not created": return False
+            return not search or search.casefold() in " ".join(str(v or "") for k, v in r.items() if not k.startswith("_")).casefold()
+        filtered = [r for r in rows if keep(r)]
+        if not filtered:
+            st.info("No Material Out matches these filters.")
+            return
+        frame = pd.DataFrame([{k: v for k, v in r.items() if not k.startswith("_")} for r in filtered])
+        clicked = None
+        try:
+            clicked = selectable_table(frame, key="osp_mo_register_table", height=min(420, 80 + 35 * len(frame)))
+        except Exception:
+            portal_table(style_status_dataframe(frame), hide_index=True, width="stretch", height=min(420, 80 + 35 * len(frame)))
+        labels = {r["_key"]: f"{r['Challan No'] or '-'} · {r['Material Out']} · {r['OSP Vendor']} · FSI {r['FSI Part'] or '-'} · Balance {r['Balance pcs']:,.0f} pcs" for r in filtered}
+        keys = list(labels)
+        if clicked is not None and 0 <= clicked < len(filtered):
+            st.session_state["osp_mo_open"] = filtered[clicked]["_key"]
+        if st.session_state.get("osp_mo_open") not in keys:
+            st.session_state["osp_mo_open"] = keys[0]
+        selected = st.selectbox("Open Material Out / Challan", keys, format_func=lambda v: labels[v], key="osp_mo_open")
+    doc = next((d for d in documents if str(d["id"]) == str(st.session_state.get("osp_mo_open") or "")), None)
+    if not doc:
+        return
+    challan = challans.challan_for(doc)
+    _render_challan_section(service, challans, doc, challan, perms)
+    _render_returns_section(challans, doc, challan, perms)
+
+
+def _doc_job_ids(doc: dict) -> list[str]:
+    return [str(r.get("id")) for r in (doc.get("lines") or [doc]) if r.get("id")]
+
+
+def _render_challan_section(service, challans: OSPChallanService, doc: dict, challan: dict | None, perms) -> None:
+    title = f"RETURNABLE DELIVERY CHALLAN · {(challan or {}).get('challan_number') or doc.get('dispatch_challan') or doc.get('material_out_number')}"
+    with stage_section("B", title, "Challan header, item prices and print. Customer details never print on the vendor challan.", key="osp_mo_challan"):
+        challan = dict(challan or {})
+        lines = {str(l.get("osp_job_id")): l for l in (challans.lines(str(challan["id"])) if challan.get("id") else [])}
+        returns = challans.returns_for(challan or None, _doc_job_ids(doc))
+        locked = bool(challan.get("emailed_at")) or bool(returns)
+        if not challan:
+            st.info("No challan details are saved for this Material Out yet. Complete the fields below and save to print the Returnable Delivery Challan.")
+        branches = challans.branches(); parties = challans.ship_to_parties()
+        branch_labels = {"": "Default plant", **{str(b["id"]): f"{b.get('branch_name')} · {b.get('plant_code') or b.get('branch_code') or ''}" for b in branches}}
+        ship_labels = {"": "Same as OSP Vendor", **{str(p["id"]): party_label(p, include_type=True) for p in parties}}
+        def pick(options, value):
+            options = list(options); return options.index(value) if value in options else 0
+        def as_date(value, fallback):
+            try: return date.fromisoformat(str(value)[:10]) if value else fallback
+            except ValueError: return fallback
+        job_lines = doc.get("lines") or [doc]
+        default_price = challans.default_prices(str(doc.get("part_id") or ""), str(doc.get("vendor_id") or ""), str(doc.get("process_id") or "")) if not lines else {"unit_price": 0.0, "gst_percent": 18.0, "uom": "NOS"}
+        scope = record_widget_token("osp-challan", challan or doc, selected=str(doc["id"]))
+        with st.form(f"osp_challan_form_{scope}"):
+            c = st.columns(4, gap="small")
+            number = c[0].text_input("Challan Number", value=str(challan.get("challan_number") or doc.get("dispatch_challan") or ""))
+            challan_date = c[1].date_input("Challan Date", value=as_date(challan.get("challan_date") or doc.get("dispatch_date"), date.today()), format="DD-MM-YYYY")
+            branch_id = c[2].selectbox("Plant / Company Branch", list(branch_labels), index=pick(branch_labels, str(challan.get("branch_id") or next((str(b["id"]) for b in branches if b.get("is_default")), ""))), format_func=lambda v: branch_labels[v])
+            ship_to = c[3].selectbox("Ship To", list(ship_labels), index=pick(ship_labels, str(challan.get("ship_to_party_id") or "")), format_func=lambda v: ship_labels[v])
+            c = st.columns(4, gap="small")
+            user_name = c[0].text_input("User", value=str(challan.get("user_name") or _profile_name()))
+            ship_via = c[1].selectbox("Ship Via", list(SHIP_VIA_OPTIONS), index=pick(SHIP_VIA_OPTIONS, challan.get("ship_via")))
+            incoterm = c[2].selectbox("Incoterm", list(INCOTERM_OPTIONS), index=pick(INCOTERM_OPTIONS, challan.get("incoterm")))
+            payment_term = c[3].selectbox("Payment Term", list(PAYMENT_TERM_OPTIONS), index=pick(PAYMENT_TERM_OPTIONS, challan.get("payment_term")))
+            c = st.columns(4, gap="small")
+            delivery_date = c[0].date_input("Delivery Date", value=as_date(challan.get("delivery_date") or doc.get("expected_return_date"), date.today()), format="DD-MM-YYYY")
+            vehicle_no = c[1].text_input("Vehicle No", value=str(challan.get("vehicle_number") or ""))
+            transporter = c[2].text_input("Transporter", value=str(challan.get("transporter_name") or ""))
+            eway = c[3].text_input("E-way Bill No", value=str(challan.get("eway_bill_number") or ""))
+            c = st.columns(3, gap="small")
+            reference = c[0].text_input("Reference Details", value=str(challan.get("reference_details") or ""))
+            old_po = c[1].text_input("Old PO Details", value=str(challan.get("old_po_details") or ""))
+            process_text = c[2].text_input("Process To Be Done", value=str(challan.get("process_text") or str(doc.get("process_name") or "").upper()))
+            c = st.columns(2, gap="small")
+            shipping = c[0].number_input("Shipping (INR)", min_value=0.0, value=float(challan.get("shipping_amount") or 0), step=100.0)
+            other = c[1].number_input("Other (INR)", min_value=0.0, value=float(challan.get("other_amount") or 0), step=100.0)
+            grid = pd.DataFrame([{
+                "osp_job_id": str(r.get("id")), "Line": r.get("material_out_line_no") or i, "FSI Item #": (lines.get(str(r.get("id"))) or {}).get("item_code") or r.get("fsi_part_number") or "",
+                "Description": (lines.get(str(r.get("id"))) or {}).get("item_description") or r.get("part_name") or "", "Heat Number": r.get("heat_number"),
+                "Qty pcs": float(r.get("quantity_dispatched") or 0), "UOM": (lines.get(str(r.get("id"))) or {}).get("uom") or default_price["uom"],
+                "Unit Price": float((lines.get(str(r.get("id"))) or {}).get("unit_price") if lines.get(str(r.get("id"))) else default_price["unit_price"]),
+                "GST %": float((lines.get(str(r.get("id"))) or {}).get("gst_percent") if lines.get(str(r.get("id"))) else default_price["gst_percent"]),
+                "Batch Code": (lines.get(str(r.get("id"))) or {}).get("batch_code") or "",
+            } for i, r in enumerate(job_lines, start=1)])
+            edited = st.data_editor(grid, hide_index=True, width="stretch", key=f"osp_challan_lines_{scope}", disabled=["osp_job_id", "Line", "Heat Number", "Qty pcs"],
+                                    column_config={"osp_job_id": None, "Unit Price": st.column_config.NumberColumn(min_value=0.0, step=0.5, format="%.2f"), "GST %": st.column_config.NumberColumn(min_value=0.0, max_value=100.0, step=1.0)})
+            remarks = st.text_input("Challan Remarks", value=str(challan.get("remarks") or ""))
+            password = st.text_input("Current QCMS Password", type="password", help="Required to edit a challan that was already e-mailed to the vendor or has vendor returns.") if challan and locked else ""
+            save = st.form_submit_button("Save Challan" if not challan else "Update Challan", type="primary", width="stretch",
+                                         disabled=not (perms["can_edit"] if challan else (perms["can_create"] or perms["can_edit"])))
+        if save:
+            try:
+                if challan and locked:
+                    from core.auth import verify_current_password
+                    verify_current_password(password)
+                if challans.duplicate_number(number, challan.get("id"), doc):
+                    raise ValueError(f"Challan Number {number.strip().upper()} is already used by another Material Out.")
+                saved = challans.save(doc, {"challan_number": number, "challan_date": challan_date, "branch_id": branch_id or None, "vendor_id": doc.get("vendor_id"),
+                                            "ship_to_party_id": ship_to or None, "user_name": user_name, "ship_via": ship_via, "incoterm": incoterm, "delivery_date": delivery_date,
+                                            "payment_term": payment_term, "vehicle_number": vehicle_no, "transporter_name": transporter, "eway_bill_number": eway,
+                                            "reference_details": reference, "old_po_details": old_po, "process_text": process_text, "shipping_amount": shipping,
+                                            "other_amount": other, "remarks": remarks},
+                                      [{"osp_job_id": r["osp_job_id"], "line_no": r["Line"], "item_code": r["FSI Item #"], "item_description": r["Description"], "uom": r["UOM"],
+                                        "unit_price": r["Unit Price"] or 0, "gst_percent": r["GST %"] if r["GST %"] is not None else 18, "batch_code": r["Batch Code"]} for r in edited.to_dict("records")],
+                                      challan.get("id"))
+                warning = _sync_dispatch_challan(service, doc, number)
+                save_success_popup(f"Challan {saved.get('challan_number') or number} saved." + (f" {warning}" if warning else ""), queue_for_rerun=True); st.rerun()
+            except Exception as exc:
+                st.error(db_message(exc))
+        if not challan.get("id"):
+            # R37: the Material Out can still be printed as a DRAFT challan (watermarked) before the details are saved.
+            try:
+                draft_pdf = challan_pdf_for_job(str(job_lines[0].get("id")), challans.repo)
+                c1, c2 = st.columns(2, gap="small")
+                c1.download_button("Download DRAFT Challan PDF", draft_pdf, file_name=f"{doc.get('dispatch_challan') or doc.get('material_out_number')}_DRAFT.pdf", mime="application/pdf",
+                                   key=f"osp_challan_draft_pdf_{doc['id']}", width="stretch", icon=":material/download:")
+                if c2.toggle("Preview DRAFT Challan", key=f"osp_challan_draft_prev_{doc['id']}"):
+                    show_pdf_preview(draft_pdf, key=f"osp_challan_draft_view_{doc['id']}", height=820, pages=2)
+            except Exception as exc:
+                st.caption(f"Draft challan preview is not available: {db_message(exc)}")
+            return
+        payload = None
+        try:
+            payload = challans.print_payload_for(str(challan["id"]))
+            pdf = osp_challan_pdf_bytes(payload)
+            excel = osp_challan_excel_bytes(payload)
+        except Exception as exc:
+            st.error(f"Challan PDF could not be generated: {db_message(exc)}")
+            return
+        totals = payload.get("totals") or {}
+        kpi_grid([{"label": "Taxable", "value": f"{totals.get('subtotal', 0):,.2f}", "foot": "INR"}, {"label": "GST", "value": f"{totals.get('tax', 0):,.2f}", "foot": "INR"},
+                  {"label": "Total", "value": f"{totals.get('total', 0):,.2f}", "foot": "INR"}, {"label": "Balance at vendor", "value": f"{(payload.get('summary') or {}).get('balance', 0):,.0f}", "foot": "pcs"}])
+        c1, c2, c3 = st.columns(3, gap="small")
+        c1.download_button("Download Challan PDF", pdf, file_name=f"{challan.get('challan_number')}.pdf", mime="application/pdf", key=f"osp_challan_pdf_{challan['id']}", width="stretch", icon=":material/download:")
+        c2.download_button("Download Challan Excel", excel, file_name=f"{challan.get('challan_number')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           key=f"osp_challan_xlsx_{challan['id']}", width="stretch", icon=":material/table_view:")
+        if c3.toggle("Preview Challan", key=f"osp_challan_preview_{challan['id']}"):
+            show_pdf_preview(pdf, key=f"osp_challan_prev_{challan['id']}", height=820, pages=3)
+        _render_challan_email(challans, doc, challan, payload, perms)
+
+
+def _sync_dispatch_challan(service, doc: dict, number: str) -> str:
+    """Keep osp_jobs.dispatch_challan equal to the challan number (Material Out edit RPCs, same permission rules)."""
+    wanted = str(number or "").strip().upper()
+    lines = doc.get("lines") or [doc]
+    if all(str(r.get("dispatch_challan") or "").strip().upper() == wanted for r in lines):
+        return ""
+    try:
+        if doc.get("is_group"):
+            service.update_material_out_group(str(doc["id"]), {"dispatch_date": str(doc.get("dispatch_date"))[:10], "expected_return_date": str(doc.get("expected_return_date") or doc.get("dispatch_date"))[:10],
+                                                               "dispatch_challan": wanted, "remarks": doc.get("dispatch_remarks")},
+                                              [{"id": r["id"], "quantity_dispatched": r.get("quantity_dispatched")} for r in lines])
+        else:
+            service.update_material_out({"osp_job_id": doc["id"], "dispatch_date": str(doc.get("dispatch_date"))[:10], "dispatch_challan": wanted,
+                                         "quantity_dispatched": doc.get("quantity_dispatched"), "expected_return_date": str(doc.get("expected_return_date") or "")[:10] or None, "remarks": doc.get("dispatch_remarks")})
+        return "Material Out challan number updated."
+    except Exception as exc:
+        return f"Material Out challan number could not be updated ({db_message(exc)})."
+
+
+def _render_challan_email(challans: OSPChallanService, doc: dict, challan: dict, payload: dict, perms) -> None:
+    st.markdown("**E-mail challan to OSP Vendor**")
+    vendor = challans.repo.get("parties", str(doc.get("vendor_id") or "")) if doc.get("vendor_id") else {}
+    emails = vendor_emails(vendor)
+    subject, body = email_body(payload)
+    key = f"osp_challan_mail_{challan['id']}"
+    c = st.columns(2, gap="small")
+    to = c[0].text_input("To", value=emails[0] if emails else "", key=f"{key}_to")
+    cc = c[1].text_input("CC (comma separated)", value=", ".join(emails[1:]), key=f"{key}_cc")
+    subject = st.text_input("Subject", value=subject, key=f"{key}_subject")
+    body = st.text_area("Message", value=body, height=170, key=f"{key}_body")
+    st.caption("The Returnable Delivery Challan PDF is attached. The e-mail and PDF are vendor-safe: no customer name, code, PO or customer part number."
+               + (f" Last e-mailed {str(challan.get('emailed_at'))[:16].replace('T', ' ')} to {challan.get('emailed_to')}." if challan.get("emailed_at") else ""))
+    if st.button("Send Challan E-mail", key=f"{key}_send", type="primary", disabled=not (perms["can_edit"] or perms["can_create"]) or "@" not in to, width="stretch", icon=":material/send:"):
+        notifier = challan_notifier(challans.repo)
+        cc_list = [v.strip() for v in cc.replace(";", ",").split(",") if "@" in v]
+        row = notifier.notify("OSP_MATERIAL_OUT_CHALLAN", subject=subject, body_text=body, related_table="osp_challans", related_id=str(challan["id"]),
+                              recipient_email=to.strip(), recipient_name=str((vendor or {}).get("party_name") or ""), cc_emails=cc_list,
+                              include_generated_pdf=True, include_record_attachments=False, include_supplier=False,
+                              context={"supplier_id": str(doc.get("vendor_id") or ""), "supplier_name": doc.get("vendor_name"), "document_no": challan.get("challan_number"),
+                                       "document_type": "OSP Returnable Delivery Challan", "next_task": "OSP vendor processing and return"})
+        if row:
+            challans.mark_emailed(str(challan["id"]), ", ".join([to.strip(), *cc_list]))
+            save_success_popup(f"Challan {challan.get('challan_number')} queued for e-mail to {to.strip()} with the PDF attached.", queue_for_rerun=True); st.rerun()
+        else:
+            st.error("The e-mail could not be queued. Check the recipient address and the e-mail settings in Admin → Notifications.")
+
+
+def _render_returns_section(challans: OSPChallanService, doc: dict, challan: dict | None, perms) -> None:
+    with stage_section("C", "VENDOR RETURN CHALLAN / INVOICE", "Every OSP Inward receipt is a vendor return automatically (same quantity, never counted twice). Add the vendor challan / vehicle / rejected quantity here, or record a return without OSP Inward.", key="osp_mo_returns"):
+        if not challan or not challan.get("id"):
+            st.info("Save the challan (section B) first. OSP Inward receipts already recorded will then appear here automatically.")
+            return
+        job_lines = doc.get("lines") or [doc]
+        receipts = challans.receipts(_doc_job_ids(doc))
+        entries = challans.return_entries(str(challan["id"]))
+        rows = merge_returns(receipts, entries)
+        summary = balance_summary(sum(float(r.get("quantity_dispatched") or 0) for r in job_lines), rows)
+        kpi_grid([{"label": "Dispatched", "value": f"{summary['dispatched']:,.0f}", "foot": "pcs"}, {"label": "Returned", "value": f"{summary['returned']:,.0f}", "foot": "pcs"},
+                  {"label": "Rejected", "value": f"{summary['rejected']:,.0f}", "foot": "pcs"}, {"label": "Balance", "value": f"{summary['balance']:,.0f}", "foot": "pcs at vendor"}])
+        heat = {str(r.get("id")): f"Line {r.get('material_out_line_no') or 1} · Heat {r.get('heat_number')} · FSI Batch {r.get('osp_batch_code') or '-'}" for r in job_lines}
+        if rows:
+            portal_table(pd.DataFrame([{"Source": r["source"], "OSP Inward": r.get("receipt_number") or "-", "Heat Line": heat.get(str(r.get("osp_job_id")), "-"),
+                                        "Vendor Challan": r.get("challan_no") or "-", "Challan Date": r.get("challan_date"), "Vendor Invoice": r.get("invoice_no") or "-",
+                                        "Invoice Date": r.get("invoice_date"), "Returned pcs": r["qty_returned"], "Rejected pcs": r["qty_rejected"], "Vehicle No": r.get("vehicle_no") or "-",
+                                        "Remarks": r.get("remarks") or "-"} for r in rows]), hide_index=True, width="stretch")
+        else:
+            st.caption("No vendor return yet. Returns recorded in OSP Inward appear here automatically.")
+        st.markdown("**Add / update vendor return**")
+        linked_ids = {str(e.get("osp_receipt_id")) for e in entries if e.get("osp_receipt_id")}
+        options = {"": "No OSP Inward · return recorded on the challan only (e.g. unprocessed / rejected material)",
+                   **{str(r["id"]): f"OSP Inward {r.get('receipt_number')} · {r.get('receipt_date')} · {float(r.get('quantity_received') or 0):,.0f} pcs" + (" · details saved" if str(r["id"]) in linked_ids else "") for r in receipts}}
+        entry_options = {"": "New return entry", **{str(e["id"]): f"{e.get('vendor_challan_number') or e.get('vendor_invoice_number') or 'Return'} · {e.get('vendor_challan_date') or ''} · {float(e.get('quantity_returned') or 0):,.0f} pcs" + (" · OSP Inward" if e.get("osp_receipt_id") else "") for e in entries}}
+        entry_id = st.selectbox("Return entry", list(entry_options), format_func=lambda v: entry_options[v], key=f"osp_ret_entry_{challan['id']}")
+        entry = next((e for e in entries if str(e["id"]) == entry_id), {})
+        receipt_choice = st.selectbox("Linked OSP Inward receipt", list(options), index=list(options).index(str(entry.get("osp_receipt_id") or "")) if str(entry.get("osp_receipt_id") or "") in options else 0,
+                                      format_func=lambda v: options[v], key=f"osp_ret_receipt_{challan['id']}_{entry_id}", disabled=bool(entry))
+        receipt = next((r for r in receipts if str(r["id"]) == receipt_choice), {})
+        def as_date(value):
+            try: return date.fromisoformat(str(value)[:10]) if value else date.today()
+            except ValueError: return date.today()
+        with st.form(f"osp_ret_form_{challan['id']}_{entry_id}_{receipt_choice}"):
+            c = st.columns(4, gap="small")
+            job_ids = list(heat)
+            job_id = c[0].selectbox("Heat line", job_ids, index=job_ids.index(str(entry.get("osp_job_id") or receipt.get("osp_job_id") or job_ids[0])) if str(entry.get("osp_job_id") or receipt.get("osp_job_id") or job_ids[0]) in job_ids else 0, format_func=lambda v: heat[v], disabled=bool(receipt))
+            vch = c[1].text_input("Vendor Challan No", value=str(entry.get("vendor_challan_number") or receipt.get("receipt_challan") or ""))
+            vch_date = c[2].date_input("Vendor Challan Date", value=as_date(entry.get("vendor_challan_date") or receipt.get("receipt_date")), format="DD-MM-YYYY")
+            vehicle = c[3].text_input("Vehicle No", value=str(entry.get("vehicle_number") or ""))
+            c = st.columns(4, gap="small")
+            inv = c[0].text_input("Vendor Invoice No", value=str(entry.get("vendor_invoice_number") or receipt.get("vendor_invoice_number") or ""))
+            inv_date = c[1].date_input("Vendor Invoice Date", value=as_date(entry.get("vendor_invoice_date") or receipt.get("vendor_invoice_date")), format="DD-MM-YYYY")
+            qty = c[2].number_input("Quantity returned (pcs)", min_value=0.0, value=float(receipt.get("quantity_received") or entry.get("quantity_returned") or 0), step=1.0, disabled=bool(receipt),
+                                    help="For an OSP Inward receipt the receipt quantity is used (edit it in OSP Inward).")
+            rej = c[3].number_input("Quantity rejected / not returned (pcs)", min_value=0.0, value=float(entry.get("quantity_rejected") or 0), step=1.0)
+            note = st.text_input("Return Remarks", value=str(entry.get("remarks") or ""))
+            go = st.form_submit_button("Update Return" if entry else "Save Return", type="primary", width="stretch", disabled=not (perms["can_edit"] or perms["can_create"]))
+        if go:
+            try:
+                existing_for_receipt = next((e for e in entries if receipt_choice and str(e.get("osp_receipt_id")) == receipt_choice), None)
+                target = entry_id or (str(existing_for_receipt["id"]) if existing_for_receipt else None)
+                challans.save_return(str(challan["id"]), {"osp_job_id": receipt.get("osp_job_id") or job_id, "osp_receipt_id": receipt_choice or entry.get("osp_receipt_id") or None,
+                                                          "vendor_challan_number": vch, "vendor_challan_date": vch_date, "vendor_invoice_number": inv, "vendor_invoice_date": inv_date,
+                                                          "quantity_returned": qty, "quantity_rejected": rej, "vehicle_number": vehicle, "remarks": note}, target)
+                save_success_popup("Vendor return saved. The challan's Supplier Details section is updated.", queue_for_rerun=True); st.rerun()
+            except Exception as exc:
+                st.error(db_message(exc))
+        if entry and st.toggle("Delete this return entry", key=f"osp_ret_del_{entry_id}", disabled=not perms["can_archive"]):
+            password = st.text_input("Current QCMS Password", type="password", key=f"osp_ret_del_pwd_{entry_id}")
+            if st.button("Delete return entry", key=f"osp_ret_del_btn_{entry_id}", disabled=not password):
+                try:
+                    from core.auth import verify_current_password
+                    verify_current_password(password)
+                    challans.delete_return(entry_id)
+                    save_success_popup("Return entry deleted. OSP Inward receipts are not affected.", queue_for_rerun=True); st.rerun()
+                except Exception as exc:
+                    st.error(db_message(exc))
 
 
 def _render_grouped_material_outs(service, perms):
     documents=[r for r in service.material_out_documents(service.register()) if r["is_group"]]
     if not documents: return
-    with stage_section("A", "MULTI-HEAT MATERIAL OUT DOCUMENTS", "One document with separately traceable heat / RMTC lines.",key="osp_multi_documents"):
+    with stage_section("D", "MULTI-HEAT MATERIAL OUT DOCUMENTS", "One document with separately traceable heat / RMTC lines.",key="osp_multi_documents"):
         labels={r["id"]:f"{r['material_out_number']} · Challan {r.get('dispatch_challan')} · Part {r.get('part_number')} · {len(r['lines'])} heat lines · {r['quantity_dispatched']:,.0f} pcs" for r in documents}
         selected=st.selectbox("Material Out document",list(labels),format_func=lambda v:labels[v],key="osp_multi_manage")
         doc=next(r for r in documents if r["id"]==selected)
@@ -276,12 +632,22 @@ def render_inward() -> None:
         dispatched = float(job.get("quantity_dispatched") or 0); already_received = float(job.get("quantity_received") or 0); remaining = max(dispatched - already_received, 0)
         quantity = c[3].number_input("Receipt Batch Qty (pcs)", min_value=1.0, max_value=max(float(remaining), 1.0), value=max(float(remaining), 1.0), step=1.0, help="Override with the actual partial quantity received from the OSP Vendor. The remaining dispatched quantity stays open for another inward.")
         portal_table(pd.DataFrame([{"FSI Batch Number": job.get("osp_batch_code") or "-", "OSP Out Qty pcs": dispatched, "Already Received pcs": already_received, "Balance at Vendor pcs": remaining, "OSP Vendor Batch": job.get("vendor_batch_number") or vendor_batch or "-", "Material Out Remarks": job.get("dispatch_remarks") or "-"}]), hide_index=True, width="stretch", height=105)
+        c = st.columns(2, gap="small")
+        return_vehicle = c[0].text_input("Return Vehicle No", help="Printed in 'Supplier Details for Returnable Challan' on the Material Out challan.")
+        return_rejected = c[1].number_input("Rejected / not returned at vendor (pcs)", min_value=0.0, value=0.0, step=1.0, help="Reduces the challan balance; the receipt quantity above is the returned quantity.")
         remarks = st.text_area("Receipt Remarks", height=70)
         submitted = st.form_submit_button("Create OSP Material Inward", type="primary", disabled=not perms["can_create"], width="stretch")
     if submitted:
         try:
             saved = service.receive_batch({"osp_job_id": job["id"], "receipt_date": receipt_date.isoformat(), "receipt_challan": receipt_challan, "vendor_invoice_number": vendor_invoice, "vendor_invoice_date": vendor_invoice_date.isoformat(), "tc_number": tc_number, "tc_date": tc_date.isoformat(), "vendor_batch_number": vendor_batch, "quantity_received": quantity, "remarks": remarks})
-            save_success_popup(f"OSP Inward {saved.get('receipt_number')} saved successfully. Post-receipt inspections are now pending.", queue_for_rerun=True); st.rerun()
+            # R37: one entry updates both - the receipt is the vendor return on the Material Out challan.
+            link_note = ""
+            try:
+                linked = OSPChallanService(service.repo).link_receipt(job, str((saved.get("current_receipt") or {}).get("id") or ""), vehicle_number=return_vehicle, quantity_rejected=return_rejected)
+                link_note = " · Vendor return added to the Material Out challan." if linked else " · Shown as a vendor return on the Material Out challan."
+            except Exception as link_exc:
+                link_note = f" · Challan return details not saved ({db_message(link_exc)}); add them in OSP Material Out."
+            save_success_popup(f"OSP Inward {saved.get('receipt_number')} saved successfully. Post-receipt inspections are now pending.{link_note}", queue_for_rerun=True); st.rerun()
         except Exception as exc: st.error(db_message(exc))
 
     with stage_section("B", "EDIT / DELETE OSP INWARD RECEIPTS", key="osp_inward_manage"):
@@ -331,6 +697,35 @@ def _render_register(rows: list[dict], height: int = 560) -> None:
         "Created By User": r.get("Created By User"), "Last Modified By User": r.get("Last Modified By User"), "Status": r.get("status"),
     } for r in rows])
     portal_table(style_status_dataframe(display), hide_index=True, width="stretch", height=height)
+
+
+def _render_record_challan(row: dict) -> None:
+    """R37: View / Print / Excel of the Returnable Delivery Challan for the selected OSP record."""
+    job_id = str(row.get("id") or "")
+    try:
+        challans = OSPChallanService()
+        from core.osp_challan_pdf import osp_challan_payload
+        payload = osp_challan_payload(job_id, challans.repo)
+        pdf = osp_challan_pdf_bytes(payload); excel = osp_challan_excel_bytes(payload)
+    except Exception as exc:
+        st.info(f"Challan is not available for this record: {db_message(exc)}")
+        return
+    summary = payload.get("summary") or {}
+    kpi_grid([{"label": "Challan", "value": payload.get("challan_number") or "-", "foot": "saved" if payload.get("saved") else "DRAFT · not saved"},
+              {"label": "Dispatched", "value": f"{float(summary.get('dispatched') or 0):,.0f}", "foot": "pcs"},
+              {"label": "Returned", "value": f"{float(summary.get('returned') or 0):,.0f}", "foot": "pcs"},
+              {"label": "Balance", "value": f"{float(summary.get('balance') or 0):,.0f}", "foot": "pcs at vendor"}])
+    name = str(payload.get("challan_number") or row.get("osp_job_number") or "OSP_Challan")
+    c1, c2, c3 = st.columns(3, gap="small")
+    c1.download_button("Challan PDF", pdf, file_name=f"{name}.pdf", mime="application/pdf", key=f"osp_rec_challan_pdf_{job_id}", width="stretch", icon=":material/download:")
+    c2.download_button("Challan Excel", excel, file_name=f"{name}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                       key=f"osp_rec_challan_xlsx_{job_id}", width="stretch", icon=":material/table_view:")
+    if c3.toggle("View Challan", key=f"osp_rec_challan_view_{job_id}"):
+        show_pdf_preview(pdf, key=f"osp_rec_challan_prev_{job_id}", height=820, pages=3)
+    pages = st.session_state.get("_qsms_pages") or {}
+    if pages.get("osp-material-out") and st.button("Add / edit return challan / invoice", key=f"osp_rec_challan_returns_{job_id}", width="stretch", icon=":material/assignment_return:"):
+        st.session_state["osp_mo_open"] = str(row.get("material_out_id") or job_id)
+        st.switch_page(pages["osp-material-out"])
 
 
 def render_records() -> None:
@@ -387,13 +782,15 @@ def render_records() -> None:
                             st.download_button(f"Dimensional PDF · {report.get('report_number')}", pdf, file_name=f"{report.get('report_number') or selected_row.get('osp_job_number')}_Dimensional.pdf", mime="application/pdf", key=f"osp_dim_pdf_{report['id']}", width="stretch")
                         except Exception as exc:
                             st.error(f"Dimensional PDF could not be generated: {exc}")
+        with stage_section("B", "RETURNABLE DELIVERY CHALLAN", "Vendor-safe challan of this Material Out (no customer details). Add vendor return challans / invoices in Material Out.", key="osp_records_challan"):
+            _render_record_challan(selected_row)
         record_email_sender(
             NotificationService(service.repo), "OSP_SAMPLE_PENDING",
             related_table="osp_jobs", related_id=selected, key=f"osp_record_email_{selected}",
             context={"supplier_id": str(selected_row.get("vendor_id") or ""), "supplier_name": selected_row.get("vendor_name"), "part_number": selected_row.get("part_number"), "next_task": "OSP Sample / Receipt Quality Follow-up"},
             include_supplier=True,
         )
-        with stage_section("B", "DELETE OSP RECORD", key="osp_records_b"):
+        with stage_section("C", "DELETE OSP RECORD", key="osp_records_b"):
             if metlab_rows or dimensional_rows:
                 st.caption("Delete linked OSP MetLAB / Dimensional inspection records first; then delete the parent OSP transaction.")
             linked_rows = [*metlab_rows, *dimensional_rows]
@@ -423,7 +820,7 @@ def render_records() -> None:
                 ):
                     st.rerun()
         if receipt_rows:
-            with stage_section("C", "DELETE PARTIAL OSP INWARD RECEIPT", key="osp_records_receipt_delete"):
+            with stage_section("D", "DELETE PARTIAL OSP INWARD RECEIPT", key="osp_records_receipt_delete"):
                 st.caption(
                     "Delete/Archive permission is controlled in Admin → Users & Access → OSP Transactions. "
                     "Deleting a receipt recalculates the OSP inward balance and is blocked while receipt-level inspection reports exist."
@@ -437,5 +834,5 @@ def render_records() -> None:
                     success_message="OSP inward receipt deleted and OSP quantity/status recalculated successfully.",
                 ):
                     st.rerun()
-    with stage_section("D", "OSP TRANSACTION REGISTER", key="osp_records_c"):
+    with stage_section("E", "OSP TRANSACTION REGISTER", key="osp_records_c"):
         _render_register(filtered)

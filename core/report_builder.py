@@ -51,6 +51,8 @@ LABEL_FIELDS: dict[str, tuple[str, tuple[str, ...]]] = {
     "vendor_id": ("parties", ("party_code", "party_name")),
     "osp_vendor_id": ("parties", ("party_code", "party_name")),
     "steel_mill_id": ("parties", ("party_code", "party_name")),
+    "default_supplier_id": ("parties", ("party_code", "party_name")),
+    "item_id": ("indirect_items", ("item_code", "item_name")),
     "process_id": ("processes", ("process_code", "process_name")),
     "material_grade_id": ("material_grades", ("grade_code",)),
     "grade_id": ("material_grades", ("grade_code",)),
@@ -79,6 +81,22 @@ INVENTORY_SOURCES: tuple[dict[str, Any], ...] = (
     {"table": "v_qsms_heat_global_balance_report", "record_type": "Heat Global Steel Balance", "module": "Inventory", "module_key": "MATERIAL_INWARD",
      "columns": ("heat_number", "global_steel_quantity_kg", "inward_steel_quantity_kg", "committed_steel_quantity_kg", "available_unallocated_steel_quantity_kg", "osp_quantity_at_vendor_pcs")},
 )
+
+# R37: Indirect Purchase datasets (separate module key INDIRECT_PURCHASE; tables are tenant RLS protected).
+INDIRECT_PURCHASE_SOURCES: tuple[dict[str, Any], ...] = (
+    {"table": "indirect_purchase_orders", "record_type": "Indirect Purchase Orders", "module": "Indirect Purchase", "module_key": "INDIRECT_PURCHASE",
+     "columns": ("po_number", "po_date", "supplier_id", "department", "cost_centre", "requisitioner", "delivery_date", "subtotal", "grand_total", "currency", "status", "approval_status")},
+    {"table": "indirect_purchase_order_items", "record_type": "Indirect PO Lines", "module": "Indirect Purchase", "module_key": "INDIRECT_PURCHASE",
+     "columns": ("item_code", "item_name", "category", "uom", "quantity", "rate", "discount_percent", "taxable_amount", "gst_percent", "line_total", "received_qty", "accepted_qty", "rejected_qty")},
+    {"table": "indirect_grns", "record_type": "Indirect Inward (GRN)", "module": "Indirect Purchase", "module_key": "INDIRECT_PURCHASE",
+     "columns": ("grn_number", "grn_date", "grn_type", "supplier_name", "supplier_invoice_no", "challan_no", "gate_entry_no", "department", "grand_total", "status")},
+    {"table": "indirect_items", "record_type": "Indirect Item Master", "module": "Indirect Purchase", "module_key": "INDIRECT_PURCHASE",
+     "columns": ("item_code", "item_name", "category", "uom", "hsn_sac", "gst_percent", "default_supplier_id", "last_price", "reorder_level", "min_stock", "storage_location", "status")},
+    {"table": "indirect_stock_ledger", "record_type": "Indirect Stock Ledger", "module": "Indirect Purchase", "module_key": "INDIRECT_PURCHASE",
+     "columns": ("txn_date", "txn_type", "item_id", "qty_in", "qty_out", "balance_after", "rate", "value", "reference_no", "department", "cost_centre")},
+)
+# The Report Builder page lists INVENTORY_SOURCES as its extra datasets; Indirect Purchase joins them (module label differs).
+INVENTORY_SOURCES = INVENTORY_SOURCES + INDIRECT_PURCHASE_SOURCES
 
 
 def pretty(column: str) -> str:

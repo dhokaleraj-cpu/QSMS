@@ -145,7 +145,8 @@ expected_paths = {
     "user-access", "email-settings", "master-import", "standards-entry", "standards-records", "my-account", "about", "notifications", "licence-company", "stawn-developer", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
     "osp-material-out", "osp-sample-receipt", "osp-inward", "osp-dimensional", "osp-metlab", "osp-records",
     "inspection-layout-entry", "inspection-layout-records", "dimensional-entry",
-    "dimensional-records", "metlab-entry", "metlab-records", "bend-test-entry", "bend-test-records", "bend-test-report", "global-search", "kpi-dashboards", "system-settings", "email-send", "email-groups", "email-my-settings", "email-sent", "bend-layout-entry", "report-builder", "master-lists", "print-designer", "inventory-reports",
+    "dimensional-records", "metlab-entry", "metlab-records", "bend-test-entry", "bend-test-records", "bend-test-report", "global-search", "kpi-dashboards", "kpi-details", "kpi-drilldown", "system-settings", "email-send", "email-groups", "email-my-settings", "email-sent", "bend-layout-entry", "report-builder", "master-lists", "print-designer", "inventory-reports",
+    "indirect-purchase", "indirect-requisition", "indirect-po", "indirect-po-list", "indirect-po-approval", "indirect-inward", "indirect-items", "indirect-stock",
 }
 if set(paths) != expected_paths or len(paths) != len(expected_paths):
     errors.append(f"Expected {len(expected_paths)} unique registered pages, found {paths}")

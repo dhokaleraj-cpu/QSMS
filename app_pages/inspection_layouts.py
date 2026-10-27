@@ -380,6 +380,7 @@ def render_records() -> None:
                 record_number=f"{selected_row.get('plan_number')}-REV-{selected_row.get('revision')}",
             )
             st.download_button("Download Layout PDF", pdf, file_name=f"Inspection_Layout_{selected_row.get('plan_number')}_Rev_{selected_row.get('revision')}.pdf", mime="application/pdf", width="stretch")
+            from core.pdf_preview import preview_button; preview_button("inspection_plans", selected, key="layout_records", record=selected_row)  # R37
         with c3:
             if password_delete_panel(repo=service.repo, table="inspection_plans", rows=[selected_row], labeler=lambda row: f"{row.get('plan_number')} Rev {row.get('revision')}", key=f"delete_layout_{selected}", can_delete=perms["can_archive"], title="Delete Selected Layout", help_text="Current password and Layout Delete permission are required. Characteristics are removed with the layout."):
                 st.rerun()

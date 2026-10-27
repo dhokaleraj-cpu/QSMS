@@ -189,6 +189,7 @@ def render_records() -> None:
                 record_number=_record_key_label(definition, selected_row),
             )
             st.download_button("Download Selected PDF", pdf, file_name=f"{definition.key}_{_record_key_label(definition, selected_row)}.pdf", mime="application/pdf", width="stretch")
+            from core.pdf_preview import preview_button; preview_button(definition.table, selected, key=f"reference_{key}", record=selected_row)  # R37
         with c3:
             if password_delete_panel(
                 repo=service.repo,

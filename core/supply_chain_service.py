@@ -34,6 +34,25 @@ FLOW_REQUIRES_FSI_RM = {FLOW_FSI_RM, FLOW_FSI_RM_DIRECT_PRODUCTION}
 _FLOW_RE = re.compile(r"\s*\[\[QCMS_SUPPLY_FLOW=(FSI_RM|DIRECT_FORGING|FSI_RM_DIRECT_PRODUCTION)\]\]\s*", re.I)
 
 
+def po_display_number(header: Mapping[str, Any] | None) -> str:
+    """R37b: "PD9131000096 · Amd 2" for an amended PO, the plain PO number otherwise."""
+    data = dict(header or {})
+    number_text = str(data.get("po_number") or "").strip()
+    try:
+        amd = int(float(data.get("amendment_no") or 0))
+    except (TypeError, ValueError):
+        amd = 0
+    return f"{number_text} · Amd {amd}" if amd > 0 and number_text else number_text
+
+
+def same_price_uom(row_uom: Any, wanted: Any) -> bool:
+    """R37b: NOS and PCS are the same count unit for price history (a forging PO in NOS must
+    print / price from history rows saved as PCS and vice versa)."""
+    a, b = str(row_uom or "").strip().upper(), str(wanted or "").strip().upper()
+    count_units = {"NOS", "PCS", "NO", "PC", "EA"}
+    return a == b or (a in count_units and b in count_units)
+
+
 def clean_flow_remarks(value: Any) -> str:
     return _FLOW_RE.sub(" ", str(value or "")).strip()
 
@@ -235,7 +254,7 @@ class SupplyChainService:
 
     def _invalidate_transactions(self) -> None:
         for key in list(self._page_cache):
-            if key and key[0] in {"customer_orders","purchase_orders","purchase_order_items","purchase_order_sources","totals_bulk","rm_purchase_orders","rm_receipts","rm_dispatches","forging_orders","forging_receipts","downstream_events","po_confirmations"}:
+            if key and key[0] in {"customer_orders","purchase_orders","purchase_order_items","purchase_order_sources","totals_bulk","rm_purchase_orders","rm_receipts","rm_dispatches","forging_orders","forging_receipts","downstream_events","po_confirmations","po_amendments"}:
                 self._page_cache.pop(key, None)
 
     # ------------------------------------------------------------------ masters
@@ -696,7 +715,7 @@ class SupplyChainService:
             if exact_raw:
                 rows = exact_raw
         if uom:
-            same_uom = [r for r in rows if str(r.get("uom") or "").upper() == str(uom).upper()]
+            same_uom = [r for r in rows if same_price_uom(r.get("uom"), uom)]
             if same_uom:
                 rows = same_uom
         return rows
@@ -714,7 +733,7 @@ class SupplyChainService:
         all_rows = self.price_history(
             part_id, supplier_id, raw_material_detail_id=raw_material_detail_id
         )
-        same_uom = [r for r in all_rows if not uom or str(r.get("uom") or "").upper() == str(uom).upper()]
+        same_uom = [r for r in all_rows if not uom or same_price_uom(r.get("uom"), uom)]
         rows = same_uom if same_uom else all_rows
         rows.sort(key=lambda r: (str(r.get("start_date") or ""), str(r.get("end_date") or "9999-12-31"), str(r.get("id") or "")))
         return [{
@@ -868,35 +887,40 @@ class SupplyChainService:
                 covering = exact
         wanted_uom = str(uom or "").upper()
         if wanted_uom:
-            exact_uom = [r for r in covering if str(r.get("uom") or "").upper() == wanted_uom]
+            exact_uom = [r for r in covering if same_price_uom(r.get("uom"), wanted_uom)]
             if exact_uom:
                 covering = exact_uom
         covering.sort(key=lambda r: (str(r.get("start_date") or ""), str(r.get("id") or "")), reverse=True)
         return number(covering[0].get("price")) if covering else 0.0
 
-    def _record_purchase_price(self, *, part_id: str, supplier_id: str, raw_material_detail_id: str | None, po_date: date | str, price: float, uom: str, currency: str, source_item_id: str) -> None:
+    def _record_purchase_price(self, *, part_id: str, supplier_id: str, raw_material_detail_id: str | None, po_date: date | str, price: float, uom: str, currency: str, source_item_id: str, remarks: str | None = None) -> dict | None:
+        """Record a PO price as a price revision effective from ``po_date``. Returns the written row.
+
+        R37b: also used by PO amendments (``po_date`` = amendment Effective Date, ``remarks`` =
+        "PO <no> Amd <n>: <reason>") so future POs pick up the amended price.
+        """
         price = max(number(price), 0.0)
         if price <= 0:
-            return
+            return None
+        extra = {"remarks": str(remarks).strip()[:500]} if str(remarks or "").strip() else {}
         target_text = parse_business_date(po_date) or date.today().isoformat()
         target = date.fromisoformat(target_text)
         history = self.price_history(part_id, supplier_id, uom=uom, raw_material_detail_id=raw_material_detail_id)
         same_start = next((r for r in history if str(r.get("start_date") or "")[:10] == target_text), None)
         if same_start:
-            self.repo.update("part_supplier_price_history", str(same_start["id"]), {"price": price, "currency": currency, "raw_material_detail_id": raw_material_detail_id, "source_purchase_order_item_id": source_item_id})
-            return
+            return self.repo.update("part_supplier_price_history", str(same_start["id"]), {"price": price, "currency": currency, "raw_material_detail_id": raw_material_detail_id, "source_purchase_order_item_id": source_item_id, **extra})
         covering = next((r for r in history if str(r.get("start_date") or "")[:10] <= target_text and (not str(r.get("end_date") or "")[:10] or target_text <= str(r.get("end_date") or "")[:10])), None)
         if covering and abs(number(covering.get("price")) - price) < 0.000001:
             if not covering.get("source_purchase_order_item_id"):
-                self.repo.update("part_supplier_price_history", str(covering["id"]), {"source_purchase_order_item_id": source_item_id})
-            return
+                return self.repo.update("part_supplier_price_history", str(covering["id"]), {"source_purchase_order_item_id": source_item_id})
+            return dict(covering)
         next_start = min((date.fromisoformat(str(r.get("start_date"))[:10]) for r in history if str(r.get("start_date") or "")[:10] > target_text), default=None)
         new_end = (next_start - timedelta(days=1)).isoformat() if next_start else None
         if covering:
             old_end = str(covering.get("end_date") or "")[:10] or None
             self.repo.update("part_supplier_price_history", str(covering["id"]), {"end_date": (target - timedelta(days=1)).isoformat()})
             new_end = old_end
-        self.repo.insert("part_supplier_price_history", {"part_id": part_id, "supplier_id": supplier_id, "raw_material_detail_id": raw_material_detail_id, "start_date": target_text, "end_date": new_end, "price": price, "currency": currency or "INR", "uom": str(uom or "KGS").upper(), "source_purchase_order_item_id": source_item_id, "status": "ACTIVE"})
+        return self.repo.insert("part_supplier_price_history", {"part_id": part_id, "supplier_id": supplier_id, "raw_material_detail_id": raw_material_detail_id, "start_date": target_text, "end_date": new_end, "price": price, "currency": currency or "INR", "uom": str((covering or {}).get("uom") or (history[0].get("uom") if history else "") or uom or "KGS").upper(), "source_purchase_order_item_id": source_item_id, "status": "ACTIVE", **extra})
 
     def rm_purchase_orders(self) -> list[dict]:
         return self._memo(("rm_purchase_orders",), lambda: annotate_transaction_rows(self.repo, self.repo.select("supply_rm_purchase_orders", order_by="created_at", desc=True, limit=10000)))
@@ -1083,8 +1107,17 @@ class SupplyChainService:
         item["approver_designation"] = str(employee.get("designation") or "").strip()
         return item
 
-    def purchase_order(self, purchase_order_id: str) -> dict | None:
+    def _purchase_order_header(self, purchase_order_id: str) -> dict | None:
         return self._enrich_purchase_order_approver(self.repo.get("supply_purchase_orders", purchase_order_id))
+
+    def purchase_order(self, purchase_order_id: str) -> dict | None:
+        header = self._purchase_order_header(purchase_order_id)
+        if header and int(number(header.get("amendment_no"))) > 0:
+            # R37b: amended POs carry their amendment history for the PO print / e-mail PDF.
+            header["amendments"] = self._memo(("po_amendments", str(purchase_order_id), int(number(header.get("amendment_no"))), str(header.get("approved_at") or "")),
+                                              lambda: self.purchase_order_amendments(str(purchase_order_id), header=header))
+            header["po_display_number"] = po_display_number(header)
+        return header
 
     def purchase_order_item(self, purchase_order_id: str) -> dict | None:
         rows = self.purchase_order_items(purchase_order_id)
@@ -1691,6 +1724,184 @@ class SupplyChainService:
         self._invalidate_transactions()
         return {"header":revised_header,"items":revised_items,"reapproval_required":was_approved,"supplier_reconfirmation_required":was_approved,"supplier_confirmation_blocks_edit":False}
 
+    # ------------------------------------------------------------------------------------------
+    # R37b · Purchase Order amendment (Amendment No. / Amendment Date / Effective Date)
+    # ------------------------------------------------------------------------------------------
+    AMENDABLE_HEADER_FIELDS = ("delivery_date", "payment_term", "incoterm", "ship_via", "other_amount", "quotation_reference", "quotation_date", "remarks", "special_instructions")
+
+    def purchase_order_amendments(self, purchase_order_id: str, *, header: Mapping[str, Any] | None = None) -> list[dict]:
+        """Amendment register of a PO, oldest first, each with its line-level before / after."""
+        try:
+            rows = self.repo.select("supply_po_amendments", eq={"purchase_order_id": purchase_order_id}, order_by="amendment_no", limit=500)
+        except Exception:
+            return []
+        header = dict(header or {})
+        approved_at = str(header.get("approved_at") or "")
+        approved = str(header.get("approval_status") or "").upper() == "APPROVED"
+        out: list[dict] = []
+        for row in sorted(rows, key=lambda r: int(number(r.get("amendment_no")))):
+            item = dict(row)
+            try:
+                lines = self.repo.select("supply_po_amendment_lines", eq={"amendment_id": row.get("id")}, order_by="line_no", limit=500)
+            except Exception:
+                lines = []
+            item["lines"] = sorted((dict(l) for l in lines), key=lambda l: (int(number(l.get("line_no"))), str(l.get("item_no") or "")))
+            status = str(item.get("status") or "PENDING_APPROVAL").upper()
+            if status == "PENDING_APPROVAL" and approved and approved_at and approved_at >= str(item.get("created_at") or ""):
+                status = "APPROVED"   # PO approved after this amendment (e.g. approved from the mobile app)
+            item["status"] = status
+            out.append(item)
+        return out
+
+    def amendment_price_suggestion(self, purchase_order_id: str, item: Mapping[str, Any], effective_date: date | str | None) -> dict[str, Any]:
+        """Default amended unit price = the price-history revision effective on the Effective Date
+        (else the latest revision) of this PO line's Supplier + Part + RM record."""
+        header = self.purchase_order(purchase_order_id) or {}
+        supplier_id = str(header.get("supplier_id") or "")
+        part = self.repo.get("parts", str(item.get("part_id") or "")) or {}
+        raw = self.repo.get("part_raw_material_details", str(item.get("raw_material_detail_id") or "")) or {}
+        if not supplier_id or not part:
+            return {}
+        if raw.get("source_part_id"):
+            part, raw = self.raw_source_context(part, raw, supplier_id)
+        uom = str(item.get("uom") or "")
+        rows = self.price_history(str(part.get("id") or ""), supplier_id, uom=uom or None, raw_material_detail_id=str(raw.get("id") or "") or None)
+        rows = [r for r in rows if r.get("start_date")]
+        if not rows:
+            return {}
+        target = parse_business_date(effective_date) or date.today().isoformat()
+        covering = [r for r in rows if str(r.get("start_date"))[:10] <= target and (not r.get("end_date") or target <= str(r.get("end_date"))[:10])]
+        pool = covering or rows
+        pool.sort(key=lambda r: (str(r.get("start_date") or ""), str(r.get("updated_at") or "")), reverse=True)
+        best = pool[0]
+        return {"price": number(best.get("price")), "start_date": str(best.get("start_date") or "")[:10], "end_date": str(best.get("end_date") or "")[:10] or None,
+                "remarks": best.get("remarks") or "", "covering": bool(covering), "currency": best.get("currency") or "INR", "uom": best.get("uom") or uom}
+
+    def amend_purchase_order(self, purchase_order_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Controlled PO amendment.
+
+        payload: {"reason", "effective_date", "lines": [{"id", "unit_price", "quantity"}],
+                  optional header fields AMENDABLE_HEADER_FIELDS}
+        * PO number stays; amendment number = previous + 1 (display "PD... · Amd N").
+        * Line price / quantity revised through update_purchase_order (R35 rules: quantity goes to
+          the Customer Order allocation, never below received quantity; PO returns to approval and
+          an approved PO needs supplier re-confirmation).
+        * A changed price is written to part_supplier_price_history effective from the Effective
+          Date so later POs pick it up; the amendment + line before/after are stored for print / audit.
+        """
+        p = dict(payload or {})
+        reason = str(p.get("reason") or "").strip()
+        if not reason:
+            raise ValueError("Amendment Reason is required.")
+        effective = parse_business_date(p.get("effective_date"))
+        if not effective:
+            raise ValueError("Amendment Effective Date is required (dd-mm-yyyy).")
+        header = self.purchase_order(purchase_order_id) or {}
+        if not header:
+            raise ValueError("Purchase Order was not found.")
+        if str(header.get("status") or "").upper() == "CANCELLED":
+            raise ValueError("A cancelled Purchase Order cannot be amended. Use Cancel & Reissue.")
+        try:
+            existing = self.repo.select("supply_po_amendments", eq={"purchase_order_id": purchase_order_id}, limit=500)
+        except Exception as exc:
+            raise ValueError("PO Amendment tables are not installed yet. Run the R37b Supabase update (20261027100000_qcms_r37b_po_amendment.sql) and try again.") from exc
+        amendment_no = max([int(number(r.get("amendment_no"))) for r in existing] + [int(number(header.get("amendment_no")))] + [0]) + 1
+
+        items = {str(r.get("id")): dict(r) for r in self.purchase_order_items(purchase_order_id)}
+        line_changes: list[dict[str, Any]] = []
+        item_payload: list[dict[str, Any]] = []
+        for index, line in enumerate(p.get("lines") or [], start=1):
+            iid = str(line.get("id") or "")
+            item = items.get(iid)
+            if not item:
+                raise ValueError(f"Amendment line {index}: the PO line no longer exists. Refresh the page.")
+            label = str(item.get("item_no") or item.get("fsi_part_number_snapshot") or f"line {index}")
+            old_price, old_qty = round(number(item.get("unit_price")), 6), round(number(item.get("quantity")), 3)
+            new_price = round(number(line.get("unit_price") if line.get("unit_price") not in (None, "") else old_price), 6)
+            new_qty = round(number(line.get("quantity") if line.get("quantity") not in (None, "") else old_qty), 3)
+            if new_price <= 0:
+                raise ValueError(f"{label}: amended Unit Price must be greater than zero.")
+            if new_qty <= 0:
+                raise ValueError(f"{label}: amended Quantity must be greater than zero.")
+            received = self.purchase_order_item_received_qty(iid)
+            if new_qty + 0.0001 < received:
+                raise ValueError(f"{label}: amended Quantity {new_qty:,.3f} cannot be below the quantity already received ({received:,.3f}).")
+            price_changed = abs(new_price - old_price) > 0.000001
+            qty_changed = abs(new_qty - old_qty) > 0.0001
+            if not (price_changed or qty_changed):
+                continue
+            item_payload.append({"id": iid, "unit_price": new_price, "quantity": new_qty})
+            line_changes.append({"item": item, "old_price": old_price, "new_price": new_price, "old_qty": old_qty, "new_qty": new_qty,
+                                 "received": received, "price_changed": price_changed, "line_no": index})
+        header_changes: dict[str, dict[str, Any]] = {}
+        update_payload: dict[str, Any] = {"refresh_master_data": False, "items": item_payload}
+        for key in self.AMENDABLE_HEADER_FIELDS:
+            if key not in p:
+                continue
+            new = p.get(key)
+            old = header.get(key)
+            if key in {"delivery_date", "quotation_date"}:
+                new, old = parse_business_date(new), parse_business_date(old)
+            elif key == "other_amount":
+                new, old = round(number(new), 2), round(number(old), 2)
+            else:
+                new, old = (str(new or "").strip() or None), (str(old or "").strip() or None)
+            if new != old:
+                header_changes[key] = {"old": old, "new": new}
+                update_payload[key] = new
+        if not line_changes and not header_changes:
+            raise ValueError("Nothing was changed. Change a line price / quantity or a commercial field before saving the amendment.")
+
+        revision = self.update_purchase_order(purchase_order_id, update_payload)
+        po_number = str(header.get("po_number") or "")
+        supplier_id = str(header.get("supplier_id") or "")
+        currency = str(header.get("currency") or "INR").upper()
+        history_note = f"PO {po_number} Amd {amendment_no}: {reason}"
+        warnings: list[str] = []
+        for change in line_changes:
+            change["price_row"] = None
+            if not change["price_changed"]:
+                continue
+            item = change["item"]
+            part = self.repo.get("parts", str(item.get("part_id") or "")) or {}
+            raw = self.repo.get("part_raw_material_details", str(item.get("raw_material_detail_id") or "")) or {}
+            if raw.get("source_part_id"):
+                part, raw = self.raw_source_context(part, raw, supplier_id)
+            if not part.get("id"):
+                warnings.append(f"{item.get('item_no')}: no Part Master link - price history not updated.")
+                continue
+            try:
+                change["price_row"] = self._record_purchase_price(
+                    part_id=str(part.get("id")), supplier_id=supplier_id, raw_material_detail_id=str(raw.get("id") or "") or None,
+                    po_date=effective, price=change["new_price"], uom=str(item.get("uom") or ("KGS" if str(header.get("po_type")) == "RAW_MATERIAL" else "NOS")),
+                    currency=currency, source_item_id=str(item.get("id")), remarks=history_note)
+                history = self.price_history_for_po(str(part.get("id")), supplier_id, uom=str(item.get("uom") or "") or None, raw_material_detail_id=str(raw.get("id") or "") or None)
+                self.repo.update("supply_purchase_order_items", str(item.get("id")), {"price_history_snapshot": history})
+            except Exception as exc:   # the amendment itself is saved; tell the user what to correct in Part Master
+                warnings.append(f"{item.get('item_no')}: price history not updated - {friendly_po_error(exc)}")
+        employee_id = current_employee_id(refresh=False)
+        amendment = self.repo.insert("supply_po_amendments", {
+            "purchase_order_id": purchase_order_id, "amendment_no": amendment_no, "amendment_date": date.today().isoformat(),
+            "effective_date": effective, "reason": reason, "header_changes": header_changes, "status": "PENDING_APPROVAL",
+            "created_by_employee_id": employee_id or None,
+        })
+        lines_out: list[dict] = []
+        for change in line_changes:
+            item = change["item"]
+            lines_out.append(self.repo.insert("supply_po_amendment_lines", {
+                "amendment_id": amendment.get("id"), "purchase_order_item_id": item.get("id"), "line_no": change["line_no"],
+                "item_no": item.get("item_no") or item.get("fsi_part_number_snapshot"), "item_description": item.get("item_description"),
+                "uom": item.get("uom"), "currency": currency, "old_unit_price": change["old_price"], "new_unit_price": change["new_price"],
+                "old_quantity": change["old_qty"], "new_quantity": change["new_qty"], "received_qty": change["received"],
+                "price_history_id": (change.get("price_row") or {}).get("id"),
+            }))
+        header_after = self.repo.update("supply_purchase_orders", purchase_order_id, {
+            "amendment_no": amendment_no, "amendment_date": date.today().isoformat(), "amendment_effective_date": effective, "amendment_reason": reason,
+        })
+        self._invalidate_transactions()
+        return {**revision, "header": header_after, "amendment": amendment, "lines": lines_out, "amendment_no": amendment_no,
+                "display_number": po_display_number(header_after), "warnings": warnings, "reapproval_required": True}
+
     def add_orders_to_purchase_order(self, purchase_order_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         """R28: add Customer Orders / Schedules to an existing (not cancelled, not received) PO.
 
@@ -1849,7 +2060,22 @@ class SupplyChainService:
 
     def approve_purchase_order(self, purchase_order_id: str, remarks: str | None = None) -> dict:
         result = self.repo.rpc("qcms_approve_purchase_order", {"p_purchase_order_id": purchase_order_id, "p_remarks": remarks})
+        self._mark_amendments_approved(purchase_order_id, result)
         return self._enrich_purchase_order_approver(dict(result or {})) or {}
+
+    def _mark_amendments_approved(self, purchase_order_id: str, approved: Any) -> None:
+        """R37b: the approval of an amended PO approves its pending amendment(s) (best effort)."""
+        try:
+            rows = self.repo.select("supply_po_amendments", eq={"purchase_order_id": purchase_order_id, "status": "PENDING_APPROVAL"}, limit=100)
+        except Exception:
+            return
+        data = dict(approved or {}) if isinstance(approved, Mapping) else {}
+        for row in rows:
+            try:
+                self.repo.update("supply_po_amendments", str(row.get("id")), {"status": "APPROVED", "approved_at": data.get("approved_at") or datetime.now(timezone.utc).isoformat(),
+                                                                              "approved_by_employee_id": data.get("approver_employee_id")})
+            except Exception:
+                pass
 
     def ensure_purchase_order_confirmation(self, purchase_order_id: str) -> dict:
         result = self.repo.rpc("qcms_ensure_po_confirmation", {"p_purchase_order_id": purchase_order_id})
@@ -1992,7 +2218,7 @@ class SupplyChainService:
                 source_part_numbers.append(str(src_part.get("part_number") or item.get("original_part_number_snapshot") or "-"))
                 source_qty_labels.append(f"{number(source.get('allocated_qty') or item.get('quantity')):,.3f}")
             rows.append({
-                "PO Number": header.get("po_number"), "PO Type": str(header.get("po_type") or "").replace("_", " ").title(), "PO Date": header.get("order_date"),
+                "PO Number": header.get("po_number"), "Amendment": (f"Amd {int(number(header.get('amendment_no')))}" if number(header.get("amendment_no")) > 0 else "-"), "PO Type": str(header.get("po_type") or "").replace("_", " ").title(), "PO Date": header.get("order_date"),
                 "Delivery Date": header.get("delivery_date"), "Supplier": party_label(supplier), "Part Number": item.get("original_part_number_snapshot") or part.get("part_number"),
                 "FSI Part Number": item.get("fsi_part_number_snapshot") or part.get("fsi_part_number"), "HSN / SAC": item.get("hsn_sac_code") or part.get("hsn_sac_code"), "Part Description": item.get("item_description") or part.get("part_name"),
                 "Customer Orders / Schedules": " · ".join(source_labels) if source_labels else "",
