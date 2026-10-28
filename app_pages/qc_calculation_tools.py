@@ -104,7 +104,8 @@ def render_tools() -> None:
             st.session_state["qct_jom_inputs"] = chemistry
         curve = st.session_state.get("qct_jom_result")
         if curve:
-            frame = pd.DataFrame([{"Distance (1/16 in.)": distance, "Calculated HRC": value} for distance, value in curve.items()])
+            from core.chem_grid import jominy_curve_table, table_frame  # R38: horizontal, inch header + mm row
+            frame = table_frame(jominy_curve_table(curve))
             portal_table(frame, hide_index=True, width="stretch")
             if st.button("Save Jominy Calculation Record", width="stretch", key="save_jominy", disabled=not perms["can_create"]):
                 _save_record(repo, perms, calculation_type="JOMINY", part_id=part_id, grade_id=grade_id, heat_number=heat_number, employee_id=employee_id, inputs=dict(st.session_state.get("qct_jom_inputs") or chemistry), results={"curve": curve}, standard="QCMS controlled Jominy calculation logic", remarks=remarks)

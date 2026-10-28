@@ -1380,6 +1380,7 @@ def render_purchase_orders() -> None:
     page_header("Purchase Order Entry · Raw Material / Forging", "Create controlled supplier POs. Use the dedicated Purchase Order tabs for Order List, Edit, PDF and Approval / Supplier Confirmation.", "Supply Chain")
     _purchase_order_subnav()
     service=SupplyChainService(); perms=current_permissions("SUPPLY_CHAIN")
+    _po_approved_auto_download(service)  # R38: approved from the PO register -> download the approved copy
     profile=current_profile() or {}
     # v4.14.19 resolves the Employee Master relationship live. A role/employee link may
     # be updated by Admin while this browser session is already open; PO creation must
@@ -1999,6 +2000,75 @@ def _batch_po_email_rows(service: SupplyChainService, purchase_order_ids: Sequen
     return rows, blockers
 
 
+PO_AUTO_DOWNLOAD_KEY = "_qcms_r38_po_auto_download"
+
+
+def queue_po_approved_download(po_id: str) -> None:
+    """R38: remember (this session only) that the approved PO PDF must be downloaded on the next run."""
+    import uuid
+    st.session_state[PO_AUTO_DOWNLOAD_KEY] = {"po_id": str(po_id), "nonce": uuid.uuid4().hex}
+
+
+def po_download_file_name(header: Mapping[str, Any]) -> str:
+    """R38: "<PO no>.pdf", or "<PO no>_Amd<n>.pdf" for an amended PO (file-system safe)."""
+    number = str((header or {}).get("po_number") or "Purchase_Order").strip() or "Purchase_Order"
+    try:
+        amd = int(float((header or {}).get("amendment_no") or 0))
+    except (TypeError, ValueError):
+        amd = 0
+    name = f"{number}_Amd{amd}" if amd > 0 else number
+    import re
+    return re.sub(r'[\\/:*?"<>|]+', "-", name) + ".pdf"
+
+
+def po_auto_download_html(pdf: bytes, file_name: str, nonce: str) -> str:
+    """Tiny HTML/JS snippet that clicks a base64 data-URL anchor once (per nonce) to download the PDF."""
+    import base64
+    import json
+    b64 = base64.b64encode(pdf).decode("ascii")
+    name = json.dumps(str(file_name or "Purchase_Order.pdf"))
+    tag = json.dumps(f"qcms-po-dl-{nonce}")
+    return (
+        "<script>(function(){var tag=" + tag + ";try{if(window.parent&&window.parent.sessionStorage.getItem(tag))return;"
+        "window.parent.sessionStorage.setItem(tag,'1');}catch(e){}"
+        "var b64='" + b64 + "';var name=" + name + ";"
+        "function fire(win){var doc=win.document,href;try{var bin=win.atob(b64),n=bin.length,u=new Uint8Array(n);"
+        "for(var i=0;i<n;i++){u[i]=bin.charCodeAt(i);}href=win.URL.createObjectURL(new win.Blob([u],{type:'application/pdf'}));}"
+        "catch(e){href='data:application/pdf;base64,'+b64;}"
+        "var a=doc.createElement('a');a.href=href;a.download=name;a.style.display='none';doc.body.appendChild(a);a.click();"
+        "setTimeout(function(){a.remove();try{win.URL.revokeObjectURL(href);}catch(e){}},4000);}"
+        "try{fire(window.parent);}catch(e){fire(window);}})();</script>"
+    )
+
+
+def _po_approved_auto_download(service: SupplyChainService) -> None:
+    pending = st.session_state.pop(PO_AUTO_DOWNLOAD_KEY, None)
+    if not isinstance(pending, dict) or not pending.get("po_id"):
+        return
+    po_id = str(pending["po_id"])
+    try:
+        header = service.purchase_order(po_id) or {}
+        if str(header.get("approval_status") or "").upper() != "APPROVED":
+            return
+        from core.customer_privacy import supplier_safe_po
+        # R38: the downloaded copy is the supplier-safe print (no customer references), same as the supplier e-mail.
+        safe_header, safe_items = supplier_safe_po(header, service.purchase_order_items_for_print(po_id))
+        pdf = purchase_order_pdf_bytes(safe_header, safe_items)
+    except Exception as exc:
+        st.warning(f"The approved PO copy could not be generated for download: {db_message(exc)}")
+        return
+    file_name = po_download_file_name(header)
+    try:
+        import streamlit.components.v1 as components
+        components.html(po_auto_download_html(pdf, file_name, str(pending.get("nonce") or po_id)), height=0)
+    except Exception:
+        pass
+    st.success(f"Purchase Order **{header.get('po_number')}** approved - a copy is downloading to this computer. "
+               "If the browser blocked it, use the button below.", icon=":material/download:")
+    st.download_button("Download approved Purchase Order PDF", pdf, file_name=file_name, mime="application/pdf", type="primary",
+                       icon=":material/picture_as_pdf:", width="stretch", key=f"po_approved_auto_dl_{po_id}")
+
+
 def _po_approval_release_panel(service: SupplyChainService, po_id: str, header: Mapping[str, Any], perms: Mapping[str, Any], *, route_allows_user: bool, key: str) -> None:
     """R27: preview the PO with the chosen print sections BEFORE approving, and decide whether the
     approved PO is emailed to the supplier now or later."""
@@ -2054,6 +2124,8 @@ def _po_approval_release_panel(service: SupplyChainService, po_id: str, header: 
                 result = notifier.dispatch([row] if row else [])
                 sent = bool(row) and not result.get("error")
             service.ensure_purchase_order_confirmation(po_id)
+            # R38: the approver's own browser downloads a copy of the approved PO automatically after the rerun.
+            queue_po_approved_download(po_id)
             save_success_popup(
                 "Purchase Order approved and emailed to the supplier with the controlled PO PDF." if sent else
                 ("Purchase Order approved. Email was requested - check My Sent Emails / outbox status." if send_now and "@" in to_email else
@@ -2435,6 +2507,7 @@ def render_purchase_order_approval_page() -> None:
     page_header("Purchase Order · Approval / Supplier Confirmation", "Controlled approval and downstream supplier acknowledgement. Supplier Confirmation never blocks PO editing.", "Supply Chain")
     _purchase_order_subnav()
     service = SupplyChainService(); perms = current_permissions("SUPPLY_CHAIN")
+    _po_approved_auto_download(service)  # R38
     profile = current_profile() or {}
     login_employee_id = current_employee_id(refresh=True)
     supplier_labels = {str(r["id"]): with_status(party_label(r), r) for r in service.suppliers()}

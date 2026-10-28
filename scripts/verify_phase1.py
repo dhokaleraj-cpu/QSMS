@@ -140,13 +140,14 @@ paths = re.findall(r'url_path="([^"]+)"', app_text)
 expected_paths = {
     "dashboard", "deployment-diagnostics", "masters", "company-branch-entry", "company-branch-records", "rmtc-entry", "rmtc-approved-worksheet", "inward-entry", "osp-home", "supply-chain-home", "supply-customer-orders", "supply-opening-stock", "supply-rm-procurement", "supply-purchase-orders", "supply-po-order-list", "supply-po-edit", "supply-po-pdf", "supply-po-approval", "supply-rm-receipt", "supply-rm-dispatch", "supply-forging", "supply-downstream", "supply-traceability", "supply-order-mis", "npd-process-flow", "npd-status", "apqp", "qc-tools", "qc-calculation-records", "complaints-home", "customer-complaint", "supplier-complaint", "customer-complaint-register", "supplier-complaint-register", "complaint-email-settings", "complaint-analysis", "complaint-records", "calibration-validation", "standard-room-inspection", "inspection-home", "records-center", "heat-ledger",
     "reports-home", "heat-transaction-report", "osp-balance-report", "supply-chain-report", "rmtc-report", "inward-report", "dimensional-report", "metlab-report", "complaints-report", "traceability-report", "npd-report", "apqp-report", "qc-report", "inspection-layout-report", "standards-report", "templates",
-    "part-entry", "part-records", "process-entry", "process-records", "grade-entry", "grade-records",
+    "part-entry", "part-records", "ecn-register", "process-entry", "process-records", "grade-entry", "grade-records",
     "reference-entry", "reference-records", "employee-entry", "employee-records",
     "user-access", "email-settings", "master-import", "standards-entry", "standards-records", "my-account", "about", "notifications", "licence-company", "stawn-developer", "rmtc-part", "rmtc-records", "rmtc-approval", "inward-records",
     "osp-material-out", "osp-sample-receipt", "osp-inward", "osp-dimensional", "osp-metlab", "osp-records",
     "inspection-layout-entry", "inspection-layout-records", "dimensional-entry",
     "dimensional-records", "metlab-entry", "metlab-records", "bend-test-entry", "bend-test-records", "bend-test-report", "global-search", "kpi-dashboards", "kpi-details", "kpi-drilldown", "system-settings", "email-send", "email-groups", "email-my-settings", "email-sent", "bend-layout-entry", "report-builder", "master-lists", "print-designer", "inventory-reports",
     "indirect-purchase", "indirect-requisition", "indirect-po", "indirect-po-list", "indirect-po-approval", "indirect-inward", "indirect-items", "indirect-stock",
+    "ppap-home", "ppap-package", "ppap-templates",  # R38 PPAP (Engineering → PPAP)
 }
 if set(paths) != expected_paths or len(paths) != len(expected_paths):
     errors.append(f"Expected {len(expected_paths)} unique registered pages, found {paths}")
@@ -1300,6 +1301,22 @@ if not all(token in v41448_ui for token in ('st-key-qcms_auth_read', 'max-height
     errors.append("v4.14.48 auth bridge zero-height CSS guard is incomplete")
 if not all(token in v41448_test for token in ('test_watermark_is_exactly_five_percent_background_and_unobtrusive', 'test_single_purchase_order_lookup_enriches_real_approver_employee_name', 'test_android_workflow_builds_every_main_release_and_is_manually_runnable')):
     errors.append("v4.14.48 focused regression tests are incomplete")
+# R38 (agent C): Part Processes section, ECN on drawing replacement, ECN / PCN register under Engineering
+_r38c = {name: (ROOT / name).read_text(encoding="utf-8") if (ROOT / name).exists() else "" for name in (
+    "core/part_process_service.py", "core/ecn_service.py", "core/ecn_pdf.py", "app_pages/ecn.py", "app_pages/part_master.py")}
+if not all(token in _r38c["core/part_process_service.py"] for token in ("def mandatory_processes(", "qcms_activate_part_process_document_revision", "PROCESS_SPEC")):
+    errors.append("R38 Part process service (mandatory_processes / process document revisions) is incomplete")
+if not all(token in _r38c["core/ecn_service.py"] for token in ('"PENDING_APPROVAL"', '"DISAPPROVED"', '"COMPLETED"', "def release_with_ecn(", "FSI/806/F05")):
+    errors.append("R38 ECN / PCN service status flow is incomplete")
+if not all(token in _r38c["core/ecn_pdf.py"] for token in ("def build_ecn_pdf(", "def build_ecn_xlsx(", "SUPPORTING DOCUMENTS ATTACHED", "FSI USE ONLY")):
+    errors.append("R38 ECN / PCN print (FSI/806/F05 PDF + Excel) is incomplete")
+if not all(token in _r38c["app_pages/ecn.py"] for token in ("def render(", "def render_part_processes(", "Raise PCN", "Submit ECN for Approval & Release Revision")):
+    errors.append("R38 ECN register / Part Processes UI is incomplete")
+if not all(token in _r38c["app_pages/part_master.py"] for token in ("PART PROCESSES & DRAWINGS", '_render_pending_ecn(repo, existing, "PART_DRAWING", perms)', "from app_pages.ecn import")):
+    errors.append("R38 Part Master is not wired to Part Processes / ECN on drawing replacement")
+if not all(token in _r38c["core/part_process_service.py"] for token in ("def part_applicable_sections(", "CASE_DEPTH", "ULTRASONIC")) \
+        or "def notify_ecn_created(" not in _r38c["core/ecn_service.py"] or "def save_actions(" not in _r38c["core/ecn_service.py"]:
+    errors.append("R38 (D) applicable sections helper / ECN actions / ECN_CREATED notification missing")
 
 report = {
     "release": "QCMS 4.14.49 Android Single Native V1.2 Drawer Recovery",

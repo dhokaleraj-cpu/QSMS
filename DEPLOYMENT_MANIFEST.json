@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R37b",
+  "release_revision": "R38",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -649,5 +649,22 @@
     "po_print_amendment_caption_every_page_and_amendment_history",
     "po_print_all_price_revision_rows",
     "updater_r8_test_timeout_fix"
+  ],
+  "r38_changes": [
+    "rmtc_qr_on_approval_label_pdf_print_and_quality_email",
+    "horizontal_chemistry_and_jominy_grids_with_mm_row",
+    "rmtc_and_part_master_sections_applicable",
+    "ppap_document_manager_linked_to_apqp",
+    "ppap_due_emails_package_send_zip_download",
+    "header_stawn_icon_fix_licensee_logo_right",
+    "version_only_in_user_details",
+    "developer_login_cover_photo",
+    "email_subject_department_prefix",
+    "po_auto_download_on_approval",
+    "employee_photo_reporting_escalation_view",
+    "part_processes_drawings_specs_revisions",
+    "ecn_pcn_on_drawing_replacement_fsi_806_f05",
+    "osp_material_out_and_challan_merged",
+    "edge_function_auto_deploy_from_updater"
   ]
 }

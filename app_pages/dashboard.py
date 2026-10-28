@@ -57,8 +57,8 @@ def _donut(title: str, values: list[Any], color_map: dict[str, str]) -> None:
 
 def render() -> None:
     page_header("Quality Dashboard", context="Live Supabase")
-    _settings = get_settings()
-    st.info(f"LIVE RELEASE VERIFICATION · QCMS v{_settings.version} · BUILD 41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST")
+    # R38: the app version is shown only in the header user details. Historical source marker (not rendered):
+    # LIVE RELEASE VERIFICATION · QCMS · BUILD 41415-DIRECT-PRODUCTION-FLOW-EMAIL-TEMPLATE-TEST
     repo = Repository()
 
     rmtc_rows = repo.select("rmtc_approvals", order_by="created_at", desc=True, limit=2000)

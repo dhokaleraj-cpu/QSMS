@@ -1136,3 +1136,52 @@ def render_apqp() -> None:
                 help_text="Deletes the selected APQP project and its linked APQP gates/documents. Current QCMS password is required.",
             ):
                 st.rerun()
+
+    # R38: PPAP Document Manager linked to this APQP project (progress + open / create).
+    _render_apqp_ppap_link(repo, project, perms, parts)
+
+
+def _render_apqp_ppap_link(repo: Repository, project: Mapping[str, Any], perms: Mapping[str, bool], parts: list[dict]) -> None:
+    from core.ppap_service import OPEN_REQUEST_KEY, ROUTE_PACKAGE, PpapService, element_state, package_progress
+    project_id = str((project or {}).get("id") or "")
+    if not project_id:
+        return
+    service = PpapService(repo)
+    with stage_section("C", "PPAP DOCUMENT MANAGER", "PPAP packages of this APQP project: element progress, overdue documents and customer submission.", key="npd_apqp_render_apqp_c"):
+        try:
+            packages = service.packages_for_apqp(project_id)
+            elements = service.all_elements([str(p["id"]) for p in packages]) if packages else []
+        except Exception as exc:
+            st.error(db_message(exc))
+            return
+        pages = st.session_state.get("_qsms_pages") or {}
+        if not packages:
+            st.caption("No PPAP package is linked to this APQP project yet.")
+        today = date.today()
+        for package in packages:
+            rows = [e for e in elements if str(e.get("package_id")) == str(package["id"])]
+            progress = package_progress(rows)
+            overdue = sum(element_state(e, today) == "overdue" for e in rows)
+            cols = st.columns([2.2, 1.2, 1.4, 1.0, 1.0, 1.2], gap="small", vertical_alignment="center")
+            cols[0].markdown(f"**{safe(package.get('package_no'))}** · PPAP {safe(package.get('customer_ppap_no') or '-')}")
+            cols[1].markdown(status_chip(package.get("status")), unsafe_allow_html=True)
+            cols[2].progress(min(1.0, progress["percent"] / 100.0), text=f"{progress['percent']:.0f}% · {progress['completed']}/{progress['applicable']}")
+            cols[3].markdown(f":red[**{overdue} overdue**]" if overdue else "0 overdue")
+            cols[4].markdown(str(package.get("psw_status") or "").replace("_", " ").title())
+            if cols[5].button("Open PPAP", key=f"apqp_open_ppap_{package['id']}", icon=":material/folder_zip:", width="stretch"):
+                st.session_state[OPEN_REQUEST_KEY] = str(package["id"])
+                if ROUTE_PACKAGE in pages:
+                    st.switch_page(pages[ROUTE_PACKAGE])
+        if st.button("Create PPAP package from this APQP project", key=f"apqp_create_ppap_{project_id}", icon=":material/add_circle:",
+                     disabled=not perms.get("can_create"), width="stretch"):
+            try:
+                created = service.create_package(service.header_from_apqp(project, parts),
+                                                 default_due=_optional_date(project.get("target_submission_date")))
+                save_success_popup(f"PPAP package {created.get('package_no')} created from APQP project {project.get('project_code')}.", queue_for_rerun=True)
+                st.session_state[OPEN_REQUEST_KEY] = str(created.get("id") or "")
+                if ROUTE_PACKAGE in pages:
+                    st.switch_page(pages[ROUTE_PACKAGE])
+                st.rerun()
+            except Exception as exc:
+                st.error(db_message(exc))
+        st.caption("Open the package in **Engineering → PPAP → PPAP Package** to upload documents, assign due dates / responsible employees and send the package to the customer.")

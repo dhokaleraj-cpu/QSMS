@@ -184,6 +184,19 @@ preview_button("parts", "p1", key="pv", record={"id": "p1", "updated_at": "x"})
 
 
 def test_pdf_actions_preview_and_download():
+    import sys
+    saved = {m: sys.modules.get(m) for m in ("core.osp_challan_pdf", "core.indirect_po_pdf")}
+    try:
+        _run_pdf_actions_preview_and_download()
+    finally:
+        for name, mod in saved.items():
+            if mod is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = mod
+
+
+def _run_pdf_actions_preview_and_download():
     from streamlit.testing.v1 import AppTest
     app = AppTest.from_string(APP_SCRIPT % str(ROOT)).run(timeout=90)
     assert not app.exception, app.exception

@@ -19,6 +19,7 @@ MODULES = (
     ("DIMENSIONAL_REPORT", "Dimensional Report"),
     ("METLAB_REPORT", "MetLAB Report"),
     ("NPD_APQP", "NPD & APQP"),
+    ("PPAP", "PPAP"),  # R38: PPAP packages / documents (falls back to NPD & APQP rights until configured)
     ("QC_CALCULATION_TOOLS", "QC Calculation Tools"),
     ("COMPLAINT_MANAGEMENT", "Complaint Management"),
     ("CALIBRATION_VALIDATION", "Calibration & Validation"),
@@ -75,7 +76,7 @@ def _legacy_role_permissions(profile: Mapping[str, Any] | None, module_key: str)
         write = role in {"PROCUREMENT", "SUPPLY_CHAIN", "MANAGEMENT"}
     elif module_key in {"RMTC_ENTRY", "MATERIAL_INWARD", "DIMENSIONAL_REPORT", "METLAB_REPORT", "OSP_TRANSACTIONS"}:
         write = role in quality_roles | {"PRODUCTION", "MANAGEMENT"}
-    elif module_key == "NPD_APQP":
+    elif module_key in {"NPD_APQP", "PPAP"}:
         write = role in quality_roles | {"PRODUCTION", "BUSINESS_DEVELOPMENT", "MANAGEMENT", "MASTER_DATA"}
     elif module_key == "CALIBRATION_VALIDATION":
         write = role in quality_roles | {"MANAGEMENT", "MASTER_DATA"}

@@ -33,6 +33,63 @@ def _normalize_department(value: Any) -> str:
 
 
 
+# R38: e-mail subjects start with the related Department instead of "QCMS" ("Quality · RMTC approval pending · ...").
+DEPARTMENT_LABELS = {
+    "quality": "Quality", "qa": "Quality", "qc": "Quality", "metlab": "MetLAB", "lab": "MetLAB",
+    "supplychain": "Supply Chain", "scm": "Supply Chain", "purchase": "Purchase", "procurement": "Purchase",
+    "stores": "Stores", "store": "Stores", "npd": "NPD", "rd": "R & D", "engineering": "Engineering",
+    "production": "Production", "management": "Management", "admin": "Admin", "administration": "Admin",
+    "hr": "HR", "accounts": "Accounts", "marketing": "Marketing", "businessdevelopment": "Business Development",
+    "maintenance": "Maintenance", "dispatch": "Dispatch",
+}
+# event / module key prefix -> department (used when no route / context department is known)
+EVENT_DEPARTMENTS = (
+    ("RMTC", "Quality"), ("METLAB", "MetLAB"), ("LAB_", "MetLAB"), ("DIMENSIONAL", "Quality"), ("INSPECTION", "Quality"),
+    ("COMPLAINT", "Quality"), ("CUSTOMER_COMPLAINT", "Quality"), ("SUPPLIER_COMPLAINT", "Quality"), ("CALIBRATION", "Quality"),
+    ("GAUGE", "Quality"), ("PPAP", "Quality"), ("AUDIT", "Quality"), ("SETUP", "Quality"), ("OSP_SAMPLE", "Quality"),
+    ("NPD", "NPD"), ("APQP", "NPD"), ("ECN", "NPD"), ("PART_PROCESS", "NPD"),
+    ("INDIRECT", "Purchase"), ("PURCHASE", "Purchase"), ("PO_CONFIRMATION", "Purchase"),
+    ("PO_", "Supply Chain"), ("RM_", "Supply Chain"), ("FORGING", "Supply Chain"), ("CUSTOMER_ORDER", "Supply Chain"),
+    ("SUPPLY", "Supply Chain"), ("OSP", "Supply Chain"),
+    ("MATERIAL_INWARD", "Stores"), ("INWARD", "Stores"), ("STORE", "Stores"), ("INVENTORY", "Stores"),
+    ("EMAIL_SERVER", "Admin"), ("DELETE", "Admin"), ("DELETION", "Admin"), ("USER", "Admin"), ("LICENCE", "Admin"),
+)
+_QCMS_SUBJECT_PREFIX = re.compile(r"^\s*(?:STAWN\s+)?QCMS\s*(?:[·:|\-–—]\s*)", re.IGNORECASE)
+
+
+def department_label(value: Any) -> str:
+    raw = " ".join(str(value or "").split())
+    if not raw or _normalize_department(raw) in {"qcmsteam", "qcms", "all", "none"}:
+        return ""
+    known = DEPARTMENT_LABELS.get(_normalize_department(raw))
+    if known:
+        return known
+    return raw.title() if raw.isupper() and len(raw) > 3 else raw
+
+
+def event_department(event_key: Any) -> str:
+    key = str(event_key or "").strip().upper()
+    for prefix, department in EVENT_DEPARTMENTS:
+        if key.startswith(prefix):
+            return department
+    return ""
+
+
+def department_subject(subject: Any, department: Any = "", event_key: Any = "") -> str:
+    """Every notification subject starts with the related department: a leading "QCMS ·" is replaced by it, any other
+    subject gets it in front (unless it already starts with a department label). No department known -> unchanged."""
+    text = str(subject or "").strip()
+    label = department_label(department) or event_department(event_key)
+    if not label or not text:
+        return text
+    if _QCMS_SUBJECT_PREFIX.match(text):
+        return f"{label} · " + _QCMS_SUBJECT_PREFIX.sub("", text, count=1)
+    head = text.split("·", 1)[0].strip()
+    if "·" in text and (_normalize_department(head) in DEPARTMENT_LABELS or head in set(DEPARTMENT_LABELS.values())):
+        return text
+    return f"{label} · {text}"
+
+
 def _quantity_text(value: Any) -> str:
     try:
         number = float(value or 0)
@@ -522,7 +579,8 @@ class NotificationService:
             "department": str((route or {}).get("department") or ""),
             "next_stage": enriched.get("next_stage"),
             "template_key": str((template or {}).get("template_key") or (route or {}).get("template_key") or event),
-            "subject": _template_text(subject_template, enriched) if subject_template else f"QCMS · {event.replace('_', ' ').title()}",
+            "subject": department_subject(_template_text(subject_template, enriched) if subject_template else f"QCMS · {event.replace('_', ' ').title()}",
+                                          enriched.get("department") or (route or {}).get("department"), event),
             "include_supplier": supplier_flag,
         }
 
@@ -603,6 +661,7 @@ class NotificationService:
             final_body = f"QCMS workflow notification\nDocument: {render_ctx.get('document_no') or '-'}\nNext stage: {render_ctx.get('next_stage') or '-'}"
         if outside:
             final_subject, final_body = self._mask_customer_text(final_subject, render_ctx, enriched), self._mask_customer_text(final_body, render_ctx, enriched)
+        final_subject = department_subject(final_subject, enriched.get("department") or (route or {}).get("department"), event)
 
         pdf_flag = bool((template or {}).get("include_generated_pdf", True)) if include_generated_pdf is None else bool(include_generated_pdf)
         docs_flag = bool((template or {}).get("include_record_attachments", True)) if include_record_attachments is None else bool(include_record_attachments)

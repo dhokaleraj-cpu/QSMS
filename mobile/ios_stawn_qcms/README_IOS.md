@@ -1,7 +1,12 @@
-# STAWN QCMS for iPhone and iPad (native SwiftUI app) — v1.2.0 (build 3)
+# STAWN QCMS for iPhone and iPad (native SwiftUI app) — v1.3.0 (build 4)
 
 Universal native app (iPhone + iPad, iOS / iPadOS 16 or newer). Same Supabase login, data, permissions (RLS) and
 print layouts as the website and the Android app. Only the publishable key is in the app.
+
+## New in v1.3.0 (build 4, R38)
+- **Horizontal chemistry and Jominy grids**: elements and Jominy distances are columns; Jominy shows the inch label
+  (J5/16") and a Distance (mm) row (n/16 x 25.4 mm, J5/16" = 7.94 mm). RMTC, MetLAB, Material Grade and Part Master record
+  views and print PDFs; wide grids wrap into bands that fit A4 (ChemGrid.swift).
 
 ## New in v1.2.0 (build 3, R37)
 - **KPI drill-down**: tap any KPI card to list the records behind the number (`qcms_kpi_records`); tap a record to open it
@@ -61,7 +66,7 @@ The app already contains the Push Notifications entitlement (`STAWNQCMS/STAWNQCM
    (APNs production — Xcode re-signs `aps-environment` to *production* when distributing). Keep the `.p8` file private.
 
 ## Build and install (Mac with Xcode 15 or newer)
-1. `cd ~/QSMS/mobile/ios_stawn_qcms && ./BUILD_STAWN_QCMS_iOS.command` (or `python3 make_project.py 1.2.0 3` to only regenerate) → generates the Xcode project, runs a build check and opens Xcode.
+1. `cd ~/QSMS/mobile/ios_stawn_qcms && ./BUILD_STAWN_QCMS_iOS.command` (or `python3 make_project.py 1.3.0 4` to only regenerate) → generates the Xcode project, runs a build check and opens Xcode.
 2. Xcode → target **STAWNQCMS** → Signing & Capabilities → Team = your Apple Developer team (bundle id `com.stawnprecision.qcms`).
 3. Connect the iPhone / iPad, choose it at the top, press **Run**. (First time on the device: Settings → Privacy & Security → Developer Mode → On.)
 4. For colleagues: create the app in App Store Connect (bundle id `com.stawnprecision.qcms`, name STAWN QCMS), then

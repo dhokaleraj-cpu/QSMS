@@ -1,4 +1,5 @@
 import UIKit
+import CoreImage
 
 /// Builds the website's controlled reports (core/reporting.py) from the same Supabase rows the website reads.
 /// Swift port of the Android RptReports: MetLAB, Bend Test, Dimensional, Material Inward, RMTC, Complaint,
@@ -201,9 +202,8 @@ enum RptReports {
         let jom = J.rows(results["jominy_rows"])
         if !jom.isEmpty {
             d.sub("HARDNESS / JOMINY TRAVERSE")
-            var jr: [[String]] = [row("Distance", "mm", "Min HRC", "Max HRC", "RMTC HRC", "MetLAB HRC", "Result", "Remark")]
-            for r in jom { jr.append(row(r["distance_label"], r["distance_mm"], r["minimum_hrc"], r["maximum_hrc"], r["rmtc_actual_hrc"], r["actual_value"], r["result"], r["remarks"])) }
-            d.grid(jr, [20, 17, 22, 22, 25, 28, 22, 38], 6)
+            let jr = jominyHorizontal(jom, [("Min HRC", "minimum_hrc"), ("Max HRC", "maximum_hrc"), ("RMTC HRC", "rmtc_actual_hrc"), ("MetLAB HRC", "actual_value"), ("Result", "result"), ("Remark", "remarks")])
+            for band in ChemGrid.bands(jr) { d.grid(band, spread(d, band[0].count, 26)) }
         }
         d.keep(70)
         d.bar("MICROSTRUCTURE PHOTOGRAPHS")
@@ -300,6 +300,80 @@ enum RptReports {
         return alias[t] ?? t
     }
 
+    // R38: horizontal chemistry / Jominy grids (elements / distances are columns; Jominy shows inch + mm).
+    static func orderedChem(_ chem: [Row]) -> [Row] {
+        var rank: [String: Int] = [:]
+        for (i, e) in chemOrder.enumerated() { rank[chemKey(e)] = i }
+        var normal: [Row] = [], extras: [Row] = [], ratio: [Row] = []
+        for r in chem {
+            let k = chemKey(r["element"])
+            if k == ratioKey { ratio.append(r) } else if rank[k] != nil { normal.append(r) } else { extras.append(r) }
+        }
+        normal.sort { (rank[chemKey($0["element"])] ?? 0, s($0["element"])) < (rank[chemKey($1["element"])] ?? 0, s($1["element"])) }
+        extras.sort { s($0["element"]) < s($1["element"]) }
+        return normal + extras + ratio
+    }
+
+    static func chemHorizontal(_ chem: [Row], _ lines: [(String, String)]) -> [[String]] {
+        let ordered = orderedChem(chem)
+        var t: [[String]] = [["Element"] + ordered.map { r -> String in
+            let e = s(r["element"]); return chemKey(e) == ratioKey ? "Al/N2 Ratio" : (e.contains("%") ? e : e + "%") }]
+        for (label, field) in lines {
+            t.append([label] + ordered.map { r -> String in let v = r[field]; return !present(v) || raw(v).isEmpty ? "-" : raw(v) })
+        }
+        return t
+    }
+
+    static func sixteenth(_ r: Row) -> Int {
+        return ChemGrid.sixteenthOf(r)  // R38: J5/16", 5/16", J 5, J3, 5 or distance_mm
+    }
+
+    /// 1/16 inch = 1.5875 mm, two decimals half-up (J2/16" = 3.18 mm).
+    static func jominyMm(_ n: Int) -> String {
+        guard n > 0 else { return "-" }
+        var value = Decimal(n) * Decimal(string: "1.5875")!, out = Decimal()
+        NSDecimalRound(&out, &value, 2, .plain)
+        return String(format: "%.2f", NSDecimalNumber(decimal: out).doubleValue)
+    }
+
+    static func jominyHorizontal(_ rows: [Row], _ lines: [(String, String)]) -> [[String]] {
+        let ordered = rows.sorted { (sixteenth($0) == 0 ? 999 : sixteenth($0)) < (sixteenth($1) == 0 ? 999 : sixteenth($1)) }
+        var t: [[String]] = [["Distance (inch)"] + ordered.map { r -> String in let n = sixteenth(r); return n > 0 ? "J\(n)/16\"" : raw(r["distance_label"]) }]
+        t.append(["Distance (mm)"] + ordered.map { r -> String in let n = sixteenth(r); return n > 0 ? jominyMm(n) : raw(r["distance_mm"]) })
+        for (label, field) in lines {
+            t.append([label] + ordered.map { r -> String in
+                var v: Any? = field == "__na" ? (s(r["applicability"]) == "NOT_APPLICABLE" ? "No" : "Yes") : r[field]
+                if field == "actual_value" && (!present(v) || s(v).isEmpty) { v = r["actual_hrc"] }
+                return !present(v) || raw(v).isEmpty ? "-" : raw(v)
+            })
+        }
+        return t
+    }
+
+    static func spread(_ d: RptDoc, _ columns: Int, _ first: CGFloat) -> [CGFloat] {
+        let n = max(2, columns)
+        return [first] + Array(repeating: (d.contentMm - first) / CGFloat(n - 1), count: n - 1)
+    }
+
+    /// R38: QR image (CoreImage) of the public certificate URL of an approved RMTC.
+    static func qrPNG(_ text: String) -> Data? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(text.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let image = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 10, y: 10)),
+              let cg = CIContext().createCGImage(image, from: image.extent) else { return nil }
+        return UIImage(cgImage: cg).pngData()
+    }
+
+    static func rmtcQrUrl(_ id: String, _ record: Row) async -> String {
+        let st = s(record["status"]), disp = s(record["disposition"])
+        guard ["APPROVED", "PARTIALLY_APPROVED"].contains(st), ["ACCEPTED", "ACCEPTED_UNDER_RESERVE"].contains(disp) else { return "" }
+        // R38: login-protected website link (no secret in the QR)
+        let number = s(record["rmtc_number"])
+        guard !number.isEmpty, number != "-" else { return "" }
+        return "https://vf6fa9hrhxquqxmfgyy4wf.streamlit.app/rmtc-records?rmtc=" + Api.enc(number)
+    }
+
     static func chemistryTable(_ d: RptDoc, _ chem: [Row]) {
         var rank: [String: Int] = [:]
         for (i, e) in chemOrder.enumerated() { rank[chemKey(e)] = i }
@@ -325,8 +399,7 @@ enum RptReports {
             }
             t.append(line)
         }
-        let rest = (d.contentMm - 26) / CGFloat(max(1, head.count - 1))
-        d.grid(t, [26] + Array(repeating: rest, count: head.count - 1))
+        for band in ChemGrid.bands(t) { d.grid(band, spread(d, band[0].count, 26)) }  // R38 A2: A4 bands
     }
 
     static func references(_ d: RptDoc, _ results: Row, _ title: String) {
@@ -659,18 +732,16 @@ enum RptReports {
                 vrow("Planned Production Qty pcs", a["planned_production_quantity_pcs"], "Input Weight kg", a["input_weight_kg"], "Planned Steel kg", a["planned_steel_quantity_kg"]),
             ], [25, 37, 27, 43, 27, 35], labelCols: [0, 2, 4], center: false, size: body))
             d.sub("Chemical Composition")
-            var cr: [[String]] = [row("Element", "Minimum", "Maximum", "Actual", "Unit", "Status")]
-            for r in chemistry where s(r["part_id"]) == pid { cr.append(row(r["element"], r["minimum_value"], r["maximum_value"], r["actual_value"], or(r["unit"], "%"), r["result"])) }
-            if cr.count == 1 { cr.append(row("-", "", "", "No chemistry values recorded", "", "NOT_EVALUATED")) }
-            rmtcGrid(d, cr, [24, 31, 31, 39, 19, 50], body, [5])
+            let pchem = chemistry.filter { s($0["part_id"]) == pid }
+            var cr = chemHorizontal(pchem, [("Minimum", "minimum_value"), ("Maximum", "maximum_value"), ("Actual", "actual_value"), ("Status", "result")])
+            if pchem.isEmpty { cr = [row("Element", "-"), row("Actual", "No chemistry values recorded")] }
+            for band in ChemGrid.bands(cr) { rmtcGrid(d, band, spread(d, band[0].count, 22), 7.6, []) }
             d.sub("Jominy Results")
-            var jr: [[String]] = [row("Distance", "mm", "Min HRC", "Max HRC", "Actual", "Actual Status", "Calculated", "Calc. Status", "Applicable")]
-            for r in jominy where s(r["part_id"]) == pid {
-                jr.append(row(r["distance_label"], r["distance_mm"], r["minimum_hrc"], r["maximum_hrc"], r["actual_hrc"], r["result"], r["calculated_hrc"], r["calculated_result"],
-                              s(r["applicability"]) == "NOT_APPLICABLE" ? "No" : "Yes"))
-            }
-            if jr.count == 1 { jr.append(row("-", "", "", "", "", "NOT_EVALUATED", "", "NOT_EVALUATED", "No")) }
-            rmtcGrid(d, jr, [20, 14, 18, 18, 20, 24, 22, 28, 30], 7.6, [5, 7])
+            let pjom = jominy.filter { s($0["part_id"]) == pid }
+            var jr = jominyHorizontal(pjom, [("Min HRC", "minimum_hrc"), ("Max HRC", "maximum_hrc"), ("Actual HRC", "actual_hrc"), ("Actual Status", "result"),
+                                             ("Calculated HRC", "calculated_hrc"), ("Calc. Status", "calculated_result"), ("Applicable", "__na")])
+            if pjom.isEmpty { jr = [row("Distance (inch)", "-"), row("Actual HRC", "No Jominy values recorded")] }
+            for band in ChemGrid.bands(jr) { rmtcGrid(d, band, spread(d, band[0].count, 22), 7.6, []) }
             d.sub("DI / Hardenability")
             rmtcGrid(d, [row("Grain Size ASTM E-112", "Actual DI", "Actual DI Status", "Calculated DI", "Calculated DI Status"),
                          row(a["grain_size"], a["actual_di"], a["actual_di_status"], a["calculated_di"], a["calculated_di_status"])], [42, 32, 42, 32, 46], body, [2, 4])
@@ -693,6 +764,11 @@ enum RptReports {
         d.blocks.append(RptPhotos(photos, cols: 3, maxHmm: 40, slots: true))
         d.keep(44)
         d.bar("RMTC VALIDATION STATUS & FINAL DECISION")
+        let qrUrl = await rmtcQrUrl(id, record)
+        if !qrUrl.isEmpty {
+            d.blocks.append(RptPhotos([RptPhoto(caption: "Material location QR · scan to download the approved certificate", data: qrPNG(qrUrl))], cols: 3, maxHmm: 30))
+            d.blocks.append(RptLabeled([vrow("Material Location QR", qrUrl)], [42, d.contentMm - 42], labelCols: [0], center: false, size: body))
+        }
         if approvals.isEmpty {
             rmtcGrid(d, [row("Validation Check", "Status", "Validation Check", "Status"), row("Record", "NOT_EVALUATED", "Final Decision", "PENDING")], [42, 55, 42, 55], body, [1, 3])
         } else {
@@ -1001,6 +1077,12 @@ enum RptReports {
             let order = child.order.isEmpty ? "" : "&order=\(child.order)"
             guard let rows = try? await api.rows("\(child.table)?select=*&\(child.fk)=eq.\(Api.enc(id))\(order)&limit=2000") else { continue }
             let cfk = await Labels.resolve(child.table, rows: rows, columns: child.cols.map { $0[0] })
+            if ChemGrid.handles(child.table) {  // R38: chemistry / Jominy children print horizontally (inch + mm)
+                for (label, t) in ChemGrid.horizontal(child.table, rows, cfk["part_id"]) where t.count > 1 && t[0].count > 1 {
+                    secs.append((child.title.uppercased() + (label.isEmpty ? "" : " · " + label), .table(t[0], Array(t.dropFirst()))))
+                }
+                continue
+            }
             secs.append((child.title.uppercased(), .table(child.cols.map { $0[1] }, rows.map { r in child.cols.map { Labels.cell($0[0], r[$0[0]], cfk[$0[0]]) } })))
         }
         let number = m.recordTitle(rec)

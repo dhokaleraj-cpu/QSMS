@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,17 @@ from core.part_identity import find_part_conflicts
 from core.selection_labels import customer_standard_label, material_grade_label, part_label, party_label, process_label
 from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_dialog, save_success_popup, section_bar, stage_section, subpage_navigation, template_download_row
 from core.db_errors import db_message
+from core.ecn_service import FORMAT_NO  # R38 ECN / PCN format no. (section J title)
+from app_pages.ecn import (  # R38 Part Processes + ECN / PCN live in app_pages/ecn.py and core/part_process_service.py
+    process_route_print_rows as _process_route_print_rows, queue_pending_ecn as _queue_pending_ecn,
+    render_ecn_register_panel as _render_ecn_register, render_part_processes as _render_part_processes,
+    render_pending_ecn as _render_pending_ecn,
+)
+from core.part_sections import (
+    PART_SECTIONS, SECTION_LABELS, applicable_from_row, filter_print_sections, not_applicable_labels, section_completeness,
+    stored_applicability,
+)
+from core.ui import kpi_grid
 
 DRAWING_TYPES = (
     ("FINISH_DRAWING", "Finish Drawing"),
@@ -527,6 +539,103 @@ def _render_metallurgical_requirements(
         except Exception as exc:
             st.error(db_message(exc))
 
+# ---------------------------------------------------------------------------------------------------------------------
+# R38 · Sections applicable, Part Processes & Drawings, ECN / PCN (format FSI/806/F05)
+# ---------------------------------------------------------------------------------------------------------------------
+# Part Processes & Drawings and ECN / PCN: app_pages/ecn.py (UI) + core/part_process_service.py / core/ecn_service.py.
+
+
+def _na_note(section_key: str) -> None:
+    st.info(
+        f"{SECTION_LABELS.get(section_key, section_key)} is marked NOT APPLICABLE for this Part "
+        "(Section A · Sections Applicable). It is skipped in entry, completeness checks, related records and print layouts."
+    )
+
+
+class _SectionNotApplicable(Exception):
+    """Raised to skip the body of a Part Master section marked Not Applicable (caught by ``_section_gate``)."""
+
+
+@contextmanager
+def _section_gate():
+    try:
+        yield
+    except _SectionNotApplicable:
+        pass
+
+
+def _require_section(applicable: dict[str, bool], section_key: str) -> None:
+    if not applicable.get(section_key, True):
+        _na_note(section_key)
+        raise _SectionNotApplicable(section_key)
+
+
+def _metallurgical_na_note(existing: dict) -> None:
+    """R38: list the metallurgical keys marked Not Applicable (their requirement rows are skipped in prints / RMTC)."""
+    try:
+        from core.part_process_service import METALLURGICAL_SECTION_KEYS, PART_SECTION_LABELS, part_applicable_sections
+        off = [PART_SECTION_LABELS[k] for k in METALLURGICAL_SECTION_KEYS if k not in part_applicable_sections(existing)]
+    except Exception:
+        off = []
+    if off:
+        st.caption("Not applicable for this Part (rows of these characteristics are omitted from prints / RMTC / MetLAB): " + ", ".join(off))
+
+
+def _render_section_applicability(repo: Repository, existing: dict, writable: bool) -> dict[str, bool]:
+    """Per-Part 'Sections applicable' checklist (parts.applicable_sections text[] + mirrored parts.section_applicability).
+
+    Returns the legacy lower-case mapping used by the section gates below (core.part_sections keys)."""
+    from core.part_process_service import (
+        PART_SECTION_REGISTRY, legacy_applicability, not_applicable_section_labels, part_applicable_sections, sections_storage,
+    )
+    part_id = str(existing.get("id") or "")
+    selected = part_applicable_sections(existing)
+    current = applicable_from_row({"section_applicability": legacy_applicability(selected)})
+    section_bar("SECTIONS APPLICABLE", "Untick a section that does not apply to this Part.")
+    st.caption(
+        "Not-applicable sections are hidden in Part Master entry, skipped in completeness / validation checks and omitted "
+        "from related records, RMTC worksheets, MetLAB requirements, reports and print layouts. All sections are applicable by default."
+    )
+    with st.form(f"part_sections_form_{part_id}"):
+        chosen: set[str] = set()
+        for group, title in (("PART", "Part Master data sections"), ("METALLURGICAL", "Metallurgical requirements (RMTC / MetLAB)")):
+            st.markdown(f"**{title}**")
+            items = [row for row in PART_SECTION_REGISTRY if row[2] == group]
+            cols = st.columns(4, gap="small")
+            for index, (key, label, _group, _legacy) in enumerate(items):
+                if cols[index % 4].checkbox(label, value=key in selected, key=f"part_section_{key}_{part_id}", disabled=not writable):
+                    chosen.add(key)
+        save_sections = st.form_submit_button("Save Sections Applicable", type="primary", disabled=not writable, width="stretch")
+    if save_sections:
+        try:
+            payload = sections_storage(chosen)
+            try:
+                repo.update("parts", part_id, payload)
+            except Exception as exc:  # database without the R38 step-3 column: keep the legacy jsonb choice
+                if "applicable_sections" not in str(exc):
+                    raise
+                repo.update("parts", part_id, {"section_applicability": stored_applicability(payload["section_applicability"])})
+            off = not_applicable_section_labels(chosen)
+            save_success_popup(
+                "Sections Applicable saved." + (f" Not applicable: {', '.join(off)}." if off else " All sections are applicable."),
+                queue_for_rerun=True,
+            )
+            st.rerun()
+        except Exception as exc:
+            st.error(db_message(exc))
+    status_rows = section_completeness(repo, part_id, current)
+    missing = [row["label"] for row in status_rows if row["status"] == "MISSING"]
+    portal_table(pd.DataFrame([{
+        "Section": row["label"], "Applicable": "Yes" if row["applicable"] else "No", "Completeness": row["status"],
+    } for row in status_rows]), hide_index=True, width="stretch", height=min(420, 72 + len(status_rows) * 30))
+    if missing:
+        st.warning("Applicable sections without data: " + ", ".join(missing))
+    return current
+
+
+
+
+
 PART_USAGE_TABLES: tuple[tuple[str, str], ...] = (
     ("supply_customer_orders", "Customer Orders / Schedules"),
     ("supply_purchase_order_items", "Purchase Order items"),
@@ -539,6 +648,7 @@ PART_USAGE_TABLES: tuple[tuple[str, str], ...] = (
     ("quality_complaints", "Quality Complaints"),
     ("npd_orders", "NPD Orders"),
     ("ppap_projects", "PPAP / APQP Projects"),
+    ("part_ecns", "Engineering / Process Change Notes"),
 )
 
 
@@ -699,8 +809,10 @@ def render_entry() -> None:
         part_id = str(existing["id"])
         if _admin_part_delete_panel(repo, existing, key=f"delete_part_entry_{part_id}"):
             st.rerun()
+        applicable = _render_section_applicability(repo, existing, writable)
 
-    with stage_section("B", 'CONTROLLED DRAWINGS', 'Drawing Number, Revision Number and Revision Date are revision-controlled. Uploading a new revision automatically makes the previous revision INACTIVE; old drawings remain downloadable in history.', key="part_master_render_entry_b"):
+    with _section_gate(), stage_section("B", 'CONTROLLED DRAWINGS', 'Drawing Number, Revision Number and Revision Date are revision-controlled. Uploading a new revision automatically makes the previous revision INACTIVE; old drawings remain downloadable in history.', key="part_master_render_entry_b"):
+        _require_section(applicable, "controlled_drawings")
         drawing_rows = [
             row for row in repo.select(
                 "document_attachments",
@@ -774,6 +886,16 @@ def render_entry() -> None:
                         width="stretch",
                     ):
                         try:
+                            if current:
+                                # R38: replacing the current revision requires an ECN (form opens below).
+                                if any(str(r.get("document_type")) == dtype and str(r.get("drawing_number") or "").casefold() == drawing_no.strip().casefold()
+                                       and str(r.get("revision") or "").casefold() == revision_no.strip().casefold() for r in drawing_rows):
+                                    raise ValueError("This Drawing Number and Revision Number already exist in revision history.")
+                                _queue_pending_ecn(part_id, {
+                                    "kind": "PART_DRAWING", "part_id": part_id, "document_type": dtype, "document_number": drawing_no.strip(),
+                                    "revision": revision_no.strip(), "revision_date": revision_dt.isoformat(), "current": dict(current),
+                                }, file)
+                                st.rerun()
                             _save_drawing_revision(repo, part_id, dtype, drawing_no, revision_no, revision_dt, file)
                             save_success_popup(
                                 f"{label} {drawing_no} Rev {revision_no} released. Previous revision is now INACTIVE.",
@@ -782,8 +904,10 @@ def render_entry() -> None:
                             st.rerun()
                         except Exception as exc:
                             st.error(db_message(exc))
+        _render_pending_ecn(repo, existing, "PART_DRAWING", perms)
 
-    with stage_section("C", 'DRAWING REVISION HISTORY', 'All released drawings remain traceable. Only the latest revision for each drawing type is ACTIVE.', key="part_master_render_entry_c"):
+    with _section_gate(), stage_section("C", 'DRAWING REVISION HISTORY', 'All released drawings remain traceable. Only the latest revision for each drawing type is ACTIVE.', key="part_master_render_entry_c"):
+        _require_section(applicable, "controlled_drawings")
         if not drawing_rows:
             st.info("No controlled drawing revisions have been released for this Part yet.")
         else:
@@ -822,7 +946,8 @@ def render_entry() -> None:
                 st.error(f"Drawing download unavailable: {exc}")
 
         # Customer Standards / Specifications linked to this Part Master.
-    with stage_section("D", 'CUSTOMER STANDARDS & SPECIFICATIONS', 'Link multiple customer/process standards to this Part. Controlled attachments can be downloaded directly from the Part Master.', key="part_master_render_entry_d"):
+    with _section_gate(), stage_section("D", 'CUSTOMER STANDARDS & SPECIFICATIONS', 'Link multiple customer/process standards to this Part. Controlled attachments can be downloaded directly from the Part Master.', key="part_master_render_entry_d"):
+        _require_section(applicable, "customer_standards")
         all_standards = repo.select("customer_standards", eq={"status": "ACTIVE"}, order_by="standard_code", limit=3000)
         standards = [
             row for row in all_standards
@@ -943,324 +1068,379 @@ def render_entry() -> None:
             ):
                 st.rerun()
 
+    with stage_section("E", 'RAW MATERIAL DETAILS & APPROVED SOURCES', 'Approved Supplier / Steel Mill combinations and raw-material forging parameters are controlled directly in Part Master.', key="part_master_render_entry_e"):
         suppliers = repo.select("parties", contains={"party_types": ["SUPPLIER"]}, eq={"status": "ACTIVE"}, order_by="party_name", limit=1000)
         supplier_map = {str(row["id"]): party_label(row) for row in suppliers}
         supplier_by_name = {name: sid for sid, name in supplier_map.items()}
-
-    with stage_section("E", 'RAW MATERIAL DETAILS & APPROVED SOURCES', 'Approved Supplier / Steel Mill combinations and raw-material forging parameters are controlled directly in Part Master.', key="part_master_render_entry_e"):
-        section_bar('APPROVED SOURCES', 'Select multiple approved Suppliers and Steel Mills for this Part. This replaces the former Reference Master → Approved Sources module.')
-        steel_mills = repo.select('parties', contains={'party_types':['STEEL_MILL']}, eq={'status':'ACTIVE'}, order_by='party_name', limit=1000)
-        steel_map = {str(row['id']): party_label(row) for row in steel_mills}
-        existing_source_links = repo.select('part_supplier_links', eq={'part_id':part_id}, limit=2000)
-        approved_supplier_ids = sorted({str(row.get('supplier_id')) for row in existing_source_links if row.get('supplier_id') and bool(row.get('approved', True))})
-        approved_mill_ids = sorted({str(row.get('steel_mill_id')) for row in existing_source_links if row.get('steel_mill_id') and bool(row.get('approved', True))})
-        sc1,sc2 = st.columns(2,gap='small')
-        selected_suppliers = sc1.multiselect('Approved Suppliers', list(supplier_map), default=[v for v in approved_supplier_ids if v in supplier_map], format_func=lambda v:supplier_map[v], disabled=not writable)
-        selected_mills = sc2.multiselect('Approved Steel Mills', list(steel_map), default=[v for v in approved_mill_ids if v in steel_map], format_func=lambda v:steel_map[v], disabled=not writable)
-        sc1,sc2,sc3,sc4 = st.columns(4,gap='small')
-        supplier_part_number = sc1.text_input('Supplier Part Number', key=f'approved_source_spn_{part_id}')
-        approval_reference = sc2.text_input('Approval Reference', key=f'approved_source_ref_{part_id}')
-        valid_from = sc3.date_input('Valid From', value=date.today(), format='DD-MM-YYYY', key=f'approved_source_from_{part_id}')
-        valid_to = sc4.date_input('Valid To', value=None, format='DD-MM-YYYY', key=f'approved_source_to_{part_id}')
-        if st.button('Save Approved Sources', type='primary', width='stretch', disabled=not writable or not selected_suppliers, key=f'save_approved_sources_{part_id}'):
-            try:
-                wanted={(sid, mid or '') for sid in selected_suppliers for mid in (selected_mills or [''])}
-                existing_by_pair={(str(row.get('supplier_id') or ''),str(row.get('steel_mill_id') or '')):row for row in existing_source_links}
-                for pair,row in existing_by_pair.items():
-                    if pair not in wanted and bool(row.get('approved', True)):
-                        repo.update('part_supplier_links',str(row['id']),{'approved':False})
-                source_def=MASTER_BY_KEY.get('approved_sources')
-                for sid,mid in wanted:
-                    payload={'part_id':part_id,'supplier_id':sid,'steel_mill_id':mid or None,'supplier_part_number':supplier_part_number.strip() or None,'approval_reference':approval_reference.strip() or None,'approved':True,'valid_from':valid_from.isoformat() if valid_from else None,'valid_to':valid_to.isoformat() if valid_to else None}
-                    existing_link=existing_by_pair.get((sid,mid))
-                    if source_def and not existing_link:
-                        payload['source_code']=MasterService(repo).next_master_code(source_def)
-                    if existing_link: repo.update('part_supplier_links',str(existing_link['id']),payload)
-                    else: repo.insert('part_supplier_links',payload)
-                save_success_popup('Approved Part sources saved successfully.', queue_for_rerun=True); st.rerun()
-            except Exception as exc: st.error(db_message(exc))
-        if existing_source_links:
-            portal_table(pd.DataFrame([{
-                'Supplier':supplier_map.get(str(r.get('supplier_id')),''), 'Steel Mill':steel_map.get(str(r.get('steel_mill_id')),''),
-                'Supplier Part No.':r.get('supplier_part_number'),'Approval Reference':r.get('approval_reference'),
-                'Valid From':r.get('valid_from'),'Valid To':r.get('valid_to'),'Approved':bool(r.get('approved'))
-            } for r in existing_source_links]),hide_index=True,width='stretch',height=min(300,80+len(existing_source_links)*34))
-
-        section_bar('RAW MATERIAL DETAILS / FORGING PARAMETERS')
-        raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=200)
-        source_parts = repo.select("parts", eq={"status": "ACTIVE"}, order_by="part_number", limit=5000)
-        source_part_map = {str(row["id"]): part_label(row) for row in source_parts if str(row.get("id")) != part_id}
-        source_part_by_label = {label: source_id for source_id, label in source_part_map.items()}
-        if password_delete_panel(repo=repo, table="part_raw_material_details", rows=raw, labeler=lambda r: f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · {r.get('section_size') or '-'} · {r.get('forging_route') or '-'} · Source {source_part_map.get(str(r.get('source_part_id')), 'Own Part')}", key=f"delete_raw_{part_id}", can_delete=perms["can_archive"], title="Delete Raw Material row"):
-            st.rerun()
-        # Compatibility marker for the pre-v4.14.3 raw-material natural key regression:
-        # ("supplier_id", "material_section_name", "section_size", "forging_route")
-        grade_by_name = {label: gid for gid, label in grade_map.items()}
-        raw_df = pd.DataFrame([{
-            "_raw_id": r.get("id"),
-            "Raw Material Type": r.get("material_section_name") or "Round Black Bar",
-            "Source Raw Forging / Casting Part": source_part_map.get(str(r.get("source_part_id") or ""), ""),
-            "Material Grade": grade_map.get(str(r.get("material_grade_id")), grade_map.get(str(existing.get("material_grade_id")), "")),
-            "Supplier Name / Location": supplier_map.get(str(r.get("supplier_id")), ""),
-            "Supplier RM Item Code": r.get("supplier_rm_item_code") or "",
-            "Supplier Forging Part No.": r.get("supplier_forging_part_number") or "",
-            "HSN / SAC Code": r.get("hsn_sac_code") or existing.get("hsn_sac_code") or "",
-            "Lead Time (Days)": int(r.get("lead_time_days") or 0),
-            "Forging Weight": r.get("forging_weight_kg"),
-            "Gross Weight": r.get("gross_weight_kg"),
-            "Input Weight kg/part": r.get("input_weight_kg") or r.get("gross_weight_kg") or r.get("forging_weight_kg"),
-            "Section Size": r.get("section_size"), "Forging Route": r.get("forging_route"),
-            "Status": r.get("status") or "ACTIVE"
-        } for r in raw], columns=["_raw_id", "Raw Material Type", "Source Raw Forging / Casting Part", "Material Grade", "Supplier Name / Location", "Supplier RM Item Code", "Supplier Forging Part No.", "HSN / SAC Code", "Lead Time (Days)", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
-        # v4.14.32: Raw Material Type is a controlled business list. Keep any legacy
-        # value already stored on a Part visible for safe editing, but do not learn/add
-        # arbitrary new material types from the reusable catalog.
-        legacy_rm_types = [str(r.get("material_section_name") or "").strip() for r in raw if str(r.get("material_section_name") or "").strip()]
-        rm_type_options = list(dict.fromkeys([*RAW_MATERIAL_TYPE_DEFAULTS, *legacy_rm_types]))
-        section_options = _catalog_options(catalog, "part.rm_section", [r.get("section_size") for r in raw])
-        route_options = _catalog_options(catalog, "part.forging_route", [r.get("forging_route") for r in raw])
-        st.caption("Raw Material Type is controlled to: Forging, Round Black Bar, Casting, Bright Bar and Ground Bar. For Forging/Casting, you may link another Part Master as the common raw forging/casting source used to produce this finished Part.")
-        with st.expander("Manage reusable Section Size and Forging Route lists", expanded=False):
-            _catalog_add_control(catalog, "part.rm_section", "Section Size", section_options, f"section_{part_id}", duplicate_word_check=True)
-            _catalog_add_control(catalog, "part.forging_route", "Forging Route", route_options, f"route_{part_id}", duplicate_word_check=True)
-        grid_base_key = f"raw_grid_base_{part_id}"
-        grid_revision_key = f"raw_grid_revision_{part_id}"
-        grid_master_token = hashlib.sha256(repr(raw).encode()).hexdigest()
-        if st.session_state.get(f"raw_grid_token_{part_id}") != grid_master_token:
-            st.session_state[grid_base_key] = raw_df
-            st.session_state[f"raw_grid_token_{part_id}"] = grid_master_token
-            st.session_state[grid_revision_key] = st.session_state.get(grid_revision_key, 0) + 1
-        raw_df = st.session_state[grid_base_key]
-        section_options = sorted(set(section_options + [str(v) for v in raw_df["Section Size"].dropna()]))
-        route_options = sorted(set(route_options + [str(v) for v in raw_df["Forging Route"].dropna()]))
-        with st.container():
-            raw_edit = st.data_editor(
-                raw_df, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"raw_{part_id}_{st.session_state.get(grid_revision_key, 0)}", disabled=not writable,
-                column_config={
-                    "_raw_id": None,
-                    "Raw Material Type": st.column_config.SelectboxColumn(options=rm_type_options or list(RAW_MATERIAL_TYPE_DEFAULTS), required=True, help="Controlled Raw Material Type: Forging, Round Black Bar, Casting, Bright Bar or Ground Bar."),
-                    "Source Raw Forging / Casting Part": st.column_config.SelectboxColumn(options=[""] + list(source_part_by_label), required=False, help="For Forging or Casting only: select another Part Master when its common raw forging/casting is used to manufacture this finished Part. Leave blank when this Part uses its own raw source."),
-                    "Material Grade": st.column_config.SelectboxColumn(options=list(grade_by_name), required=True),
-                    "Supplier Name / Location": st.column_config.SelectboxColumn(options=list(supplier_by_name), required=True),
-                    "Supplier RM Item Code": st.column_config.TextColumn(help="Optional common supplier-facing RM item code. Use the SAME code on different finished Parts when they buy the exact same RM. QCMS can consolidate those sources into one RM PO line while retaining each finished-Part allocation."),
-                    "Supplier Forging Part No.": st.column_config.TextColumn(help="Optional common supplier forging part number. Use the SAME value for different finished Parts when the purchased forging is genuinely identical before downstream machining."),
-                    "HSN / SAC Code": st.column_config.TextColumn(help="Supplier/raw-material specific HSN or SAC. Purchase Orders inherit this value automatically; Part Master header HSN is used only as fallback."),
-                    "Lead Time (Days)": st.column_config.NumberColumn(min_value=0, step=1, required=True, help="Used to calculate the default PO delivery date; it remains editable in the PO."),
-                    "Forging Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
-                    "Gross Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
-                    "Input Weight kg/part": st.column_config.NumberColumn(min_value=0.001, format="%.3f", required=True, help="Steel input required for one production part."),
-                    "Section Size": st.column_config.SelectboxColumn(options=section_options or [""], required=True),
-                    "Forging Route": st.column_config.SelectboxColumn(options=route_options or [""], required=True),
-                    "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
-                },
-            )
-            save_raw = st.button("Save Raw Material Details", type="primary", disabled=not writable, width="stretch")
-        st.caption("Linked rows inherit current Section E values from the selected raw part. Edit those values and approvals on the raw part itself. Select a supplier approved for that raw part.")
-        # The source driver reruns immediately. Re-seed the editor under a new
-        # widget key only when inherited cells differ, preserving other edits.
-        resolved_grid = raw_edit.copy()
-        grid_source_errors = []
-        inherited_columns = {
-            "Supplier RM Item Code": "supplier_rm_item_code", "Supplier Forging Part No.": "supplier_forging_part_number",
-            "HSN / SAC Code": "hsn_sac_code", "Lead Time (Days)": "lead_time_days",
-            "Forging Weight": "forging_weight_kg", "Gross Weight": "gross_weight_kg",
-            "Input Weight kg/part": "input_weight_kg", "Section Size": "section_size", "Forging Route": "forging_route",
-        }
-        for idx, edited_row in raw_edit.iterrows():
-            source_id = source_part_by_label.get(str(edited_row.get("Source Raw Forging / Casting Part") or ""))
-            if not source_id:
-                continue
-            sid = supplier_by_name.get(str(edited_row.get("Supplier Name / Location") or ""))
-            try:
-                if not sid:
-                    raise ValueError("Select a supplier for the linked raw part.")
-                live = effective_link(repo, {"id": part_id}, {"source_part_id": source_id, "supplier_id": sid, "material_section_name": edited_row.get("Raw Material Type")})
-                for column, field in inherited_columns.items():
-                    resolved_grid.at[idx, column] = live.get(field)
-                resolved_grid.at[idx, "Material Grade"] = grade_map.get(str(live.get("material_grade_id")), "")
-                st.caption(f"Linked source {source_part_map.get(source_id)} — current Section E and valid supplier approvals")
+        if applicable["approved_sources"]:
+            section_bar('APPROVED SOURCES', 'Select multiple approved Suppliers and Steel Mills for this Part. This replaces the former Reference Master → Approved Sources module.')
+            steel_mills = repo.select('parties', contains={'party_types':['STEEL_MILL']}, eq={'status':'ACTIVE'}, order_by='party_name', limit=1000)
+            steel_map = {str(row['id']): party_label(row) for row in steel_mills}
+            existing_source_links = repo.select('part_supplier_links', eq={'part_id':part_id}, limit=2000)
+            approved_supplier_ids = sorted({str(row.get('supplier_id')) for row in existing_source_links if row.get('supplier_id') and bool(row.get('approved', True))})
+            approved_mill_ids = sorted({str(row.get('steel_mill_id')) for row in existing_source_links if row.get('steel_mill_id') and bool(row.get('approved', True))})
+            sc1,sc2 = st.columns(2,gap='small')
+            selected_suppliers = sc1.multiselect('Approved Suppliers', list(supplier_map), default=[v for v in approved_supplier_ids if v in supplier_map], format_func=lambda v:supplier_map[v], disabled=not writable)
+            selected_mills = sc2.multiselect('Approved Steel Mills', list(steel_map), default=[v for v in approved_mill_ids if v in steel_map], format_func=lambda v:steel_map[v], disabled=not writable)
+            sc1,sc2,sc3,sc4 = st.columns(4,gap='small')
+            supplier_part_number = sc1.text_input('Supplier Part Number', key=f'approved_source_spn_{part_id}')
+            approval_reference = sc2.text_input('Approval Reference', key=f'approved_source_ref_{part_id}')
+            valid_from = sc3.date_input('Valid From', value=date.today(), format='DD-MM-YYYY', key=f'approved_source_from_{part_id}')
+            valid_to = sc4.date_input('Valid To', value=None, format='DD-MM-YYYY', key=f'approved_source_to_{part_id}')
+            if st.button('Save Approved Sources', type='primary', width='stretch', disabled=not writable or not selected_suppliers, key=f'save_approved_sources_{part_id}'):
+                try:
+                    wanted={(sid, mid or '') for sid in selected_suppliers for mid in (selected_mills or [''])}
+                    existing_by_pair={(str(row.get('supplier_id') or ''),str(row.get('steel_mill_id') or '')):row for row in existing_source_links}
+                    for pair,row in existing_by_pair.items():
+                        if pair not in wanted and bool(row.get('approved', True)):
+                            repo.update('part_supplier_links',str(row['id']),{'approved':False})
+                    source_def=MASTER_BY_KEY.get('approved_sources')
+                    for sid,mid in wanted:
+                        payload={'part_id':part_id,'supplier_id':sid,'steel_mill_id':mid or None,'supplier_part_number':supplier_part_number.strip() or None,'approval_reference':approval_reference.strip() or None,'approved':True,'valid_from':valid_from.isoformat() if valid_from else None,'valid_to':valid_to.isoformat() if valid_to else None}
+                        existing_link=existing_by_pair.get((sid,mid))
+                        if source_def and not existing_link:
+                            payload['source_code']=MasterService(repo).next_master_code(source_def)
+                        if existing_link: repo.update('part_supplier_links',str(existing_link['id']),payload)
+                        else: repo.insert('part_supplier_links',payload)
+                    save_success_popup('Approved Part sources saved successfully.', queue_for_rerun=True); st.rerun()
+                except Exception as exc: st.error(db_message(exc))
+            if existing_source_links:
                 portal_table(pd.DataFrame([{
-                    "Supplier": supplier_map.get(str(a.get("supplier_id")), ""),
-                    "Supplier Part No.": a.get("supplier_part_number"), "Approval Reference": a.get("approval_reference"),
-                    "Valid From": a.get("valid_from"), "Valid To": a.get("valid_to"),
-                } for a in live.get("_supplier_approvals", [])]), hide_index=True, width="stretch")
-            except ValueError as exc:
-                grid_source_errors.append(str(exc))
-        for message in dict.fromkeys(grid_source_errors):
-            st.warning(message)
-        # Compare JSON-normalized cells so None/NaN and numeric dtype differences
-        # do not cause an endless rerun.
-        if resolved_grid.to_json(orient="records") != raw_edit.to_json(orient="records"):
-            st.session_state[grid_base_key] = resolved_grid
-            st.session_state[grid_revision_key] = st.session_state.get(grid_revision_key, 0) + 1
-            st.rerun()
-        if save_raw:
-            try:
-                if grid_source_errors:
-                    raise ValueError(" / ".join(dict.fromkeys(grid_source_errors)))
-                def mapper(row, index):
-                    name = str(row.get("Supplier Name / Location") or "").strip(); sid = supplier_by_name.get(name)
-                    grade_name = str(row.get("Material Grade") or "").strip(); row_grade_id = grade_by_name.get(grade_name)
-                    if not sid: return {}
-                    if not row_grade_id: raise ValueError(f"Material Grade is required for {name}.")
-                    catalog.remember_many("part.rm_section", [row.get("Section Size")]); catalog.remember_many("part.forging_route", [row.get("Forging Route")])
-                    input_weight = None if pd.isna(row.get("Input Weight kg/part")) else row.get("Input Weight kg/part")
-                    if input_weight is None or float(input_weight) <= 0:
-                        raise ValueError(f"Input Weight kg/part is required for {name}.")
-                    material_section = str(row.get("Raw Material Type") or "").strip() or "Round Black Bar"
-                    source_label = str(row.get("Source Raw Forging / Casting Part") or "").strip()
-                    source_part_id = source_part_by_label.get(source_label) if source_label else None
-                    if source_label and not source_part_id:
-                        raise ValueError(f"Select a valid Source Raw Forging / Casting Part for {name}.")
-                    if source_part_id and str(source_part_id) == part_id:
-                        raise ValueError("Source Raw Forging / Casting Part must be another Part Master record, not the same finished Part.")
-                    if source_part_id and material_section.casefold() not in {"forging", "casting"}:
-                        raise ValueError("Source Raw Forging / Casting Part can be selected only when Raw Material Type is Forging or Casting.")
-                    if source_part_id:
-                        live = effective_link(repo, {"id": part_id}, {"source_part_id": source_part_id, "supplier_id": sid, "material_section_name": material_section})
-                        return {**({"id": str(row["_raw_id"])} if pd.notna(row.get("_raw_id")) and str(row.get("_raw_id")) in {str(r["id"]) for r in raw} else {}), **{k: live.get(k) for k in INHERITED_FIELDS}, "material_section_name": material_section, "source_part_id": source_part_id, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
-                    return {"supplier_id": sid, "material_grade_id": row_grade_id, "source_part_id": source_part_id, "supplier_rm_item_code": str(row.get("Supplier RM Item Code") or "").strip() or None, "supplier_forging_part_number": str(row.get("Supplier Forging Part No.") or "").strip() or None, "hsn_sac_code": str(row.get("HSN / SAC Code") or "").strip() or None, "lead_time_days": int(row.get("Lead Time (Days)") or 0), "material_section_name": material_section, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section Size") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
-                _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id", "material_grade_id", "material_section_name", "section_size", "forging_route"), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
-            except Exception as exc:
-                st.error(db_message(exc))
-
-
-        # v4.13.8: supplier-specific technical heading/value data and price history
-        # are controlled from Part Master and pulled automatically into the PO.
-        current_raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=500)
-        raw_labels = {
-            str(r["id"]): f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · HSN {r.get('hsn_sac_code') or existing.get('hsn_sac_code') or '-'} · {grade_map.get(str(r.get('material_grade_id')), 'Grade -')} · {r.get('material_section_name') or 'Raw Material Type -'} · {r.get('section_size') or '-'} · Source {source_part_map.get(str(r.get('source_part_id') or ''), 'Own Part')} · LT {int(r.get('lead_time_days') or 0)}d"
-            for r in current_raw
-        }
-        section_bar("SUPPLIER TECHNICAL DATA & PRICE HISTORY", "Select the supplier-specific Raw Material record. Heading/value technical rows are copied automatically to the Purchase Order; price history is matched by the selected Supplier + Raw Material Detail + FSI Part Number. The same commercial rate is intentionally allowed on different Part Master records.")
-        selected_raw_id = st.selectbox("Raw Material / Supplier Record", list(raw_labels), format_func=lambda v: raw_labels[v], key=f"rm_supplier_detail_select_{part_id}") if raw_labels else None
-        if not selected_raw_id:
-            st.info("Save at least one Raw Material Detail row before adding supplier technical data or price history.")
+                    'Supplier':supplier_map.get(str(r.get('supplier_id')),''), 'Steel Mill':steel_map.get(str(r.get('steel_mill_id')),''),
+                    'Supplier Part No.':r.get('supplier_part_number'),'Approval Reference':r.get('approval_reference'),
+                    'Valid From':r.get('valid_from'),'Valid To':r.get('valid_to'),'Approved':bool(r.get('approved'))
+                } for r in existing_source_links]),hide_index=True,width='stretch',height=min(300,80+len(existing_source_links)*34))
         else:
-            selected_raw = next(r for r in current_raw if str(r.get("id")) == str(selected_raw_id))
-            selected_supplier_id = str(selected_raw.get("supplier_id") or "")
+            _na_note("approved_sources")
 
-            tech_section_perm = section_permissions(st.session_state.get("profile") or {}, "PART_MASTER", "SUPPLIER_TECHNICAL", repo)
-            tech_rows = repo.select("part_raw_material_technical_data", eq={"raw_material_detail_id": selected_raw_id}, order_by="sequence_no", limit=500) if tech_section_perm["can_view"] else []
-            if tech_section_perm["can_view"] and password_delete_panel(repo=repo, table="part_raw_material_technical_data", rows=tech_rows, labeler=lambda r: f"{r.get('heading') or '-'} · {r.get('value_text') or '-'}", key=f"delete_rm_technical_{selected_raw_id}", can_delete=perms["can_archive"] and tech_section_perm["can_edit"], title="Delete Technical Data row"):
+        if applicable["raw_material"]:
+            section_bar('RAW MATERIAL DETAILS / FORGING PARAMETERS')
+            raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=200)
+            source_parts = repo.select("parts", eq={"status": "ACTIVE"}, order_by="part_number", limit=5000)
+            source_part_map = {str(row["id"]): part_label(row) for row in source_parts if str(row.get("id")) != part_id}
+            source_part_by_label = {label: source_id for source_id, label in source_part_map.items()}
+            if password_delete_panel(repo=repo, table="part_raw_material_details", rows=raw, labeler=lambda r: f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · {r.get('section_size') or '-'} · {r.get('forging_route') or '-'} · Source {source_part_map.get(str(r.get('source_part_id')), 'Own Part')}", key=f"delete_raw_{part_id}", can_delete=perms["can_archive"], title="Delete Raw Material row"):
                 st.rerun()
-            tech_df = pd.DataFrame([{
-                "Heading": r.get("heading") or "",
-                "Value": r.get("value_text") or "",
-                "Include on PO": bool(r.get("include_on_po", True)),
-                "Sequence": int(r.get("sequence_no") or 10),
-                "Status": r.get("status") or "ACTIVE",
-            } for r in tech_rows], columns=["Heading", "Value", "Include on PO", "Sequence", "Status"])
-            with st.form(f"rm_technical_form_{selected_raw_id}"):
-                tech_edit = st.data_editor(
-                    tech_df, num_rows="dynamic", hide_index=True, width="stretch", height=250, key=f"rm_technical_data_{selected_raw_id}", disabled=(not writable or not tech_section_perm["can_edit"]),
+            # Compatibility marker for the pre-v4.14.3 raw-material natural key regression:
+            # ("supplier_id", "material_section_name", "section_size", "forging_route")
+            grade_by_name = {label: gid for gid, label in grade_map.items()}
+            raw_df = pd.DataFrame([{
+                "_raw_id": r.get("id"),
+                "Raw Material Type": r.get("material_section_name") or "Round Black Bar",
+                "Source Raw Forging / Casting Part": source_part_map.get(str(r.get("source_part_id") or ""), ""),
+                "Material Grade": grade_map.get(str(r.get("material_grade_id")), grade_map.get(str(existing.get("material_grade_id")), "")),
+                "Supplier Name / Location": supplier_map.get(str(r.get("supplier_id")), ""),
+                "Supplier RM Item Code": r.get("supplier_rm_item_code") or "",
+                "Supplier Forging Part No.": r.get("supplier_forging_part_number") or "",
+                "HSN / SAC Code": r.get("hsn_sac_code") or existing.get("hsn_sac_code") or "",
+                "Lead Time (Days)": int(r.get("lead_time_days") or 0),
+                "Forging Weight": r.get("forging_weight_kg"),
+                "Gross Weight": r.get("gross_weight_kg"),
+                "Input Weight kg/part": r.get("input_weight_kg") or r.get("gross_weight_kg") or r.get("forging_weight_kg"),
+                "Section Size": r.get("section_size"), "Forging Route": r.get("forging_route"),
+                "Status": r.get("status") or "ACTIVE"
+            } for r in raw], columns=["_raw_id", "Raw Material Type", "Source Raw Forging / Casting Part", "Material Grade", "Supplier Name / Location", "Supplier RM Item Code", "Supplier Forging Part No.", "HSN / SAC Code", "Lead Time (Days)", "Forging Weight", "Gross Weight", "Input Weight kg/part", "Section Size", "Forging Route", "Status"])
+            # v4.14.32: Raw Material Type is a controlled business list. Keep any legacy
+            # value already stored on a Part visible for safe editing, but do not learn/add
+            # arbitrary new material types from the reusable catalog.
+            legacy_rm_types = [str(r.get("material_section_name") or "").strip() for r in raw if str(r.get("material_section_name") or "").strip()]
+            rm_type_options = list(dict.fromkeys([*RAW_MATERIAL_TYPE_DEFAULTS, *legacy_rm_types]))
+            section_options = _catalog_options(catalog, "part.rm_section", [r.get("section_size") for r in raw])
+            route_options = _catalog_options(catalog, "part.forging_route", [r.get("forging_route") for r in raw])
+            st.caption("Raw Material Type is controlled to: Forging, Round Black Bar, Casting, Bright Bar and Ground Bar. For Forging/Casting, you may link another Part Master as the common raw forging/casting source used to produce this finished Part.")
+            with st.expander("Manage reusable Section Size and Forging Route lists", expanded=False):
+                _catalog_add_control(catalog, "part.rm_section", "Section Size", section_options, f"section_{part_id}", duplicate_word_check=True)
+                _catalog_add_control(catalog, "part.forging_route", "Forging Route", route_options, f"route_{part_id}", duplicate_word_check=True)
+            grid_base_key = f"raw_grid_base_{part_id}"
+            grid_revision_key = f"raw_grid_revision_{part_id}"
+            grid_master_token = hashlib.sha256(repr(raw).encode()).hexdigest()
+            if st.session_state.get(f"raw_grid_token_{part_id}") != grid_master_token:
+                st.session_state[grid_base_key] = raw_df
+                st.session_state[f"raw_grid_token_{part_id}"] = grid_master_token
+                st.session_state[grid_revision_key] = st.session_state.get(grid_revision_key, 0) + 1
+            raw_df = st.session_state[grid_base_key]
+            section_options = sorted(set(section_options + [str(v) for v in raw_df["Section Size"].dropna()]))
+            route_options = sorted(set(route_options + [str(v) for v in raw_df["Forging Route"].dropna()]))
+            with st.container():
+                raw_edit = st.data_editor(
+                    raw_df, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"raw_{part_id}_{st.session_state.get(grid_revision_key, 0)}", disabled=not writable,
                     column_config={
-                        "Heading": st.column_config.TextColumn(required=True, help="Example: RM May'26, Tool Cost, Profit, Rej + ICC, Packaging, Heat Treatment Condition."),
-                        "Value": st.column_config.TextColumn(required=True),
-                        "Include on PO": st.column_config.CheckboxColumn(default=True),
-                        "Sequence": st.column_config.NumberColumn(min_value=1, step=1),
+                        "_raw_id": None,
+                        "Raw Material Type": st.column_config.SelectboxColumn(options=rm_type_options or list(RAW_MATERIAL_TYPE_DEFAULTS), required=True, help="Controlled Raw Material Type: Forging, Round Black Bar, Casting, Bright Bar or Ground Bar."),
+                        "Source Raw Forging / Casting Part": st.column_config.SelectboxColumn(options=[""] + list(source_part_by_label), required=False, help="For Forging or Casting only: select another Part Master when its common raw forging/casting is used to manufacture this finished Part. Leave blank when this Part uses its own raw source."),
+                        "Material Grade": st.column_config.SelectboxColumn(options=list(grade_by_name), required=True),
+                        "Supplier Name / Location": st.column_config.SelectboxColumn(options=list(supplier_by_name), required=True),
+                        "Supplier RM Item Code": st.column_config.TextColumn(help="Optional common supplier-facing RM item code. Use the SAME code on different finished Parts when they buy the exact same RM. QCMS can consolidate those sources into one RM PO line while retaining each finished-Part allocation."),
+                        "Supplier Forging Part No.": st.column_config.TextColumn(help="Optional common supplier forging part number. Use the SAME value for different finished Parts when the purchased forging is genuinely identical before downstream machining."),
+                        "HSN / SAC Code": st.column_config.TextColumn(help="Supplier/raw-material specific HSN or SAC. Purchase Orders inherit this value automatically; Part Master header HSN is used only as fallback."),
+                        "Lead Time (Days)": st.column_config.NumberColumn(min_value=0, step=1, required=True, help="Used to calculate the default PO delivery date; it remains editable in the PO."),
+                        "Forging Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
+                        "Gross Weight": st.column_config.NumberColumn(min_value=0.0, format="%.3f"),
+                        "Input Weight kg/part": st.column_config.NumberColumn(min_value=0.001, format="%.3f", required=True, help="Steel input required for one production part."),
+                        "Section Size": st.column_config.SelectboxColumn(options=section_options or [""], required=True),
+                        "Forging Route": st.column_config.SelectboxColumn(options=route_options or [""], required=True),
                         "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
                     },
                 )
-                save_tech = st.form_submit_button("Save Supplier Technical Data", type="primary", width="stretch", disabled=(not writable or not tech_section_perm["can_edit"]))
-            if save_tech:
+                save_raw = st.button("Save Raw Material Details", type="primary", disabled=not writable, width="stretch")
+            st.caption("Linked rows inherit current Section E values from the selected raw part. Edit those values and approvals on the raw part itself. Select a supplier approved for that raw part.")
+            # The source driver reruns immediately. Re-seed the editor under a new
+            # widget key only when inherited cells differ, preserving other edits.
+            resolved_grid = raw_edit.copy()
+            grid_source_errors = []
+            inherited_columns = {
+                "Supplier RM Item Code": "supplier_rm_item_code", "Supplier Forging Part No.": "supplier_forging_part_number",
+                "HSN / SAC Code": "hsn_sac_code", "Lead Time (Days)": "lead_time_days",
+                "Forging Weight": "forging_weight_kg", "Gross Weight": "gross_weight_kg",
+                "Input Weight kg/part": "input_weight_kg", "Section Size": "section_size", "Forging Route": "forging_route",
+            }
+            for idx, edited_row in raw_edit.iterrows():
+                source_id = source_part_by_label.get(str(edited_row.get("Source Raw Forging / Casting Part") or ""))
+                if not source_id:
+                    continue
+                sid = supplier_by_name.get(str(edited_row.get("Supplier Name / Location") or ""))
                 try:
-                    def tech_mapper(row, index):
-                        heading = str(row.get("Heading") or "").strip(); value = str(row.get("Value") or "").strip()
-                        if not heading and not value: return {}
-                        if not heading or not value: raise ValueError("Both Technical Data Heading and Value are required.")
-                        return {"raw_material_detail_id": selected_raw_id, "supplier_id": selected_supplier_id, "heading": heading, "value_text": value, "include_on_po": bool(row.get("Include on PO", True)), "sequence_no": int(row.get("Sequence") or (index + 1) * 10), "status": str(row.get("Status") or "ACTIVE")}
-                    _save_rows(repo, "part_raw_material_technical_data", part_id, tech_edit, ("raw_material_detail_id", "heading"), tech_mapper)
-                    save_success_popup("Supplier technical data saved. Active rows will populate Purchase Orders automatically.", queue_for_rerun=True); st.rerun()
-                except Exception as exc: st.error(db_message(exc))
+                    if not sid:
+                        raise ValueError("Select a supplier for the linked raw part.")
+                    live = effective_link(repo, {"id": part_id}, {"source_part_id": source_id, "supplier_id": sid, "material_section_name": edited_row.get("Raw Material Type")})
+                    for column, field in inherited_columns.items():
+                        resolved_grid.at[idx, column] = live.get(field)
+                    resolved_grid.at[idx, "Material Grade"] = grade_map.get(str(live.get("material_grade_id")), "")
+                    st.caption(f"Linked source {source_part_map.get(source_id)} — current Section E and valid supplier approvals")
+                    portal_table(pd.DataFrame([{
+                        "Supplier": supplier_map.get(str(a.get("supplier_id")), ""),
+                        "Supplier Part No.": a.get("supplier_part_number"), "Approval Reference": a.get("approval_reference"),
+                        "Valid From": a.get("valid_from"), "Valid To": a.get("valid_to"),
+                    } for a in live.get("_supplier_approvals", [])]), hide_index=True, width="stretch")
+                except ValueError as exc:
+                    grid_source_errors.append(str(exc))
+            for message in dict.fromkeys(grid_source_errors):
+                st.warning(message)
+            # Compare JSON-normalized cells so None/NaN and numeric dtype differences
+            # do not cause an endless rerun.
+            if resolved_grid.to_json(orient="records") != raw_edit.to_json(orient="records"):
+                st.session_state[grid_base_key] = resolved_grid
+                st.session_state[grid_revision_key] = st.session_state.get(grid_revision_key, 0) + 1
+                st.rerun()
+            if save_raw:
+                try:
+                    if grid_source_errors:
+                        raise ValueError(" / ".join(dict.fromkeys(grid_source_errors)))
+                    def mapper(row, index):
+                        name = str(row.get("Supplier Name / Location") or "").strip(); sid = supplier_by_name.get(name)
+                        grade_name = str(row.get("Material Grade") or "").strip(); row_grade_id = grade_by_name.get(grade_name)
+                        if not sid: return {}
+                        if not row_grade_id: raise ValueError(f"Material Grade is required for {name}.")
+                        catalog.remember_many("part.rm_section", [row.get("Section Size")]); catalog.remember_many("part.forging_route", [row.get("Forging Route")])
+                        input_weight = None if pd.isna(row.get("Input Weight kg/part")) else row.get("Input Weight kg/part")
+                        if input_weight is None or float(input_weight) <= 0:
+                            raise ValueError(f"Input Weight kg/part is required for {name}.")
+                        material_section = str(row.get("Raw Material Type") or "").strip() or "Round Black Bar"
+                        source_label = str(row.get("Source Raw Forging / Casting Part") or "").strip()
+                        source_part_id = source_part_by_label.get(source_label) if source_label else None
+                        if source_label and not source_part_id:
+                            raise ValueError(f"Select a valid Source Raw Forging / Casting Part for {name}.")
+                        if source_part_id and str(source_part_id) == part_id:
+                            raise ValueError("Source Raw Forging / Casting Part must be another Part Master record, not the same finished Part.")
+                        if source_part_id and material_section.casefold() not in {"forging", "casting"}:
+                            raise ValueError("Source Raw Forging / Casting Part can be selected only when Raw Material Type is Forging or Casting.")
+                        if source_part_id:
+                            live = effective_link(repo, {"id": part_id}, {"source_part_id": source_part_id, "supplier_id": sid, "material_section_name": material_section})
+                            return {**({"id": str(row["_raw_id"])} if pd.notna(row.get("_raw_id")) and str(row.get("_raw_id")) in {str(r["id"]) for r in raw} else {}), **{k: live.get(k) for k in INHERITED_FIELDS}, "material_section_name": material_section, "source_part_id": source_part_id, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
+                        return {"supplier_id": sid, "material_grade_id": row_grade_id, "source_part_id": source_part_id, "supplier_rm_item_code": str(row.get("Supplier RM Item Code") or "").strip() or None, "supplier_forging_part_number": str(row.get("Supplier Forging Part No.") or "").strip() or None, "hsn_sac_code": str(row.get("HSN / SAC Code") or "").strip() or None, "lead_time_days": int(row.get("Lead Time (Days)") or 0), "material_section_name": material_section, "forging_weight_kg": None if pd.isna(row.get("Forging Weight")) else row.get("Forging Weight"), "gross_weight_kg": None if pd.isna(row.get("Gross Weight")) else row.get("Gross Weight"), "input_weight_kg": input_weight, "section_size": str(row.get("Section Size") or "").strip() or None, "forging_route": str(row.get("Forging Route") or "").strip() or None, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
+                    _save_rows(repo, "part_raw_material_details", part_id, raw_edit, ("supplier_id", "material_grade_id", "material_section_name", "section_size", "forging_route"), mapper); save_success_popup("Raw Material Details saved successfully.", queue_for_rerun=True); st.rerun()
+                except Exception as exc:
+                    st.error(db_message(exc))
 
-            if not tech_section_perm["can_view"]:
-                st.info("Supplier Technical Data is hidden by your section permission.")
-            price_section_perm = section_permissions(st.session_state.get("profile") or {}, "PART_MASTER", "PRICE_HISTORY", repo)
-            if price_section_perm["can_view"]:
-                price_rows = repo.select("part_supplier_price_history", eq={"part_id": part_id, "supplier_id": selected_supplier_id, "raw_material_detail_id": selected_raw_id}, order_by="start_date", limit=500)
-                if password_delete_panel(repo=repo, table="part_supplier_price_history", rows=price_rows, labeler=lambda r: f"{r.get('start_date')} to {r.get('end_date') or 'Current'} · {r.get('price')} {r.get('currency') or 'INR'}/{r.get('uom') or 'KGS'}", key=f"delete_price_history_{selected_raw_id}", can_delete=perms["can_archive"], title="Delete Price History row"):
-                    st.rerun()
-                price_df = pd.DataFrame([{
-                    "Start Date": pd.to_datetime(r.get("start_date"), errors="coerce"),
-                    "End Date": pd.to_datetime(r.get("end_date"), errors="coerce") if r.get("end_date") else pd.NaT,
-                    "Basic Rate": r.get("price"),
-                    "Freight": r.get("freight"),
-                    "Tool Cost": r.get("tool_cost"),
-                    "P&F": r.get("packing_forwarding"),
-                    "Profit": r.get("profit"),
-                    "ICC/Rej.": r.get("icc_rejection"),
-                    "Currency": r.get("currency") or "INR", "UOM": r.get("uom") or "KGS",
-                    "Remark": r.get("remarks") or "", "Status": r.get("status") or "ACTIVE",
-                    "_id": str(r.get("id") or ""),
-                } for r in price_rows], columns=["Start Date", "End Date", "Basic Rate", "Freight", "Tool Cost", "P&F", "Profit", "ICC/Rej.", "Currency", "UOM", "Remark", "Status", "_id"])
-                st.caption("Prices are controlled per Supplier + Raw Material record + UOM. Add a new row with a new Start Date and leave End Date blank: QCMS closes the previous open price automatically (End Date = new Start Date - 1).")
-                with st.form(f"price_history_form_{selected_raw_id}"):
-                    price_edit = st.data_editor(
-                        price_df, num_rows="dynamic", hide_index=True, width="stretch", height=240, key=f"price_history_{selected_raw_id}", disabled=not writable,
-                        column_config={
-                            "Start Date": st.column_config.DateColumn(required=True, format="DD/MM/YYYY"),
-                            "End Date": st.column_config.DateColumn(format="DD/MM/YYYY", help="Leave blank for the current/open-ended price."),
-                            "Basic Rate": st.column_config.NumberColumn(required=True, min_value=0.0, format="%.2f", help="Controlled supplier basic rate used as the default PO unit price."),
-                            "Freight": st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
-                            "Tool Cost": st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
-                            "P&F": st.column_config.NumberColumn(min_value=0.0, format="%.2f", help="Packing & Forwarding component."),
-                            "Profit": st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
-                            "ICC/Rej.": st.column_config.NumberColumn(min_value=0.0, format="%.2f", help="ICC / rejection component."),
-                            "Currency": st.column_config.SelectboxColumn(options=["INR", "USD", "EUR", "GBP"], required=True),
-                            "UOM": st.column_config.SelectboxColumn(options=["KGS", "NOS", "PCS"], required=True),
-                            "Remark": st.column_config.TextColumn(help="Reason / commercial note for this price revision; printed in the PO Price Revision History table."),
-                            "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
-                            # R37b: hidden database id - an edited Start Date / UOM now updates the SAME row
-                            # instead of inserting an overlapping duplicate (live P0001 overlap error).
-                            "_id": None,
-                        },
-                    )
-                    save_price = st.form_submit_button("Save Supplier / FSI Part Price History", type="primary", width="stretch", disabled=not writable)
-                if save_price:
-                    try:
-                        from core.price_history_service import save_price_history_grid
-                        # R37b: a row is identified by its hidden _id; the legacy natural key
-                        # ("part_id", "supplier_id", "raw_material_detail_id", "uom", "start_date") is only the fallback.
 
-                        def grid_value(row, key):
-                            value = row.get(key)
-                            try:
-                                if value is None or pd.isna(value): return None
-                            except (TypeError, ValueError):
-                                pass
-                            if hasattr(value, "date") and not isinstance(value, str): value = value.date()
-                            return value
-
-                        edited_rows = [{
-                            "id": str(grid_value(row, "_id") or "").strip() or None,
-                            "start_date": grid_value(row, "Start Date"), "end_date": grid_value(row, "End Date"),
-                            "price": grid_value(row, "Basic Rate"), "freight": grid_value(row, "Freight"),
-                            "tool_cost": grid_value(row, "Tool Cost"), "packing_forwarding": grid_value(row, "P&F"),
-                            "profit": grid_value(row, "Profit"), "icc_rejection": grid_value(row, "ICC/Rej."),
-                            "currency": grid_value(row, "Currency") or "INR", "uom": grid_value(row, "UOM") or "KGS",
-                            "remarks": grid_value(row, "Remark"), "status": grid_value(row, "Status") or "ACTIVE",
-                        } for _, row in price_edit.iterrows()]
-                        plan = save_price_history_grid(repo, part_id=part_id, supplier_id=selected_supplier_id, raw_material_detail_id=selected_raw_id, edited=edited_rows)
-                        note = (" Previous period(s) closed automatically: " + "; ".join(plan.auto_closed) + ".") if plan.auto_closed else ""
-                        message = f"Supplier / FSI Part price history saved successfully ({plan.changed} row(s) changed).{note}" if plan.changed else "No price-history change to save."
-                        save_success_popup(message, queue_for_rerun=True); st.rerun()
-                    except Exception as exc: st.error(db_message(exc))
+            # v4.13.8: supplier-specific technical heading/value data and price history
+            # are controlled from Part Master and pulled automatically into the PO.
+            current_raw = repo.select("part_raw_material_details", eq={"part_id": part_id}, order_by="sequence_no", limit=500)
+            raw_labels = {
+                str(r["id"]): f"{supplier_map.get(str(r.get('supplier_id')), 'Supplier')} · HSN {r.get('hsn_sac_code') or existing.get('hsn_sac_code') or '-'} · {grade_map.get(str(r.get('material_grade_id')), 'Grade -')} · {r.get('material_section_name') or 'Raw Material Type -'} · {r.get('section_size') or '-'} · Source {source_part_map.get(str(r.get('source_part_id') or ''), 'Own Part')} · LT {int(r.get('lead_time_days') or 0)}d"
+                for r in current_raw
+            }
+            section_bar("SUPPLIER TECHNICAL DATA & PRICE HISTORY", "Select the supplier-specific Raw Material record. Heading/value technical rows are copied automatically to the Purchase Order; price history is matched by the selected Supplier + Raw Material Detail + FSI Part Number. The same commercial rate is intentionally allowed on different Part Master records.")
+            selected_raw_id = st.selectbox("Raw Material / Supplier Record", list(raw_labels), format_func=lambda v: raw_labels[v], key=f"rm_supplier_detail_select_{part_id}") if raw_labels else None
+            if not selected_raw_id:
+                st.info("Save at least one Raw Material Detail row before adding supplier technical data or price history.")
             else:
-                st.info("Supplier Price History is hidden by your section permission.")
-    with stage_section("F", 'JOMINY REQUIREMENT', 'Controlled 1/16 inch to millimetre conversion and HRC requirement band.', key="part_master_render_entry_f"):
+                selected_raw = next(r for r in current_raw if str(r.get("id")) == str(selected_raw_id))
+                selected_supplier_id = str(selected_raw.get("supplier_id") or "")
+
+                if applicable["supplier_technical_data"]:
+                    tech_section_perm = section_permissions(st.session_state.get("profile") or {}, "PART_MASTER", "SUPPLIER_TECHNICAL", repo)
+                    tech_rows = repo.select("part_raw_material_technical_data", eq={"raw_material_detail_id": selected_raw_id}, order_by="sequence_no", limit=500) if tech_section_perm["can_view"] else []
+                    if tech_section_perm["can_view"] and password_delete_panel(repo=repo, table="part_raw_material_technical_data", rows=tech_rows, labeler=lambda r: f"{r.get('heading') or '-'} · {r.get('value_text') or '-'}", key=f"delete_rm_technical_{selected_raw_id}", can_delete=perms["can_archive"] and tech_section_perm["can_edit"], title="Delete Technical Data row"):
+                        st.rerun()
+                    tech_df = pd.DataFrame([{
+                        "Heading": r.get("heading") or "",
+                        "Value": r.get("value_text") or "",
+                        "Include on PO": bool(r.get("include_on_po", True)),
+                        "Sequence": int(r.get("sequence_no") or 10),
+                        "Status": r.get("status") or "ACTIVE",
+                    } for r in tech_rows], columns=["Heading", "Value", "Include on PO", "Sequence", "Status"])
+                    with st.form(f"rm_technical_form_{selected_raw_id}"):
+                        tech_edit = st.data_editor(
+                            tech_df, num_rows="dynamic", hide_index=True, width="stretch", height=250, key=f"rm_technical_data_{selected_raw_id}", disabled=(not writable or not tech_section_perm["can_edit"]),
+                            column_config={
+                                "Heading": st.column_config.TextColumn(required=True, help="Example: RM May'26, Tool Cost, Profit, Rej + ICC, Packaging, Heat Treatment Condition."),
+                                "Value": st.column_config.TextColumn(required=True),
+                                "Include on PO": st.column_config.CheckboxColumn(default=True),
+                                "Sequence": st.column_config.NumberColumn(min_value=1, step=1),
+                                "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
+                            },
+                        )
+                        save_tech = st.form_submit_button("Save Supplier Technical Data", type="primary", width="stretch", disabled=(not writable or not tech_section_perm["can_edit"]))
+                    if save_tech:
+                        try:
+                            def tech_mapper(row, index):
+                                heading = str(row.get("Heading") or "").strip(); value = str(row.get("Value") or "").strip()
+                                if not heading and not value: return {}
+                                if not heading or not value: raise ValueError("Both Technical Data Heading and Value are required.")
+                                return {"raw_material_detail_id": selected_raw_id, "supplier_id": selected_supplier_id, "heading": heading, "value_text": value, "include_on_po": bool(row.get("Include on PO", True)), "sequence_no": int(row.get("Sequence") or (index + 1) * 10), "status": str(row.get("Status") or "ACTIVE")}
+                            _save_rows(repo, "part_raw_material_technical_data", part_id, tech_edit, ("raw_material_detail_id", "heading"), tech_mapper)
+                            save_success_popup("Supplier technical data saved. Active rows will populate Purchase Orders automatically.", queue_for_rerun=True); st.rerun()
+                        except Exception as exc: st.error(db_message(exc))
+
+                    if not tech_section_perm["can_view"]:
+                        st.info("Supplier Technical Data is hidden by your section permission.")
+                else:
+                    _na_note("supplier_technical_data")
+                if applicable["price_history"]:
+                    price_section_perm = section_permissions(st.session_state.get("profile") or {}, "PART_MASTER", "PRICE_HISTORY", repo)
+                    if price_section_perm["can_view"]:
+                        price_rows = repo.select("part_supplier_price_history", eq={"part_id": part_id, "supplier_id": selected_supplier_id, "raw_material_detail_id": selected_raw_id}, order_by="start_date", limit=500)
+                        if password_delete_panel(repo=repo, table="part_supplier_price_history", rows=price_rows, labeler=lambda r: f"{r.get('start_date')} to {r.get('end_date') or 'Current'} · {r.get('price')} {r.get('currency') or 'INR'}/{r.get('uom') or 'KGS'}", key=f"delete_price_history_{selected_raw_id}", can_delete=perms["can_archive"], title="Delete Price History row"):
+                            st.rerun()
+                        price_df = pd.DataFrame([{
+                            "Start Date": pd.to_datetime(r.get("start_date"), errors="coerce"),
+                            "End Date": pd.to_datetime(r.get("end_date"), errors="coerce") if r.get("end_date") else pd.NaT,
+                            "Basic Rate": r.get("price"),
+                            "Freight": r.get("freight"),
+                            "Tool Cost": r.get("tool_cost"),
+                            "P&F": r.get("packing_forwarding"),
+                            "Profit": r.get("profit"),
+                            "ICC/Rej.": r.get("icc_rejection"),
+                            "Currency": r.get("currency") or "INR", "UOM": r.get("uom") or "KGS",
+                            "Remark": r.get("remarks") or "", "Status": r.get("status") or "ACTIVE",
+                            "_id": str(r.get("id") or ""),
+                        } for r in price_rows], columns=["Start Date", "End Date", "Basic Rate", "Freight", "Tool Cost", "P&F", "Profit", "ICC/Rej.", "Currency", "UOM", "Remark", "Status", "_id"])
+                        st.caption("Prices are controlled per Supplier + Raw Material record + UOM. Add a new row with a new Start Date and leave End Date blank: QCMS closes the previous open price automatically (End Date = new Start Date - 1).")
+                        with st.form(f"price_history_form_{selected_raw_id}"):
+                            price_edit = st.data_editor(
+                                price_df, num_rows="dynamic", hide_index=True, width="stretch", height=240, key=f"price_history_{selected_raw_id}", disabled=not writable,
+                                column_config={
+                                    "Start Date": st.column_config.DateColumn(required=True, format="DD/MM/YYYY"),
+                                    "End Date": st.column_config.DateColumn(format="DD/MM/YYYY", help="Leave blank for the current/open-ended price."),
+                                    "Basic Rate": st.column_config.NumberColumn(required=True, min_value=0.0, format="%.2f", help="Controlled supplier basic rate used as the default PO unit price."),
+                                    "Freight": st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
+                                    "Tool Cost": st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
+                                    "P&F": st.column_config.NumberColumn(min_value=0.0, format="%.2f", help="Packing & Forwarding component."),
+                                    "Profit": st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
+                                    "ICC/Rej.": st.column_config.NumberColumn(min_value=0.0, format="%.2f", help="ICC / rejection component."),
+                                    "Currency": st.column_config.SelectboxColumn(options=["INR", "USD", "EUR", "GBP"], required=True),
+                                    "UOM": st.column_config.SelectboxColumn(options=["KGS", "NOS", "PCS"], required=True),
+                                    "Remark": st.column_config.TextColumn(help="Reason / commercial note for this price revision; printed in the PO Price Revision History table."),
+                                    "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"]),
+                                    # R37b: hidden database id - an edited Start Date / UOM now updates the SAME row
+                                    # instead of inserting an overlapping duplicate (live P0001 overlap error).
+                                    "_id": None,
+                                },
+                            )
+                            save_price = st.form_submit_button("Save Supplier / FSI Part Price History", type="primary", width="stretch", disabled=not writable)
+                        if save_price:
+                            try:
+                                from core.price_history_service import save_price_history_grid
+                                # R37b: a row is identified by its hidden _id; the legacy natural key
+                                # ("part_id", "supplier_id", "raw_material_detail_id", "uom", "start_date") is only the fallback.
+
+                                def grid_value(row, key):
+                                    value = row.get(key)
+                                    try:
+                                        if value is None or pd.isna(value): return None
+                                    except (TypeError, ValueError):
+                                        pass
+                                    if hasattr(value, "date") and not isinstance(value, str): value = value.date()
+                                    return value
+
+                                edited_rows = [{
+                                    "id": str(grid_value(row, "_id") or "").strip() or None,
+                                    "start_date": grid_value(row, "Start Date"), "end_date": grid_value(row, "End Date"),
+                                    "price": grid_value(row, "Basic Rate"), "freight": grid_value(row, "Freight"),
+                                    "tool_cost": grid_value(row, "Tool Cost"), "packing_forwarding": grid_value(row, "P&F"),
+                                    "profit": grid_value(row, "Profit"), "icc_rejection": grid_value(row, "ICC/Rej."),
+                                    "currency": grid_value(row, "Currency") or "INR", "uom": grid_value(row, "UOM") or "KGS",
+                                    "remarks": grid_value(row, "Remark"), "status": grid_value(row, "Status") or "ACTIVE",
+                                } for _, row in price_edit.iterrows()]
+                                plan = save_price_history_grid(repo, part_id=part_id, supplier_id=selected_supplier_id, raw_material_detail_id=selected_raw_id, edited=edited_rows)
+                                note = (" Previous period(s) closed automatically: " + "; ".join(plan.auto_closed) + ".") if plan.auto_closed else ""
+                                message = f"Supplier / FSI Part price history saved successfully ({plan.changed} row(s) changed).{note}" if plan.changed else "No price-history change to save."
+                                save_success_popup(message, queue_for_rerun=True); st.rerun()
+                            except Exception as exc: st.error(db_message(exc))
+                    else:
+                        st.info("Supplier Price History is hidden by your section permission.")
+                else:
+                    _na_note("price_history")
+        else:
+            _na_note("raw_material")
+    with _section_gate(), stage_section("F", 'JOMINY REQUIREMENT', 'Controlled 1/16 inch to millimetre conversion and HRC requirement band.', key="part_master_render_entry_f"):
+        _require_section(applicable, "jominy")
         distances = repo.select("jominy_distances", eq={"status": "ACTIVE"}, order_by="distance_16th", limit=100)
         dmap = {str(d.get("distance_label")): d for d in distances}
         jom = repo.select("part_jominy_requirements", eq={"part_id": part_id}, order_by="sequence_no", limit=100)
         if password_delete_panel(repo=repo, table="part_jominy_requirements", rows=jom, labeler=lambda r: f"{r.get('distance_label')} · {r.get('minimum_hrc')}–{r.get('maximum_hrc')} HRC", key=f"delete_jom_{part_id}", can_delete=perms["can_archive"], title="Delete Jominy Requirement row"):
             st.rerun()
-        jdf = pd.DataFrame([{"Distance (inch)": r.get("distance_label"), "MM (Auto)": round(float((dmap.get(str(r.get("distance_label"))) or {}).get("distance_16th") or 0) * 25.4 / 16, 2), "Minimum HRC": r.get("minimum_hrc"), "Maximum HRC": r.get("maximum_hrc"), "Status": r.get("status") or "ACTIVE"} for r in jom], columns=["Distance (inch)", "MM (Auto)", "Minimum HRC", "Maximum HRC", "Status"])
-        disabled = True if not writable else ["MM (Auto)"]
+        # R38: horizontal Jominy grid - distances are COLUMNS (inch label + mm), rows are Minimum / Maximum HRC.
+        # "Distance (inch)" -> "MM (Auto)" conversion: 1/16 inch = 25.4 / 16 mm (core.analysis_grids.jominy_mm).
+        from core.analysis_grids import jominy_label, jominy_mm, sixteenth_from
+        try:  # R38: shared horizontal chemistry / Jominy helpers (agent A) - also reads "J1.5mm" style labels
+            from core.chem_grid import jominy_distance_mm as _chem_grid_mm
+        except Exception:
+            _chem_grid_mm = None
+
+        def _distance_mm(d: dict) -> float:
+            value = _chem_grid_mm(d) if _chem_grid_mm else None
+            if value is None:
+                value = jominy_mm(sixteenth_from(d.get("distance_16th"), label=d.get("distance_label")))
+            return float(value or 0)
+        by_distance = {str(r.get("jominy_distance_id") or ""): r for r in jom}
+        by_label = {str(r.get("distance_label") or ""): r for r in jom}
+        jcols: list[tuple[str, dict, dict]] = []
+        for d in distances:
+            sixteenth = sixteenth_from(d.get("distance_16th"), label=d.get("distance_label"))
+            column = f"{jominy_label(sixteenth, d.get('distance_label'))} · {_distance_mm(d):.2f} mm"
+            current = by_distance.get(str(d.get("id"))) or by_label.get(str(d.get("distance_label"))) or {}
+            jcols.append((column, d, current))
+        portal_table(pd.DataFrame([
+            {"Distance (inch)": "MM (Auto)", **{jominy_label(sixteenth_from(d.get("distance_16th"), label=d.get("distance_label")), d.get("distance_label")): f"{_distance_mm(d):.2f}" for _, d, _ in jcols}},
+        ]), hide_index=True, width="stretch")
+        def _jcell(row: dict, field: str):
+            return None if not row or str(row.get("status") or "ACTIVE") != "ACTIVE" else row.get(field)
+        jdf = pd.DataFrame([
+            {"Row": "Minimum HRC", **{column: _jcell(current, "minimum_hrc") for column, _, current in jcols}},
+            {"Row": "Maximum HRC", **{column: _jcell(current, "maximum_hrc") for column, _, current in jcols}},
+        ], columns=["Row", *[column for column, _, _ in jcols]])
+        disabled = True if not writable else ["Row"]
+        st.caption("Enter the HRC band under each Jominy distance. Leave a distance blank when it is not specified (an existing row is then set INACTIVE).")
         with st.form(f"jominy_grid_form_{part_id}"):
-            jedit = st.data_editor(jdf, num_rows="dynamic", hide_index=True, width="stretch", height=280, key=f"jom_{part_id}", disabled=disabled, column_config={"Distance (inch)": st.column_config.SelectboxColumn(options=list(dmap), required=True), "MM (Auto)": st.column_config.NumberColumn(format="%.2f"), "Minimum HRC": st.column_config.NumberColumn(format="%.2f"), "Maximum HRC": st.column_config.NumberColumn(format="%.2f"), "Status": st.column_config.SelectboxColumn(options=["ACTIVE", "INACTIVE"])})
+            jedit = st.data_editor(jdf, hide_index=True, width="stretch", height=125, key=f"jom_h_{part_id}", disabled=disabled, column_config={column: st.column_config.NumberColumn(column, format="%.2f") for column, _, _ in jcols})
             save_jominy = st.form_submit_button("Save Jominy Requirements", type="primary", disabled=not writable, width="stretch")
         if save_jominy:
             try:
+                def _jvalue(row_name: str, column: str):
+                    match = jedit[jedit["Row"] == row_name]
+                    value = match.iloc[0].get(column) if not match.empty else None
+                    return None if value is None or pd.isna(value) else float(value)
+                vertical = []
+                for column, distance, current in jcols:
+                    low, high = _jvalue("Minimum HRC", column), _jvalue("Maximum HRC", column)
+                    if low is None and high is None:
+                        if current and str(current.get("status") or "ACTIVE") == "ACTIVE":
+                            vertical.append({"Distance (inch)": str(distance.get("distance_label")), "Minimum HRC": current.get("minimum_hrc"), "Maximum HRC": current.get("maximum_hrc"), "Status": "INACTIVE"})
+                        continue
+                    vertical.append({"Distance (inch)": str(distance.get("distance_label")), "Minimum HRC": low, "Maximum HRC": high, "Status": "ACTIVE"})
+                vertical_frame = pd.DataFrame(vertical, columns=["Distance (inch)", "Minimum HRC", "Maximum HRC", "Status"])
                 def mapper(row, index):
                     label = str(row.get("Distance (inch)") or "").strip()
                     if not label: return {}
@@ -1269,15 +1449,34 @@ def render_entry() -> None:
                     low = None if pd.isna(row.get("Minimum HRC")) else row.get("Minimum HRC"); high = None if pd.isna(row.get("Maximum HRC")) else row.get("Maximum HRC")
                     if low is not None and high is not None and float(low) > float(high): raise ValueError(f"Jominy {label}: minimum exceeds maximum.")
                     return {"jominy_distance_id": distance.get("id"), "distance_label": label, "minimum_hrc": low, "maximum_hrc": high, "sequence_no": 10 * (index + 1), "status": str(row.get("Status") or "ACTIVE")}
-                _save_rows(repo, "part_jominy_requirements", part_id, jedit, ("jominy_distance_id",), mapper); save_success_popup("Jominy Requirements saved successfully.", queue_for_rerun=True); st.rerun()
+                _save_rows(repo, "part_jominy_requirements", part_id, vertical_frame, ("jominy_distance_id",), mapper); save_success_popup("Jominy Requirements saved successfully.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
                 st.error(db_message(exc))
-    with stage_section("G", "OSP INSPECTION FOR METLAB", key="part_master_render_entry_g"):
+    with _section_gate(), stage_section("G", "OSP INSPECTION FOR METLAB", key="part_master_render_entry_g"):
+        _require_section(applicable, "osp_metlab")
+        _metallurgical_na_note(existing)
         _render_osp_metlab_requirements(repo, catalog, part_id, writable, perms["can_archive"], show_heading=False)
 
-    with stage_section("H", "METALLURGICAL REQUIREMENTS · FINAL DISPATCH ONLY", key="part_master_render_entry_h"):
+    with _section_gate(), stage_section("H", "METALLURGICAL REQUIREMENTS · FINAL DISPATCH ONLY", key="part_master_render_entry_h"):
+        _require_section(applicable, "final_metallurgical")
+        _metallurgical_na_note(existing)
         _render_metallurgical_requirements(repo, catalog, part_id, writable, perms["can_archive"], show_heading=False)
 
+    # R38: Part process routing with optional process drawings / specifications (revision controlled, ECN on replacement)
+    with _section_gate(), stage_section("I", "PART PROCESSES & DRAWINGS", "Ordered processes for this Part (mandatory / optional, in-house / OSP) with optional controlled drawings and specifications per process. Replacing a revision requests an ECN / PCN.", key="part_master_render_entry_i"):
+        _require_section(applicable, "process_routing")
+        _render_part_processes(repo, existing, writable, perms)
+
+    with stage_section("J", "ENGINEERING / PROCESS CHANGE NOTES (ECN / PCN)", f"Change notes of this Part · format {FORMAT_NO}. Raised automatically when a controlled drawing or process document revision is replaced.", key="part_master_render_entry_j"):
+        _render_ecn_register(repo, perms, part_id=part_id, key=f"part_ecn_{part_id}")
+
+
+
+def _horizontal_jominy_print(rows: list[dict]) -> pd.DataFrame:
+    """R38: Part Master print - Jominy distances as columns (inch label + Distance (mm) row), HRC band rows."""
+    from core.analysis_grids import jominy_table, table_frame
+    active = [r for r in rows if str(r.get("status") or "ACTIVE") == "ACTIVE"]
+    return table_frame(jominy_table(active, [("Min HRC", "minimum_hrc"), ("Max HRC", "maximum_hrc")], blank="")) if active else pd.DataFrame()
 
 
 def render_records() -> None:
@@ -1308,6 +1507,8 @@ def render_records() -> None:
             process_rows = repo.select("part_process_parameter_specifications", eq={"part_id": selected}, order_by="sequence_no", limit=500)
             metallurgy_rows = repo.select("part_metallurgical_requirements", eq={"part_id": selected}, order_by="sequence_no", limit=500)
             standard_links = repo.select("part_standard_links", eq={"part_id": selected, "status": "ACTIVE"}, order_by="sequence_no", limit=500)
+            import core.part_process_service as _ppsvc  # R38: parts.applicable_sections (with legacy jsonb fallback)
+            _applicable_keys = _ppsvc.part_applicable_sections(selected_row)
             standards_all = {str(r["id"]): r for r in repo.select("customer_standards", limit=3000)}
             processes_all = {str(r["id"]): r for r in repo.select("processes", limit=3000)}
             parties_all = {str(r["id"]): r for r in repo.select("parties", limit=3000)}
@@ -1327,14 +1528,16 @@ def render_records() -> None:
                     "Material Grade": (grades.get(str(selected_row.get("material_grade_id"))) or {}).get("grade_code"),
                     "Finish Weight kg": selected_row.get("finished_weight_kg"), "Drawing Number": selected_row.get("drawing_number"),
                     "Drawing Revision": selected_row.get("drawing_revision"), "Status": selected_row.get("status"), "Remarks": selected_row.get("remarks"),
+                    "Sections Not Applicable": ", ".join(_ppsvc.not_applicable_section_labels(_applicable_keys)) or "None",
                 },
-                {
+                _ppsvc.filter_print_tables({  # R38: not-applicable sections / requirement rows are omitted from the print
                     "Linked Customer Standards / Specifications": standard_rows,
                     "Raw Material Details": raw_rows,
-                    "Jominy Requirements": jominy_rows,
+                    "Jominy Requirements": _horizontal_jominy_print(jominy_rows),  # R38: distances as columns + mm row
                     "OSP / Process Inspection Requirements": process_rows,
                     "Metallurgical Requirements": metallurgy_rows,
-                },
+                    "Part Processes & Drawings": _process_route_print_rows(repo, selected, processes_all),
+                }, _applicable_keys),
                 record_number=str(selected_row.get("part_number") or ""),
             )
             st.download_button("Download Part Master PDF", pdf, file_name=f"Part_Master_{selected_row.get('part_number')}.pdf", mime="application/pdf", width="stretch")

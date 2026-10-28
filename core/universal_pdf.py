@@ -36,6 +36,9 @@ TABLE_MAP: dict[str, tuple[str, str]] = {
     "part_metallurgical_requirements": ("Part Metallurgical Requirement", "part-records"),
     "part_heat_treatment_details": ("Part Heat Treatment", "part-records"),
     "part_rmtc_requirements": ("Part RMTC Requirement", "part-records"),
+    "part_process_routes": ("Part Process", "part-records"),  # R38
+    "part_ecns": ("Engineering / Process Change Note (ECN / PCN)", "ecn-register"),  # R38
+    "part_ecn_actions": ("ECN Implementation Action", "ecn-register"),  # R38
     "parties": ("Customer / Supplier / Vendor", "reference-records"),
     "company_branches": ("Company Branch", "company-branch-records"),
     "material_grades": ("Material Grade", "grade-records"),

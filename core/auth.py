@@ -614,6 +614,64 @@ def logout() -> None:
 COMPANY_LEGAL_NAME = "FOUR STAR INDUSTRIES PRIVATE LIMITED"
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# R38 · Login page cover photo (STAWN developer can add / replace it; public bucket because Login has no session)
+# ---------------------------------------------------------------------------------------------------------------
+LOGIN_COVER_BUCKET = "qcms-public"
+LOGIN_COVER_PREFIX = "login/cover"
+LOGIN_COVER_EXTENSIONS = ("jpg", "png")
+LOGIN_COVER_MAX_BYTES = 5 * 1024 * 1024
+LOGIN_COVER_TIMEOUT_SECONDS = 6.0
+
+
+def login_cover_public_url(ext: str, base_url: str | None = None) -> str:
+    base = str(base_url if base_url is not None else get_settings().supabase_url or "").rstrip("/")
+    return f"{base}/storage/v1/object/public/{LOGIN_COVER_BUCKET}/{LOGIN_COVER_PREFIX}.{ext}" if base else ""
+
+
+def _download_public_image(url: str, timeout: float = LOGIN_COVER_TIMEOUT_SECONDS) -> bytes | None:
+    from urllib.request import Request, urlopen
+
+    try:
+        with urlopen(Request(url, headers={"User-Agent": "STAWN-QCMS"}), timeout=timeout) as response:  # noqa: S310 - fixed https Supabase URL
+            if int(getattr(response, "status", 200) or 200) != 200:
+                return None
+            if not str(response.headers.get("Content-Type") or "").lower().startswith("image/"):
+                return None
+            data = response.read(LOGIN_COVER_MAX_BYTES + 1)
+            return data if 0 < len(data) <= LOGIN_COVER_MAX_BYTES else None
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_login_cover(base_url: str) -> bytes | None:
+    for ext in LOGIN_COVER_EXTENSIONS:
+        url = login_cover_public_url(ext, base_url)
+        data = _download_public_image(url) if url else None
+        if data:
+            return data
+    return None
+
+
+def login_cover_bytes() -> bytes | None:
+    """Uploaded login cover photo (qcms-public/login/cover.jpg|png) or None -> default assets/login_factory.jpeg."""
+    if is_preview_session():
+        return None
+    try:
+        base = str(get_settings().supabase_url or "").rstrip("/")
+        return _cached_login_cover(base) if base else None
+    except Exception:
+        return None
+
+
+def clear_login_cover_cache() -> None:
+    try:
+        _cached_login_cover.clear()
+    except Exception:
+        pass
+
+
 def render_login() -> None:
     """Render the v4.13.4 reference-matched isolated login.
 
@@ -720,7 +778,11 @@ def render_login() -> None:
             with st.container(border=True, key="qcms_login_image_card"):
                 # R20: legal company name on the login page.
                 st.markdown(f'<div class="qcms-login-welcome">{COMPANY_LEGAL_NAME}</div><div class="qcms-login-sub">STAWN QCMS · Quality Control Monitoring System</div>', unsafe_allow_html=True)
-                if factory_image.exists():
+                # R38: the STAWN developer can replace the cover photo (Developer Console); default = login_factory.jpeg.
+                cover = login_cover_bytes()
+                if cover:
+                    st.image(cover, width="stretch")
+                elif factory_image.exists():
                     st.image(str(factory_image), width="stretch")
         with form_col:
             with st.form("phase1_login_form"):

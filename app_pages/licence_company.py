@@ -69,6 +69,7 @@ def _company_setup(profile: dict, status: dict, *, can_edit: bool, tenant_id: st
                 if upload is not None:
                     values["logo_path"] = lic.upload_company_logo(upload, company.get("tenant_id"))
                     st.session_state.pop("_qcms_r35_logo_cache", None)
+                    st.session_state.pop("_qcms_r38_header_company_logo", None)  # R38: refresh the logo in the top ribbon
                 lic.save_company_profile(values, complete=bool(finish), profile_id=str(profile.get("id") or "") or None)
                 save_success_popup("Company profile saved." + (" Setup complete." if finish else ""), queue_for_rerun=True)
                 st.rerun()
@@ -176,6 +177,97 @@ def render() -> None:
 
 
 # ------------------------------------------------------------------------------------------- STAWN developer console
+# ---------------------------------------------------------------------------------------------------------------
+# R38 · Login page cover photo (STAWN developer only). Stored in the PUBLIC bucket qcms-public at login/cover.<ext>
+# because the Login page is shown before any session exists.
+# ---------------------------------------------------------------------------------------------------------------
+def _cover_ext(file: object) -> str:
+    mime = str(getattr(file, "type", "") or "").lower()
+    name = str(getattr(file, "name", "") or "").lower()
+    if mime.endswith("png") or name.endswith(".png"):
+        return "png"
+    if mime.endswith(("jpeg", "jpg")) or name.endswith((".jpg", ".jpeg")):
+        return "jpg"
+    raise ValueError("Use a JPG or PNG photo for the login cover.")
+
+
+def upload_login_cover(file: object, client: object | None = None) -> str:
+    """Store the cover at qcms-public/login/cover.<ext> (replacing any other format) and return the object path."""
+    from core.auth import LOGIN_COVER_BUCKET, LOGIN_COVER_EXTENSIONS, LOGIN_COVER_MAX_BYTES, LOGIN_COVER_PREFIX, clear_login_cover_cache
+    from core.database import get_session_client
+
+    data = file.getvalue() if hasattr(file, "getvalue") else b""
+    if not data:
+        raise ValueError("The selected photo is empty.")
+    if len(data) > LOGIN_COVER_MAX_BYTES:
+        raise ValueError("Use a cover photo smaller than 5 MB (JPG or PNG).")
+    ext = _cover_ext(file)
+    client = client or get_session_client()
+    if client is None:
+        raise RuntimeError("A live QCMS session is required to upload the login cover photo.")
+    bucket = client.storage.from_(LOGIN_COVER_BUCKET)
+    path = f"{LOGIN_COVER_PREFIX}.{ext}"
+    bucket.upload(path, data, {"content-type": "image/png" if ext == "png" else "image/jpeg", "upsert": "true", "cache-control": "60"})
+    others = [f"{LOGIN_COVER_PREFIX}.{e}" for e in LOGIN_COVER_EXTENSIONS if e != ext]
+    try:
+        bucket.remove(others)
+    except Exception:
+        pass
+    clear_login_cover_cache()
+    return path
+
+
+def reset_login_cover(client: object | None = None) -> None:
+    """Remove the uploaded cover - the Login page shows the default factory photo again."""
+    from core.auth import LOGIN_COVER_BUCKET, LOGIN_COVER_EXTENSIONS, LOGIN_COVER_PREFIX, clear_login_cover_cache
+    from core.database import get_session_client
+
+    client = client or get_session_client()
+    if client is None:
+        raise RuntimeError("A live QCMS session is required.")
+    client.storage.from_(LOGIN_COVER_BUCKET).remove([f"{LOGIN_COVER_PREFIX}.{e}" for e in LOGIN_COVER_EXTENSIONS])
+    clear_login_cover_cache()
+
+
+def _login_cover_section() -> None:
+    from pathlib import Path
+
+    from core.auth import login_cover_bytes
+
+    with stage_section("H", "LOGIN PAGE COVER PHOTO (STAWN ONLY)",
+                       "Add or replace the photo on the left of the Login page (JPG / PNG, max 5 MB, landscape ~ 1600 × 900 px). "
+                       "Reset to show the default factory photo again.", key="qcms_dev_login_cover"):
+        current = login_cover_bytes()
+        default = Path(__file__).resolve().parents[1] / "assets" / "login_factory.jpeg"
+        c1, c2 = st.columns([2, 3], gap="medium")
+        with c1:
+            if current:
+                st.image(current, width="stretch", caption="Current login cover (uploaded)")
+            elif default.exists():
+                st.image(str(default), width="stretch", caption="Current login cover (default factory photo)")
+        with c2:
+            upload = st.file_uploader("New login cover photo (JPG / PNG, max 5 MB)", type=["jpg", "jpeg", "png"], key="qcms_dev_login_cover_file")
+            if upload is not None:
+                st.image(upload.getvalue(), width="stretch", caption="Preview of the new cover")
+            b1, b2 = st.columns(2, gap="small")
+            if b1.button("Save as login cover", type="primary", width="stretch", disabled=upload is None, key="qcms_dev_login_cover_save",
+                         icon=":material/upload:"):
+                try:
+                    upload_login_cover(upload)
+                    save_success_popup("Login page cover photo updated. It shows on the Login page within a minute.", queue_for_rerun=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(db_message(exc))
+            if b2.button("Reset to default photo", width="stretch", disabled=not current, key="qcms_dev_login_cover_reset",
+                         icon=":material/restart_alt:"):
+                try:
+                    reset_login_cover()
+                    save_success_popup("Login page cover reset to the default factory photo.", queue_for_rerun=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(db_message(exc))
+
+
 def render_developer() -> None:
     page_header("STAWN Developer Console", "All companies, licences and administrators · STAWN PRECISION PRIVATE LIMITED only", "Admin")
     status = lic.licence_status(force=True)
@@ -280,15 +372,17 @@ def render_developer() -> None:
                        "administrators cannot change them; their company name and logo appear under the STAWN QCMS name.",
                        key="qcms_dev_branding"):
         from pathlib import Path
-        from core.config import get_settings
         icon = Path(__file__).resolve().parents[1] / "assets" / "stawn_qcms_icon.png"
         b1, b2 = st.columns([1, 4], gap="small")
         if icon.exists():
             b1.image(str(icon), width=96)
         b2.markdown(f"**App name:** {about.PRODUCT} – {about.TAGLINE}  \n"
-                    f"**Website:** v{get_settings().version} R35 · STAWN icon in the browser tab and address bar  \n"
-                    f"**Android:** v{about.ANDROID_VERSION} · **iPhone / iPad:** v{about.IOS_VERSION} · STAWN logo on the left of the top bar  \n"
+                    "**Website:** STAWN icon in the browser tab, address bar and on the left of the top bar  \n"
+                    "**Android / iPhone / iPad:** STAWN logo on the left of the top bar  \n"
+                    "App versions are shown only in the user details (top right) and on the About page.  \n"
                     f"**Developer:** {about.COMPANY} · {about.EMAIL}")
+
+    _login_cover_section()
 
     with stage_section("G", "ALL ADMINISTRATION TOOLS", "Every admin right in one place for the STAWN developer login.",
                        key="qcms_dev_admin_tools"):

@@ -246,10 +246,8 @@ final class RptReports {
         List<JSONObject> jom = list(results.optJSONArray("jominy_rows"));
         if (!jom.isEmpty()) {
             d.sub("HARDNESS / JOMINY TRAVERSE");
-            List<String[]> jr = new ArrayList<>();
-            jr.add(row("Distance", "mm", "Min HRC", "Max HRC", "RMTC HRC", "MetLAB HRC", "Result", "Remark"));
-            for (JSONObject r : jom) jr.add(row(r.opt("distance_label"), r.opt("distance_mm"), r.opt("minimum_hrc"), r.opt("maximum_hrc"), r.opt("rmtc_actual_hrc"), r.opt("actual_value"), r.opt("result"), r.opt("remarks")));
-            d.grid(rows(jr), f(20, 17, 22, 22, 25, 28, 22, 38), 6);
+            List<String[]> jr = jominyHorizontal(jom, new String[][]{{"Min HRC", "minimum_hrc"}, {"Max HRC", "maximum_hrc"}, {"RMTC HRC", "rmtc_actual_hrc"}, {"MetLAB HRC", "actual_value"}, {"Result", "result"}, {"Remark", "remarks"}});
+            for (List<String[]> band : ChemGrid.bands(jr, ChemGrid.PDF_BAND_COLUMNS)) d.grid(rows(band), spread(d, band.get(0).length, 26));
         }
         d.keep(70);
         d.bar("MICROSTRUCTURE PHOTOGRAPHS");
@@ -383,6 +381,93 @@ final class RptReports {
         return alias.containsKey(t) ? alias.get(t) : t;
     }
 
+    // R38: horizontal chemistry / Jominy grids (elements / distances are columns; Jominy shows inch + mm).
+    static String chemHead(Object element) {
+        String e = str(element);
+        return RATIO.equals(chemKey(e)) ? "Al/N2 Ratio" : e.contains("%") ? e : e + "%";
+    }
+
+    /** lines = {title, field}; field "__na" prints Yes/No from applicability. */
+    static List<String[]> chemHorizontal(List<JSONObject> chem, String[][] lines) {
+        List<JSONObject> ordered = orderedChem(chem);
+        List<String[]> t = new ArrayList<>();
+        String[] head = new String[ordered.size() + 1];
+        head[0] = "Element";
+        for (int i = 0; i < ordered.size(); i++) head[i + 1] = chemHead(ordered.get(i).opt("element"));
+        t.add(head);
+        for (String[] l : lines) {
+            String[] r = new String[ordered.size() + 1];
+            r[0] = l[0];
+            for (int i = 0; i < ordered.size(); i++) { Object val = ordered.get(i).opt(l[1]); r[i + 1] = !present(val) || "".equals(val) ? "-" : raw(val); }
+            t.add(r);
+        }
+        return t;
+    }
+
+    static int sixteenth(JSONObject r) {
+        return ChemGrid.sixteenthOf(r);  // R38: J5/16", 5/16", J 5, J3, 5 or distance_mm
+    }
+
+    /** 1/16 inch = 1.5875 mm, two decimals half-up (J2/16" = 3.18 mm). */
+    static String jominyMm(int s) {
+        return s > 0 ? new java.math.BigDecimal(s).multiply(new java.math.BigDecimal("1.5875")).setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() : "-";
+    }
+
+    static List<String[]> jominyHorizontal(List<JSONObject> rows, String[][] lines) {
+        List<JSONObject> ordered = new ArrayList<>(rows);
+        Collections.sort(ordered, (x, y) -> Integer.compare(sixteenth(x) == 0 ? 999 : sixteenth(x), sixteenth(y) == 0 ? 999 : sixteenth(y)));
+        List<String[]> t = new ArrayList<>();
+        String[] head = new String[ordered.size() + 1], mm = new String[ordered.size() + 1];
+        head[0] = "Distance (inch)";
+        mm[0] = "Distance (mm)";
+        for (int i = 0; i < ordered.size(); i++) {
+            int s = sixteenth(ordered.get(i));
+            head[i + 1] = s > 0 ? "J" + s + "/16\"" : dash(ordered.get(i).opt("distance_label"));
+            mm[i + 1] = s > 0 ? jominyMm(s) : raw(ordered.get(i).opt("distance_mm"));
+        }
+        t.add(head);
+        t.add(mm);
+        for (String[] l : lines) {
+            String[] r = new String[ordered.size() + 1];
+            r[0] = l[0];
+            for (int i = 0; i < ordered.size(); i++) {
+                JSONObject o = ordered.get(i);
+                Object val = "__na".equals(l[1]) ? ("NOT_APPLICABLE".equals(str(o.opt("applicability"))) ? "No" : "Yes") : o.opt(l[1]);
+                if ("actual_value".equals(l[1]) && (!present(val) || "".equals(val))) val = o.opt("actual_hrc");
+                r[i + 1] = !present(val) || "".equals(val) ? "-" : raw(val);
+            }
+            t.add(r);
+        }
+        return t;
+    }
+
+    static float[] spread(RptDoc d, int columns, float first) {
+        float[] w = new float[Math.max(2, columns)];
+        w[0] = first;
+        float rest = (d.contentMm() - first) / Math.max(1, w.length - 1);
+        for (int i = 1; i < w.length; i++) w[i] = rest;
+        return w;
+    }
+
+    static List<JSONObject> orderedChem(List<JSONObject> chem) {
+        Map<String, Integer> rank = new HashMap<>();
+        for (int i = 0; i < CHEM_ORDER.length; i++) rank.put(chemKey(CHEM_ORDER[i]), i);
+        List<JSONObject> normal = new ArrayList<>(), extras = new ArrayList<>(), ratio = new ArrayList<>();
+        for (JSONObject r : chem) {
+            String k = chemKey(r.opt("element"));
+            if (RATIO.equals(k)) ratio.add(r); else if (rank.containsKey(k)) normal.add(r); else extras.add(r);
+        }
+        Collections.sort(normal, (x, y) -> {
+            int c = Integer.compare(rank.get(chemKey(x.opt("element"))), rank.get(chemKey(y.opt("element"))));
+            return c != 0 ? c : str(x.opt("element")).compareTo(str(y.opt("element")));
+        });
+        Collections.sort(extras, (x, y) -> str(x.opt("element")).compareTo(str(y.opt("element"))));
+        List<JSONObject> ordered = new ArrayList<>(normal);
+        ordered.addAll(extras);
+        ordered.addAll(ratio);
+        return ordered;
+    }
+
     static void chemistryTable(RptDoc d, List<JSONObject> chem) {
         Map<String, Integer> rank = new HashMap<>();
         for (int i = 0; i < CHEM_ORDER.length; i++) rank.put(chemKey(CHEM_ORDER[i]), i);
@@ -418,11 +503,7 @@ final class RptReports {
             }
             t.add(r);
         }
-        float rest = (d.contentMm() - 26) / Math.max(1, head.length - 1);
-        float[] w = new float[head.length];
-        w[0] = 26;
-        for (int i = 1; i < w.length; i++) w[i] = rest;
-        d.grid(rows(t), w);
+        for (List<String[]> band : ChemGrid.bands(t, ChemGrid.PDF_BAND_COLUMNS)) d.grid(rows(band), spread(d, band.get(0).length, 26));  // R38 A2: A4 bands
     }
 
     static void references(RptDoc d, JSONObject results, String title) {
@@ -796,20 +877,18 @@ final class RptReports {
             };
             d.blocks.add(new RptDoc.Labeled(ident, f(25, 37, 27, 43, 27, 35), new int[]{0, 2, 4}, false, body));
             d.sub("Chemical Composition");
-            List<String[]> cr = new ArrayList<>();
-            cr.add(row("Element", "Minimum", "Maximum", "Actual", "Unit", "Status"));
-            for (JSONObject r : chemistry) if (pid.equals(str(r.opt("part_id"))))
-                cr.add(row(r.opt("element"), r.opt("minimum_value"), r.opt("maximum_value"), r.opt("actual_value"), or(r.opt("unit"), "%"), r.opt("result")));
-            if (cr.size() == 1) cr.add(row("-", "", "", "No chemistry values recorded", "", "NOT_EVALUATED"));
-            rmtcGrid(d, cr, f(24, 31, 31, 39, 19, 50), body, 5);
+            List<JSONObject> pchem = new ArrayList<>();
+            for (JSONObject r : chemistry) if (pid.equals(str(r.opt("part_id")))) pchem.add(r);
+            List<String[]> cr = chemHorizontal(pchem, new String[][]{{"Minimum", "minimum_value"}, {"Maximum", "maximum_value"}, {"Actual", "actual_value"}, {"Status", "result"}});
+            if (pchem.isEmpty()) { cr.clear(); cr.add(row("Element", "-")); cr.add(row("Actual", "No chemistry values recorded")); }
+            for (List<String[]> band : ChemGrid.bands(cr, ChemGrid.PDF_BAND_COLUMNS)) rmtcGrid(d, band, spread(d, band.get(0).length, 22), 7.6f);
             d.sub("Jominy Results");
-            List<String[]> jr = new ArrayList<>();
-            jr.add(row("Distance", "mm", "Min HRC", "Max HRC", "Actual", "Actual Status", "Calculated", "Calc. Status", "Applicable"));
-            for (JSONObject r : jominy) if (pid.equals(str(r.opt("part_id"))))
-                jr.add(row(r.opt("distance_label"), r.opt("distance_mm"), r.opt("minimum_hrc"), r.opt("maximum_hrc"), r.opt("actual_hrc"), r.opt("result"),
-                    r.opt("calculated_hrc"), r.opt("calculated_result"), "NOT_APPLICABLE".equals(str(r.opt("applicability"))) ? "No" : "Yes"));
-            if (jr.size() == 1) jr.add(row("-", "", "", "", "", "NOT_EVALUATED", "", "NOT_EVALUATED", "No"));
-            rmtcGrid(d, jr, f(20, 14, 18, 18, 20, 24, 22, 28, 30), 7.6f, 5, 7);
+            List<JSONObject> pjom = new ArrayList<>();
+            for (JSONObject r : jominy) if (pid.equals(str(r.opt("part_id")))) pjom.add(r);
+            List<String[]> jr = jominyHorizontal(pjom, new String[][]{{"Min HRC", "minimum_hrc"}, {"Max HRC", "maximum_hrc"}, {"Actual HRC", "actual_hrc"}, {"Actual Status", "result"},
+                {"Calculated HRC", "calculated_hrc"}, {"Calc. Status", "calculated_result"}, {"Applicable", "__na"}});
+            if (pjom.isEmpty()) { jr.clear(); jr.add(row("Distance (inch)", "-")); jr.add(row("Actual HRC", "No Jominy values recorded")); }
+            for (List<String[]> band : ChemGrid.bands(jr, ChemGrid.PDF_BAND_COLUMNS)) rmtcGrid(d, band, spread(d, band.get(0).length, 22), 7.6f);
             d.sub("DI / Hardenability");
             String[][] di = {row("Grain Size ASTM E-112", "Actual DI", "Actual DI Status", "Calculated DI", "Calculated DI Status"),
                 row(a.opt("grain_size"), a.opt("actual_di"), a.opt("actual_di_status"), a.opt("calculated_di"), a.opt("calculated_di_status"))};
@@ -841,6 +920,9 @@ final class RptReports {
         d.blocks.add(new RptDoc.Photos(photos, 3, 40, true));
         d.keep(44);
         d.bar("RMTC VALIDATION STATUS & FINAL DECISION");
+        String qrUrl = rmtcQrUrl(api, id, record);
+        if (!qrUrl.isEmpty())
+            d.blocks.add(new RptDoc.Labeled(new String[][]{vrow("Material Location QR", "Certificate download (QR label from QCMS web): " + qrUrl)}, f(42, 152), new int[]{0}, false, body));
         if (approvals.isEmpty()) {
             rmtcGrid(d, Arrays.asList(row("Validation Check", "Status", "Validation Check", "Status"), row("Record", "NOT_EVALUATED", "Final Decision", "PENDING")), f(42, 55, 42, 55), body, 1, 3);
         } else {
@@ -871,6 +953,21 @@ final class RptReports {
         };
         d.blocks.add(new RptDoc.Labeled(sign, f(24, 41, 24, 41, 30, 34), new int[]{0, 2, 4}, true, body));
         return d;
+    }
+
+    static final String QCMS_WEBSITE = "https://vf6fa9hrhxquqxmfgyy4wf.streamlit.app";
+
+    /** R38: QR of an approved RMTC = login-protected website link <website>/rmtc-records?rmtc=<RMTC number> (no secret); "" when not approved. */
+    static String rmtcQrUrl(Api api, String id, JSONObject record) {
+        try {
+            String st = str(record.opt("status")), disp = str(record.opt("disposition"));
+            if (!(st.equals("APPROVED") || st.equals("PARTIALLY_APPROVED")) || !(disp.equals("ACCEPTED") || disp.equals("ACCEPTED_UNDER_RESERVE"))) return "";
+            String number = str(record.opt("rmtc_number"));
+            if (number.isEmpty() || number.equals("-")) return "";
+            return QCMS_WEBSITE + "/rmtc-records?rmtc=" + Api.enc(number).replace("+", "%20");
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private static void rmtcGrid(RptDoc d, List<String[]> rows, float[] w, float cell, int... status) {
@@ -1229,6 +1326,12 @@ final class RptReports {
                 List<String> cols = new ArrayList<>();
                 for (String[] c : child.cols) cols.add(c[0]);
                 Map<String, Map<String, String>> cfk = Labels.resolve(api, child.table, rows, cols);
+                if (ChemGrid.handles(child.table)) {  // R38: chemistry / Jominy children print horizontally (inch + mm)
+                    for (Map.Entry<String, List<String[]>> e : ChemGrid.horizontal(child.table, rows, cfk.get("part_id")).entrySet())
+                        if (e.getValue().size() > 1 && e.getValue().get(0).length > 1)
+                            sections.put(child.title.toUpperCase(Locale.ROOT) + (e.getKey().isEmpty() ? "" : " · " + e.getKey()), new Table(ChemGrid.headers(e.getValue()), ChemGrid.data(e.getValue())));
+                    continue;
+                }
                 List<String> heads = new ArrayList<>();
                 for (String[] c : child.cols) heads.add(c[1]);
                 List<List<String>> data = new ArrayList<>();

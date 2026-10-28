@@ -10,7 +10,7 @@ from core.access import current_permissions
 from core.catalog import LearnedValueCatalog
 from core.database import get_session_client
 from core.delete_service import password_delete_panel
-from core.employee_service import AUTHORITIES, EmployeeService
+from core.employee_service import AUTHORITIES, EmployeeService, employee_details, employee_name, employee_photo_bytes, upload_employee_photo
 from core.reporting import controlled_record_pdf_bytes
 from core.selection_labels import employee_label
 from core.ui import consume_master_blank_request, page_header, record_widget_token, save_success_popup, section_bar, subpage_navigation, template_download_row
@@ -78,7 +78,16 @@ def render_entry()->None:
         remarks=st.text_area('Remarks',value=str(existing.get('remarks') or ''),height=70)
         save=st.form_submit_button('Save Employee',type='primary',disabled=not writable,width='stretch')
     st.caption(f"Experience automatically calculated: {svc.years(exp_start.isoformat())} completed years")
-    photo=st.file_uploader('Employee Photo',type=['png','jpg','jpeg'],key=f"employee_photo_{scope}")
+    # R38: employee photo - current thumbnail + upload (a photo chosen for a new employee is stored on Save).
+    ph1,ph2=st.columns([1,5],gap='small',vertical_alignment='center')
+    current_photo=employee_photo_bytes(existing.get('photo_storage_path')) if existing else None
+    with ph1:
+        if current_photo:
+            st.image(current_photo,width=96,caption='Current photo')
+        else:
+            st.caption('No photo yet')
+    with ph2:
+        photo=st.file_uploader('Employee Photo (JPG / PNG, max 3 MB)',type=['png','jpg','jpeg'],key=f"employee_photo_{scope}")
     if save:
         try:
             final_code=code.strip()
@@ -86,15 +95,17 @@ def render_entry()->None:
                 final_code=str(repo.rpc('qsms_next_employee_code') or '')
             payload={'employee_code':final_code,'first_name':first.strip(),'last_name':last.strip(),'email':email.strip().lower(),'department':str(department).strip(),'designation':str(designation).strip(),'plant':str(plant).strip(),'mobile_number':mobile.strip() or None,'approval_authorities':authorities,'is_top_level_authority':bool(top_level),'reports_to_employee_id':None if top_level else (reports or None),'experience_start_date':exp_start.isoformat(),'status':status,'remarks':remarks.strip() or None,'source_system':'QSMS'}
             saved=svc.save(payload,None if selected=='__new__' else selected)
+            if photo is not None and saved.get('id'):
+                try:upload_employee_photo(repo,str(saved['id']),photo)
+                except Exception as photo_exc:st.warning(f"Employee saved, but the photo was not stored: {db_message(photo_exc)}")
             catalog.remember_many('employee.department',[department]);catalog.remember_many('employee.designation',[designation]);catalog.remember_many('employee.plant',[plant])
             st.session_state['edit_employee_id']=str(saved['id']);save_success_popup(f"Employee saved with code {saved.get('employee_code')}.", queue_for_rerun=True);st.rerun()
         except Exception as exc:st.error(db_message(exc))
     if existing and photo is not None and writable:
         if st.button('Upload Employee Photo',type='primary',width='stretch'):
             try:
-                client=get_session_client(); ext=photo.name.rsplit('.',1)[-1].lower(); path=f"{repo.tenant_id}/employees/{existing['id']}/photo_{existing['id']}.{ext}"
-                client.storage.from_('quality-documents').upload(path,photo.getvalue(),{'content-type':photo.type,'upsert':'true'})
-                repo.update('employees',str(existing['id']),{'photo_storage_path':path});save_success_popup('Employee photo uploaded successfully.', queue_for_rerun=True);st.rerun()
+                upload_employee_photo(repo,str(existing['id']),photo)
+                save_success_popup('Employee photo uploaded successfully.', queue_for_rerun=True);st.rerun()
             except Exception as exc:st.error(db_message(exc))
     if existing:
         if password_delete_panel(
@@ -105,6 +116,71 @@ def render_entry()->None:
             help_text='Permanent deletion requires your current QCMS password. Linked users/approvals will block deletion.',
         ):
             st.session_state.pop('edit_employee_id',None); st.rerun()
+
+
+def _person_line(row:dict)->str:
+    parts=[employee_name(row),str(row.get('designation') or '').strip(),str(row.get('email') or '').strip()]
+    return ' · '.join(p for p in parts if p) or '-'
+
+
+def _employee_details_panel(svc:EmployeeService,rows:list[dict],selected_row:dict)->None:
+    """R38: photo, reporting-to, escalation chain, direct reports, approval routes and departments of the selected employee."""
+    try:
+        routes=svc.repo.select('qcms_module_approval_routes',order_by='module_key',limit=3000)
+    except Exception:
+        routes=[]
+    try:
+        schedules=svc.repo.select('qcms_notification_schedules',order_by='schedule_label',limit=500)
+    except Exception:
+        schedules=[]
+    info=employee_details(rows,routes,str(selected_row.get('id')),schedules)
+    section_bar('EMPLOYEE DETAILS · REPORTING & ESCALATION',f"{employee_name(selected_row)} · {selected_row.get('employee_code') or ''}")
+    p1,p2=st.columns([1,4],gap='medium',vertical_alignment='top')
+    with p1:
+        photo=employee_photo_bytes(selected_row.get('photo_storage_path'))
+        if photo:
+            st.image(photo,width=130)
+        else:
+            initials=''.join(part[:1] for part in employee_name(selected_row).split()[:2]).upper() or '?'
+            st.markdown(f"<div style='width:110px;height:110px;border-radius:50%;background:#E6F2F2;color:#0B6E70;display:flex;align-items:center;justify-content:center;font:900 34px Arial'>{initials}</div>",unsafe_allow_html=True)
+            st.caption('No photo - add it in Employee Entry')
+    with p2:
+        boss=info['reporting_to']
+        st.markdown(
+            f"### {employee_name(selected_row)}  \n"
+            f"**Code:** {selected_row.get('employee_code') or '-'} · **Department(s):** {', '.join(info['departments']) or '-'} · "
+            f"**Designation:** {selected_row.get('designation') or '-'} · **Plant:** {selected_row.get('plant') or '-'}  \n"
+            f"**E-mail:** {selected_row.get('email') or '-'} · **Mobile:** {selected_row.get('mobile_number') or '-'} · **Status:** {selected_row.get('status') or '-'}"
+        )
+        b1,b2=st.columns([1,8],gap='small',vertical_alignment='center')
+        boss_photo=employee_photo_bytes(boss.get('photo_storage_path')) if boss else None
+        with b1:
+            if boss_photo:
+                st.image(boss_photo,width=56)
+        with b2:
+            st.markdown(f"**Reports to:** {_person_line(boss) if boss else ('Top-level authority' if selected_row.get('is_top_level_authority') else '— not set —')}")
+        if info['escalation']:
+            portal_table(pd.DataFrame([{'Escalation Level':f"L{r['level']}",'Name':employee_name(r),'Designation':r.get('designation'),'Department':r.get('department'),'Email':r.get('email'),'Mobile':r.get('mobile_number')} for r in info['escalation']]),hide_index=True,width='stretch')
+        else:
+            st.caption('No escalation chain (no Reports-To set).')
+    d1,d2=st.columns(2,gap='medium')
+    with d1:
+        st.markdown(f"**Direct reports ({len(info['direct_reports'])})**")
+        if info['direct_reports']:
+            portal_table(pd.DataFrame([{'Name':employee_name(r),'Designation':r.get('designation'),'Department':r.get('department'),'Status':r.get('status')} for r in info['direct_reports']]),hide_index=True,width='stretch')
+        else:
+            st.caption('No employees report to this person.')
+    with d2:
+        st.markdown(f"**Approver in approval routes ({len(info['approval_routes'])})**")
+        if info['approval_routes']:
+            portal_table(pd.DataFrame([{'Module':r.get('module_key'),'Department':r.get('department'),'Level':r.get('level_no'),'Level Name':r.get('level_name'),'Required':'YES' if r.get('required') else 'NO','Overdue after (h)':r.get('overdue_after_hours')} for r in info['approval_routes']]),hide_index=True,width='stretch')
+        else:
+            st.caption('Not an approver in any module approval route.')
+    st.markdown(f"**Overdue escalation in notification schedules ({len(info['schedule_escalations'])})**")
+    if info['schedule_escalations']:
+        portal_table(pd.DataFrame([{'Schedule':r.get('schedule_label'),'Module':r.get('module_key'),'Department':r.get('department'),'Escalation':f"Level {r.get('level')}",'After (h)':r.get('after_hours'),'Enabled':'YES' if r.get('enabled') else 'NO'} for r in info['schedule_escalations']]),hide_index=True,width='stretch')
+    else:
+        st.caption('Not an overdue escalation employee in any notification schedule.')
 
 
 def render_records()->None:
@@ -136,6 +212,7 @@ def render_records()->None:
         with c3:
             if password_delete_panel(repo=svc.repo,table='employees',rows=[selected_row],labeler=lambda r:f"{r.get('employee_code')} · {r.get('first_name')} {r.get('last_name')}",key=f"delete_employee_{selected}",can_delete=perms['can_archive'],title='Delete Selected Employee',help_text='Permanent deletion requires your current password. Employees linked to users or approvals may need to be set Inactive instead.'):
                 st.rerun()
+        _employee_details_panel(svc,rows,selected_row)
     else:
         st.info('No Employee records match the search.')
 

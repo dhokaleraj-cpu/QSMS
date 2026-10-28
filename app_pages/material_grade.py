@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import zlib
 
 import pandas as pd
 import streamlit as st
@@ -20,6 +21,14 @@ DEFAULT_ELEMENTS = ["C", "Si", "Mn", "P", "S", "Cr", "Mo", "Ni"]
 
 def _grade_labels(rows: list[dict]) -> dict[str, str]:
     return {str(r["id"]): material_grade_label(r) for r in rows}
+
+
+def _horizontal_composition(composition: list[dict]) -> pd.DataFrame:
+    """R38: Material Grade chemistry with elements as COLUMNS and Minimum / Maximum / Test Method as rows."""
+    from core.analysis_grids import chemistry_table, table_frame
+    if not composition:
+        return pd.DataFrame([{"Element": "No chemical composition recorded"}])
+    return table_frame(chemistry_table(composition, [("Minimum", "minimum"), ("Maximum", "maximum"), ("Test Method", "test_method")], blank=""))
 
 
 def render_entry() -> None:
@@ -95,33 +104,62 @@ def render_entry() -> None:
         chemistry = repo.select("material_grade_elements", eq={"material_grade_id": grade_id}, order_by="element", limit=300)
         if password_delete_panel(repo=repo, table="material_grade_elements", rows=chemistry, labeler=lambda r: f"{r.get('element')} · {r.get('minimum')} to {r.get('maximum')} {r.get('unit') or '%'}", key=f"delete_chem_{grade_id}", can_delete=perms["can_archive"], title="Delete Chemical Composition row"):
             st.rerun()
+        # R38: horizontal grid - elements are COLUMNS, rows are Minimum % / Maximum % (+ Unit / Test Method).
+        from core.analysis_grids import element_key, ordered_elements
         existing_by_name = {str(r.get("element") or "").strip().casefold(): r for r in chemistry}
-        chemistry_rows = [
-            {"Element": r.get("element"), "Minimum %": r.get("minimum"), "Maximum %": r.get("maximum"), "Unit": r.get("unit") or "%", "Test Method": r.get("test_method")}
-            for r in chemistry
-        ]
+        ordered = [str(r.get("element") or "").strip() for r in ordered_elements(chemistry) if str(r.get("element") or "").strip()]
+        default_columns = list(ordered)
         for element in DEFAULT_ELEMENTS:
-            if element.casefold() not in existing_by_name:
-                chemistry_rows.append({"Element": element, "Minimum %": None, "Maximum %": None, "Unit": "%", "Test Method": None})
-        cdf = pd.DataFrame(chemistry_rows, columns=["Element", "Minimum %", "Maximum %", "Unit", "Test Method"])
-        edited = st.data_editor(
-            cdf, num_rows="dynamic", hide_index=True, width="stretch", height=440,
-            key=f"chem_{grade_id}", disabled=not writable,
-            column_config={"Minimum %": st.column_config.NumberColumn(format="%.4f"), "Maximum %": st.column_config.NumberColumn(format="%.4f")},
+            if element.casefold() not in existing_by_name and element_key(element) not in {element_key(x) for x in ordered}:
+                default_columns.append(element)
+        element_options = list(dict.fromkeys(default_columns + [str(v) for v in catalog.suggestions("material.element") if str(v).strip()]))
+        elements = st.multiselect(
+            "Elements (grid columns)", element_options, default=default_columns, accept_new_options=True,
+            key=f"chem_columns_{grade_id}", disabled=not writable,
+            help="Add an element by typing its symbol and pressing Enter. Elements are shown left to right as columns.",
+        )
+        elements = [str(e).strip() for e in elements if str(e).strip()]
+        elements = [str(r["element"]) for r in ordered_elements([{"element": e} for e in elements])]
+        columns_token = zlib.crc32("|".join(elements).encode("utf-8"))
+        def _cur(element: str, field: str):
+            return (existing_by_name.get(element.casefold()) or {}).get(field)
+        limits = pd.DataFrame([
+            {"Row": "Minimum %", **{e: _cur(e, "minimum") for e in elements}},
+            {"Row": "Maximum %", **{e: _cur(e, "maximum") for e in elements}},
+        ], columns=["Row", *elements])
+        limits_edit = st.data_editor(
+            limits, hide_index=True, width="stretch", height=125, key=f"chem_h_{grade_id}_{columns_token}",
+            disabled=True if not writable else ["Row"],
+            column_config={e: st.column_config.NumberColumn(e, format="%.4f") for e in elements},
+        )
+        extra = pd.DataFrame([
+            {"Row": "Unit", **{e: str(_cur(e, "unit") or "%") for e in elements}},
+            {"Row": "Test Method", **{e: str(_cur(e, "test_method") or "") for e in elements}},
+        ], columns=["Row", *elements])
+        extra_edit = st.data_editor(
+            extra, hide_index=True, width="stretch", height=125, key=f"chem_h_extra_{grade_id}_{columns_token}",
+            disabled=True if not writable else ["Row"],
+            column_config={e: st.column_config.TextColumn(e) for e in elements},
         )
         suggestions = catalog.suggestions("material.element")
         if suggestions:
             st.caption("Available element names from previous grades: " + ", ".join(suggestions[:30]))
         if st.button("Save Chemical Composition", type="primary", disabled=not writable, width="stretch"):
             try:
-                for _, row in edited.iterrows():
-                    element = str(row.get("Element") or "").strip()
-                    if not element: continue
-                    low = None if pd.isna(row.get("Minimum %")) else row.get("Minimum %"); high = None if pd.isna(row.get("Maximum %")) else row.get("Maximum %")
+                def _value(frame: pd.DataFrame, row_name: str, element: str):
+                    match = frame[frame["Row"] == row_name]
+                    value = match.iloc[0].get(element) if not match.empty else None
+                    return None if value is None or (not isinstance(value, str) and pd.isna(value)) else value
+                for element in elements:
+                    low = _value(limits_edit, "Minimum %", element); high = _value(limits_edit, "Maximum %", element)
+                    if low is None and high is None and element.casefold() not in existing_by_name:
+                        continue  # an untouched default column does not create an empty element row
                     if low is not None and high is not None and float(low) > float(high): raise ValueError(f"{element}: Minimum cannot exceed Maximum.")
-                    payload = {"material_grade_id": grade_id, "element": element, "minimum": low, "maximum": high, "unit": str(row.get("Unit") or "%").strip() or "%", "test_method": str(row.get("Test Method") or "").strip() or None}
+                    unit = str(_value(extra_edit, "Unit", element) or "%").strip() or "%"
+                    method = str(_value(extra_edit, "Test Method", element) or "").strip() or None
+                    payload = {"material_grade_id": grade_id, "element": element, "minimum": low, "maximum": high, "unit": unit, "test_method": method}
                     repo.upsert_by("material_grade_elements", payload, natural_key={"material_grade_id": grade_id, "element": element})
-                    catalog.remember_many("material.element", [element]); catalog.remember_many("material.test_method", [row.get("Test Method")])
+                    catalog.remember_many("material.element", [element]); catalog.remember_many("material.test_method", [method])
                 save_success_popup("Chemical Composition saved inside the Material Grade Master.", queue_for_rerun=True); st.rerun()
             except Exception as exc:
                 st.error(db_message(exc))
@@ -154,7 +192,7 @@ def render_records() -> None:
             pdf = controlled_record_pdf_bytes(
                 "MATERIAL GRADE RECORD",
                 {"Material Grade": selected_row.get("grade_code"), "Material Number": selected_row.get("material_number"), "Standard / Specification": selected_row.get("standard"), "Revision": selected_row.get("revision"), "Effective Date": selected_row.get("effective_date"), "Status": selected_row.get("status"), "Remarks": selected_row.get("remarks")},
-                {"Chemical Composition": [{"Element": row.get("element"), "Minimum": row.get("minimum"), "Maximum": row.get("maximum"), "Unit": row.get("unit"), "Test Method": row.get("test_method")} for row in composition]},
+                {"Chemical Composition": _horizontal_composition(composition)},  # R38: elements as columns
                 record_number=f"{selected_row.get('grade_code')}-REV-{selected_row.get('revision')}",
             )
             st.download_button("Download Grade PDF", pdf, file_name=f"Material_Grade_{selected_row.get('grade_code')}_Rev_{selected_row.get('revision')}.pdf", mime="application/pdf", width="stretch")
@@ -179,4 +217,4 @@ def render_records() -> None:
     portal_table(df, hide_index=True, width="stretch", height=430)
     if selected:
         section_bar("SELECTED GRADE · CHEMICAL COMPOSITION", "Chemical elements remain embedded inside the selected Material Grade Master.")
-        portal_table(pd.DataFrame([{"Element": r.get("element"), "Minimum %": r.get("minimum"), "Maximum %": r.get("maximum"), "Unit": r.get("unit"), "Test Method": r.get("test_method")} for r in composition]), hide_index=True, width="stretch", height=300)
+        portal_table(_horizontal_composition(composition), hide_index=True, width="stretch")

@@ -165,6 +165,22 @@ def quality_record_excel_bytes(payload: Mapping[str, object], report_kind: str) 
             sections = (("Inspection Results", list(payload.get("results") or [])),)
         for title, rows in sections:
             frame = pd.DataFrame([dict(row) for row in rows])
+            if rows and title in ("Chemistry", "Jominy"):
+                # R38: horizontal grids - elements / Jominy distances are columns (Jominy adds the mm row).
+                from core.analysis_grids import chemistry_table, jominy_table, table_frame
+                if title == "Chemistry":
+                    grid = chemistry_table([dict(r) for r in rows], [
+                        ("Spec. Min", "minimum_value"), ("Spec. Max", "maximum_value"),
+                        ("RMTC Achieved", lambda r: r.get("rmtc_actual_value") if r.get("rmtc_actual_value") not in (None, "") else r.get("source_actual_value")),
+                        ("Achieved", "actual_value"), ("Result", "result"),
+                    ], blank="")
+                else:
+                    grid = jominy_table([dict(r) for r in rows], [
+                        ("Min HRC", "minimum_hrc"), ("Max HRC", "maximum_hrc"), ("RMTC HRC", "rmtc_actual_hrc"),
+                        ("Achieved HRC", lambda r: r.get("actual_value") if r.get("actual_value") not in (None, "") else r.get("actual_hrc")),
+                        ("Result", "result"),
+                    ], blank="")
+                frame = table_frame(grid)
             if not frame.empty and "observations" in frame.columns:
                 frame["observations"] = frame["observations"].apply(
                     lambda value: ", ".join(str(item) for item in value if item not in (None, "")) if isinstance(value, list) else value
@@ -548,6 +564,8 @@ def _rmtc_grid(
     *,
     status_columns: tuple[int, ...] = (),
     header_rows: int = 1,
+    status_rows: tuple[int, ...] = (),
+    label_column: bool = False,
 ) -> Table:
     head = _tone(header_style, INK, bold=True)
     remark_cols = {i for i, v in enumerate(rows[0] if rows else []) if _is_remark_label(v)}
@@ -561,8 +579,10 @@ def _rmtc_grid(
                 style = _aligned(head, TA_CENTER)
                 cells.append(_paragraph(value, style))
                 continue
-            elif col_index in status_columns:
+            elif col_index in status_columns or (row_index in status_rows and col_index > 0):
                 style = _tone(cell_style, _status_text_color(value), bold=True)
+            elif label_column and col_index == 0:
+                style = _tone(cell_style, INK, bold=True)  # R38: row titles of horizontal grids
             elif col_index in remark_cols:
                 style = _tone(cell_style, REMARK_COLOR, italic=True)
             elif col_index in conclusion_cols:
@@ -723,11 +743,71 @@ def _chemical_horizontal_report_table(
                 value = row.get("source_actual_value")
             line.append("-" if value in (None, "") else value)
         rows.append(line)
-    first_width = 26 * mm
-    remaining = max(1.0, content_width - first_width)
-    value_width = remaining / max(1, len(header) - 1)
-    widths = [first_width, *([value_width] * (len(header) - 1))]
-    return _rmtc_grid(rows, widths, styles["header"], styles["small"], header_rows=1)
+    # R38 A2: wide element lists wrap into stacked bands (row titles repeated) so the grid fits A4.
+    return _horizontal_analysis_grid(rows, content_width, styles["header"], styles["small"], first_width=26 * mm)
+
+
+_SHORT_STATUS = {"NOT_EVALUATED": "N.E.", "NOT_APPLICABLE": "N.A.", "APPLICABLE": "Yes"}
+
+
+def _short_status(value: object) -> object:
+    return _SHORT_STATUS.get(str(value or "").upper(), value)
+
+
+def _horizontal_analysis_grid(
+    table: Sequence[Sequence[object]],
+    content_width: float,
+    header_style: ParagraphStyle,
+    cell_style: ParagraphStyle,
+    *,
+    status_rows: tuple[int, ...] = (),
+    first_width: float = 26 * mm,
+) -> Table:
+    """R38: chemistry / Jominy grid with elements or distances as COLUMNS (row titles in column 0).
+
+    Very wide grids (more than 16 value columns) are split into stacked blocks that repeat the row titles.
+    """
+    rows = [list(row) for row in table]
+    if not rows or len(rows[0]) <= 1:
+        rows = [[(rows[0][0] if rows else "Item"), "-"], *[[row[0] if row else "", "No values recorded"] for row in rows[1:]]] if rows else [["Item", "-"]]
+    values = len(rows[0]) - 1
+    per_block = 16
+    if values <= per_block:
+        width = max(1.0, content_width - first_width) / max(1, values)
+        return _rmtc_grid(rows, [first_width, *([width] * values)], header_style, cell_style,
+                          status_rows=status_rows, label_column=True)
+    blocks: list[list[object]] = []
+    for start in range(1, values + 1, per_block):
+        block = [[row[0], *row[start:start + per_block]] for row in rows]
+        count = len(block[0]) - 1
+        width = max(1.0, content_width - first_width) / per_block
+        blocks.append([_rmtc_grid(block, [first_width, *([width] * count)], header_style, cell_style,
+                                  status_rows=status_rows, label_column=True)])
+    stacked = Table(blocks, colWidths=[content_width], hAlign="LEFT")
+    stacked.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                 ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+    return stacked
+
+
+def _qr_approval_block(url: object, lines: Sequence[object], content_width: float, label_style: ParagraphStyle, cell_style: ParagraphStyle) -> Table | None:
+    """R38: material-location QR printed in the approval block of an approved RMTC."""
+    if not str(url or "").strip():
+        return None
+    try:
+        from core.qr_codes import qr_drawing
+        drawing = qr_drawing(str(url), 30 * mm)
+    except Exception:
+        return None
+    text = [_paragraph("MATERIAL LOCATION QR · scan to open / download this approved RMTC certificate (QCMS login required)", _tone(label_style, TEAL, bold=True))]
+    text += [_paragraph(line, cell_style) for line in lines]
+    text.append(_paragraph(str(url), _tone(cell_style, MUTED, italic=True)))
+    table = Table([[drawing, text]], colWidths=[34 * mm, content_width - 34 * mm], hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.6, TEAL), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    return table
 
 
 # Compatibility tokens retained for v4.12.5 verification: ["Final Decision", overall] and ["Decision Reason", decision_reason]
@@ -886,6 +966,12 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     )
 
     story: list[object] = []
+    # R38: sections Not Applicable for this RMTC are omitted from the print (flowables go to a discarded list).
+    from core.section_applicability import normalize_rmtc_sections, rmtc_not_applicable_labels
+    applicable = normalize_rmtc_sections(payload.get("applicable_sections"))
+
+    def _sink(key: str) -> list[object]:
+        return story if applicable.get(key, True) else []
 
     # Header / traceability. The 4-column grid is exactly the same width as the page header.
     story.append(_rmtc_section_bar("RMTC HEADER & TRACEABILITY", content_width, section_text_style))
@@ -910,9 +996,15 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
             [29 * mm, content_width - 29 * mm], label_style, cell_style,
             label_columns=(0,),
         ))
+    if rmtc_not_applicable_labels(applicable):  # R38
+        story.append(_rmtc_labeled_grid(
+            [["Sections Not Applicable", ", ".join(rmtc_not_applicable_labels(applicable))]],
+            [29 * mm, content_width - 29 * mm], label_style, cell_style,
+            label_columns=(0,),
+        ))
 
-    story.append(Spacer(1, 1.6 * mm))
-    story.append(_rmtc_section_bar("GLOBAL HEAT QUANTITY BALANCE & RECORD LIST", content_width, section_text_style))
+    _sink("heat_balance").append(Spacer(1, 1.6 * mm))
+    _sink("heat_balance").append(_rmtc_section_bar("GLOBAL HEAT QUANTITY BALANCE & RECORD LIST", content_width, section_text_style))
     heat_balance_rows = [
         ["Global Heat Qty kg", heat_summary.get("global_steel_quantity_kg") or record.get("certificate_quantity"),
          "Committed kg", heat_summary.get("committed_steel_quantity_kg"),
@@ -921,7 +1013,7 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
          "Remaining Planned kg", heat_summary.get("remaining_planned_steel_quantity_kg"),
          "Active RMTC Records", heat_summary.get("active_rmtc_count")],
     ]
-    story.append(_rmtc_labeled_grid(
+    _sink("heat_balance").append(_rmtc_labeled_grid(
         heat_balance_rows,
         [31*mm, 33*mm, 31*mm, 33*mm, 34*mm, 32*mm],
         label_style, cell_style, label_columns=(0, 2, 4),
@@ -935,7 +1027,7 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         ])
     if len(heat_record_rows) == 1:
         heat_record_rows.append([record.get("rmtc_number"), record.get("certificate_reference"), supplier.get("party_name"), "-", "-", "-", "-", record.get("disposition") or record.get("status")])
-    story.append(_rmtc_grid(
+    _sink("heat_balance").append(_rmtc_grid(
         heat_record_rows,
         [24*mm, 27*mm, 34*mm, 21*mm, 21*mm, 21*mm, 25*mm, 21*mm],
         header_style, small_style, status_columns=(7,),
@@ -964,15 +1056,15 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     ))
 
     mechanical = record.get("mechanical_results") or {}
-    story.append(Spacer(1, 1.6 * mm))
-    story.append(_rmtc_section_bar("SUPPLIER RMTC MECHANICAL PROPERTIES", content_width, section_text_style))
+    _sink("supplier_mechanical").append(Spacer(1, 1.6 * mm))
+    _sink("supplier_mechanical").append(_rmtc_section_bar("SUPPLIER RMTC MECHANICAL PROPERTIES", content_width, section_text_style))
     mech_rows = [["Property", "Actual / Result", "Source"]]
     if isinstance(mechanical, Mapping) and mechanical:
         for key, value in mechanical.items():
             mech_rows.append([str(key).replace("_", " ").title(), value, "Supplier RMTC"])
     else:
         mech_rows.append(["Mechanical Properties", "No dedicated mechanical property values recorded", "Supplier RMTC"])
-    story.append(_rmtc_grid(mech_rows, [55*mm, 94*mm, 45*mm], header_style, cell_style))
+    _sink("supplier_mechanical").append(_rmtc_grid(mech_rows, [55*mm, 94*mm, 45*mm], header_style, cell_style))
 
     # Worksheets flow continuously. No forced page break is used, reducing total pages.
     for worksheet_index, approval in enumerate(part_approvals, start=1):
@@ -997,63 +1089,68 @@ def rmtc_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
         ))
 
         part_chem = [row for row in chemistry if str(row.get("part_id")) == part_id]
-        story.append(_rmtc_section_bar("Chemical Composition", content_width, sub_text_style, light=True))
-        chem_rows = [["Element", "Minimum", "Maximum", "Actual", "Unit", "Status"]]
-        for row in part_chem:
-            chem_rows.append([row.get("element"), row.get("minimum_value"), row.get("maximum_value"), row.get("actual_value"), row.get("unit") or "%", row.get("result")])
-        if len(chem_rows) == 1:
-            chem_rows.append(["-", "", "", "No chemistry values recorded", "", "NOT_EVALUATED"])
-        story.append(_rmtc_grid(chem_rows, [24*mm, 31*mm, 31*mm, 39*mm, 19*mm, 50*mm], header_style, cell_style, status_columns=(5,)))
+        _sink("chemistry").append(_rmtc_section_bar("Chemical Composition", content_width, sub_text_style, light=True))
+        # R38: horizontal chemistry grid - elements are columns, rows are Min / Max / Actual / Status.
+        from core.analysis_grids import chemistry_table, jominy_table
+        chem_table = chemistry_table(part_chem, [
+            ("Minimum", "minimum_value"), ("Maximum", "maximum_value"), ("Actual", "actual_value"),
+            ("Status", lambda r: _short_status(r.get("result") or "NOT_EVALUATED")),
+        ])
+        _sink("chemistry").append(_horizontal_analysis_grid(chem_table, content_width, header_style, small_style, status_rows=(4,), first_width=22 * mm))
 
         part_jominy = [row for row in jominy if str(row.get("part_id")) == part_id]
-        story.append(_rmtc_section_bar("Jominy Results", content_width, sub_text_style, light=True))
-        j_rows = [["Distance", "mm", "Min HRC", "Max HRC", "Actual", "Actual Status", "Calculated", "Calc. Status", "Applicable"]]
-        for row in part_jominy:
-            j_rows.append([
-                row.get("distance_label"), row.get("distance_mm"), row.get("minimum_hrc"), row.get("maximum_hrc"),
-                row.get("actual_hrc"), row.get("result"), row.get("calculated_hrc"), row.get("calculated_result"),
-                "No" if str(row.get("applicability")) == "NOT_APPLICABLE" else "Yes",
-            ])
-        if len(j_rows) == 1:
-            j_rows.append(["-", "", "", "", "", "NOT_EVALUATED", "", "NOT_EVALUATED", "No"])
-        story.append(_rmtc_grid(
-            j_rows,
-            [20*mm, 14*mm, 18*mm, 18*mm, 20*mm, 24*mm, 22*mm, 28*mm, 30*mm],
-            header_style, small_style, status_columns=(5, 7),
-        ))
+        _sink("jominy").append(_rmtc_section_bar("Jominy Results", content_width, sub_text_style, light=True))
+        # R38: horizontal Jominy grid - distances are columns; inch label header + mm row, then HRC rows.
+        j_table = jominy_table(part_jominy, [
+            ("Min HRC", "minimum_hrc"), ("Max HRC", "maximum_hrc"), ("Actual HRC", "actual_hrc"),
+            ("Actual Status", lambda r: _short_status(r.get("result") or "NOT_EVALUATED")),
+            ("Calculated HRC", "calculated_hrc"),
+            ("Calc. Status", lambda r: _short_status(r.get("calculated_result") or "NOT_EVALUATED")),
+            ("Applicable", lambda r: "No" if str(r.get("applicability")) == "NOT_APPLICABLE" else "Yes"),
+        ])
+        _sink("jominy").append(_horizontal_analysis_grid(j_table, content_width, header_style, small_style, status_rows=(5, 7), first_width=22 * mm))
 
-        story.append(_rmtc_section_bar("DI / Hardenability", content_width, sub_text_style, light=True))
+        _sink("di_value").append(_rmtc_section_bar("DI / Hardenability", content_width, sub_text_style, light=True))
         di_rows = [["Grain Size ASTM E-112", "Actual DI", "Actual DI Status", "Calculated DI", "Calculated DI Status"]]
         di_rows.append([approval.get("grain_size"), approval.get("actual_di"), approval.get("actual_di_status"), approval.get("calculated_di"), approval.get("calculated_di_status")])
-        story.append(_rmtc_grid(di_rows, [42*mm, 32*mm, 42*mm, 32*mm, 46*mm], header_style, cell_style, status_columns=(2, 4)))
+        _sink("di_value").append(_rmtc_grid(di_rows, [42*mm, 32*mm, 42*mm, 32*mm, 46*mm], header_style, cell_style, status_columns=(2, 4)))
 
         part_req = [row for row in requirements if str(row.get("part_id")) == part_id]
         mechanical_tokens = ("tensile", "yield", "elongation", "reduction", "impact", "proof", "mechanical", "uts")
         mech_req = [row for row in part_req if any(token in str(row.get("requirement_name") or row.get("requirement_code") or "").casefold() for token in mechanical_tokens)]
         other_req = [row for row in part_req if row not in mech_req]
 
-        story.append(_rmtc_section_bar("Mechanical Properties", content_width, sub_text_style, light=True))
+        _sink("mechanical").append(_rmtc_section_bar("Mechanical Properties", content_width, sub_text_style, light=True))
         mech_part_rows = [["Property", "Specification", "Actual / Observation", "Unit", "Status", "Remarks"]]
         for row in mech_req:
             mech_part_rows.append([row.get("requirement_name") or row.get("requirement_code"), row.get("requirement_value"), row.get("actual_value"), row.get("unit"), row.get("result"), row.get("remarks")])
         if len(mech_part_rows) == 1:
             mech_part_rows.append(["Mechanical Properties", "As supplier RMTC / Part requirement", "No separate part-level mechanical property row", "", "NOT_EVALUATED", ""])
-        story.append(_rmtc_grid(mech_part_rows, [38*mm, 42*mm, 40*mm, 18*mm, 24*mm, 32*mm], header_style, small_style, status_columns=(4,)))
+        _sink("mechanical").append(_rmtc_grid(mech_part_rows, [38*mm, 42*mm, 40*mm, 18*mm, 24*mm, 32*mm], header_style, small_style, status_columns=(4,)))
 
-        story.append(_rmtc_section_bar("Heat Treatment & Other Requirements", content_width, sub_text_style, light=True))
+        _sink("heat_treatment").append(_rmtc_section_bar("Heat Treatment & Other Requirements", content_width, sub_text_style, light=True))
         req_rows = [["Requirement", "Specification / Part Master", "RMTC Actual / Observation", "Unit", "Status", "Remarks"]]
         for row in other_req:
             req_rows.append([row.get("requirement_name") or row.get("requirement_code"), row.get("requirement_value"), row.get("actual_value"), row.get("unit"), row.get("result"), row.get("remarks")])
         if len(req_rows) == 1:
             req_rows.append(["-", "No additional requirements recorded", "", "", "NOT_EVALUATED", ""])
-        story.append(_rmtc_grid(req_rows, [38*mm, 45*mm, 39*mm, 18*mm, 24*mm, 30*mm], header_style, small_style, status_columns=(4,)))
+        _sink("heat_treatment").append(_rmtc_grid(req_rows, [38*mm, 45*mm, 39*mm, 18*mm, 24*mm, 30*mm], header_style, small_style, status_columns=(4,)))
 
-    story.append(CondPageBreak(55 * mm))
-    story.append(_rmtc_section_bar("RMTC MICROSTRUCTURE PHOTOGRAPHS", content_width, section_text_style))
-    story.append(_microstructure_photo_table(microstructure_images, content_width, center_style))
+    _sink("microstructure").append(CondPageBreak(55 * mm))
+    _sink("microstructure").append(_rmtc_section_bar("RMTC MICROSTRUCTURE PHOTOGRAPHS", content_width, section_text_style))
+    _sink("microstructure").append(_microstructure_photo_table(microstructure_images, content_width, center_style))
 
     story.append(CondPageBreak(44 * mm))
     story.append(_rmtc_section_bar("RMTC VALIDATION STATUS & FINAL DECISION", content_width, section_text_style))
+    # R38: the material-location QR is printed for APPROVED / ACCEPTED RMTCs only.
+    from core.qr_codes import is_rmtc_approved
+    qr_lines = list(payload.get("qr_lines") or [])
+    if payload.get("qr_app_url") and str(payload.get("qr_app_url")) != str(payload.get("qr_url") or ""):
+        qr_lines.append(f"QCMS link (after login): {payload.get('qr_app_url')}")
+    qr_block = _qr_approval_block(payload.get("qr_url"), qr_lines, content_width, label_style, cell_style) if is_rmtc_approved(record) else None
+    if qr_block is not None:
+        story.append(qr_block)
+        story.append(Spacer(1, 1.2 * mm))
     if not part_approvals:
         story.append(_rmtc_grid(
             [["Validation Check", "Status", "Validation Check", "Status"], ["Record", "NOT_EVALUATED", "Final Decision", "PENDING"]],
@@ -1553,10 +1650,14 @@ def metlab_record_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     jominy_rows = [dict(row) for row in (results.get("jominy_rows") or [])]
     if jominy_rows:
         story.append(_rmtc_section_bar("HARDNESS / JOMINY TRAVERSE", content_width, sty["sub"], light=True))
-        rows = [["Distance", "mm", "Min HRC", "Max HRC", "RMTC HRC", "MetLAB HRC", "Result", "Remark"]]
-        for row in jominy_rows:
-            rows.append([row.get("distance_label"), row.get("distance_mm"), row.get("minimum_hrc"), row.get("maximum_hrc"), row.get("rmtc_actual_hrc"), row.get("actual_value"), row.get("result"), row.get("remarks")])
-        story.append(_rmtc_grid(rows, [20*mm, 17*mm, 22*mm, 22*mm, 25*mm, 28*mm, 22*mm, 38*mm], sty["header"], sty["small"], status_columns=(6,)))
+        # R38: horizontal Jominy grid with inch labels + mm row.
+        from core.analysis_grids import jominy_table
+        j_table = jominy_table(jominy_rows, [
+            ("Min HRC", "minimum_hrc"), ("Max HRC", "maximum_hrc"), ("RMTC HRC", "rmtc_actual_hrc"),
+            ("MetLAB HRC", lambda r: r.get("actual_value") if r.get("actual_value") not in (None, "") else r.get("actual_hrc")),
+            ("Result", lambda r: _short_status(r.get("result"))), ("Remark", "remarks"),
+        ])
+        story.append(_horizontal_analysis_grid(j_table, content_width, sty["header"], sty["small"], status_rows=(6,)))
 
     story.append(CondPageBreak(70 * mm))
     if is_bend_test:
@@ -1965,10 +2066,9 @@ def qc_calculation_pdf_bytes(payload: Mapping[str, object]) -> bytes:
     calc_type = str(record.get("calculation_type") or "")
     if calc_type == "JOMINY":
         curve = result_payload.get("curve") or {}
-        sections["Calculated Jominy Curve"] = pd.DataFrame([
-            {"Distance (1/16 in.)": key, "Calculated HRC": value}
-            for key, value in sorted(((int(k), v) for k, v in dict(curve).items()), key=lambda item: item[0])
-        ])
+        # R38 A2: horizontal curve - distances are columns (J n/16" header), Distance (mm) row, Calculated HRC row.
+        from core.chem_grid import jominy_curve_table, table_frame
+        sections["Calculated Jominy Curve"] = table_frame(jominy_curve_table(curve))
     elif calc_type == "DI_VALUE":
         factors = result_payload.get("factors") or {}
         sections["DI Factor Details"] = pd.DataFrame([{"Factor": key, "Value": value} for key, value in dict(factors).items()])

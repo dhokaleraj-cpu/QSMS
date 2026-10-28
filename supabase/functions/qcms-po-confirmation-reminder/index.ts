@@ -42,7 +42,7 @@ Deno.serve(async(req:Request)=>{try{
    for(const email of emails){
     const dedupeKey=`PO_CONFIRMATION_DAILY:${reportDate}:${conf.id}:${email.toLowerCase()}`;
     const{data:existing,error:existingError}=await admin.from("qcms_notification_outbox").select("id").eq("tenant_id",tenantId).eq("dedupe_key",dedupeKey).maybeSingle();if(existingError)throw existingError;if(existing?.id)continue;
-    const subject=`PRIORITY · Purchase Order confirmation pending · ${po.po_number||"QCMS PO"}`;
+    const subject=`Purchase · PRIORITY · Purchase Order confirmation pending · ${po.po_number||"PO"}`; /* R38: department prefix (supplier e-mail) */
     const introLines=[`Dear ${supplier.party_name||"Supplier"},`,"",`This is a priority daily reminder to confirm Purchase Order ${po.po_number||"-"}.`,`PO Type: ${String(po.po_type||"PURCHASE ORDER").replaceAll("_"," ")}`,`Requested confirmation date: ${String(conf.requested_at||"").slice(0,10)||"-"}`,`Expected delivery date: ${po.delivery_date||"-"}`,`Previous automated reminders: ${Number(conf.reminder_count||0)}`];
     const closingLines=["Please send your Purchase Order acknowledgement / confirmation on priority. Daily reminders stop once the current confirmation document is submitted or confirmation is recorded in QCMS.",snaps.attachments.length?"Attached: Purchase Order PDF and an Excel sheet of the order lines.":"Attached: Excel sheet of the order lines.","","Regards,",company];
     const bodyText=[...introLines,"","PURCHASE ORDER LINES",textTable(SUPPLIER_HEADERS,lineCells),poTotalsText(lines),"",...closingLines].join("\n");

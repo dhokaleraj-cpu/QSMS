@@ -447,6 +447,15 @@ def _chemical_horizontal_models(source_rows: list[dict], existing_chem: dict[str
     return pd.DataFrame(preview_rows), pd.DataFrame([actual]), ordered, labels
 
 
+def _jominy_horizontal_frame(rows: list[dict]) -> pd.DataFrame:
+    """R38: Jominy distances as COLUMNS (J1/16" ...) with a Distance (mm) row, then HRC rows."""
+    from core.analysis_grids import jominy_table, table_frame
+    return table_frame(jominy_table(rows, [
+        ("Min HRC", "minimum_hrc"), ("Max HRC", "maximum_hrc"), ("RMTC Actual HRC", "actual_hrc"),
+        ("Calculated HRC", "calculated_hrc"), ("Result", "result"),
+    ]))
+
+
 def _reference_defaults(existing: dict | None) -> list[str]:
     result_map = dict((existing or {}).get("results") or {})
     return [str(value).strip() for value in (result_map.get("reference_documents") or []) if str(value).strip()]
@@ -1049,7 +1058,7 @@ def _render_entry(required_inspection_method: str | None = None) -> None:
         for title, key in (("CHEMICAL COMPOSITION", "chemistry"), ("JOMINY HARDENABILITY", "jominy")):
             if snapshot.get(key):
                 st.markdown(f"**{title} · RMTC Actual (reference only)**")
-                reference_frame = _chemical_horizontal_models(list(snapshot[key]), {})[0] if key == "chemistry" else pd.DataFrame(snapshot[key])
+                reference_frame = _chemical_horizontal_models(list(snapshot[key]), {})[0] if key == "chemistry" else _jominy_horizontal_frame(list(snapshot[key]))
                 portal_table(reference_frame, hide_index=True, width="stretch")
     with stage_section("E", "LAYOUT MASTER INSPECTION REQUIREMENTS", key="metlab_report_render_entry_e"):
         layout_source = _layout_rows(service, plan_id, existing)

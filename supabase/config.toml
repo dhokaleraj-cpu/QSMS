@@ -43,3 +43,7 @@ minimum_password_length = 8
 
 [analytics]
 enabled = false
+
+# R38: public QR certificate download (token-checked inside the function)
+[functions.qcms-rmtc-certificate]
+verify_jwt = false

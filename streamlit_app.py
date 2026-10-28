@@ -62,6 +62,7 @@ from app_pages import (
     master_import,
     material_grade,
     npd_apqp,
+    ppap as ppap_page,
     material_inward,
     metlab_report,
     my_account,
@@ -115,6 +116,11 @@ except Exception:
 # origin-scoped Components-v2 localStorage bridge before showing Login; secure
 # same-origin cookies remain as a fast fallback for WebView/browser refreshes.
 _auth_clearing = service_persistent_auth_bridge()
+try:  # R38: keep the RMTC QR deep link (?rmtc=<number>) across the login screen
+    from core.rmtc_qr import remember_qr_request as _remember_qr_request
+    _remember_qr_request(st.query_params, st.session_state)
+except Exception:
+    pass
 if not is_logged_in() and not _auth_clearing:
     restore_persistent_login()
 if not is_logged_in() and st.session_state.pop("_qcms_auth_restore_pending", False):
@@ -165,6 +171,8 @@ android_streamlit_nav = bool(native_mobile and _native_android and _android_stre
 # Keep an explicit route-to-Page registry. Streamlit may expose the default
 # page at the root URL even when a url_path was supplied, so deriving this
 # mapping from page.url_path can drop the "dashboard" key.
+from app_pages import ecn as ecn_page  # R38 ECN / PCN register (Engineering)
+
 PAGE_ITEMS = (
     ("dashboard", st.Page(dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard")),
     ("deployment-diagnostics", st.Page(deployment_diagnostics.render, title="Deployment Diagnostics", icon=":material/verified:", url_path="deployment-diagnostics")),
@@ -202,6 +210,9 @@ PAGE_ITEMS = (
     ("npd-process-flow", st.Page(npd_apqp.render_process_flow, title="Process Flow Designer", icon=":material/account_tree:", url_path="npd-process-flow")),
     ("npd-status", st.Page(npd_apqp.render_npd_status, title="NPD Status", icon=":material/timeline:", url_path="npd-status")),
     ("apqp", st.Page(npd_apqp.render_apqp, title="APQP", icon=":material/assignment_turned_in:", url_path="apqp")),
+    ("ppap-home", st.Page(ppap_page.render_ppap_home, title="PPAP", icon=":material/folder_zip:", url_path="ppap-home")),
+    ("ppap-package", st.Page(ppap_page.render_ppap_package, title="PPAP Package", icon=":material/inventory:", url_path="ppap-package")),
+    ("ppap-templates", st.Page(ppap_page.render_ppap_templates, title="PPAP Element Templates", icon=":material/list_alt:", url_path="ppap-templates")),
     ("qc-tools", st.Page(qc_calculation_tools.render_tools, title="QC Calculation Tools", icon=":material/calculate:", url_path="qc-tools")),
     ("qc-calculation-records", st.Page(qc_calculation_tools.render_records, title="QC Calculation Records", icon=":material/receipt_long:", url_path="qc-calculation-records")),
     ("complaints-home", st.Page(complaints.render_home, title="Complaint Management", icon=":material/support_agent:", url_path="complaints-home")),
@@ -237,6 +248,7 @@ PAGE_ITEMS = (
 
     ("part-entry", st.Page(part_master.render_entry, title="Part Master Entry", icon=":material/edit_note:", url_path="part-entry")),
     ("part-records", st.Page(part_master.render_records, title="Part Master Records", icon=":material/table_view:", url_path="part-records")),
+    ("ecn-register", st.Page(ecn_page.render, title="Engineering Change Notes", icon=":material/published_with_changes:", url_path="ecn-register")),
     ("process-entry", st.Page(process_master.render_entry, title="Process Master Entry", icon=":material/settings:", url_path="process-entry")),
     ("process-records", st.Page(process_master.render_records, title="Process Master Records", icon=":material/table_view:", url_path="process-records")),
     ("grade-entry", st.Page(material_grade.render_entry, title="Material Grade Entry", icon=":material/science:", url_path="grade-entry")),
@@ -326,6 +338,7 @@ MODULE_SUBMENUS = {
         ("masters", "Masters Home", ":material/dataset:"),
         ("company-branch-entry", "Company Branch", ":material/account_balance:"),
         ("part-entry", "Part Entry", ":material/edit_note:"),
+        ("ecn-register", "ECN / PCN Register", ":material/published_with_changes:"),
         ("process-entry", "Process Entry", ":material/settings:"),
         ("grade-entry", "Grade Entry", ":material/science:"),
         ("reference-entry", "Reference Entry", ":material/edit_note:"),
@@ -393,8 +406,17 @@ MODULE_SUBMENUS = {
         ("npd-process-flow", "Process Flow Designer", ":material/account_tree:"),
         ("npd-status", "NPD Status", ":material/timeline:"),
         ("apqp", "APQP", ":material/assignment_turned_in:"),
+        ("ppap-home", "PPAP", ":material/folder_zip:"),
         ("npd-report", "NPD Reports", ":material/assessment:"),
         ("apqp-report", "APQP Reports", ":material/assessment:"),
+    ),
+    "Engineering": (
+        ("ecn-register", "ECN / PCN Register", ":material/published_with_changes:"),
+        ("part-entry", "Part Master · Processes", ":material/edit_note:"),
+        ("npd-process-flow", "Process Flow Designer", ":material/account_tree:"),
+        ("ppap-home", "PPAP", ":material/folder_zip:"),
+        ("ppap-package", "PPAP Package", ":material/inventory:"),
+        ("ppap-templates", "PPAP Templates", ":material/list_alt:"),
     ),
     "QC Calculation Tools": (
         ("qc-tools", "Calculation Tools", ":material/calculate:"),
@@ -483,7 +505,7 @@ RECORD_ROUTES = {
 }
 ROUTE_MODULE = {
     "dashboard": "Dashboard", "my-account": "Dashboard", "about": "Dashboard", "notifications": "Dashboard", "licence-company": "Admin", "stawn-developer": "Admin", "kpi-dashboards": "KPI Dashboards", "kpi-details": "KPI Dashboards", "kpi-drilldown": "KPI Dashboards", "system-settings": "Admin", "print-designer": "Admin", "email-send": "Email", "email-groups": "Email", "email-my-settings": "Email", "email-sent": "Email",
-    "masters": "Masters", "company-branch-entry": "Masters", "company-branch-records": "Masters", "part-entry": "Masters", "process-entry": "Masters",
+    "masters": "Masters", "company-branch-entry": "Masters", "company-branch-records": "Masters", "part-entry": "Masters", "ecn-register": "Engineering", "process-entry": "Masters",
     "grade-entry": "Masters", "reference-entry": "Masters", "employee-entry": "Masters",
     "user-access": "Admin", "email-settings": "Admin", "deployment-diagnostics": "Admin", "master-import": "Masters", "standards-entry": "Masters",
     "rmtc-entry": "RMTC", "rmtc-approved-worksheet": "RMTC", "rmtc-part": "RMTC", "rmtc-approval": "RMTC",
@@ -492,7 +514,7 @@ ROUTE_MODULE = {
     "osp-inward": "OSP", "osp-dimensional": "OSP", "osp-metlab": "OSP",
     "supply-chain-home": "Supply Chain", "supply-customer-orders": "Supply Chain", "supply-opening-stock": "Supply Chain", "supply-rm-procurement": "Supply Chain", "supply-purchase-orders": "Supply Chain", "supply-po-order-list": "Supply Chain", "supply-po-edit": "Supply Chain", "supply-po-pdf": "Supply Chain", "supply-po-approval": "Supply Chain", "supply-rm-receipt": "Supply Chain", "supply-rm-dispatch": "Supply Chain", "supply-forging": "Supply Chain", "supply-downstream": "Supply Chain", "supply-traceability": "Supply Chain", "supply-order-mis": "Supply Chain",
     "indirect-purchase": "Indirect Purchase", "indirect-requisition": "Indirect Purchase", "indirect-po": "Indirect Purchase", "indirect-po-list": "Indirect Purchase", "indirect-po-approval": "Indirect Purchase", "indirect-inward": "Indirect Purchase", "indirect-items": "Indirect Purchase", "indirect-stock": "Indirect Purchase",
-    "npd-process-flow": "NPD & APQP", "npd-status": "NPD & APQP", "apqp": "NPD & APQP",
+    "npd-process-flow": "NPD & APQP", "npd-status": "NPD & APQP", "apqp": "NPD & APQP", "ppap-home": "Engineering", "ppap-package": "Engineering", "ppap-templates": "Engineering",
     "qc-tools": "QC Calculation Tools",
     "complaints-home": "Complaints", "customer-complaint": "Complaints",
     "supplier-complaint": "Complaints", "customer-complaint-register": "Complaints", "supplier-complaint-register": "Complaints",
@@ -514,7 +536,7 @@ PAGE_TITLE_TO_PATH = {
     "OSP Heat Balance Report": "osp-balance-report", "Supply Chain Order / Dispatch Report": "supply-chain-report", "RMTC Report Register": "rmtc-report", "Material Inward Report Register": "inward-report", "Dimensional Inspection Reports": "dimensional-report", "MetLAB Reports": "metlab-report", "Complaint Reports": "complaints-report",
  "Supply Chain Traceability Report": "traceability-report", "NPD Status Report": "npd-report", "APQP Status Report": "apqp-report", "QC Calculation Reports": "qc-report", "Inspection Layout Reports": "inspection-layout-report", "Customer Standards Reports": "standards-report",
     "Templates": "templates", "Part Master Entry": "part-entry",
-    "Part Master Records": "part-records", "Process Master Entry": "process-entry",
+    "Part Master Records": "part-records", "Engineering Change Notes": "ecn-register", "Process Master Entry": "process-entry",
     "Process Master Records": "process-records", "Material Grade Entry": "grade-entry",
     "Material Grade Records": "grade-records", "Reference Master Entry": "reference-entry",
     "Reference Master Records": "reference-records", "Employee Entry": "employee-entry",
@@ -526,7 +548,7 @@ PAGE_TITLE_TO_PATH = {
     "OSP MetLAB": "osp-metlab", "OSP Records": "osp-records",
     "Supply Chain": "supply-chain-home", "Supply Customer Orders": "supply-customer-orders", "Supply Opening Stock": "supply-opening-stock", "Opening Stock & Import": "supply-opening-stock", "Supply RM Procurement": "supply-rm-procurement", "Supply Purchase Orders": "supply-purchase-orders", "Purchase Order List": "supply-po-order-list", "Edit Purchase Order": "supply-po-edit", "Purchase Order PDF": "supply-po-pdf", "Purchase Order Approval": "supply-po-approval", "Supply RM Receipt": "supply-rm-receipt", "Supply RM to Forging": "supply-rm-dispatch", "Supply Forging": "supply-forging", "Supply Downstream": "supply-downstream", "Supply Traceability": "supply-traceability", "Supply Order MIS": "supply-order-mis",
     "Indirect Purchase": "indirect-purchase", "Indirect Purchase Requisition": "indirect-requisition", "Indirect Purchase Order": "indirect-po", "Indirect PO Register": "indirect-po-list", "Indirect PO Approval": "indirect-po-approval", "Indirect Inward (GRN)": "indirect-inward", "Indirect Item Master": "indirect-items", "Indirect Stock & Issue": "indirect-stock",
-    "Process Flow Designer": "npd-process-flow", "NPD Status": "npd-status", "APQP": "apqp",
+    "Process Flow Designer": "npd-process-flow", "NPD Status": "npd-status", "APQP": "apqp", "PPAP": "ppap-home", "PPAP Package": "ppap-package", "PPAP Element Templates": "ppap-templates",
     "QC Calculation Tools": "qc-tools", "QC Calculation Records": "qc-calculation-records",
     "Complaint Management": "complaints-home", "Customer Complaint": "customer-complaint", "Supplier Complaint": "supplier-complaint", "Customer Complaint Register": "customer-complaint-register", "Supplier Complaint Register": "supplier-complaint-register", "Complaint Email Configuration": "complaint-email-settings", "Complaint Analysis & CAPA": "complaint-analysis", "Complaint Records": "complaint-records",
     "Inspection Layout Entry": "inspection-layout-entry",
@@ -549,7 +571,7 @@ PAGE_TITLE_TO_PATH = {
 # st.columns(13
 
 ROUTE_PERMISSION_MODULE = {
-    "part-entry":"PART_MASTER","part-records":"PART_MASTER","company-branch-entry":"REFERENCE_MASTERS","company-branch-records":"REFERENCE_MASTERS",
+    "part-entry":"PART_MASTER","part-records":"PART_MASTER","ecn-register":"PART_MASTER","company-branch-entry":"REFERENCE_MASTERS","company-branch-records":"REFERENCE_MASTERS",
     "process-entry":"REFERENCE_MASTERS","process-records":"REFERENCE_MASTERS","grade-entry":"MATERIAL_GRADE","grade-records":"MATERIAL_GRADE",
     "reference-entry":"REFERENCE_MASTERS","reference-records":"REFERENCE_MASTERS","employee-entry":"EMPLOYEE_MASTER","employee-records":"EMPLOYEE_MASTER",
     "standards-entry":"REFERENCE_MASTERS","standards-records":"REFERENCE_MASTERS","master-import":"REFERENCE_MASTERS",
@@ -561,7 +583,7 @@ ROUTE_PERMISSION_MODULE = {
     "inspection-layout-entry":"INSPECTION_LAYOUTS","inspection-layout-records":"INSPECTION_LAYOUTS",
     "supply-chain-home":"SUPPLY_CHAIN","supply-customer-orders":"SUPPLY_CHAIN","supply-opening-stock":"SUPPLY_CHAIN","supply-rm-procurement":"SUPPLY_CHAIN","supply-purchase-orders":"SUPPLY_CHAIN","supply-po-order-list":"SUPPLY_CHAIN","supply-po-edit":"SUPPLY_CHAIN","supply-po-pdf":"SUPPLY_CHAIN","supply-po-approval":"SUPPLY_CHAIN","supply-rm-receipt":"SUPPLY_CHAIN","supply-rm-dispatch":"SUPPLY_CHAIN","supply-forging":"SUPPLY_CHAIN","supply-downstream":"SUPPLY_CHAIN","supply-traceability":"SUPPLY_CHAIN","supply-order-mis":"SUPPLY_CHAIN",
     "indirect-purchase":"INDIRECT_PURCHASE","indirect-requisition":"INDIRECT_PURCHASE","indirect-po":"INDIRECT_PURCHASE","indirect-po-list":"INDIRECT_PURCHASE","indirect-po-approval":"INDIRECT_PURCHASE","indirect-inward":"INDIRECT_PURCHASE","indirect-items":"INDIRECT_PURCHASE","indirect-stock":"INDIRECT_PURCHASE",
-    "npd-process-flow":"NPD_APQP","npd-status":"NPD_APQP","apqp":"NPD_APQP","qc-tools":"QC_CALCULATION_TOOLS","qc-calculation-records":"QC_CALCULATION_TOOLS",
+    "npd-process-flow":"NPD_APQP","npd-status":"NPD_APQP","apqp":"NPD_APQP","ppap-home":"PPAP","ppap-package":"PPAP","ppap-templates":"PPAP","qc-tools":"QC_CALCULATION_TOOLS","qc-calculation-records":"QC_CALCULATION_TOOLS",
     "complaints-home":"COMPLAINT_MANAGEMENT","customer-complaint":"COMPLAINT_MANAGEMENT","supplier-complaint":"COMPLAINT_MANAGEMENT","customer-complaint-register":"COMPLAINT_MANAGEMENT","supplier-complaint-register":"COMPLAINT_MANAGEMENT","complaint-email-settings":"COMPLAINT_MANAGEMENT","complaint-analysis":"COMPLAINT_MANAGEMENT","complaint-records":"COMPLAINT_MANAGEMENT",
     "calibration-validation":"CALIBRATION_VALIDATION","standard-room-inspection":"CALIBRATION_VALIDATION",
     "user-access":"USER_ACCESS","email-settings":"USER_ACCESS","deployment-diagnostics":"USER_ACCESS","system-settings":"USER_ACCESS","print-designer":"USER_ACCESS",
@@ -572,7 +594,7 @@ ROUTE_PERMISSION_MODULE = {
 if android_streamlit_nav:
     _mobile_group_order = (
         "Dashboard", "KPI Dashboards", "Email", "Masters", "Supply Chain", "Indirect Purchase", "RMTC", "Inward", "OSP",
-        "Inspections", "Bend Test", "NPD & APQP", "QC Calculation Tools", "Complaints",
+        "Inspections", "Bend Test", "NPD & APQP", "Engineering", "QC Calculation Tools", "Complaints",
         "Calibration & Validation", "Records", "Reports", "Search", "Templates", "Admin",
     )
     _mobile_page_groups = {}
@@ -661,6 +683,8 @@ RAIL_NAV = (
     (PAGE_BY_PATH["calibration-validation"], "Calibration", "Calibration & Validation", ":material/straighten:"),
     (None, "Engineering", "", ""),
     (PAGE_BY_PATH["npd-status"], "NPD / APQP", "NPD & APQP", ":material/timeline:"),
+    (PAGE_BY_PATH["ppap-home"], "PPAP", "Engineering", ":material/folder_zip:"),
+    (PAGE_BY_PATH["ecn-register"], "ECN / PCN", "Engineering", ":material/published_with_changes:"),
     (PAGE_BY_PATH["qc-tools"], "QC Tools", "QC Calculation Tools", ":material/calculate:"),
     (None, "Reports & Records", "", ""),
     (PAGE_BY_PATH["reports-home"], "Reports", "Reports", ":material/assessment:"),
@@ -688,7 +712,9 @@ if not native_mobile:
                 label_visibility="collapsed",
             )
             shell_global_submit = gs2.form_submit_button("Search", icon=":material/search:", width="stretch")
-            gs3.caption(f"STAWN QCMS · v{settings.version} R35 · {_licence.get('company_name') or settings.company_name} · licence {_licence.get('status') or '-'} · LIVE BUILD · QCMS v{settings.version} · 41449-ANDROID-SINGLE-NATIVE-DRAWER-V12")
+            # R38: the app version is shown only in the header user details and on the About page.
+            # Historical source markers (not rendered): LIVE BUILD · QCMS · 41449-ANDROID-SINGLE-NATIVE-DRAWER-V12
+            gs3.caption(f"{_licence.get('company_name') or settings.company_name} · licence {_licence.get('status') or '-'}")
     # R35: notification bell (approval requests, tasks, updates) + one-time company setup reminder for the admin.
     _nb1, _nb2 = st.columns([1.3, 10.7], gap="small", vertical_alignment="center")
     with _nb1:

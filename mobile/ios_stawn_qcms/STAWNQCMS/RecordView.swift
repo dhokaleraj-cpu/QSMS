@@ -263,6 +263,11 @@ struct RecordView: View {
             let order = child.order.isEmpty ? "" : "&order=\(child.order)"
             let rows = await Api.shared.list("\(child.table)?select=*&\(child.fk)=eq.\(Api.enc(id))\(order)&limit=2000")
             let cfk = await Labels.resolve(child.table, rows: rows, columns: child.cols.map { $0[0] })
+            if ChemGrid.handles(child.table) && !rows.isEmpty {
+                // R38: chemistry / Jominy shown horizontally - elements / distances are columns, Jominy inch + mm rows.
+                let t = ChemGrid.combined(child.table, rows, cfk["part_id"])
+                if t.count > 1 { children[child.table + child.fk] = (t[0], Array(t.dropFirst()), []); continue }
+            }
             children[child.table + child.fk] = (child.cols.map { $0[1] }, rows.map { r in child.cols.map { Labels.cell($0[0], r[$0[0]], cfk[$0[0]]) } }, rows)
         }
         if !module.attachEntity.isEmpty { files = (try? await Api.shared.attachments(entity: module.attachEntity, id: id)) ?? [] }

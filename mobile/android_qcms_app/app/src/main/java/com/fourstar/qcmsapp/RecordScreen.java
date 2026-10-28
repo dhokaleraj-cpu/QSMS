@@ -188,6 +188,16 @@ public final class RecordScreen extends Screen implements ExportKit.RecordPrint 
             if (err != null) { holder.addView(Ui.text(a, Api.message(err), 12, Ui.RED_FG, false)); return; }
             JSONArray rows = (JSONArray) res[0];
             @SuppressWarnings("unchecked") Map<String, Map<String, String>> fk = (Map<String, Map<String, String>>) res[1];
+            if (ChemGrid.handles(child.table) && rows.length() > 0) {
+                // R38: chemistry / Jominy shown horizontally - elements / distances are columns, Jominy inch + mm rows.
+                for (Map.Entry<String, List<String[]>> e : ChemGrid.horizontal(child.table, rows, fk.get("part_id")).entrySet()) {
+                    if (e.getValue().size() < 2) continue;
+                    String t = e.getKey().isEmpty() ? child.title : child.title + " · " + e.getKey();
+                    if (!e.getKey().isEmpty()) holder.addView(Ui.text(a, e.getKey(), 12, Ui.MUTED, true));
+                    holder.addView(new DataGrid(a, t, ChemGrid.headers(e.getValue()), ChemGrid.data(e.getValue()), 300, null));
+                }
+                return;
+            }
             List<String> headers = new ArrayList<>();
             for (String[] c : child.cols) headers.add(c[1]);
             List<List<String>> data = new ArrayList<>();

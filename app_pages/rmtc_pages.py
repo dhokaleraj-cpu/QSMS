@@ -16,6 +16,7 @@ from core.password_edit import password_reopen_for_edit
 from core.attachments import MICROSTRUCTURE_IMAGE_TYPES, AttachmentService, AttachmentSlot, new_attachment_uploaders, render_attachment_manager
 from core.delete_service import password_delete_panel
 from core.calculations import band_status, calculate_di, calculate_jominy_curve
+from core.analysis_grids import element_label, jominy_label, jominy_mm, ordered_elements
 from core.permissions import normalized_role
 from core.rmtc_service import RMTCService
 from core.notification_service import NotificationService
@@ -69,6 +70,21 @@ def _requirement_result(actual:Any,requirement:Any,applicable:bool=True)->str:
     sequence_score=SequenceMatcher(None,expected,actual_text).ratio() if expected and actual_text else 0.0
     token_score=(len(expected_tokens & actual_tokens)/len(expected_tokens)) if expected_tokens else 0.0
     return 'PASS' if max(sequence_score,token_score)>=0.75 else 'FAIL'
+
+
+def _unique_columns(labels:list[str])->list[str]:
+    """R38: horizontal grids need unique column names (a grade may list C and C%)."""
+    seen:dict[str,int]={};out=[]
+    for label in labels:
+        text=str(label or '-');seen[text]=seen.get(text,0)+1
+        out.append(text if seen[text]==1 else f"{text} ({seen[text]})")
+    return out
+
+
+def _jominy_column(sixteenth:int,label:Any,mm:Any)->str:
+    """J5/16" · 7.94 mm - both the inch label and the millimetre value in the column header."""
+    value=jominy_mm(sixteenth) if sixteenth else _number(mm)
+    return f"{jominy_label(sixteenth,label)} · {value:.2f} mm" if value is not None else jominy_label(sixteenth,label)
 
 
 def _employee_map(svc:RMTCService,authority:str)->dict[str,str]:
@@ -632,8 +648,61 @@ def render_approved_part_worksheet()->None:
             if st.button('2 · Save Added Part Final Decision',type='primary',width='stretch',disabled=decision_disabled):
                 try:
                     svc.decide_added_part(rid,validate_part_id,disposition,reason.strip() or None,approver)
+                    _run_qr_hook(svc.repo,rid,send_email=False)  # R38: refresh the QR certificate snapshot
                     save_success_popup('Added Part final decision saved. Existing accepted Part releases were not changed.',queue_for_rerun=True);st.rerun()
                 except Exception as exc:st.error(db_message(exc))
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# R38 · Sections applicable per RMTC (core/section_applicability.py; defaults from the covered Parts' Part Master choice)
+# ---------------------------------------------------------------------------------------------------------------------
+from contextlib import contextmanager
+
+
+class _RmtcSectionNA(Exception):
+    """Raised as the first statement of a worksheet section that is Not Applicable for this RMTC."""
+
+
+@contextmanager
+def _rmtc_stage(applicable:dict,section_key:str,letter:str,title:str,note:str='',*,key:str):
+    if applicable.get(section_key,True):
+        with stage_section(letter,title,note,key=key):
+            yield True
+        return
+    st.caption(f"{letter} · {title} — NOT APPLICABLE for this RMTC (hidden, not validated, not printed).")
+    try:
+        yield False
+    except _RmtcSectionNA:
+        pass
+
+
+def _skip_na(ok:bool)->None:
+    if not ok:
+        raise _RmtcSectionNA()
+
+
+def _render_rmtc_sections(svc:RMTCService,header:dict,part_rows:list[dict],parts:dict,writable:bool)->dict:
+    """Tick / untick the RMTC report sections; unticked sections are hidden, saved NOT_APPLICABLE and omitted from print."""
+    from core.section_applicability import RMTC_SECTIONS,rmtc_not_applicable_labels,rmtc_sections,stored_rmtc_sections
+    rid=str(header.get('id'))
+    covered=[parts.get(str(row.get('part_id'))) or {} for row in part_rows]
+    current=rmtc_sections(header,covered)
+    off=rmtc_not_applicable_labels(current)
+    with stage_section('A','SECTIONS APPLICABLE (THIS RMTC)','Defaults come from the covered Parts (Part Master · Sections Applicable). Untick a section that does not apply to this certificate.',key=f'rmtc_sections_{rid}'):
+        with st.form(f'rmtc_sections_form_{rid}'):
+            cols=st.columns(4,gap='small');chosen={}
+            for index,(skey,label,_title,help_text) in enumerate(RMTC_SECTIONS):
+                chosen[skey]=cols[index%4].checkbox(label,value=current[skey],help=help_text,disabled=not writable,key=f'rmtc_section_{skey}_{rid}')
+            submitted=st.form_submit_button('Save Sections Applicable',type='primary',disabled=not writable,width='stretch')
+        if submitted:
+            try:
+                svc.save_applicable_sections(rid,stored_rmtc_sections(chosen))
+                save_success_popup('RMTC sections applicable saved.'+(f" Not applicable: {', '.join(rmtc_not_applicable_labels(chosen))}." if rmtc_not_applicable_labels(chosen) else ' All sections are applicable.'),queue_for_rerun=True)
+                st.rerun()
+            except Exception as exc:st.error(db_message(exc))
+    if off:
+        st.caption('Not applicable for this RMTC: '+', '.join(off))
+    return current
 
 
 def render_part()->None:
@@ -651,6 +720,7 @@ def render_part()->None:
     if not header:st.error('RMTC record not found.');return
     part_rows=svc.covered_parts(rid);parts={str(p['id']):p for p in svc.parts()}
     workflow_progress(_workflow_steps(header,part_rows))
+    rmtc_app=_render_rmtc_sections(svc,header,part_rows,parts,bool(perms['can_edit'] or perms['can_create']))  # R38 sections applicable
     if st.button('Back to RMTC Header',icon=':material/arrow_back:',width='content'):
         _open_rmtc_header_for_edit(rid)
     labels={str(row.get('part_id')):part_label(parts.get(str(row.get('part_id'))) or {}) for row in part_rows}
@@ -697,27 +767,65 @@ def render_part()->None:
         elif plan_exceeds_heat:
             st.error(f"Committed Heat steel {projected_commitment:,.3f} kg exceeds the Global Heat steel quantity {global_heat_steel:,.3f} kg.")
 
-    with stage_section("C", 'CHEMICAL COMPOSITION', 'Limits come from this Part Master material grade. Actual values are entered from the RMTC.', key="rmtc_pages_render_part_c"):
-        templates=svc.chemistry_template(grade_id);existing_chem={str(r.get('material_grade_element_id')):r for r in existing['chemistry']}
-        chem_df=pd.DataFrame([{'Element':t.get('element'),'Minimum %':t.get('minimum'),'Maximum %':t.get('maximum'),'Actual %':(existing_chem.get(str(t.get('id'))) or {}).get('actual_value'),'Applicable':(existing_chem.get(str(t.get('id'))) or {}).get('result')!='NOT_APPLICABLE','Status':(existing_chem.get(str(t.get('id'))) or {}).get('result') or 'NOT_EVALUATED','_id':t.get('id'),'Unit':t.get('unit') or '%'} for t in templates])
-        chem_edit=st.data_editor(chem_df,hide_index=True,width='stretch',height=350,disabled=['Element','Minimum %','Maximum %','Status','_id','Unit'],column_config={'_id':None,'Actual %':st.column_config.NumberColumn(format='%.4f')},key=f"chem_part_{rid}_{part_id}")
-        chemistry_rows=[];chemistry_map={}
-        for _,row in chem_edit.iterrows():
-            applicable=bool(row.get('Applicable'));actual=None if pd.isna(row.get('Actual %')) else row.get('Actual %');status=band_status(actual,row.get('Minimum %'),row.get('Maximum %'),applicable)
-            chemistry_rows.append({'material_grade_element_id':row['_id'],'element':row['Element'],'minimum_value':row['Minimum %'],'maximum_value':row['Maximum %'],'actual_value':actual,'unit':row['Unit'],'result':status})
-            if applicable and actual is not None:chemistry_map[str(row['Element'])]=actual
+    # R38: a section Not Applicable for this RMTC is hidden and saved as NOT_APPLICABLE rows (validation skips them).
+    from core.section_applicability import na_chemistry_rows,na_jominy_rows,na_requirement_rows,split_requirement_templates
+    chemistry_rows=[] if rmtc_app.get('chemistry',True) else na_chemistry_rows(svc.chemistry_template(grade_id));chemistry_map={};calculated_curve={}
+    jominy_rows=[] if rmtc_app.get('jominy',True) else na_jominy_rows(svc.jominy_template(part_id))
+    grain=int(part_approval.get('grain_size') or 6);di_applicable=False;actual_di=0.0
+    with _rmtc_stage(rmtc_app,'chemistry',"C", 'CHEMICAL COMPOSITION', 'Limits come from this Part Master material grade. Actual values are entered from the RMTC.', key="rmtc_pages_render_part_c") as _ok:
+        _skip_na(_ok)
+        # R38: horizontal chemistry grid - elements are COLUMNS; rows Minimum / Maximum (spec), Actual (entry), Status.
+        templates=ordered_elements(svc.chemistry_template(grade_id));existing_chem={str(r.get('material_grade_element_id')):r for r in existing['chemistry']}
+        chem_cols=_unique_columns([element_label(t.get('element'),t.get('unit') or '%') for t in templates])
+        chem_spec=pd.DataFrame([
+            {'Row':'Minimum %',**{c:t.get('minimum') for c,t in zip(chem_cols,templates)}},
+            {'Row':'Maximum %',**{c:t.get('maximum') for c,t in zip(chem_cols,templates)}},
+        ],columns=['Row',*chem_cols])
+        portal_table(chem_spec,hide_index=True,width='stretch')
+        chem_actual=pd.DataFrame([{'Row':'Actual %',**{c:(existing_chem.get(str(t.get('id'))) or {}).get('actual_value') for c,t in zip(chem_cols,templates)}}],columns=['Row',*chem_cols])
+        chem_edit=st.data_editor(chem_actual,hide_index=True,width='stretch',height=80,disabled=['Row'],column_config={c:st.column_config.NumberColumn(c,format='%.4f') for c in chem_cols},key=f"chem_part_h_{rid}_{part_id}")
+        chem_na_default=[c for c,t in zip(chem_cols,templates) if (existing_chem.get(str(t.get('id'))) or {}).get('result')=='NOT_APPLICABLE']
+        chem_na=set(st.multiselect('Not Applicable elements',chem_cols,default=chem_na_default,key=f"chem_part_na_{rid}_{part_id}"))
+        chemistry_rows=[];chemistry_map={};chem_status={}
+        actual_line=chem_edit.iloc[0] if not chem_edit.empty else {}
+        for c,t in zip(chem_cols,templates):
+            applicable=c not in chem_na;value=actual_line.get(c) if hasattr(actual_line,'get') else None
+            actual=None if value is None or pd.isna(value) else float(value);status=band_status(actual,t.get('minimum'),t.get('maximum'),applicable)
+            chem_status[c]=status
+            chemistry_rows.append({'material_grade_element_id':t.get('id'),'element':t.get('element'),'minimum_value':t.get('minimum'),'maximum_value':t.get('maximum'),'actual_value':actual,'unit':t.get('unit') or '%','result':status})
+            if applicable and actual is not None:chemistry_map[str(t.get('element'))]=actual
+        portal_table(style_status_dataframe(pd.DataFrame([{'Row':'Status',**chem_status}],columns=['Row',*chem_cols])),hide_index=True,width='stretch')
         calculated_curve=calculate_jominy_curve(chemistry_map)
 
-    with stage_section("D", 'JOMINY RESULTS', 'Single grid with Actual Jominy, Actual Status, Calculated Jominy and Calculated Status.', key="rmtc_pages_render_part_d"):
+    with _rmtc_stage(rmtc_app,'jominy',"D", 'JOMINY RESULTS', 'Horizontal grid: distances are columns (inch + mm). Rows: Min / Max HRC, Actual Jominy, Actual Jominy Status, Calculated Jominy, Calculated Jominy Status.', key="rmtc_pages_render_part_d") as _ok:
+        _skip_na(_ok)
         jtemplates=svc.jominy_template(part_id);existing_j={str(r.get('jominy_distance_id')):r for r in existing['jominy']}
+        jtemplates=sorted(jtemplates,key=lambda t:int(t.get('distance_16th') or 999))
         jrows=[]
         for t in jtemplates:
-            old=existing_j.get(str(t.get('jominy_distance_id'))) or {};distance=int(t.get('distance_16th') or 0);applicable=old.get('applicability','APPLICABLE')!='NOT_APPLICABLE';calc=calculated_curve.get(distance) if applicable else None
-            jrows.append({'Distance':t.get('distance_label'),'MM':t.get('distance_mm'),'Min HRC':t.get('minimum_hrc'),'Max HRC':t.get('maximum_hrc'),'Actual Jominy':old.get('actual_hrc'),'Actual Jominy Status':band_status(old.get('actual_hrc'),t.get('minimum_hrc'),t.get('maximum_hrc'),applicable),'Calculated Jominy':calc,'Calculated Jominy Status':band_status(calc,t.get('minimum_hrc'),t.get('maximum_hrc'),applicable),'Applicable':applicable,'_distance_id':t.get('jominy_distance_id'),'_distance_16th':distance})
-        jedit=st.data_editor(pd.DataFrame(jrows),hide_index=True,width='stretch',height=360,disabled=['Distance','MM','Min HRC','Max HRC','Actual Jominy Status','Calculated Jominy','Calculated Jominy Status','_distance_id','_distance_16th'],column_config={'_distance_id':None,'_distance_16th':None,'Actual Jominy':st.column_config.NumberColumn(format='%.3f')},key=f"jom_part_{rid}_{part_id}")
-        jominy_rows=[{'jominy_distance_id':row['_distance_id'],'distance_label':row['Distance'],'distance_mm':row['MM'],'distance_16th':row['_distance_16th'],'minimum_hrc':row['Min HRC'],'maximum_hrc':row['Max HRC'],'actual_hrc':None if pd.isna(row['Actual Jominy']) else row['Actual Jominy'],'applicability':'APPLICABLE' if bool(row['Applicable']) else 'NOT_APPLICABLE'} for _,row in jedit.iterrows()]
+            old=existing_j.get(str(t.get('jominy_distance_id'))) or {};distance=int(t.get('distance_16th') or 0);applicable=old.get('applicability','APPLICABLE')!='NOT_APPLICABLE'
+            jrows.append({'Distance':t.get('distance_label'),'MM':t.get('distance_mm'),'Min HRC':t.get('minimum_hrc'),'Max HRC':t.get('maximum_hrc'),'Actual Jominy':old.get('actual_hrc'),'Applicable':applicable,'_distance_id':t.get('jominy_distance_id'),'_distance_16th':distance,'_column':_jominy_column(distance,t.get('distance_label'),t.get('distance_mm'))})
+        jcols=_unique_columns([r['_column'] for r in jrows])
+        for r,c in zip(jrows,jcols):r['_column']=c
+        j_actual=pd.DataFrame([{'Row':'Actual Jominy',**{r['_column']:r['Actual Jominy'] for r in jrows}}],columns=['Row',*jcols])
+        jedit=st.data_editor(j_actual,hide_index=True,width='stretch',height=80,disabled=['Row'],column_config={c:st.column_config.NumberColumn(c,format='%.3f') for c in jcols},key=f"jom_part_h_{rid}_{part_id}")
+        j_na=set(st.multiselect('Not Applicable Jominy distances',jcols,default=[r['_column'] for r in jrows if not r['Applicable']],key=f"jom_part_na_{rid}_{part_id}"))
+        j_line=jedit.iloc[0] if not jedit.empty else {}
+        jominy_rows=[]
+        for r in jrows:
+            applicable=r['_column'] not in j_na;value=j_line.get(r['_column']) if hasattr(j_line,'get') else None
+            actual=None if value is None or pd.isna(value) else float(value)
+            calc=calculated_curve.get(r['_distance_16th']) if applicable else None
+            r.update({'Actual Jominy':actual,'Applicable':applicable,'Actual Jominy Status':band_status(actual,r['Min HRC'],r['Max HRC'],applicable),'Calculated Jominy':calc,'Calculated Jominy Status':band_status(calc,r['Min HRC'],r['Max HRC'],applicable)})
+            jominy_rows.append({'jominy_distance_id':r['_distance_id'],'distance_label':r['Distance'],'distance_mm':r['MM'],'distance_16th':r['_distance_16th'],'minimum_hrc':r['Min HRC'],'maximum_hrc':r['Max HRC'],'actual_hrc':actual,'applicability':'APPLICABLE' if applicable else 'NOT_APPLICABLE'})
+        from core.chem_grid import jominy_scale_rows  # R38 A2: Distance (in) + Distance (mm) rows above the HRC rows
+        for line in jominy_scale_rows([{'distance_16th':r['_distance_16th'],'distance_label':r['Distance'],'distance_mm':r['MM']} for r in jrows]):
+            for r,value in zip(jrows,line[1:]):r[line[0]]=value
+        j_summary=pd.DataFrame([{'Row':title,**{r['_column']:r.get(field) for r in jrows}} for title,field in (('Distance (in)','Distance (in)'),('Distance (mm)','Distance (mm)'),('Min HRC','Min HRC'),('Max HRC','Max HRC'),('Actual Jominy','Actual Jominy'),('Actual Jominy Status','Actual Jominy Status'),('Calculated Jominy','Calculated Jominy'),('Calculated Jominy Status','Calculated Jominy Status'))],columns=['Row',*jcols])
+        portal_table(style_status_dataframe(j_summary),hide_index=True,width='stretch')
 
-    with stage_section("E", 'DI VALUE', 'Actual and calculated DI use the supplied DI Hardenability workbook factor table.', key="rmtc_pages_render_part_e"):
+    with _rmtc_stage(rmtc_app,'di_value',"E", 'DI VALUE', 'Actual and calculated DI use the supplied DI Hardenability workbook factor table.', key="rmtc_pages_render_part_e") as _ok:
+        _skip_na(_ok)
         grain=st.selectbox('Grain Size (ASTM E-112)',[4,5,6,7,8],index=[4,5,6,7,8].index(int(part_approval.get('grain_size') or 6)))
         di_applicable=st.checkbox('DI Applicable',value=str(part_approval.get('calculated_di_status') or '')!='NOT_APPLICABLE')
         actual_di=st.number_input('Actual DI',min_value=0.0,value=float(part_approval.get('actual_di') or 0),step=0.01,disabled=not di_applicable)
@@ -726,12 +834,15 @@ def render_part()->None:
 
     with stage_section("F", 'HEAT TREATMENT & OTHER REQUIREMENTS', 'Not Applicable is available and does not block Draft saving.', key="rmtc_pages_render_part_f"):
         templates=svc.requirements(part_id);existing_req={str(r.get('source_requirement_id')):r for r in existing['requirements']}
+        templates,na_templates=split_requirement_templates(templates,rmtc_app)  # R38: Mechanical / HT rows not applicable for this RMTC
+        if na_templates:st.caption(f"{len(na_templates)} requirement row(s) are NOT APPLICABLE for this RMTC (Sections Applicable) - hidden and saved as Not Applicable.")
         req_rows=[]
         for t in templates:
             old=existing_req.get(str(t.get('id'))) or {};applicable=old.get('result')!='NOT_APPLICABLE'
             req_rows.append({'Property / Requirement':t.get('parameter_name'),'Part Master Value':t.get('requirement_value'),'RMTC Actual / Observation':old.get('actual_value') or '','Applicable':applicable,'Status':_requirement_result(old.get('actual_value'),t.get('requirement_value'),applicable),'_id':t.get('id'),'_seq':t.get('sequence_no')})
         req_edit=st.data_editor(pd.DataFrame(req_rows),hide_index=True,width='stretch',height=360,disabled=['Property / Requirement','Part Master Value','Status','_id','_seq'],column_config={'_id':None,'_seq':None},key=f"req_part_{rid}_{part_id}")
         requirement_rows=[{'source_requirement_id':row['_id'],'requirement_name':row['Property / Requirement'],'requirement_value':row['Part Master Value'],'actual_value':row['RMTC Actual / Observation'],'result':_requirement_result(row['RMTC Actual / Observation'],row['Part Master Value'],bool(row['Applicable'])),'sequence_no':row['_seq']} for _,row in req_edit.iterrows()]
+        requirement_rows+=na_requirement_rows(na_templates,existing_req)  # R38
         if st.button('Save Part Worksheet',type='primary',disabled=not writable or planned_production_qty<=0 or input_weight<=0 or plan_exceeds_heat,width='stretch'):
             try:
                 result=svc.save_part_worksheet(rid,part_id,chemistry_rows,jominy_rows,requirement_rows,grain,actual_di if di_applicable else None,di_applicable,planned_production_qty,input_weight)
@@ -758,13 +869,17 @@ def render_records()->None:
     svc=RMTCService();perms=current_permissions('RMTC_ENTRY');rows=svc.list();parts={str(p['id']):p for p in svc.parts()};suppliers={str(p['id']):p for p in svc.parties('SUPPLIER')};mills={str(p['id']):p for p in svc.parties('STEEL_MILL')}
     if st.button('Start New RMTC',icon=':material/add:',type='primary',width='content'):
         _start_new_rmtc_for_heat('');st.switch_page(st.session_state['_qsms_pages']['rmtc-entry'])
-    search=st.text_input('Search RMTC, Heat Number, Heat Code or Supplier RMTC')
+    from core.rmtc_qr import pending_qr_request  # R38: QR / e-mail deep link <website>/rmtc-records?rmtc=<RMTC number> (login required)
+    qr_rmtc=pending_qr_request(st.query_params,st.session_state)
+    search=st.text_input('Search RMTC, Heat Number, Heat Code or Supplier RMTC',value=qr_rmtc)
     filtered=[r for r in rows if not search or search.casefold() in ' '.join(str(r.get(k) or '') for k in ('rmtc_number','certificate_reference','heat_number','heat_code')).casefold()]
 
     selected=''
     if filtered:
         labels={str(r['id']):with_status(f"{r.get('rmtc_number')} · {r.get('heat_number')} · {str(r.get('disposition') or 'PENDING').replace('_',' ').title()}", r) for r in filtered}
-        selected=st.selectbox('Select RMTC record',list(labels),format_func=lambda x:labels[x])
+        qr_match=next((str(r['id']) for r in filtered if qr_rmtc and str(r.get('rmtc_number') or '').strip().casefold()==qr_rmtc.casefold()),'')
+        if qr_match: st.info(f"Opened from the material-location QR: RMTC {qr_rmtc}. Download the certificate PDF below.")
+        selected=st.selectbox('Select RMTC record',list(labels),index=list(labels).index(qr_match) if qr_match else 0,format_func=lambda x:labels[x])
         selected_row=next(r for r in filtered if str(r.get('id'))==selected)
         st.session_state['edit_rmtc_id']=selected;st.session_state['part_rmtc_id']=selected
         disposition_cards([
@@ -793,7 +908,11 @@ def render_records()->None:
             )
         except Exception as exc:
             st.warning(f'RMTC PDF could not be prepared: {exc}')
+        if qr_match==selected:_render_qr_certificate_downloads(svc.repo,selected_row)  # R38: QR scan -> supplier test certificate
         from core.pdf_preview import preview_button; preview_button('rmtc_approvals', selected, key='rmtc_records', record=selected_row)  # R37
+        for note in st.session_state.pop('rmtc_qr_flash',None) or []:
+            st.info(note)
+        _render_rmtc_qr_panel(svc.repo,selected_row,can_manage=bool(perms.get('can_edit') or perms.get('can_approve')),key='records')  # R38
         record_email_sender(
             NotificationService(svc.repo), 'RMTC_APPROVAL_PENDING',
             related_table='rmtc_approvals', related_id=selected, key=f'rmtc_record_email_{selected}',
@@ -821,6 +940,108 @@ def render_records()->None:
     report_register(df,'rmtc_register','RMTC Register',height=600,style=style_status_dataframe)  # R36b: filters + filtered exports
 
 
+def _render_approval_grids(record:dict,details:dict,parts:dict)->None:
+    """R38: approval view - entered chemistry / Jominy per Part as HORIZONTAL grids (elements / distances = columns,
+    Jominy with inch label header + Distance (mm) row). Not-applicable sections are skipped."""
+    from core.chem_grid import chemistry_table, jominy_table, table_frame
+    from core.section_applicability import rmtc_sections
+    covered=[parts.get(str(r.get('part_id'))) or {} for r in details.get('parts') or []]
+    applicable=rmtc_sections(record,covered)
+    show_chem=applicable.get('chemistry',True) and any(str(r.get('result') or '').upper()!='NOT_APPLICABLE' for r in details.get('chemistry') or [])
+    show_jom=applicable.get('jominy',True) and any(str(r.get('applicability') or '').upper()!='NOT_APPLICABLE' for r in details.get('jominy') or [])
+    if not (show_chem or show_jom):
+        return
+    with stage_section("R", 'CHEMISTRY & JOMINY REVIEW','Entered values per Part (horizontal grids). Not-applicable sections are hidden.',key='rmtc_pages_render_approval_grids'):
+        for part_row in details.get('parts') or []:
+            pid=str(part_row.get('part_id'));number=(parts.get(pid) or {}).get('part_number') or pid
+            chem=[r for r in details.get('chemistry') or [] if str(r.get('part_id'))==pid and str(r.get('result') or '').upper()!='NOT_APPLICABLE']
+            jom=[r for r in details.get('jominy') or [] if str(r.get('part_id'))==pid and str(r.get('applicability') or '').upper()!='NOT_APPLICABLE']
+            if show_chem and chem:
+                st.markdown(f"**{number} · Chemical Composition**")
+                portal_table(table_frame(chemistry_table(chem,[('Minimum','minimum_value'),('Maximum','maximum_value'),('Actual','actual_value'),('Status','result')])),hide_index=True,width='stretch')
+            if show_jom and jom:
+                st.markdown(f"**{number} · Jominy (inch / mm)**")
+                portal_table(table_frame(jominy_table(jom,[('Min HRC','minimum_hrc'),('Max HRC','maximum_hrc'),('Actual HRC','actual_hrc'),('Result','result')])),hide_index=True,width='stretch')
+
+
+def _render_qr_certificate_downloads(repo:Any,record:dict)->None:
+    """R38: opened from the material-location QR (?rmtc=) - offer the supplier test certificate attachment(s) too."""
+    from core.qr_codes import is_rmtc_approved
+    if not is_rmtc_approved(record):
+        st.warning('This RMTC is not approved - the certificate is shown for reference only.')
+    try:
+        service=AttachmentService(repo)
+        rows=[r for r in service.list_active('RMTC',str(record.get('id'))) if str(r.get('document_type') or '') in ('RMTC_COPY','RMTC_ATTACHMENT_2','RMTC_ATTACHMENT_3')]
+        if not rows and record.get('rmtc_copy_path'):
+            rows=[{'object_path':record.get('rmtc_copy_path'),'file_name':str(record.get('rmtc_copy_path')).rsplit('/',1)[-1],'document_type':'RMTC_COPY','id':'copy'}]
+    except Exception as exc:
+        st.warning(db_message(exc));return
+    if not rows:
+        st.caption('No supplier test certificate is attached to this RMTC.');return
+    for index,row in enumerate(rows):
+        try:
+            data=service.download(row)
+        except Exception as exc:
+            st.warning(f"{row.get('file_name')}: {db_message(exc)}");continue
+        label='Download Supplier Test Certificate' if row.get('document_type')=='RMTC_COPY' else f"Download {row.get('file_name')}"
+        st.download_button(label,data=data,file_name=str(row.get('file_name') or 'certificate'),mime=str(row.get('mime_type') or 'application/octet-stream'),icon=':material/download:',width='content',key=f"rmtc_qr_cert_{record.get('id')}_{index}")
+
+
+def _run_qr_hook(repo:Any,rid:str,*,send_email:bool=True)->None:
+    """R38: after an RMTC approval - certificate snapshot + QR label PNG attachment + Quality e-mail (core.rmtc_qr). Never blocks."""
+    try:
+        from core.rmtc_qr import RMTCQRLabelService
+        result=RMTCQRLabelService(repo).on_rmtc_approved(rid,send_email=send_email)
+    except Exception as exc:
+        result={'ok':False,'warnings':[f'QR could not be generated: {exc}']}
+    notes=list(result.get('warnings') or [])
+    if result.get('ok') and send_email and result.get('emailed'):
+        notes.insert(0,f"Material-location QR label generated and e-mailed to {result.get('emailed')} Quality department employee(s).")
+    elif result.get('ok'):
+        notes.insert(0,'Material-location QR label generated / certificate refreshed.')
+    st.session_state['rmtc_qr_flash']=notes
+
+
+def _render_rmtc_qr_panel(repo:Any,record:dict,*,can_manage:bool,key:str)->None:
+    """R38: approved RMTC -> QR label image, Download PNG / Print label (100x60 mm PDF), refresh / re-send."""
+    from core.qr_codes import is_rmtc_approved
+    from core.rmtc_qr import RMTCQRLabelService
+    if not is_rmtc_approved(record):
+        return
+    rid=str(record.get('id'))
+    qr=RMTCQRLabelService(repo)
+    section_bar('MATERIAL LOCATION QR','Stick this QR label where the material is stored. Scanning it opens this RMTC in QCMS (login required) with the certificate downloads.')
+    stored=qr.stored_label(rid)
+    if not stored:
+        st.info('No QR label has been generated for this approved RMTC yet (approved before R38 or from the mobile app).')
+        if st.button('Generate QR & e-mail Quality department',icon=':material/qr_code_2:',type='primary',disabled=not can_manage,key=f'rmtc_qr_generate_{key}_{rid}'):
+            with st.spinner('Generating QR label and certificate…'):
+                _run_qr_hook(repo,rid,send_email=True)
+            st.rerun()
+    try:
+        assets=qr.assets(record)
+    except Exception as exc:
+        st.warning(f'QR could not be prepared: {exc}');return
+    q1,q2=st.columns([1,2],gap='small')
+    with q1:
+        st.image(assets['png'],width=240)
+    with q2:
+        st.markdown('\n\n'.join(f"**{line}**" if i==0 else line for i,line in enumerate(assets['lines'])))
+        st.code(assets['url'],language=None)
+        if assets.get('app_url') and assets.get('app_url')!=assets.get('url'):
+            st.caption(f"QCMS link (after login): {assets['app_url']}")
+        if stored:
+            st.caption(f"QR label stored as RMTC attachment: {stored.get('file_name')} · {str(stored.get('updated_at') or stored.get('created_at') or '')[:19].replace('T',' ')}")
+        d1,d2=st.columns(2,gap='small')
+        d1.download_button('Download QR PNG',assets['png'],file_name=f"{assets['file_stem']}_QR_Label.png",mime='image/png',icon=':material/qr_code_2:',width='stretch',key=f'rmtc_qr_png_{key}_{rid}')
+        d2.download_button('Print Label PDF (100 x 60 mm)',assets['label_pdf'],file_name=f"{assets['file_stem']}_QR_Label.pdf",mime='application/pdf',icon=':material/print:',width='stretch',key=f'rmtc_qr_label_{key}_{rid}',help='Print label: open the PDF and print it on a 100 x 60 mm sticker; write the storage location in the Location box.')
+        r1,r2=st.columns(2,gap='small')
+        if r1.button('Refresh QR Label',icon=':material/sync:',width='stretch',disabled=not can_manage,key=f'rmtc_qr_refresh_{key}_{rid}',help='Re-store the QR label PNG attachment (after an edit / added Part).'):
+            _run_qr_hook(repo,rid,send_email=False);st.rerun()
+        if r2.button('Re-send QR to Quality',icon=':material/forward_to_inbox:',width='stretch',disabled=not can_manage,key=f'rmtc_qr_resend_{key}_{rid}'):
+            _run_qr_hook(repo,rid,send_email=True);st.rerun()
+
+
 def render_approval()->None:
     subpage_navigation(
         ('dashboard','Back to Dashboard',':material/arrow_back:'),
@@ -837,6 +1058,8 @@ def render_approval()->None:
     st.session_state['part_rmtc_id']=rid
     record=next(r for r in rows if str(r['id'])==rid);details=svc.details(rid);parts={str(p['id']):p for p in svc.parts()}
     workflow_progress(_workflow_steps(record,details['parts']))
+    for note in st.session_state.pop('rmtc_qr_flash',None) or []:
+        (st.warning if any(w in note for w in ('could not','No active','not ')) else st.info)(note)
 
     disposition_cards([
         {'label':'Workflow','value':record.get('status') or 'DRAFT','foot':'Draft → Approval Pending → Final'},
@@ -844,6 +1067,8 @@ def render_approval()->None:
         {'label':'Final Disposition','value':record.get('disposition') or 'PENDING','foot':'Controls Material Inward eligibility'},
         {'label':'Covered Parts','value':len(details['parts']),'foot':record.get('rmtc_number')},
     ])
+
+    _render_approval_grids(record,details,parts)  # R38: horizontal chemistry / Jominy review (applicable sections only)
 
     with stage_section("A", 'PART VALIDATION & CONTROLLED DECISION', 'Automated results are read-only. Final disposition is selected independently for every Part Number.', key="rmtc_pages_render_approval_a"):
         decision_rows=[]
@@ -937,6 +1162,7 @@ def render_approval()->None:
             if st.button('3 · Save Added Part Final Decision',type='primary',width='stretch',disabled=not can_approve or not worksheet_done or not added_approver or added_disposition=='PENDING',key=f'incremental_decide_{rid}_{added_part_id}'):
                 try:
                     svc.decide_added_part(rid,added_part_id,added_disposition,added_reason.strip() or None,added_approver)
+                    _run_qr_hook(svc.repo,rid,send_email=False)  # R38: refresh the QR certificate snapshot
                     save_success_popup('Added Part final decision saved. Existing accepted Parts remain released.',queue_for_rerun=True);st.rerun()
                 except Exception as exc:st.error(db_message(exc))
 
@@ -987,8 +1213,15 @@ def render_approval()->None:
                         raise ValueError(f"Manual acceptance reason is mandatory for {str(row.get('Part Number'))}.")
                     decisions.append({'part_id':str(row.get('_part_id')),'disposition':disposition,'reason':reason or None})
                 result=repo.rpc('qsms_decide_rmtc',{'p_rmtc_id':rid,'p_decisions':decisions,'p_approved_by_employee_id':approved})
+                try:
+                    from core.qr_codes import is_rmtc_approved
+                    if is_rmtc_approved(svc.get(rid) or {}):
+                        _run_qr_hook(repo,rid,send_email=True)  # R38: QR + certificate + Quality e-mail (never blocks)
+                except Exception as qr_exc:
+                    st.session_state['rmtc_qr_flash']=[f'QR could not be generated: {qr_exc}']
                 save_success_popup(f"RMTC decision saved as {str((result or {}).get('disposition') or '').replace('_',' ').title()}.", queue_for_rerun=True);st.rerun()
             except Exception as exc:st.error(db_message(exc))
 
         if finalized:
             st.success(f"Final disposition: {str(record.get('disposition') or '').replace('_',' ').title()}")
+            _render_rmtc_qr_panel(repo,record,can_manage=bool(can_approve or perms.get('can_edit')),key='approval')

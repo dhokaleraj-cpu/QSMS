@@ -224,7 +224,155 @@ def logo_data_uri() -> str:
 @lru_cache(maxsize=1)
 def stawn_logo_data_uri() -> str:
     path = Path(__file__).resolve().parents[1] / "assets" / "stawn_qcms_icon.png"
-    return "" if not path.exists() else "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+    if not path.exists():
+        return ""
+    data = path.read_bytes()
+    try:  # R38: the header shows the icon at ~46 px - send a 96 px copy instead of the 512 px source on every rerun.
+        data = _shrink_image_bytes(data, 96, fmt="PNG") or data
+    except Exception:
+        pass
+    return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+
+
+def _shrink_image_bytes(data: bytes, max_px: int, *, fmt: str = "PNG") -> bytes | None:
+    """Return a copy of an image scaled so its longest side is <= max_px (None when PIL cannot read it)."""
+    import io
+
+    from PIL import Image
+
+    with Image.open(io.BytesIO(data)) as im:
+        im.load()
+        if fmt.upper() == "PNG" and im.mode not in ("RGBA", "LA", "RGB", "L"):
+            im = im.convert("RGBA")
+        im.thumbnail((max_px, max_px))
+        out = io.BytesIO()
+        im.save(out, format=fmt.upper())
+        return out.getvalue()
+
+
+HEADER_COMPANY_LOGO_KEY = "_qcms_r38_header_company_logo"
+HEADER_COMPANY_LOGO_TTL = 900
+
+
+def header_company_logo_html(licensee: str = "") -> str:
+    """R38: licensed company's logo (qcms_company_profiles.logo_path) for the right side of the top ribbon.
+
+    Cached per session for 15 minutes; renders nothing when no logo is uploaded.
+    """
+    import time as _time
+
+    cached = st.session_state.get(HEADER_COMPANY_LOGO_KEY)
+    if isinstance(cached, dict) and _time.time() - float(cached.get("_at", 0)) < HEADER_COMPANY_LOGO_TTL:
+        return str(cached.get("html") or "")
+    short = ""
+    out = ""
+    try:
+        from core.licence_service import company_logo_bytes, company_profile
+
+        prof = company_profile()
+        short = str(prof.get("display_name") or prof.get("legal_name") or "").strip()
+        data = company_logo_bytes(prof.get("logo_path"))
+        if data:
+            try:
+                data = _shrink_image_bytes(data, 160, fmt="PNG") or data
+                mime = "image/png"
+            except Exception:
+                mime = "image/jpeg" if data[:3] == b"\xff\xd8\xff" else "image/png"
+            uri = f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
+            out = (f'<span class="qcms-hdr-company-logo" title="{safe(short or licensee)}">'
+                   f'<img src="{uri}" alt="{safe(short or licensee or "Company logo")}"></span>')
+    except Exception:
+        out = ""
+    if not out:
+        # No logo uploaded (or not readable) -> the licensed company's initials badge ("FSI").
+        name = short or str(licensee or "").strip()
+        badge = company_initials(name)
+        if badge:
+            out = f'<span class="qcms-hdr-company-initials" title="{safe(name)}">{safe(badge)}</span>'
+    st.session_state[HEADER_COMPANY_LOGO_KEY] = {"_at": _time.time(), "html": out}
+    return out
+
+
+_COMPANY_SUFFIX_WORDS = {"private", "pvt", "pvt.", "limited", "ltd", "ltd.", "llp", "inc", "inc.", "the", "and", "&", "co", "co.", "company"}
+
+
+def company_initials(name: str, max_letters: int = 3) -> str:
+    """R38: "Four Star Industries Private Limited" -> "FSI" (legal suffixes ignored)."""
+    words = [w for w in re.split(r"[\s\-_/,]+", str(name or "")) if w and w.casefold() not in _COMPANY_SUFFIX_WORDS]
+    letters = "".join(w[0] for w in words if w[0].isalnum()).upper()
+    return letters[:max_letters]
+
+
+HEADER_USER_KEY = "_qcms_r38_header_user"
+
+
+def header_user_details(profile: Mapping[str, Any]) -> dict[str, Any]:
+    """R38: the signed-in user's employee row (code, department, designation) + photo data URI for the header avatar.
+
+    Cached per session for 15 minutes; never raises (no photo -> initials avatar).
+    """
+    import time as _time
+
+    employee_id = str((profile or {}).get("employee_id") or "").strip()
+    cached = st.session_state.get(HEADER_USER_KEY)
+    if (isinstance(cached, dict) and cached.get("employee_id") == employee_id
+            and _time.time() - float(cached.get("_at", 0)) < HEADER_COMPANY_LOGO_TTL):
+        return cached
+    info: dict[str, Any] = {"employee_id": employee_id, "photo_uri": "", "_at": _time.time()}
+    if employee_id and not is_preview_session():
+        try:
+            from core.database import get_session_client
+            from core.employee_service import employee_photo_bytes
+
+            client = get_session_client()
+            rows = (client.table("employees").select("employee_code,department,designation,email,mobile_number,photo_storage_path")
+                    .eq("id", employee_id).limit(1).execute().data) if client else []
+            row = dict((rows or [{}])[0] or {})
+            info.update({k: row.get(k) for k in ("employee_code", "department", "designation", "email", "mobile_number")})
+            data = employee_photo_bytes(row.get("photo_storage_path"))
+            if data:
+                try:
+                    data = _shrink_image_bytes(data, 96, fmt="PNG") or data
+                    mime = "image/png"
+                except Exception:
+                    mime = "image/jpeg" if data[:3] == b"\xff\xd8\xff" else "image/png"
+                info["photo_uri"] = f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
+        except Exception:
+            pass
+    st.session_state[HEADER_USER_KEY] = info
+    return info
+
+
+def header_avatar_html(initials: str, photo_uri: str = "") -> str:
+    """R38: employee photo in the header avatar (Employee Master photo), initials otherwise."""
+    if photo_uri:
+        return f'<div class="fsi-user-avatar fsi-user-avatar-photo"><img src="{photo_uri}" alt="{safe(initials)}"></div>'
+    return f'<div class="fsi-user-avatar">{safe(initials)}</div>'
+
+
+def app_version_text() -> str:
+    """R38: the ONLY place the app version is rendered on the website - the header "User details" popover."""
+    from core import about
+
+    return (f"{about.PRODUCT} website v{get_settings().version} · Android app v{about.ANDROID_VERSION} · "
+            f"iPhone / iPad app v{about.IOS_VERSION}")
+
+
+def render_user_details(profile: Mapping[str, Any], *, branch_code: str, licensee: str, user: Mapping[str, Any]) -> None:
+    """R38 user details section (header popover): who is signed in + "About this app" with the version."""
+    name = str(profile.get("full_name") or "Quality User")
+    if user.get("photo_uri"):
+        st.markdown(f'<img src="{user["photo_uri"]}" alt="" style="width:64px;height:64px;border-radius:50%;object-fit:cover">',
+                    unsafe_allow_html=True)
+    st.markdown(f"**{safe(name)}**  \n{safe(role_label(profile))} · Branch {safe(branch_code)}")
+    rows = [("Employee code", user.get("employee_code")), ("Department", user.get("department") or profile.get("department")),
+            ("Designation", user.get("designation") or profile.get("designation")),
+            ("E-mail", profile.get("email") or user.get("email")), ("Licensed company", licensee)]
+    st.markdown("  \n".join(f"{label}: **{safe(value)}**" for label, value in rows if str(value or "").strip()))
+    st.divider()
+    st.markdown("**About this app**")
+    st.markdown(f"Version: **{safe(app_version_text())}**")
+    st.markdown('<a href="./about" target="_self">About STAWN QCMS</a>', unsafe_allow_html=True)
 
 
 def safe(value: Any) -> str:
@@ -1516,6 +1664,33 @@ def apply_teal_material_theme() -> None:
     }
     html body .fsi-user-avatar{color:var(--tm-primary)!important;}
     html body .fsi-logo-card{border-radius:var(--tm-rs)!important;}
+    /* R38 header branding: the STAWN icon is a rounded square - show it at 46 px without the old FSI wordmark card,
+       and never let the long licensee line squeeze it into a thin pill. */
+    html body .fsi-company-block{gap:10px!important;height:auto!important;min-height:48px!important;min-width:0!important;}
+    html body .fsi-company-block>div:last-child{min-width:0!important;overflow:hidden!important;}
+    html body .fsi-logo-card{flex:0 0 46px!important;width:46px!important;height:46px!important;min-width:46px!important;
+      padding:0!important;background:transparent!important;border:0!important;border-radius:12px!important;overflow:hidden!important;
+      box-shadow:0 1px 5px rgba(0,0,0,.22)!important;}
+    html body .fsi-logo-card .fsi-logo{width:46px!important;height:46px!important;max-width:none!important;max-height:none!important;
+      object-fit:cover!important;display:block!important;border-radius:12px!important;}
+    html body .fsi-company-sub{overflow:hidden!important;text-overflow:ellipsis!important;}
+    html body .fsi-user{min-width:0!important;}
+    html body .fsi-user-avatar{flex:0 0 31px!important;}
+    html body .qcms-hdr-company-logo{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;height:38px;max-width:150px;
+      padding:3px 6px;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.18);margin-right:4px;}
+    html body .qcms-hdr-company-logo img{height:32px;max-height:32px;max-width:138px;width:auto;height:auto;object-fit:contain;display:block;}
+    html body .qcms-hdr-company-initials{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;height:36px;min-width:36px;
+      padding:0 8px;background:#fff;color:var(--tm-primary-dark)!important;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.18);
+      font-size:13px;font-weight:900;letter-spacing:.06em;margin-right:4px;}
+    html body .fsi-user-avatar-photo{padding:0!important;overflow:hidden!important;flex:0 0 34px!important;width:34px!important;height:34px!important;
+      border:2px solid rgba(255,255,255,.9)!important;}
+    html body .fsi-user-avatar-photo img{width:100%%;height:100%%;object-fit:cover;display:block;border-radius:50%%;}
+    html body [class*="st-key-qcms_header_user_details"] button{background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.55)!important;
+      color:#fff!important;border-radius:999px!important;min-height:34px!important;padding:2px 6px!important;}
+    html body [class*="st-key-qcms_header_user_details"] button *{color:#fff!important;}
+    html body .qcms-hdr-company-name{flex:0 1 auto;display:inline-block;max-width:120px;padding:5px 9px;border:1px solid rgba(255,255,255,.55);
+      border-radius:999px;color:#fff!important;font-size:10px;font-weight:800;letter-spacing:.02em;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis;margin-right:4px;}
     html body [class*="st-key-qcms_header_nav_active_"] div[data-testid="stPageLink"] a{background:rgba(255,255,255,.18)!important;border-radius:999px!important;box-shadow:none!important;}
     html body [class*="st-key-qcms_header_nav_"] div[data-testid="stPageLink"] a:hover{border-radius:999px!important;}
     html body [class*="st-key-qcms_header_exit"] .stButton>button{border-radius:999px!important;}
@@ -1668,7 +1843,8 @@ def render_shell_header(
         with c3:
             initials = "".join(part[:1] for part in str(profile.get("full_name") or "QCMS User").split()[:2]).upper() or "Q"
             # R37: "＋" quick-add (new transaction / new e-mail / new query) at the top right, next to the user.
-            u0, u1, u2 = st.columns([1.15, 5.0, 1.0], gap="small", vertical_alignment="center")
+            # R38: user details popover (the only place with the app version) between the user and Sign out.
+            u0, u1, u3, u2 = st.columns([1.15, 5.0, 0.85, 1.0], gap="small", vertical_alignment="center")
             with u0:
                 with st.container(border=False, key="qcms_header_quick_add"):
                     try:
@@ -1682,12 +1858,21 @@ def render_shell_header(
                     branch_code = str(branch.get("branch_code") or branch.get("plant_code") or s.plant_code)
                 except Exception:
                     branch_code = str(s.plant_code)
+                # R38: licensed company's logo (initials badge without a logo) on the right of the ribbon, before the
+                # user; the user's Employee Master photo in the avatar. The app version is NOT shown here any more -
+                # only in the "User details" popover next to it.
+                company_logo = header_company_logo_html(licensee)
+                user_info = header_user_details(profile)
                 st.markdown(
-                    f'<div class="fsi-user"><div class="fsi-user-avatar">{safe(initials)}</div>'
+                    f'<div class="fsi-user">{company_logo}{header_avatar_html(initials, str(user_info.get("photo_uri") or ""))}'
                     f'<div class="fsi-user-copy"><div class="fsi-user-name">{safe(profile.get("full_name") or "Quality User")}</div>'
-                    f'<div class="fsi-user-meta">{safe(role_label(profile))} · Branch {safe(branch_code)} · v{safe(s.version)}</div></div></div>',
+                    f'<div class="fsi-user-meta">{safe(role_label(profile))} · Branch {safe(branch_code)}</div></div></div>',
                     unsafe_allow_html=True,
                 )
+            with u3:
+                with st.container(border=False, key="qcms_header_user_details"):
+                    with st.popover("", icon=":material/badge:", help="User details · About this app (version)", width="stretch"):
+                        render_user_details(profile, branch_code=branch_code, licensee=licensee, user=user_info)
             with u2:
                 with st.container(border=False, key="qcms_header_exit"):
                     if st.button("↪", key="fsi_signout", help="Sign out", width="stretch"):

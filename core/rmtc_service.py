@@ -9,6 +9,7 @@ from typing import Any
 import streamlit as st
 
 from core.calculations import band_status, calculate_di, calculate_jominy_curve
+from core.analysis_grids import jominy_mm  # Jominy mm = distance_16th * 25.4/16 (half-up, 2 decimals)
 from core.attachments import AttachmentService
 from core.database import get_session_client
 from core.repository import Repository
@@ -153,7 +154,7 @@ class RMTCService:
                 match=re.search(r'(\d+)\s*/\s*16', str(requirement.get('distance_label') or ''), re.I)
                 sixteenth=int(match.group(1)) if match else 0
                 distance=next((row for row in distances if int(row.get('distance_16th') or 0)==sixteenth), distance)
-            prepared.append({**requirement,'jominy_distance_id':(distance or {}).get('id') or requirement.get('jominy_distance_id'),'distance_16th':sixteenth,'distance_mm':round(float(sixteenth)*25.4/16,2) if sixteenth else None})
+            prepared.append({**requirement,'jominy_distance_id':(distance or {}).get('id') or requirement.get('jominy_distance_id'),'distance_16th':sixteenth,'distance_mm':jominy_mm(sixteenth) if sixteenth else None})
         return prepared
 
     def requirements(self,part_id):
@@ -321,7 +322,24 @@ class RMTCService:
                 {'slot': slot, 'caption': record.get(f'microstructure_caption_{slot}') or f'Microstructure Photo {slot}', 'bytes': b'', 'file_name': None}
                 for slot in range(1, 4)
             ]
+        # R38: approved RMTC certificates carry the material-location QR on the print (core.rmtc_qr; default QR_CONTENT
+        # "APP" = login-protected deep link <website>/rmtc-records?rmtc=<no>, no secret). Draft / rejected RMTCs print no QR.
+        qr_url, qr_lines, qr_app_url = '', [], ''
+        try:
+            from core.rmtc_qr import print_qr
+            qr_url, qr_lines, qr_app_url = print_qr(record, self.repo)
+        except Exception:
+            qr_url, qr_lines, qr_app_url = '', [], ''
+        try:  # R38: sections applicable for this RMTC (stored choice, else the covered Parts' defaults)
+            from core.section_applicability import rmtc_sections
+            applicable_sections = rmtc_sections(record, part_master)
+        except Exception:
+            applicable_sections = {}
         return {
+            'qr_url': qr_url,
+            'qr_lines': qr_lines,
+            'qr_app_url': qr_app_url,
+            'applicable_sections': applicable_sections,
             'record': record,
             'part_approvals': details['parts'],
             'parts': parts,
@@ -367,6 +385,11 @@ class RMTCService:
         rows = self.repo.select('v_qsms_heat_production_summary', eq={'rmtc_approval_id': rmtc_id}, limit=1)
         return rows[0] if rows else {}
 
+    def save_applicable_sections(self, rmtc_id: str, mapping: dict) -> dict:
+        """R38: store the per-RMTC sections applicable (rmtc_approvals.applicable_sections)."""
+        from core.section_applicability import stored_rmtc_sections
+        return self.repo.update('rmtc_approvals', str(rmtc_id), {'applicable_sections': stored_rmtc_sections(mapping)})
+
     def save_part_worksheet(self,rmtc_id:str,part_id:str,chem_rows:list[dict],jominy_rows:list[dict],requirement_rows:list[dict],grain_size:int|None,actual_di:float|None,di_applicable:bool=True,planned_production_quantity_pcs:float=0,input_weight_kg:float|None=None):
         chemistry_map={str(row.get('element') or '').strip():row.get('actual_value') for row in chem_rows if row.get('result')!='NOT_APPLICABLE'}
         curve=calculate_jominy_curve(chemistry_map)
@@ -382,7 +405,7 @@ class RMTCService:
             distance=int(row.get('distance_16th') or 0); calculated=curve.get(distance) if row.get('applicability')!='NOT_APPLICABLE' else None
             actual_result=band_status(row.get('actual_hrc'),row.get('minimum_hrc'),row.get('maximum_hrc'),row.get('applicability')!='NOT_APPLICABLE')
             calculated_result=band_status(calculated,row.get('minimum_hrc'),row.get('maximum_hrc'),row.get('applicability')!='NOT_APPLICABLE')
-            jominy_payload.append({'rmtc_approval_id':rmtc_id,'part_id':part_id,'jominy_distance_id':row.get('jominy_distance_id'),'distance_label':row.get('distance_label'),'distance_mm':round(float(distance)*25.4/16,2) if distance else 0,'actual_hrc':row.get('actual_hrc'),'result':actual_result,'calculated_hrc':calculated,'calculated_result':calculated_result,'applicability':row.get('applicability') or 'APPLICABLE','remarks':row.get('remarks')})
+            jominy_payload.append({'rmtc_approval_id':rmtc_id,'part_id':part_id,'jominy_distance_id':row.get('jominy_distance_id'),'distance_label':row.get('distance_label'),'distance_mm':jominy_mm(distance) if distance else 0,'actual_hrc':row.get('actual_hrc'),'result':actual_result,'calculated_hrc':calculated,'calculated_result':calculated_result,'applicability':row.get('applicability') or 'APPLICABLE','remarks':row.get('remarks')})
         self.repo.bulk_upsert('rmtc_jominy_results',jominy_payload,on_conflict='tenant_id,rmtc_approval_id,part_id,jominy_distance_id')
 
         existing_requirements={str(r.get('source_requirement_id')):r for r in self.repo.select('rmtc_requirement_results',eq={'rmtc_approval_id':rmtc_id,'part_id':part_id},limit=500)}

@@ -5,6 +5,29 @@ import { PDFDocument, StandardFonts, rgb } from "npm:pdf-lib@1.17.1";
 import { Buffer } from "node:buffer";
 import { MAX_ATTACHMENT_BYTES, PO_LINE_HEADERS, clean, companyName, day, emailShell, htmlTable, poLineCells, poLineRows, poLineTotals, poUpdatedAt, SUPPLIER_SAFE_HIDDEN, supplierSafeLine, pruneColumns, removeGenerated, selectIn, snapshotAttachments, storeGenerated, textTable, toNumber, xlsxAttachment, type Cell, type Col, type PoLine, type SnapshotCache, type SnapshotRef } from "./reminder_kit.ts";
 
+// R38: e-mail subjects start with the related Department instead of "QCMS" (schedule department -> module department).
+const R38_MODULE_DEPARTMENT: Record<string, string> = { SUPPLY_CHAIN: "Supply Chain", OSP_TRANSACTIONS: "Supply Chain", COMPLAINT_MANAGEMENT: "Quality", CALIBRATION_VALIDATION: "Quality", NPD_APQP: "NPD", PPAP: "Quality", RMTC: "Quality", METLAB: "MetLAB", MATERIAL_INWARD: "Stores", STORES: "Stores", PURCHASE: "Purchase", INDIRECT_PURCHASE: "Purchase", ADMIN: "Admin" };
+const R38_DEPARTMENT_LABEL: Record<string, string> = { quality: "Quality", metlab: "MetLAB", supplychain: "Supply Chain", purchase: "Purchase", procurement: "Purchase", stores: "Stores", npd: "NPD", rd: "R & D", management: "Management", admin: "Admin", engineering: "Engineering", production: "Production", marketing: "Marketing" };
+function r38DepartmentLabel(value: unknown): string {
+  const raw = String(value ?? "").trim().replace(/\s+/g, " ");
+  const norm = raw.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (!raw || ["qcmsteam", "qcms", "all", "none"].includes(norm)) return "";
+  return R38_DEPARTMENT_LABEL[norm] || raw;
+}
+function r38ScheduleDepartment(schedule: Record<string, any>): string {
+  const many = Array.isArray(schedule?.recipient_departments) ? schedule.recipient_departments : [];
+  return r38DepartmentLabel(schedule?.recipient_department) || r38DepartmentLabel(many[0]) || R38_MODULE_DEPARTMENT[String(schedule?.module_key || "").toUpperCase()] || "";
+}
+function r38DepartmentSubject(subject: string, department: string): string {
+  const re = /^\s*(?:STAWN\s+)?QCMS\s*[·:|\-–—]\s*/i;
+  const label = r38DepartmentLabel(department);
+  if (!label || !subject.trim()) return subject;
+  if (re.test(subject)) return `${label} · ${subject.replace(re, "")}`;
+  const head = subject.split("·")[0].trim();
+  const known = subject.includes("·") && (Object.values(R38_DEPARTMENT_LABEL).includes(head) || Boolean(R38_DEPARTMENT_LABEL[head.toLowerCase().replace(/[^a-z0-9]+/g, "")]));
+  return known ? subject : `${label} · ${subject.trim()}`;
+}
+
 const jsonHeaders = { "Content-Type": "application/json" };
 const BUCKET = "quality-documents";
 
@@ -343,6 +366,26 @@ async function gatherRows(admin: any, tenantId: string, schedule: Row, localDate
       pushIf({ reference: `${order.order_number || "NPD"} · OP ${r.operation_no || "-"}`, part: String(part.fsi_part_number || part.part_number || "-"), party: `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || "Unassigned", due_date: String(r.target_date || "-"), status: String(r.status || "PENDING"), quantity: String(r.process_name_snapshot || r.process_name || r.responsible || ""), responsible_employee_id: String(r.responsible_employee_id || ""), order_id: String(r.npd_order_id || ""),
         part_number: clean(part.part_number) || clean(part.fsi_part_number), part_description: clean(part.part_name), customer: clean((maps.parties.get(String(order.customer_id || "")) || {}).party_name), qty: toNumber(order.order_qty), uom: toNumber(order.order_qty) !== null ? "PCS" : "", delivery_date: day(order.delivery_date), details: [`OP ${r.operation_no || "-"} ${clean(r.process_name_snapshot) || clean(r.process_name)}`.trim(), `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || "Unassigned"].join(" · ") }, r.target_date);
     }
+  } else if (schedule.schedule_key === "PPAP_DOCUMENT_DUE") {
+    // R38: PPAP elements due within days_ahead (default 3) or overdue -> responsible employee; the package owner gets a digest.
+    const [{ data: packages = [] }, { data: elements = [] }] = await Promise.all([
+      admin.from("ppap_packages").select("id,package_no,part_id,customer_id,customer_part_no,customer_ppap_no,owner_employee_id,status,customer_due_date").eq("tenant_id", tenantId).limit(5000),
+      admin.from("ppap_package_elements").select("id,package_id,element_no,element_name,status,due_date,responsible_employee_id").eq("tenant_id", tenantId).limit(20000),
+    ]);
+    const packageMap = new Map<string, Row>(packages.map((r: Row) => [String(r.id), r]));
+    for (const r of elements) {
+      if (["COMPLETED", "NA"].includes(String(r.status || "").toUpperCase())) continue;
+      const pkg = packageMap.get(String(r.package_id));
+      if (!pkg || ["APPROVED", "CANCELLED", "CLOSED"].includes(String(pkg.status || "").toUpperCase())) continue;
+      const part = maps.parts.get(String(pkg.part_id || "")) || {}; const customer = maps.parties.get(String(pkg.customer_id || "")) || {};
+      const emp = maps.employees.get(String(r.responsible_employee_id || "")) || {}; const owner = String(pkg.owner_employee_id || "");
+      const empName = `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || "Unassigned";
+      const elementLabel = `${String(r.element_no ?? "").padStart(2, "0")} ${clean(r.element_name)}`.trim();
+      pushIf({ reference: `${pkg.package_no || "PPAP"} · E${String(r.element_no ?? "-").padStart(2, "0")}`, part: String(part.fsi_part_number || part.part_number || pkg.customer_part_no || "-"), party: empName, due_date: String(r.due_date || "-"), status: String(r.status || "NOT_STARTED").replaceAll("_", " "), quantity: elementLabel,
+        responsible_employee_id: String(r.responsible_employee_id || "") || undefined, escalation_employee_ids: owner && owner !== String(r.responsible_employee_id || "") ? [owner] : [],
+        part_number: clean(pkg.customer_part_no) || clean(part.part_number), part_description: clean(part.part_name), customer: clean(customer.party_name), delivery_date: day(pkg.customer_due_date),
+        details: [elementLabel, clean(pkg.customer_ppap_no) ? `PPAP ${clean(pkg.customer_ppap_no)}` : "", empName].filter(Boolean).join(" · ") }, r.due_date);
+    }
   }
   return result;
 }
@@ -388,14 +431,18 @@ Deno.serve(async (req: Request) => {
         if (clock.hour !== Number(schedule.hour_local ?? 8) || (lastRunDate && daysBetween(lastRunDate, clock.date) < cadenceDays)) continue;
         processedSchedules += 1;
         const rows = await gatherRows(admin, tenantId, schedule, clock.date, maps); generatedRows += rows.length;
+        if (schedule.schedule_key === "PPAP_DOCUMENT_DUE") {
+          // R38: in-app (bell / mobile push) notification per responsible employee, deduplicated per day.
+          try { await admin.rpc("qcms_ppap_due_notifications", { p_tenant_id: tenantId, p_local_date: clock.date, p_days_ahead: Number(schedule.days_ahead ?? 3) }); } catch (_e) { /* optional */ }
+        }
         const overdueCount = rows.filter((r) => r.status.startsWith("OVERDUE")).length; const openCount = rows.length - overdueCount;
         const template = templateMap.get(String(schedule.template_key || schedule.event_key)) || {};
         const baseCtx = { department: schedule.recipient_department || "QCMS Team", report_date: clock.date, open_count: openCount, overdue_count: overdueCount };
-        const subject = renderTemplate(String(template.subject_template || `QCMS · ${schedule.schedule_label} · {{report_date}}`), baseCtx);
+        const subject = r38DepartmentSubject(renderTemplate(String(template.subject_template || `QCMS · ${schedule.schedule_label} · {{report_date}}`), baseCtx), r38ScheduleDepartment(schedule));
         const bodyText = renderTemplate(String(template.body_template || "Attached is the QCMS open / overdue report for {{report_date}}."), baseCtx);
 
         const primaryRecipients: Array<{ email: string; name: string; rows: DigestRow[]; external?: boolean }> = [];
-        if (["NPD_PROCESS_OPEN_OVERDUE", "PO_PENDING_APPROVAL", "CUSTOMER_COMPLAINT_OPEN_OVERDUE", "SUPPLIER_COMPLAINT_OPEN_OVERDUE", "COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "COMPLAINT_FOLLOWUP_DUE"].includes(String(schedule.schedule_key))) {
+        if (["NPD_PROCESS_OPEN_OVERDUE", "PPAP_DOCUMENT_DUE", "PO_PENDING_APPROVAL", "CUSTOMER_COMPLAINT_OPEN_OVERDUE", "SUPPLIER_COMPLAINT_OPEN_OVERDUE", "COMPLAINT_CUSTOMER_OPEN_OVERDUE", "COMPLAINT_SUPPLIER_OPEN_OVERDUE", "COMPLAINT_FOLLOWUP_DUE"].includes(String(schedule.schedule_key))) {
           const grouped = new Map<string, DigestRow[]>();
           for (const row of rows) {
             const ids = [row.responsible_employee_id, ...(row.escalation_employee_ids || [])].filter(Boolean) as string[];

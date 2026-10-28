@@ -5,6 +5,29 @@ import * as XLSX from "npm:xlsx@0.18.5";
 import { Buffer } from "node:buffer";
 import { MAX_ATTACHMENT_BYTES, XLSX_MIME, clean, companyName, day, emailShell, htmlTable, poLineRows, poUpdatedAt, pruneColumns, removeGenerated, snapshotAttachments, storeGenerated, textTable, toNumber, type Cell, type Col, type PoLine, type SnapshotCache, type SnapshotRef } from "./reminder_kit.ts";
 
+// R38: e-mail subjects start with the related Department instead of "QCMS" (schedule department -> module department).
+const R38_MODULE_DEPARTMENT: Record<string, string> = { SUPPLY_CHAIN: "Supply Chain", OSP_TRANSACTIONS: "Supply Chain", COMPLAINT_MANAGEMENT: "Quality", CALIBRATION_VALIDATION: "Quality", NPD_APQP: "NPD", PPAP: "Quality", RMTC: "Quality", METLAB: "MetLAB", MATERIAL_INWARD: "Stores", STORES: "Stores", PURCHASE: "Purchase", INDIRECT_PURCHASE: "Purchase", ADMIN: "Admin" };
+const R38_DEPARTMENT_LABEL: Record<string, string> = { quality: "Quality", metlab: "MetLAB", supplychain: "Supply Chain", purchase: "Purchase", procurement: "Purchase", stores: "Stores", npd: "NPD", rd: "R & D", management: "Management", admin: "Admin", engineering: "Engineering", production: "Production", marketing: "Marketing" };
+function r38DepartmentLabel(value: unknown): string {
+  const raw = String(value ?? "").trim().replace(/\s+/g, " ");
+  const norm = raw.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (!raw || ["qcmsteam", "qcms", "all", "none"].includes(norm)) return "";
+  return R38_DEPARTMENT_LABEL[norm] || raw;
+}
+function r38ScheduleDepartment(schedule: Record<string, any>): string {
+  const many = Array.isArray(schedule?.recipient_departments) ? schedule.recipient_departments : [];
+  return r38DepartmentLabel(schedule?.recipient_department) || r38DepartmentLabel(many[0]) || R38_MODULE_DEPARTMENT[String(schedule?.module_key || "").toUpperCase()] || "";
+}
+function r38DepartmentSubject(subject: string, department: string): string {
+  const re = /^\s*(?:STAWN\s+)?QCMS\s*[·:|\-–—]\s*/i;
+  const label = r38DepartmentLabel(department);
+  if (!label || !subject.trim()) return subject;
+  if (re.test(subject)) return `${label} · ${subject.replace(re, "")}`;
+  const head = subject.split("·")[0].trim();
+  const known = subject.includes("·") && (Object.values(R38_DEPARTMENT_LABEL).includes(head) || Boolean(R38_DEPARTMENT_LABEL[head.toLowerCase().replace(/[^a-z0-9]+/g, "")]));
+  return known ? subject : `${label} · ${subject.trim()}`;
+}
+
 const HEADERS = { "Content-Type": "application/json" };
 type Row = Record<string, any>;
 type DigestRow = { reference:string; part:string; party:string; due_date:string; status:string; quantity:string;
@@ -187,7 +210,7 @@ Deno.serve(async(req:Request)=>{
         }
         const tpl=templateMap.get(String(schedule.template_key||schedule.event_key))||{}, overdue=rows.filter((r)=>r.status.startsWith("OVERDUE")).length;
         const ctx={report_date:clock.date,open_count:rows.length-overdue,overdue_count:overdue,department:schedule.recipient_department||"QCMS Team"};
-        const subject=render(String(tpl.subject_template||`QCMS · ${schedule.schedule_label} · {{report_date}}`),ctx), bodyText=render(String(tpl.body_template||"Please find attached the QCMS Excel digest for {{report_date}}."),ctx);
+        const subject=r38DepartmentSubject(render(String(tpl.subject_template||`QCMS · ${schedule.schedule_label} · {{report_date}}`),ctx),r38ScheduleDepartment(schedule)||"Supply Chain"), bodyText=render(String(tpl.body_template||"Please find attached the QCMS Excel digest for {{report_date}}."),ctx);
         const bytes=workbook(String(schedule.schedule_label||"QCMS Supply Chain Digest"),clock.date,rows,company), fileName=`QCMS_${String(schedule.schedule_key)}_${clock.date}.xlsx`;
         // R36: same rows as an HTML table in the body (part number, customer, supplier, qty, price, delivery date) + PO PDFs (overdue first, max 10).
         const table=digestTable(rows);

@@ -1,0 +1,6 @@
+{
+  "comment": "Edge Functions the Mac updater deploys through the Supabase Management API (scripts/deploy_functions.py). Unchanged functions are skipped via the qcms_applied_sql ledger.",
+  "functions": [
+    {"slug": "qcms-overdue-notifier", "verify_jwt": false}
+  ]
+}

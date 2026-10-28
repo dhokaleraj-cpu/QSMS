@@ -81,13 +81,14 @@ DOC_TITLES: dict[str, str] = {
     "indirect_grns": "INDIRECT GOODS RECEIPT NOTE",
     "indirect_items": "INDIRECT ITEM MASTER",
     "supply_purchase_order_sources": "PO SOURCE REFERENCE",
+    "ppap_packages": "PPAP PACKAGE",  # R38
 }
 
 NUMBER_FIELDS: tuple[str, ...] = (
     "po_number", "challan_number", "grn_number", "pr_number", "item_code", "material_out_number", "osp_job_number", "inward_number", "rmtc_number", "receipt_number", "receipt_no",
     "dispatch_number", "dispatch_no", "report_number", "complaint_number", "calculation_number", "order_number",
     "master_reference_no", "supplier_order_no", "confirmation_number", "document_number", "project_code", "flow_number",
-    "batch_code", "reference_no", "certificate_number", "asset_code", "plan_number", "part_number", "party_code",
+    "package_no", "batch_code", "reference_no", "certificate_number", "asset_code", "plan_number", "part_number", "party_code",
     "grade_code", "process_code", "employee_code", "branch_code", "stage_code", "standard_number", "file_name", "heat_number",
 )
 DATE_FIELDS: tuple[str, ...] = (
@@ -108,8 +109,13 @@ CHILD_SECTIONS: dict[str, tuple[tuple[str, str, str, str], ...]] = {
     "inspection_reports": (("inspection_results", "inspection_report_id", "id", "INSPECTION RESULTS"),),
     "npd_orders": (("npd_order_steps", "npd_order_id", "id", "NPD STEPS"),),
     "npd_process_flows": (("npd_process_flow_steps", "flow_id", "id", "PROCESS FLOW STEPS"),),
+    "ppap_packages": (("ppap_package_elements", "package_id", "id", "PPAP ELEMENTS"),  # R38
+                      ("ppap_element_documents", "package_id", "id", "PPAP DOCUMENTS"),
+                      ("ppap_status_notes", "package_id", "id", "STATUS NOTES"),
+                      ("ppap_customer_submissions", "package_id", "id", "CUSTOMER SUBMISSIONS")),
     "rmtc_approvals": (("rmtc_part_approvals", "rmtc_approval_id", "id", "PART WORKSHEETS"),
-                       ("rmtc_chemistry_results", "rmtc_approval_id", "id", "CHEMISTRY RESULTS")),
+                       ("rmtc_chemistry_results", "rmtc_approval_id", "id", "CHEMISTRY RESULTS"),
+                       ("rmtc_jominy_results", "rmtc_approval_id", "id", "JOMINY RESULTS")),  # R38 A2
     "material_grades": (("material_grade_elements", "material_grade_id", "id", "CHEMICAL ELEMENTS"),),
     "inspection_plans": (("inspection_plan_characteristics", "inspection_plan_id", "id", "CHARACTERISTICS"),),
     "osp_jobs": (("osp_jobs", "material_out_id", "material_out_id", "MATERIAL OUT LINES"),
@@ -134,7 +140,11 @@ CHILD_SECTIONS: dict[str, tuple[tuple[str, str, str, str], ...]] = {
               ("part_heat_treatment_details", "part_id", "id", "HEAT TREATMENT"),
               ("part_rmtc_requirements", "part_id", "id", "RMTC REQUIREMENTS"),
               ("part_jominy_requirements", "part_id", "id", "JOMINY REQUIREMENTS"),
-              ("part_standard_links", "part_id", "id", "LINKED STANDARDS")),
+              ("part_standard_links", "part_id", "id", "LINKED STANDARDS"),
+              ("part_process_routes", "part_id", "id", "PART PROCESSES"),  # R38
+              ("part_ecns", "part_id", "id", "ENGINEERING / PROCESS CHANGE NOTES")),
+    "part_process_routes": (("part_ecns", "process_route_id", "id", "ECN / PCN"),),  # R38
+    "part_ecns": (("part_ecn_actions", "ecn_id", "id", "IMPLEMENTATION ACTIONS"),),  # R38
     "parties": (("parts", "customer_id", "id", "PARTS (CUSTOMER)"),
                 ("part_supplier_links", "supplier_id", "id", "PARTS SUPPLIED")),
     "employees": (("employees", "reports_to_employee_id", "id", "TEAM MEMBERS"),),
@@ -156,6 +166,7 @@ ATTACHMENT_ENTITY: dict[str, str] = {
     "supply_purchase_orders": "SUPPLY_PURCHASE_ORDER", "supply_po_confirmations": "PO_CONFIRMATION",
     "osp_jobs": "OSP_JOB", "quality_complaints": "QUALITY_COMPLAINT", "parts": "PART_MASTER", "npd_orders": "NPD_ORDER",
     "customer_standards": "CUSTOMER_STANDARD", "part_process_specifications": "PART_PROCESS_SPEC",
+    "part_ecns": "PART_ECN", "part_process_routes": "PART_PROCESS",  # R38
 }
 
 # Tables whose dedicated controlled print is produced by NotificationService._generated_report.
@@ -461,6 +472,53 @@ def fetch_record(repo: Any, table: str, record_id: str) -> dict:
     return dict(rows[0]) if rows else {}
 
 
+# R38: chemistry / Jominy children print horizontally (elements / distances are columns, Jominy with mm row).
+_HORIZONTAL_GRIDS = {"material_grade_elements", "rmtc_chemistry_results", "part_jominy_requirements", "rmtc_jominy_results"}
+
+
+def _analysis_frame(table: str, rows: list[dict], resolver: "_Resolver") -> pd.DataFrame | None:
+    try:
+        from core.analysis_grids import chemistry_table, jominy_table, table_frame
+        if not rows:
+            return pd.DataFrame()
+        if table == "material_grade_elements":
+            def _pick(*keys):
+                return lambda r: next((r.get(k) for k in keys if r.get(k) not in (None, "")), None)
+            return table_frame(chemistry_table(rows, [("Minimum", _pick("minimum", "minimum_value", "min_value")),
+                                                      ("Maximum", _pick("maximum", "maximum_value", "max_value")),
+                                                      ("Test Method", "test_method")], blank=""))
+        if table == "part_jominy_requirements":
+            active = [r for r in rows if str(r.get("status") or "ACTIVE") == "ACTIVE"]
+            return table_frame(jominy_table(active, [("Min HRC", "minimum_hrc"), ("Max HRC", "maximum_hrc")], blank=""))
+        if table == "rmtc_chemistry_results":
+            by_part: dict[str, list[dict]] = {}
+            for row in rows:
+                by_part.setdefault(str(row.get("part_id") or ""), []).append(row)
+            frames = []
+            for part_id, part_rows in by_part.items():
+                part = resolver.label(table, "part_id", part_id) if part_id else ""
+                prefix = f"{part} · " if part and len(by_part) > 1 else ""
+                frames.append(table_frame(chemistry_table(part_rows, [
+                    (f"{prefix}Minimum", "minimum_value"), (f"{prefix}Maximum", "maximum_value"),
+                    (f"{prefix}Actual", "actual_value"), (f"{prefix}Status", "result")], blank="")))
+            return pd.concat(frames, ignore_index=True).fillna("") if frames else pd.DataFrame()
+        if table == "rmtc_jominy_results":  # R38 A2: distances across, inch header + Distance (mm) row per part
+            by_part_j: dict[str, list[dict]] = {}
+            for row in rows:
+                by_part_j.setdefault(str(row.get("part_id") or ""), []).append(row)
+            frames = []
+            for part_id, part_rows in by_part_j.items():
+                part = resolver.label(table, "part_id", part_id) if part_id else ""
+                prefix = f"{part} · " if part and len(by_part_j) > 1 else ""
+                frames.append(table_frame(jominy_table(part_rows, [
+                    (f"{prefix}Actual HRC", "actual_hrc"), (f"{prefix}Actual Status", "result"),
+                    (f"{prefix}Calculated HRC", "calculated_hrc"), (f"{prefix}Calc. Status", "calculated_result")], blank="")))
+            return pd.concat(frames, ignore_index=True).fillna("") if frames else pd.DataFrame()
+    except Exception:
+        return None
+    return None
+
+
 def record_print_data(table: str, record_id: str, repo: Any = None, *, external: bool = False, record: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Everything the generic print needs: title, number, date, fields, child sections, attachments, status, approval."""
     if repo is None:
@@ -472,16 +530,32 @@ def record_print_data(table: str, record_id: str, repo: Any = None, *, external:
         from core.customer_privacy import strip_customer
         row = strip_customer(row)
     sections: dict[str, pd.DataFrame] = {}
+    applicable_keys: set[str] | None = None
+    if table == "parts":  # R38: Not Applicable Part sections are omitted from the print
+        try:
+            from core.part_process_service import part_applicable_sections
+            applicable_keys = part_applicable_sections(row)
+        except Exception:
+            applicable_keys = None
     for child_table, child_column, parent_column, title in CHILD_SECTIONS.get(table, ()):
         if external and child_column == "customer_id":
             continue  # R36b: a customer's own parts / orders never print on a customer-safe copy
+        if applicable_keys is not None:
+            from core.part_process_service import CHILD_TABLE_SECTION
+            if CHILD_TABLE_SECTION.get(child_table, "") not in applicable_keys | {""}:
+                continue
         rows = resolver.children(child_table, child_column, row.get(parent_column))
+        if applicable_keys is not None and child_table in {"part_metallurgical_requirements", "part_process_parameter_specifications"}:
+            from core.part_process_service import filter_requirement_rows
+            rows = filter_requirement_rows(rows, applicable_keys)
         if child_table == table:
             rows = [r for r in rows if str(r.get("id")) != str(row.get("id"))]  # never list the record itself
         if external:
             from core.customer_privacy import strip_customer
             rows = [strip_customer(r) for r in rows]
-        frame = _child_frame(child_table, rows, resolver, link_column=child_column)
+        frame = _analysis_frame(child_table, rows, resolver) if child_table in _HORIZONTAL_GRIDS else None  # R38
+        if frame is None:
+            frame = _child_frame(child_table, rows, resolver, link_column=child_column)
         if not frame.empty:
             sections[title] = frame
     status = _first(row, STATUS_FIELDS).replace("_", " ")
@@ -522,6 +596,12 @@ def _specific_pdf(table: str, record_id: str, repo: Any, external: bool) -> tupl
         service = NotificationService(repo)
         service.customer_safe = bool(external)
         return service._generated_report(table, record_id)
+    if table == "part_ecns":  # R38: ECN / PCN controlled print (format FSI/806/F05)
+        from core.ecn_pdf import ecn_pdf_bytes
+        record = fetch_record(repo, table, record_id)
+        if not record:
+            return None
+        return f"{record.get('ecn_number') or 'ECN'}.pdf", ecn_pdf_bytes(record_id, repo)
     if table == "qc_calculation_records":
         from core.reporting import qc_calculation_pdf_bytes
         record = fetch_record(repo, table, record_id)

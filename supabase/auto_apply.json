@@ -15,6 +15,11 @@
     "supabase/migrations/20261024100000_qcms_r37_kpi_drilldown.sql",
     "supabase/migrations/20261024120000_qcms_r37_indirect_purchase.sql",
     "supabase/migrations/20261024120000_qcms_r37_module_kpis.sql",
-    "supabase/migrations/20261027100000_qcms_r37b_po_amendment.sql"
+    "supabase/migrations/20261027100000_qcms_r37b_po_amendment.sql",
+    "supabase/migrations/20261028120000_qcms_r38_part_process_ecn.sql",
+    "supabase/migrations/20261028130000_qcms_r38_part_process_ecn.sql",
+    "supabase/migrations/20261028100000_qcms_r38_rmtc_qr_chem.sql",
+    "supabase/migrations/20261028140000_qcms_r38_misc.sql",
+    "supabase/migrations/20261028120000_qcms_r38_ppap.sql"
   ]
 }

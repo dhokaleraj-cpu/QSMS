@@ -312,6 +312,10 @@ page._render_challan_module(Svc(), {"can_edit": True, "can_create": True, "can_a
 '''
     app = AppTest.from_string(script).run(timeout=30)
     assert not app.exception, app.exception
+    # R38: the challan is entered with the Material Out; saved details are corrected behind one toggle (no second entry form).
+    assert "Update Challan" not in [b.label for b in app.button]
+    next(t for t in app.toggle if t.label == "Correct challan details").set_value(True).run(timeout=30)
+    assert not app.exception, app.exception
     labels = [b.label for b in app.button]
     assert "Update Challan" in labels and "Send Challan E-mail" in labels and "Save Return" in labels
     assert any(b.label == "Download Challan PDF" for b in app.get("download_button"))
@@ -406,26 +410,30 @@ def test_challan_excel_has_sections_and_no_customer():
 def test_pages_offer_challan_pdf_excel_and_records_view():
     page = read("app_pages/osp_transactions.py")
     assert "Download Challan Excel" in page and "Download DRAFT Challan PDF" in page
-    assert "def _render_record_challan" in page and '"RETURNABLE DELIVERY CHALLAN"' in page and "Add / edit return challan / invoice" in page
+    # R38: OSP Records opens the SAME Material Out / challan record view (Details · Print · Vendor returns) - no separate challan section.
+    assert "def render_material_out_record" in page and "render_material_out_record(service, challans, doc, challan, perms, allow_delete=False)" in page
     src = read("core/osp_challan_pdf.py")
     assert "def osp_challan_pdf_bytes(job_id" in src and "_watermark_pdf_bytes" in src and "saved_layout(\"PURCHASE_ORDER\")" in src
 
 
 def test_material_out_and_records_challan_buttons_apptest():
+    """R38: the shared record view (used by OSP Records) offers the challan PDF / Excel on its Print tab."""
     from streamlit.testing.v1 import AppTest
     script = '''
 import streamlit as st
 st.data_editor = lambda frame, **kwargs: frame
 from tests.test_r37_osp import FakeRepo, TABLES, JOB
 from core.osp_challan import OSPChallanService
+from core.osp_service import OSPService
 import app_pages.osp_transactions as page
 repo = FakeRepo(TABLES)
-page.OSPChallanService = lambda *a, **k: OSPChallanService(repo)
-import core.osp_challan as oc
-oc.Repository = lambda: repo
-page._render_record_challan(dict(JOB, osp_job_number="OSP-1"))
+svc = OSPChallanService(repo)
+class Svc(OSPService):
+    def __init__(self): self.repo = repo
+doc = OSPService.material_out_documents([dict(JOB, osp_job_number="OSP-1", material_out_number="OUT-1")])[0]
+page.render_material_out_record(Svc(), svc, doc, svc.challan_for(doc), {"can_edit": True, "can_create": True, "can_archive": True}, allow_delete=False)
 '''
     app = AppTest.from_string(script).run(timeout=30)
     assert not app.exception, app.exception
     labels = [b.label for b in app.get("download_button")]
-    assert "Challan PDF" in labels and "Challan Excel" in labels
+    assert "Download Challan PDF" in labels and "Download Challan Excel" in labels
