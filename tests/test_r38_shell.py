@@ -63,13 +63,14 @@ def test_ribbon_has_no_version_but_user_details_popover_has_it():
 
     script = '''
 import streamlit as st
+st.session_state["_qsms_preview"] = True  # no live Supabase calls from the header (Mac has real secrets)
 from core import ui
 st.session_state[ui.HEADER_COMPANY_LOGO_KEY] = {"_at": 9e12, "html": '<span class="qcms-hdr-company-initials">FSI</span>'}
 st.session_state[ui.HEADER_USER_KEY] = {"employee_id": "e1", "_at": 9e12, "employee_code": "FSI-007", "department": "Purchase", "photo_uri": ""}
 st.session_state["_qcms_r35_licence_status"] = {"_at": 9e12, "data": {"company_name": "Four Star Industries Private Limited"}}
 ui.render_shell_header({"full_name": "Rajesh Dhokale", "role": "ADMIN", "employee_id": "e1"}, "Dashboard")
 '''
-    app = AppTest.from_string(script).run(timeout=30)
+    app = AppTest.from_string(script).run(timeout=90)
     assert not app.exception, app.exception
     from core.config import get_settings
 

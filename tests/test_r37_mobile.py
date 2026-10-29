@@ -20,7 +20,7 @@ def balanced(src: str) -> bool:
 # ------------------------------------------------------------------ versions
 def test_versions():
     gradle = read(AND / "app/build.gradle")
-    assert "versionCode 370" in gradle and "versionName '3.7.0'" in gradle
+    assert "versionCode 371" in gradle and "versionName '3.7.1'" in gradle
     mp = read(IOS / "make_project.py")
     assert 'else "1.3.0"' in mp and 'else "4"' in mp
     assert 'VERSION="1.3.0"' in read(IOS / "BUILD_STAWN_QCMS_iOS.command")

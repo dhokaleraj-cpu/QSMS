@@ -39,6 +39,7 @@ ROUTE_KEYWORDS: dict[str, str] = {
     "rmtc-entry": "rmtc mill test certificate raw material test certificate chemistry new entry",
     "rmtc-records": "rmtc register certificates",
     "rmtc-approval": "rmtc approval validation decision",
+    "rmtc-qr": "rmtc qr code public link label material location certificate download zip",
     "inward-entry": "material inward grn receipt heat new entry",
     "inward-records": "material inward register grn",
     "osp-home": "osp outside processing vendor heat treatment",

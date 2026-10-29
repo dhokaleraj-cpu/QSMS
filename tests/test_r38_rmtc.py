@@ -38,12 +38,12 @@ def test_app_url_and_query_param(monkeypatch):
         def select(self, *a, **k):
             return []
     assert r.app_base_url(_Empty()) == r.DEFAULT_APP_URL
-    # default "APP": the QR always carries the login-protected app link, never a token (no secret in the QR)
-    assert r.QR_CONTENT == "APP"
+    # R40: default "TOKEN" = public no-login URL (random token); the login-protected app link is the fallback
+    assert r.QR_CONTENT == "TOKEN"
     assert r.qr_target_url("https://a/rmtc-records?rmtc=1", "") == "https://a/rmtc-records?rmtc=1"
-    assert r.qr_target_url("https://a/x", "https://p.supabase.co/functions/v1/qcms-rmtc-certificate?t=" + "A" * 32) == "https://a/x"
-    monkeypatch.setattr(r, "QR_CONTENT", "TOKEN")  # legacy opt-in only
     assert r.qr_target_url("https://a/x", "https://token") == "https://token"
+    monkeypatch.setattr(r, "QR_CONTENT", "APP")  # login-protected mode (fallback)
+    assert r.qr_target_url("https://a/x", "https://p.supabase.co/functions/v1/qcms-rmtc-certificate?t=" + "A" * 32) == "https://a/x"
     # the deep link survives the login screen (stashed in the session, consumed once)
     state = {}
     assert r.remember_qr_request({"rmtc": "RMTC-9"}, state) == "RMTC-9" and state[r.SESSION_KEY] == "RMTC-9"
@@ -175,6 +175,7 @@ def test_approval_stores_png_attachment_and_emails_quality(monkeypatch):
     monkeypatch.setattr(rmtc_qr, "app_base_url", lambda repo=None: "https://qcms.example.app")
     import core.notification_service as ns
     monkeypatch.setattr(ns, "NotificationService", lambda repo=None: notify)
+    monkeypatch.setattr(rmtc_qr, "QR_CONTENT", "APP")  # R40: login-protected fallback mode (public mode: test_r40_public_qr)
     result = rmtc_qr.RMTCQRLabelService(repo, storage_client=lambda: client).on_rmtc_approved(RID)
     assert result["ok"] and not result["warnings"], result
     assert result["app_url"] == "https://qcms.example.app/rmtc-records?rmtc=RMTC-77"

@@ -1,12 +1,13 @@
 """R38 · QR codes for approved RMTC certificates (material-location label).
 
-The QR encodes a stable public URL::
+The QR encodes a stable public URL (R40 default; anyone with the QR opens all RMTC documents, no login)::
 
     https://<project>.supabase.co/functions/v1/qcms-rmtc-certificate?t=<32-char token>
 
 The public Edge Function ``qcms-rmtc-certificate`` resolves the token (table ``rmtc_qr_tokens``) with the
-service role and redirects to a fresh 10-minute signed URL of the stored certificate PDF
-(``quality-documents/{tenant}/rmtc_certificates/{rmtc_id}/RMTC_<number>.pdf``).
+service role and serves the document index / ZIP / combined PDF / 10-minute signed download URLs of the stored
+customer-safe certificate PDF (``quality-documents/{tenant}/rmtc_certificates/{rmtc_id}/RMTC_<number>.pdf``) and every
+RMTC attachment.
 
 No extra dependency: the QR matrix comes from reportlab's built-in encoder (reportlab is already required)
 and the PNG is written with zlib (pure Python). Pillow, when installed (it ships with Streamlit), is only
@@ -228,6 +229,45 @@ def quality_department(value: Any) -> bool:
     return "quality" in str(value or "").casefold()
 
 
+# ----------------------------------------------------------------------------- R40 · customer-safe public certificate
+def public_certificate_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """RMTC print payload for the PUBLIC certificate (anyone with the QR can download it).
+
+    core.customer_privacy.strip_customer blanks every customer key; in addition the original (customer) part number
+    is replaced by the FSI part number (``-`` when none), the drawing number / customer link of the parts are
+    removed and the heat-usage rows show FSI part numbers only.
+    """
+    from core.customer_privacy import strip_customer
+
+    clean = dict(strip_customer(dict(payload or {})))
+    parts = {str(k): dict(v or {}) for k, v in dict(clean.get("parts") or {}).items()}
+    fsi_by_number: dict[str, str] = {}
+    for key, part in parts.items():
+        fsi = str(part.get("fsi_part_number") or "").strip()
+        if part.get("part_number"):
+            fsi_by_number[str(part.get("part_number")).strip()] = fsi
+        part["part_number"] = fsi or "-"
+        for field in ("customer_id", "drawing_number", "drawing_revision"):
+            if field in part:
+                part[field] = None
+        parts[key] = part
+    clean["parts"] = parts
+    usage = []
+    for row in clean.get("heat_usage") or []:
+        row = dict(row or {})
+        original = str(row.get("part_number") or "").strip()
+        row["part_number"] = str(row.get("fsi_part_number") or "").strip() or fsi_by_number.get(original, "") or "-"
+        usage.append(row)
+    if "heat_usage" in clean:
+        clean["heat_usage"] = usage
+    fsi_numbers = [str(p.get("part_number")) for p in parts.values() if str(p.get("part_number") or "-") != "-"]
+    clean["qr_lines"] = [(f"Parts: {', '.join(dict.fromkeys(fsi_numbers)) or '-'}" if str(line).startswith("Parts:") else line)
+                         for line in (clean.get("qr_lines") or [])]
+    clean["qr_app_url"] = ""
+    clean["customer_safe"] = True
+    return clean
+
+
 # ----------------------------------------------------------------------------- service
 class RMTCQRService:
     """Token, certificate snapshot, QR assets and Quality-department e-mail for an approved RMTC."""
@@ -276,6 +316,20 @@ class RMTCQRService:
         })
         return dict(row), True
 
+    def revoke_active(self, rmtc_id: str) -> int:
+        """R40: mark every active token of this RMTC revoked (printed labels with the old code stop working)."""
+        count = 0
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            rows = self.repo.select("rmtc_qr_tokens", eq={"rmtc_approval_id": str(rmtc_id), "revoked": False}, limit=20) or []
+        except Exception:
+            rows = []
+        for row in rows:
+            if row.get("id"):
+                self.repo.update("rmtc_qr_tokens", str(row["id"]), {"revoked": True, "revoked_at": now, "updated_at": now})
+                count += 1
+        return count
+
     def url_for(self, rmtc_id: str) -> str:
         token = self.active_token(rmtc_id)
         return certificate_url(str(token["token"])) if token and valid_token(token.get("token")) else ""
@@ -317,7 +371,7 @@ class RMTCQRService:
 
         service = RMTCService.__new__(RMTCService)
         service.repo = self.repo
-        payload = service.report_payload(rmtc_id)
+        payload = public_certificate_payload(service.report_payload(rmtc_id))
         record = dict(payload.get("record") or {})
         return f"RMTC_{safe_file_token(record.get('rmtc_number'))}.pdf", rmtc_record_pdf_bytes(payload)
 

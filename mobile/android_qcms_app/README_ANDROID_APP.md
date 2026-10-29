@@ -24,11 +24,11 @@ Every grid scrolls left / right and up / down with a fixed header row and first 
 ## Build
 GitHub builds it automatically on every push to main that changes `mobile/android_qcms_app`
 (workflow **STAWN QCMS Android App APK**, artifact **QCMS-NATIVE-APP-APK**, file
-`STAWN_QCMS_v3.7.0.apk`). The test APK is signed with the fixed key `app/qcms-debug.keystore`,
+`STAWN_QCMS_v3.7.1.apk`). The test APK is signed with the fixed key `app/qcms-debug.keystore`,
 so a new APK installs over the previous one without uninstalling.
 
 Install on the phone: download the artifact zip from GitHub → Actions → latest run, unzip,
-open `STAWN_QCMS_v3.7.0.apk` on the phone, allow "Install unknown apps" for the browser / Files app.
+open `STAWN_QCMS_v3.7.1.apk` on the phone, allow "Install unknown apps" for the browser / Files app.
 The older WebView app (`com.fourstar.qcms.test`) can stay installed; this app is `com.fourstar.qcmsapp`.
 
 ## v3.0.0 (R30)
@@ -59,6 +59,10 @@ layout, Universal Record PDF for any other table). Asset and PO screens offer th
 Cards also honour a server "drill" object (table + PostgREST filter) and, on older databases, a label -> key map with
 client-side status filters. Supply / Quality / Masters / More tabs show the module infographic cards on top. "+" New transaction
 only lists modules with Create permission; New query opens Global Search with the keyboard up; search results have a Results PDF.
+
+## v3.7.1 (R40) - public RMTC QR
+- RMTC QR codes are public (no login): one scan opens one PDF with every RMTC document; ZIP / per-file downloads.
+- New "RMTC QR Codes" module directly below RMTC: list, QR, public link, documents, PNG / JPEG / PDF / label, refresh, revoke, bulk create.
 
 ## v3.7.0 (R39) - website parity
 - STAWN Developer Console (developer only): licences, companies, company admins, any company's profile / logo, login cover photo, trial-data purge.

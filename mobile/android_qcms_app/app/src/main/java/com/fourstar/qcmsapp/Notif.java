@@ -266,7 +266,7 @@ final class Notif {
             {"supply-forging", "forging_orders"}, {"supply-downstream", "downstream_events"}, {"supply-opening-stock", "opening_stock"},
             {"supply-traceability", "traceability"}, {"traceability-report", "traceability"},
             {"rmtc-entry", "rmtc"}, {"rmtc-records", "rmtc"}, {"rmtc-report", "rmtc"}, {"rmtc-approval", "rmtc"}, {"rmtc-part", "rmtc"},
-            {"rmtc-approved-worksheet", "accepted_rmtc_parts"},
+            {"rmtc-approved-worksheet", "accepted_rmtc_parts"}, {"rmtc-qr", "rmtc_qr"},
             {"inward-entry", "inward"}, {"inward-records", "inward"}, {"inward-report", "inward"}, {"heat-ledger", "heat_ledger"},
             {"dimensional-entry", "dimensional_reports"}, {"dimensional-records", "dimensional_reports"}, {"dimensional-report", "dimensional_reports"},
             {"metlab-entry", "metlab_reports"}, {"metlab-records", "metlab_reports"}, {"metlab-report", "metlab_reports"},

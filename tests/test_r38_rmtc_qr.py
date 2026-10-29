@@ -233,7 +233,7 @@ def test_rmtc_pages_call_qr_hook_after_approval_and_show_panel():
     hook = page.index("_run_qr_hook(repo,rid,send_email=True)", decide)
     assert hook - decide < 600
     assert "is_rmtc_approved(svc.get(rid) or {})" in page
-    for token in ("Download QR PNG", "Print Label PDF (100 x 60 mm)", "Refresh QR Label", "Re-send QR to Quality",
+    for token in ("Download QR PNG", "Print Label PDF (100 x 60 mm)", "Refresh public QR / certificate", "Re-send QR to Quality",
                   "Generate QR & e-mail Quality department", "_render_rmtc_qr_panel(repo,record", "_render_rmtc_qr_panel(svc.repo,selected_row"):
         assert token in page
     assert page.count("_run_qr_hook(svc.repo,rid,send_email=False)") == 2  # added-part decisions refresh the certificate
@@ -293,7 +293,7 @@ def test_rmtc_pdf_grids_horizontal_and_qr_printed():
     mm_row = words.index("Distance (mm)", jom)
     assert words[mm_row + 1:mm_row + 3] == ["1.59", "3.18"]
     assert "7.94" in words[mm_row:mm_row + 12]
-    assert "MATERIAL LOCATION QR · scan to open / download this approved RMTC certificate" in " ".join(text.split())
+    assert "MATERIAL LOCATION QR · scan to open / download" in " ".join(text.split())  # R40: public-link wording for token URLs
     assert "qcms-rmtc-certificate?t=" in text.replace("\n", "")
 
 

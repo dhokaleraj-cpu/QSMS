@@ -30,8 +30,9 @@ import java.util.Set;
 
 /**
  * R39 · Approved RMTC material-location QR (website core/rmtc_qr.py, R38/R39):
- *  - QR content = login-protected website link (QR_CONTENT "APP"): <website>/rmtc-records?rmtc=<RMTC number>
- *    (RptReports.rmtcQrUrl); matrix from the pure-Java encoder IncQrCode (same choices as the website encoder).
+ *  - R40: QR content = PUBLIC link (no login) IncQrPublic.PUBLIC_BASE + "?t=<32-char random token>" from rmtc_qr_tokens
+ *    (IncQrPublic.ensure: active token or new SecureRandom token + customer-safe certificate PDF); falls back to the
+ *    login-protected website link only when the token cannot be created (note shown). Matrix from IncQrCode.
  *  - Caption lines = label_lines (RMTC no, heat, grade, size / section, parts, qty, supplier, approval date[, location]).
  *  - Downloads: QR PNG (QR + caption), QR JPEG (white background, RGB), QR PDF (A6 page, QR + caption) and the
  *    100 x 60 mm print label PDF. File names RMTC_<no>_QR.png / .jpg / .pdf, RMTC_<no>_QR_Label.pdf.
@@ -73,6 +74,11 @@ final class IncQrLabel {
         String stem = "RMTC";
         String number = "";
         boolean[][] matrix;
+        /** R40: public token link (no login) vs website fallback; note = why the fallback / certificate warning. */
+        boolean isPublic;
+        String token = "";
+        String note = "";
+        JSONObject tokenRow;
     }
 
     /** _date_text: dd-MM-yyyy */
@@ -121,8 +127,16 @@ final class IncQrLabel {
     /** Background: grade / supplier names + covered part numbers -> QR assets. */
     static Assets assets(Api api, JSONObject r) throws Exception {
         Assets s = new Assets();
-        s.url = RptReports.rmtcQrUrl(api, Lookups.j(r, "id"), r);
-        if (s.url.isEmpty()) s.url = RptReports.QCMS_WEBSITE + "/rmtc-records?rmtc=" + Api.enc(Lookups.j(r, "rmtc_number")).replace("+", "%20");
+        IncQrPublic.Link link = IncQrPublic.ensure(api, r);  // R40: public token URL (fallback: website link + note)
+        s.url = link.url;
+        if (!link.isPublic) {  // fallback: R38 / R39 login-protected website link
+            String web = RptReports.rmtcQrUrl(api, Lookups.j(r, "id"), r);
+            if (!web.isEmpty()) s.url = web;
+        }
+        s.isPublic = link.isPublic;
+        s.token = link.token;
+        s.note = link.note;
+        s.tokenRow = link.row;
         String grade = "", supplier = "";
         try {
             JSONObject g = IncCalc.one(api, "material_grades?select=grade_code,grade_name&id=eq." + Api.enc(Lookups.j(r, "material_grade_id")) + "&limit=1");
@@ -264,7 +278,7 @@ final class IncQrLabel {
             if (y > h - pad - pt(6)) break;
         }
         Paint note = paint(6.5f, false);
-        String n = "Scan with a phone: QCMS login opens this record.";
+        String n = s.isPublic ? "Scan with a phone: open / download all RMTC documents (no login)." : "Scan with a phone: QCMS login opens this record.";
         c.drawText(n, (w - note.measureText(n)) / 2f, h - pad, note);
         doc.finishPage(page);
         return pdfBytes(doc);
@@ -299,7 +313,8 @@ final class IncQrLabel {
         Paint lb = paint(8, true);
         c.drawText("Location:", pad + pt(1.5f), h - pad - locH + pt(3.6f), lb);
         if (!location.isEmpty()) c.drawText(location.length() > 60 ? location.substring(0, 60) : location, pad + pt(17), h - pad - locH + pt(3.6f), paint(8, false));
-        c.drawText("Scan with a phone: QCMS login opens this RMTC and its certificate downloads.", pad + pt(1.5f), h - pad - pt(1.4f), paint(5.4f, false));
+        c.drawText(s.isPublic ? "Scan with a phone: open / download all RMTC documents (no login needed)."
+            : "Scan with a phone: QCMS login opens this RMTC and its certificate downloads.", pad + pt(1.5f), h - pad - pt(1.4f), paint(5.4f, false));
         doc.finishPage(page);
         return pdfBytes(doc);
     }
@@ -380,15 +395,22 @@ final class IncQrLabel {
         body.append("RMTC ").append(number).append(" has been approved (").append(Ui.pretty(Lookups.j(r, "disposition"))).append(").\n\n");
         body.append(String.join("\n", s.lines.subList(1, s.lines.size())));
         body.append("\n\nAttached: the QR label (PNG) and the RMTC record PDF. Print the QR label and stick it at the location where this material is stored.");
-        body.append("\nScan the QR (QCMS login required) to open / download the approved RMTC certificate: ").append(s.url).append("\n");
+        if (s.isPublic) {
+            body.append("\nScan the QR (no login needed) to open / download the approved RMTC certificate and every RMTC document.");
+            body.append("\nOpen / download all RMTC documents: ").append(s.url).append("\n");
+        } else {
+            body.append("\nScan the QR (QCMS login required) to open / download the approved RMTC certificate: ").append(s.url).append("\n");
+            if (!s.note.isEmpty()) body.append(s.note).append("\n");
+        }
         String subject = "Quality · RMTC " + number + " approved · QR label for material location";
-        JSONObject ctx = new JSONObject().put("rmtc_id", Lookups.j(r, "id")).put("rmtc_number", number).put("department", "Quality")
+        JSONObject ctx = new JSONObject().put("rmtc_id", Lookups.j(r, "id")).put("rmtc_number", number).put("department", "Quality").put("qr_url", s.url)
             .put("next_task", "Stick QR label at material location").put("event_key", EVENT_KEY).put("document_no", number);
         String text = body.toString();
         JSONObject tpl = SndMail.template(api, null, EVENT_KEY);
         if (tpl != null) {
             if (!Lookups.j(tpl, "subject_template").isEmpty()) subject = SndMail.fill(Lookups.j(tpl, "subject_template"), ctx);
             if (!Lookups.j(tpl, "body_template").isEmpty()) text = SndMail.fill(Lookups.j(tpl, "body_template"), ctx);
+            if (!text.contains(s.url)) text += "\n\nOpen / download all RMTC documents: " + s.url + "\n";  // R40: the link is always in the mail
         }
         subject = SndMail.departmentSubject(subject, "Quality", EVENT_KEY);
         JSONArray cc = new JSONArray();
@@ -427,7 +449,8 @@ final class IncQrLabel {
             JSONObject r = IncRmtcData.rmtc(api, rid);
             if (!approved(r)) { warnings.put("RMTC is not approved; QR not generated."); return result; }
             Assets s = assets(api, r);
-            result.put("ok", true).put("url", s.url);
+            result.put("ok", true).put("url", s.url).put("public", s.isPublic);
+            if (!s.note.isEmpty()) warnings.put(s.note);
             JSONObject attachment = null;
             try {
                 attachment = storeLabel(api, r, png(s), s.stem);
@@ -503,7 +526,9 @@ final class IncQrLabel {
         String rid = Lookups.j(rec, "id");
         LinearLayout card = Ui.card(a);
         card.addView(Ui.text(a, "MATERIAL LOCATION QR", 13, Ui.TEXT, true));
-        card.addView(Ui.text(a, "Stick this QR label where the material is stored. Scanning it opens this RMTC in QCMS (login required) with the certificate downloads.", 11.5f, Ui.MUTED, false));
+        card.addView(Ui.text(a, s.isPublic ? "Stick this QR label where the material is stored. Scanning it opens a public page (no login) to view / download the RMTC certificate and every RMTC document."
+            : "Stick this QR label where the material is stored. Scanning it opens this RMTC in QCMS (login required) with the certificate downloads.", 11.5f, Ui.MUTED, false));
+        if (!s.note.isEmpty()) card.addView(Ui.text(a, s.note, 11.5f, Ui.AMBER_FG, false), Ui.matchWrap(a, 4));
         ImageView img = new ImageView(a);
         img.setAdjustViewBounds(true);
         img.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -530,6 +555,9 @@ final class IncQrLabel {
                 fileActions(a, name, mime, bytes);
             }));
         }
+        Button more = Ui.outline(a, "▦ RMTC QR Codes · public link, documents, ZIP / PDF, revoke", Ui.TEAL_DARK);
+        card.addView(more, Ui.matchWrap(a, 6));
+        more.setOnClickListener(v -> a.push(new IncQrScreen.Detail(a, rid)));
         if (manage) {
             Button refresh = Ui.outline(a, stored == null ? "Generate QR & e-mail Quality department" : "Refresh QR Label", Ui.TEAL);
             card.addView(refresh, Ui.matchWrap(a, 10));
@@ -555,7 +583,7 @@ final class IncQrLabel {
         });
     }
 
-    private static void addFileButton(MainActivity a, LinearLayout card, String label, String name, String mime, Api.Task<byte[]> build) {
+    static void addFileButton(MainActivity a, LinearLayout card, String label, String name, String mime, Api.Task<byte[]> build) {
         Button b = Ui.outline(a, label, Ui.TEAL);
         card.addView(b, Ui.matchWrap(a, 6));
         b.setOnClickListener(v -> Api.async(build, (bytes, err) -> {

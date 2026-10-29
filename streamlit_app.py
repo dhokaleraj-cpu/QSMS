@@ -172,6 +172,7 @@ android_streamlit_nav = bool(native_mobile and _native_android and _android_stre
 # page at the root URL even when a url_path was supplied, so deriving this
 # mapping from page.url_path can drop the "dashboard" key.
 from app_pages import ecn as ecn_page  # R38 ECN / PCN register (Engineering)
+from app_pages import rmtc_qr as rmtc_qr_page  # R40 RMTC QR Codes (public no-login QR, below the RMTC pages)
 
 PAGE_ITEMS = (
     ("dashboard", st.Page(dashboard.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard")),
@@ -272,6 +273,7 @@ PAGE_ITEMS = (
     ("rmtc-part", st.Page(rmtc_pages.render_part, title="RMTC Part Worksheet", icon=":material/format_list_bulleted:", url_path="rmtc-part")),
     ("rmtc-records", st.Page(rmtc_pages.render_records, title="RMTC Records", icon=":material/table_view:", url_path="rmtc-records")),
     ("rmtc-approval", st.Page(rmtc_pages.render_approval, title="RMTC Approval", icon=":material/approval:", url_path="rmtc-approval")),
+    ("rmtc-qr", st.Page(rmtc_qr_page.render, title="RMTC QR Codes", icon=":material/qr_code_2:", url_path="rmtc-qr")),  # R40
     ("inward-records", st.Page(material_inward.render_records, title="Material Inward Records", icon=":material/table_view:", url_path="inward-records")),
     ("osp-material-out", st.Page(osp_transactions.render_material_out, title="OSP Material Out", icon=":material/output:", url_path="osp-material-out")),
     ("osp-sample-receipt", st.Page(osp_transactions.render_sample_receipt, title="OSP Sample Receipt", icon=":material/experiment:", url_path="osp-sample-receipt")),
@@ -361,6 +363,7 @@ MODULE_SUBMENUS = {
         ("rmtc-part", "Part Worksheet", ":material/format_list_bulleted:"),
         ("rmtc-approval", "Validation & Decision", ":material/approval:"),
         ("rmtc-report", "RMTC Reports", ":material/assessment:"),
+        ("rmtc-qr", "RMTC QR Codes", ":material/qr_code_2:"),
     ),
     "Inward": (
         ("inward-entry", "Material Inward Entry", ":material/input:"),
@@ -508,7 +511,7 @@ ROUTE_MODULE = {
     "masters": "Masters", "company-branch-entry": "Masters", "company-branch-records": "Masters", "part-entry": "Masters", "ecn-register": "Engineering", "process-entry": "Masters",
     "grade-entry": "Masters", "reference-entry": "Masters", "employee-entry": "Masters",
     "user-access": "Admin", "email-settings": "Admin", "deployment-diagnostics": "Admin", "master-import": "Masters", "standards-entry": "Masters",
-    "rmtc-entry": "RMTC", "rmtc-approved-worksheet": "RMTC", "rmtc-part": "RMTC", "rmtc-approval": "RMTC",
+    "rmtc-entry": "RMTC", "rmtc-approved-worksheet": "RMTC", "rmtc-part": "RMTC", "rmtc-approval": "RMTC", "rmtc-qr": "RMTC",
     "inward-entry": "Inward",
     "osp-home": "OSP", "osp-material-out": "OSP", "osp-sample-receipt": "OSP",
     "osp-inward": "OSP", "osp-dimensional": "OSP", "osp-metlab": "OSP",
@@ -542,7 +545,7 @@ PAGE_TITLE_TO_PATH = {
     "Reference Master Records": "reference-records", "Employee Entry": "employee-entry",
     "Employee Records": "employee-records", "Users & Access": "user-access", "Email Server & Notifications": "email-settings", "Deployment Diagnostics": "deployment-diagnostics", "Master Import": "master-import", "Customer Standards Entry": "standards-entry", "Customer Standards Records": "standards-records", "My Account": "my-account", "About STAWN QCMS": "about", "My Notifications": "notifications", "Licence & Company": "licence-company", "STAWN Developer Console": "stawn-developer",
     "Approved RMTC Part Worksheet": "rmtc-approved-worksheet", "RMTC Part Worksheet": "rmtc-part", "RMTC Records": "rmtc-records",
-    "RMTC Approval": "rmtc-approval", "Material Inward Records": "inward-records",
+    "RMTC Approval": "rmtc-approval", "RMTC QR Codes": "rmtc-qr", "Material Inward Records": "inward-records",
     "OSP Material Out": "osp-material-out", "OSP Sample Receipt": "osp-sample-receipt",
     "OSP Material Inward": "osp-inward", "OSP Dimensional": "osp-dimensional",
     "OSP MetLAB": "osp-metlab", "OSP Records": "osp-records",
@@ -575,7 +578,7 @@ ROUTE_PERMISSION_MODULE = {
     "process-entry":"REFERENCE_MASTERS","process-records":"REFERENCE_MASTERS","grade-entry":"MATERIAL_GRADE","grade-records":"MATERIAL_GRADE",
     "reference-entry":"REFERENCE_MASTERS","reference-records":"REFERENCE_MASTERS","employee-entry":"EMPLOYEE_MASTER","employee-records":"EMPLOYEE_MASTER",
     "standards-entry":"REFERENCE_MASTERS","standards-records":"REFERENCE_MASTERS","master-import":"REFERENCE_MASTERS",
-    "rmtc-entry":"RMTC_ENTRY","rmtc-approved-worksheet":"RMTC_ENTRY","rmtc-part":"RMTC_ENTRY","rmtc-approval":"RMTC_ENTRY","rmtc-records":"RMTC_ENTRY",
+    "rmtc-entry":"RMTC_ENTRY","rmtc-approved-worksheet":"RMTC_ENTRY","rmtc-part":"RMTC_ENTRY","rmtc-approval":"RMTC_ENTRY","rmtc-records":"RMTC_ENTRY","rmtc-qr":"RMTC_ENTRY",
     "inward-entry":"MATERIAL_INWARD","inward-records":"MATERIAL_INWARD",
     "osp-home":"OSP_TRANSACTIONS","osp-material-out":"OSP_TRANSACTIONS","osp-sample-receipt":"OSP_TRANSACTIONS","osp-inward":"OSP_TRANSACTIONS","osp-records":"OSP_TRANSACTIONS",
     "osp-dimensional":"DIMENSIONAL_REPORT","osp-metlab":"METLAB_REPORT",
@@ -675,6 +678,7 @@ RAIL_NAV = (
     (PAGE_BY_PATH["indirect-purchase"], "Indirect Purchase", "Indirect Purchase", ":material/shopping_basket:"),
     (None, "Quality", "", ""),
     (PAGE_BY_PATH["rmtc-entry"], "RMTC", "RMTC", ":material/fact_check:"),
+    (PAGE_BY_PATH["rmtc-qr"], "RMTC QR Codes", "RMTC QR Codes", ":material/qr_code_2:"),  # R40: directly below RMTC
     (PAGE_BY_PATH["inward-entry"], "Inward", "Inward", ":material/input:"),
     (PAGE_BY_PATH["inspection-home"], "Inspections", "Inspections", ":material/verified_user:"),
     (PAGE_BY_PATH["bend-test-entry"], "Bend Test", "Bend Test", ":material/architecture:"),
@@ -736,7 +740,7 @@ if not native_mobile:
     with st.container(border=False, key="qcms_workspace"):
         rail_col, content_col = st.columns([1.22, 8.78], gap="small", vertical_alignment="top")
         with rail_col:
-            render_left_navigation(current_module, RAIL_NAV)
+            render_left_navigation("RMTC QR Codes" if current_path == "rmtc-qr" else current_module, RAIL_NAV)  # R40: highlight the QR row
         with content_col:
             with st.container(border=False, key="qcms_content"):
                 if not bool(current_route_permission.get("can_view", True)):

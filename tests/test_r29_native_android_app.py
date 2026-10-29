@@ -14,7 +14,7 @@ def read(path: Path) -> str:
 def test_project_and_gradle():
     gradle = read(APP / "app/build.gradle")
     assert "applicationId 'com.fourstar.qcmsapp'" in gradle and "minSdk 26" in gradle and "targetSdk 35" in gradle
-    assert "versionName '3.7.0'" in gradle and "signingConfig signingConfigs.qcms" in gradle
+    assert "versionName '3.7.1'" in gradle and "signingConfig signingConfigs.qcms" in gradle
     assert '"https://xxrxopzxzyjnzumrwuwy.supabase.co"' in gradle
     assert "sb_publishable_" in gradle and "service_role" not in gradle
     assert (APP / "app/qcms-debug.keystore").exists()

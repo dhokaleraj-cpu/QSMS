@@ -798,7 +798,10 @@ def _qr_approval_block(url: object, lines: Sequence[object], content_width: floa
         drawing = qr_drawing(str(url), 30 * mm)
     except Exception:
         return None
-    text = [_paragraph("MATERIAL LOCATION QR · scan to open / download this approved RMTC certificate (QCMS login required)", _tone(label_style, TEAL, bold=True))]
+    heading = ("MATERIAL LOCATION QR · scan to open / download all RMTC documents (public link - no login; anyone with this QR)"
+               if "/functions/v1/qcms-rmtc-certificate?t=" in str(url) else
+               "MATERIAL LOCATION QR · scan to open / download this approved RMTC certificate (QCMS login required)")  # R40
+    text = [_paragraph(heading, _tone(label_style, TEAL, bold=True))]
     text += [_paragraph(line, cell_style) for line in lines]
     text.append(_paragraph(str(url), _tone(cell_style, MUTED, italic=True)))
     table = Table([[drawing, text]], colWidths=[34 * mm, content_width - 34 * mm], hAlign="LEFT")

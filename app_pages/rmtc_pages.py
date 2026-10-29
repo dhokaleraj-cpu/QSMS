@@ -988,7 +988,7 @@ def _render_qr_certificate_downloads(repo:Any,record:dict)->None:
 
 
 def _run_qr_hook(repo:Any,rid:str,*,send_email:bool=True)->None:
-    """R38: after an RMTC approval - certificate snapshot + QR label PNG attachment + Quality e-mail (core.rmtc_qr). Never blocks."""
+    """R38/R40: after an RMTC approval - public token + customer-safe certificate + QR label PNG + Quality e-mail (core.rmtc_qr). Never blocks."""
     try:
         from core.rmtc_qr import RMTCQRLabelService
         result=RMTCQRLabelService(repo).on_rmtc_approved(rid,send_email=send_email)
@@ -996,26 +996,26 @@ def _run_qr_hook(repo:Any,rid:str,*,send_email:bool=True)->None:
         result={'ok':False,'warnings':[f'QR could not be generated: {exc}']}
     notes=list(result.get('warnings') or [])
     if result.get('ok') and send_email and result.get('emailed'):
-        notes.insert(0,f"Material-location QR label generated and e-mailed to {result.get('emailed')} Quality department employee(s).")
+        notes.insert(0,f"Public material-location QR label generated and e-mailed to {result.get('emailed')} Quality department employee(s).")
     elif result.get('ok'):
-        notes.insert(0,'Material-location QR label generated / certificate refreshed.')
+        notes.insert(0,'Public QR label generated / customer-safe certificate refreshed.' if result.get('public') else 'Material-location QR label generated (login link - public QR not available).')
     st.session_state['rmtc_qr_flash']=notes
 
 
 def _render_rmtc_qr_panel(repo:Any,record:dict,*,can_manage:bool,key:str)->None:
-    """R38: approved RMTC -> QR label image, Download PNG / Print label (100x60 mm PDF), refresh / re-send."""
+    """R38/R40: approved RMTC -> public QR (no login), downloads PNG / JPEG / PDF / 100x60 label, refresh / revoke."""
     from core.qr_codes import is_rmtc_approved
-    from core.rmtc_qr import RMTCQRLabelService
+    from core.rmtc_qr import PUBLIC_NOTICE, RMTCQRLabelService
     if not is_rmtc_approved(record):
         return
     rid=str(record.get('id'))
     qr=RMTCQRLabelService(repo)
-    section_bar('MATERIAL LOCATION QR','Stick this QR label where the material is stored. Scanning it opens this RMTC in QCMS (login required) with the certificate downloads.')
+    section_bar('MATERIAL LOCATION QR (PUBLIC)','Stick this QR label where the material is stored. '+PUBLIC_NOTICE)
     stored=qr.stored_label(rid)
     if not stored:
         st.info('No QR label has been generated for this approved RMTC yet (approved before R38 or from the mobile app).')
         if st.button('Generate QR & e-mail Quality department',icon=':material/qr_code_2:',type='primary',disabled=not can_manage,key=f'rmtc_qr_generate_{key}_{rid}'):
-            with st.spinner('Generating QR label and certificate…'):
+            with st.spinner('Generating public QR, certificate and label…'):
                 _run_qr_hook(repo,rid,send_email=True)
             st.rerun()
     try:
@@ -1028,11 +1028,13 @@ def _render_rmtc_qr_panel(repo:Any,record:dict,*,can_manage:bool,key:str)->None:
     with q2:
         st.markdown('\n\n'.join(f"**{line}**" if i==0 else line for i,line in enumerate(assets['lines'])))
         st.code(assets['url'],language=None)
-        if assets.get('app_url') and assets.get('app_url')!=assets.get('url'):
-            st.caption(f"QCMS link (after login): {assets['app_url']}")
+        if assets.get('public'):
+            st.caption('Public link: '+PUBLIC_NOTICE+' Print a new label after "Revoke QR (new code)".')
+        else:
+            st.caption('No public QR code yet - the QR opens QCMS (login required). Press "Refresh public QR / certificate" to create the public code.')
         if stored:
             st.caption(f"QR label stored as RMTC attachment: {stored.get('file_name')} · {str(stored.get('updated_at') or stored.get('created_at') or '')[:19].replace('T',' ')}")
-        # R39: QR download in PNG / JPEG / PDF (A6 page) besides the 100 x 60 mm label PDF
+        # R39: QR download in PNG / JPEG / PDF (A6 page) besides the 100 x 60 mm label PDF - all encode the QR URL above
         from core.rmtc_qr import qr_jpeg, qr_pdf
         d1,d3,d4=st.columns(3,gap='small')
         d1.download_button('Download QR PNG',assets['png'],file_name=f"{assets['file_stem']}_QR.png",mime='image/png',icon=':material/image:',width='stretch',key=f'rmtc_qr_png_{key}_{rid}')
@@ -1046,10 +1048,29 @@ def _render_rmtc_qr_panel(repo:Any,record:dict,*,can_manage:bool,key:str)->None:
             d4.caption(f'PDF not available: {exc}')
         st.download_button('Print Label PDF (100 x 60 mm)',assets['label_pdf'],file_name=f"{assets['file_stem']}_QR_Label.pdf",mime='application/pdf',icon=':material/print:',width='stretch',key=f'rmtc_qr_label_{key}_{rid}',help='Print label: open the PDF and print it on a 100 x 60 mm sticker; write the storage location in the Location box.')
         r1,r2=st.columns(2,gap='small')
-        if r1.button('Refresh QR Label',icon=':material/sync:',width='stretch',disabled=not can_manage,key=f'rmtc_qr_refresh_{key}_{rid}',help='Re-store the QR label PNG attachment (after an edit / added Part).'):
-            _run_qr_hook(repo,rid,send_email=False);st.rerun()
+        if r1.button('Refresh public QR / certificate',icon=':material/sync:',width='stretch',disabled=not can_manage,key=f'rmtc_qr_refresh_{key}_{rid}',help='Create the public QR code if missing, re-store the customer-safe certificate PDF and the QR label (after an edit / added Part).'):
+            with st.spinner('Refreshing public QR, certificate and label…'):
+                _run_qr_hook(repo,rid,send_email=False)
+            st.rerun()
         if r2.button('Re-send QR to Quality',icon=':material/forward_to_inbox:',width='stretch',disabled=not can_manage,key=f'rmtc_qr_resend_{key}_{rid}'):
             _run_qr_hook(repo,rid,send_email=True);st.rerun()
+        _render_qr_revoke(repo,rid,can_manage=can_manage,key=key)
+
+
+def _render_qr_revoke(repo:Any,rid:str,*,can_manage:bool,key:str)->None:
+    """R40: revoke = mark the public token revoked and create a new one; the old printed label stops working."""
+    if not can_manage:
+        return
+    confirm=st.checkbox('I understand: the old printed QR label stops working and a new label must be printed.',key=f'rmtc_qr_revoke_ok_{key}_{rid}')
+    if st.button('Revoke QR (new code)',icon=':material/block:',width='stretch',disabled=not confirm,key=f'rmtc_qr_revoke_{key}_{rid}',help='Use when a label was lost / shared by mistake. Creates a new public code; print and stick the new label.'):
+        from core.rmtc_qr import RMTCQRLabelService
+        with st.spinner('Revoking the QR code and creating a new one…'):
+            result=RMTCQRLabelService(repo).revoke_and_renew(rid)
+        notes=list(result.get('warnings') or [])
+        if result.get('ok'):
+            notes.insert(0,f"QR code revoked ({result.get('revoked',0)} old code(s)); new public QR created - print and stick the new label.")
+        st.session_state['rmtc_qr_flash']=notes
+        st.rerun()
 
 
 def render_approval()->None:

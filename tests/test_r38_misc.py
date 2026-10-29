@@ -56,12 +56,13 @@ def test_header_renders_company_logo_before_user_and_version_only_in_user_detail
 
     script = '''
 import streamlit as st
+st.session_state["_qsms_preview"] = True  # no live Supabase calls from the header (Mac has real secrets)
 from core import ui
 st.session_state[ui.HEADER_COMPANY_LOGO_KEY] = {"_at": 9e12, "html": '<span class="qcms-hdr-company-logo"><img src="data:image/png;base64,AAAA" alt="Four Star"></span>'}
 st.session_state["_qcms_r35_licence_status"] = {"_at": 9e12, "data": {"company_name": "Four Star Industries Private Limited"}}
 ui.render_shell_header({"full_name": "Rajesh Dhokale", "role": "ADMIN"}, "Dashboard")
 '''
-    app = AppTest.from_string(script).run(timeout=30)
+    app = AppTest.from_string(script).run(timeout=90)
     assert not app.exception, app.exception
     html = " ".join(m.value for m in app.markdown)
     user = html[html.index('<div class="fsi-user">'):]

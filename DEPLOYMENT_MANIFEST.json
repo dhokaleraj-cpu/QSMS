@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R39b",
+  "release_revision": "R40b",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -685,5 +685,16 @@
   "r39b_changes": [
     "test_java_qr_matrix_skips_macos_java_launcher_stub_without_jdk",
     "updater_banner_text"
+  ],
+  "r40_changes": [
+    "rmtc_qr_public_no_login_random_token",
+    "qr_scan_opens_one_pdf_all_rmtc_documents_index_zip_per_file",
+    "certificate_customer_safe_stored_per_rmtc",
+    "rmtc_qr_codes_page_below_rmtc_web_and_android",
+    "qr_refresh_revoke_bulk_create_multi_label",
+    "android_3_7_1"
+  ],
+  "r40b_changes": [
+    "header_apptests_run_in_preview_mode_no_live_supabase_calls_mac_full_suite_timeout"
   ]
 }

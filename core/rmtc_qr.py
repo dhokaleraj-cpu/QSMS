@@ -1,23 +1,26 @@
-"""QCMS R38 · RMTC approval QR label (PNG attachment, print, Quality-department e-mail).
+"""QCMS R38 / R40 · RMTC approval QR label (PNG attachment, print, Quality-department e-mail).
 
-Builds on ``core.qr_codes`` (token table ``rmtc_qr_tokens`` + public Edge Function ``qcms-rmtc-certificate`` that
-downloads the stored certificate PDF without a QCMS login; the Android / iOS apps show the same token QR).
+Builds on ``core.qr_codes`` (token table ``rmtc_qr_tokens`` + public Edge Function ``qcms-rmtc-certificate``).
 
 * QR content (``QR_CONTENT``):
-    "APP" (default, R38 final) - the login-protected app deep link ``<website>/rmtc-records?rmtc=<RMTC number>``.
-                                 No secret / token is encoded; RMTC Records honours ``?rmtc=`` after login and offers
-                                 the RMTC print PDF + the supplier test certificate attachment for download.
-    "TOKEN"                    - legacy opt-in: the no-login certificate URL (Edge Function + rmtc_qr_tokens). Only when
-                                 the user explicitly wants a public download; no new tokens are created in "APP" mode.
+    "TOKEN" (default, R40)  - the PUBLIC no-login URL
+                              ``https://<project>.supabase.co/functions/v1/qcms-rmtc-certificate?t=<32-char token>``.
+                              Anyone with the QR can open and download ALL RMTC documents (customer-safe certificate PDF
+                              first, then every RMTC attachment, "Download all (ZIP)" and "Download all as one PDF").
+                              The random token is the only key (a plain RMTC number is never used - it could be guessed).
+                              "Revoke QR (new code)" marks the token revoked and issues a new one (old labels stop working).
+    "APP" (fallback)        - the login-protected app deep link ``<website>/rmtc-records?rmtc=<RMTC number>``; used only
+                              when no token can be created (e.g. no live session).
   RMTC no / heat / grade / parts / qty / supplier / approval date are printed as text so the label is useful offline.
+* Certificate PDF (customer-safe RMTC print): ``quality-documents/<tenant>/rmtc_certificates/<rmtc_id>/RMTC_<no>.pdf``,
+  path written to ``rmtc_qr_tokens.certificate_path`` on approval, on "Refresh public QR / certificate" and by the bulk
+  action on the RMTC QR Codes page.
 * Label PDF: 100 x 60 mm sticker (QR + RMTC no + heat + grade + part numbers + qty + hand-written Location field).
 * Website base URL: QSMS_APP_URL (when not localhost) -> WhatsApp settings ``app_link`` -> ``DEFAULT_APP_URL``.
-* Label PNG = QR + caption (RMTC no, heat, grade, size / section, supplier, approval date, location when present).
-  QR matrix: ``qrcode`` library when installed, else reportlab's built-in encoder (always available). PNG writer: Pillow
-  (ships with Streamlit) for the caption, pure-zlib PNG otherwise.
-* On approval: PNG stored as ``document_attachments`` (entity RMTC, document_type RMTC_QR_LABEL) and e-mailed to every
-  ACTIVE employee of the Quality department (Quality / QA / QC / Quality Assurance / Quality Control ...) through
-  ``NotificationService`` event ``RMTC_APPROVED_QR`` (subject starts with "Quality"). Never raises / never blocks approval.
+* Label PNG = QR + caption. QR matrix: ``qrcode`` library when installed, else reportlab's built-in encoder.
+* On approval: token + certificate, PNG stored as ``document_attachments`` (entity RMTC, document_type RMTC_QR_LABEL)
+  and e-mailed (with the public link) to every ACTIVE employee of the Quality department through ``NotificationService``
+  event ``RMTC_APPROVED_QR``. Never raises / never blocks approval.
 """
 from __future__ import annotations
 
@@ -40,7 +43,10 @@ EVENT_KEY = "RMTC_APPROVED_QR"
 DOCUMENT_TYPE = "RMTC_QR_LABEL"
 ENTITY_TYPE = "RMTC"
 BUCKET = qr_codes.BUCKET
-QR_CONTENT = "APP"  # "APP" (login required, no secret) | "TOKEN" (legacy public token URL, opt-in only)
+QR_CONTENT = "TOKEN"  # "TOKEN" (R40 default: public no-login URL with a random token) | "APP" (login-protected deep link)
+PUBLIC_NOTICE = "Anyone with this QR can open and download all RMTC documents - no login."
+PUBLIC_SCAN_HINT = "Scan with a phone: opens all RMTC documents in one PDF (no login needed)."
+APP_SCAN_HINT = "Scan with a phone: QCMS login opens this RMTC and its certificate downloads."
 LABEL_WIDTH_MM = 100.0
 LABEL_HEIGHT_MM = 60.0
 
@@ -90,6 +96,15 @@ def qr_target_url(app_url: str, token_url: str = "") -> str:
     if QR_CONTENT.upper() == "APP" or not str(token_url or "").strip():
         return app_url
     return token_url
+
+
+def is_public_url(text: Any) -> bool:
+    """True when ``text`` is the public no-login certificate URL (Edge Function + token)."""
+    return f"/functions/v1/{qr_codes.FUNCTION_SLUG}?t=" in str(text or "")
+
+
+def scan_hint(text: Any) -> str:
+    return PUBLIC_SCAN_HINT if is_public_url(text) else APP_SCAN_HINT
 
 
 def requested_rmtc(query_params: Any) -> str:
@@ -228,16 +243,10 @@ def qty_text(record: Mapping[str, Any]) -> str:
         return str(value)
 
 
-def label_pdf_bytes(text: str, lines: Sequence[str], *, width_mm: float = LABEL_WIDTH_MM, height_mm: float = LABEL_HEIGHT_MM) -> bytes:
-    """100 x 60 mm sticker PDF: QR left, RMTC text right, blank "Location" write-in box at the bottom."""
+def _draw_label(pdf: Any, text: str, lines: Sequence[str], page_w: float, page_h: float) -> None:
     from reportlab.graphics import renderPDF
     from reportlab.lib.units import mm
-    from reportlab.pdfgen import canvas as rl_canvas
 
-    buffer = BytesIO()
-    page_w, page_h = width_mm * mm, height_mm * mm
-    pdf = rl_canvas.Canvas(buffer, pagesize=(page_w, page_h))
-    pdf.setTitle("RMTC material location label")
     pad = 3 * mm
     loc_h = 9 * mm
     qr_size = min(page_h - 2 * pad - loc_h - 1.5 * mm, page_w * 0.45)
@@ -261,8 +270,27 @@ def label_pdf_bytes(text: str, lines: Sequence[str], *, width_mm: float = LABEL_
     if location:
         pdf.setFont("Helvetica", 8); pdf.drawString(pad + 17 * mm, pad + loc_h - 3.6 * mm, location[:60])
     pdf.setFont("Helvetica-Oblique", 5.4)
-    pdf.drawString(pad + 1.5 * mm, pad + 1.4 * mm, "Scan with a phone: QCMS login opens this RMTC and its certificate downloads.")
-    pdf.showPage(); pdf.save()
+    pdf.drawString(pad + 1.5 * mm, pad + 1.4 * mm, scan_hint(text))
+
+
+def label_pdf_bytes(text: str, lines: Sequence[str], *, width_mm: float = LABEL_WIDTH_MM, height_mm: float = LABEL_HEIGHT_MM) -> bytes:
+    """100 x 60 mm sticker PDF: QR left, RMTC text right, blank "Location" write-in box at the bottom."""
+    return labels_pdf_bytes([(text, lines)], width_mm=width_mm, height_mm=height_mm)
+
+
+def labels_pdf_bytes(items: Sequence[tuple[str, Sequence[str]]], *, width_mm: float = LABEL_WIDTH_MM, height_mm: float = LABEL_HEIGHT_MM) -> bytes:
+    """R40: several 100 x 60 mm labels, one per page (label printers print one sticker per page)."""
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas as rl_canvas
+
+    buffer = BytesIO()
+    page_w, page_h = width_mm * mm, height_mm * mm
+    pdf = rl_canvas.Canvas(buffer, pagesize=(page_w, page_h))
+    pdf.setTitle("RMTC material location label" + ("s" if len(items) > 1 else ""))
+    for text, lines in items:
+        _draw_label(pdf, text, lines, page_w, page_h)
+        pdf.showPage()
+    pdf.save()
     return buffer.getvalue()
 
 
@@ -317,7 +345,7 @@ def qr_pdf_bytes(text: str, lines: Sequence[str] = (), *, width_mm: float = A6_W
         if y < pad + 6 * mm:
             break
     pdf.setFont("Helvetica-Oblique", 6.5)
-    pdf.drawCentredString(page_w / 2, pad, "Scan with a phone: QCMS login opens this record.")
+    pdf.drawCentredString(page_w / 2, pad, scan_hint(text) if is_public_url(text) else "Scan with a phone: QCMS login opens this record.")
     pdf.showPage(); pdf.save()
     return buffer.getvalue()
 
@@ -379,6 +407,132 @@ def quality_recipients(repo: Any) -> list[dict]:
     return result
 
 
+# ----------------------------------------------------------------------------- R40 · public document bundle helpers
+PUBLIC_DOC_LABELS = {
+    "CERTIFICATE": "Approved RMTC certificate (QCMS)",
+    "RMTC_COPY": "Supplier test certificate",
+    "RMTC_ATTACHMENT_2": "Supporting document",
+    "RMTC_ATTACHMENT_3": "Additional document",
+}
+_DOC_ORDER = ("CERTIFICATE", "RMTC_COPY", "RMTC_ATTACHMENT_2", "RMTC_ATTACHMENT_3")
+MAX_BUNDLE_BYTES = 50 * 1024 * 1024
+
+
+def _doc_rank(document_type: str) -> int:
+    if document_type in _DOC_ORDER:
+        return _DOC_ORDER.index(document_type)
+    return 10 if document_type.startswith("RMTC_MICROSTRUCTURE_") else 20
+
+
+def _doc_label(document_type: str) -> str:
+    if document_type in PUBLIC_DOC_LABELS:
+        return PUBLIC_DOC_LABELS[document_type]
+    match = re.fullmatch(r"RMTC_MICROSTRUCTURE_(\d+)", document_type)
+    return f"Microstructure photo {match.group(1)}" if match else "RMTC document"
+
+
+def unique_file_names(names: Sequence[str]) -> list[str]:
+    used: set[str] = set(); out: list[str] = []
+    for raw in names:
+        base = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", str(raw or "")).strip() or "document"
+        stem, dot, ext = base.rpartition(".")
+        stem, ext = (stem, f".{ext}") if dot and stem else (base, "")
+        name, n = base, 2
+        while name.casefold() in used:
+            name = f"{stem} ({n}){ext}"; n += 1
+        used.add(name.casefold()); out.append(name)
+    return out
+
+
+def documents_zip_bytes(files: Sequence[tuple[Mapping[str, Any], bytes | None]], *, max_bytes: int = MAX_BUNDLE_BYTES) -> tuple[bytes, list[str]]:
+    import zipfile
+    kept: list[tuple[Mapping[str, Any], bytes]] = []
+    skipped: list[str] = []
+    total = 0
+    for doc, data in files:
+        if not data:
+            skipped.append(f"{doc.get('file_name')} (file not found)"); continue
+        if total + len(data) > max_bytes:
+            skipped.append(f"{doc.get('file_name')} (size limit)"); continue
+        total += len(data); kept.append((doc, data))
+    names = unique_file_names([str(d.get("file_name") or "document") for d, _ in kept])
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name, (_doc, data) in zip(names, kept):
+            archive.writestr(name, data)
+        if skipped:
+            archive.writestr("_not_included.txt", "Files not included:\r\n" + "\r\n".join(f"- {s}" for s in skipped) + "\r\n")
+    return buffer.getvalue(), skipped
+
+
+def combined_pdf_bytes(files: Sequence[tuple[Mapping[str, Any], bytes | None]], *, title: str = "RMTC documents", max_bytes: int = MAX_BUNDLE_BYTES) -> tuple[bytes, list[str]]:
+    """Certificate + PDF attachments merged, JPG / PNG images as A4 pages, other files listed on a final page (pypdf)."""
+    from pypdf import PdfReader, PdfWriter
+    writer = PdfWriter()
+    not_merged: list[str] = []
+    total = 0
+    for doc, data in files:
+        name = str(doc.get("file_name") or "document")
+        if not data:
+            not_merged.append(f"{name} (file not found)"); continue
+        if total + len(data) > max_bytes:
+            not_merged.append(f"{name} (size limit)"); continue
+        total += len(data)
+        low, mime = name.lower(), str(doc.get("mime_type") or "").lower()
+        try:
+            if "pdf" in mime or low.endswith(".pdf"):
+                for page in PdfReader(BytesIO(data)).pages:
+                    writer.add_page(page)
+            elif any(x in mime for x in ("jpeg", "jpg", "png")) or low.endswith((".jpg", ".jpeg", ".png")):
+                for page in PdfReader(BytesIO(_image_page_pdf(data, f"{doc.get('label') or ''}: {name}"))).pages:
+                    writer.add_page(page)
+            else:
+                not_merged.append(f"{name} (file type cannot be merged - download it separately)")
+        except Exception:
+            not_merged.append(f"{name} (file could not be merged - download it separately)")
+    if not_merged or not len(writer.pages):
+        for page in PdfReader(BytesIO(_text_page_pdf(f"{title} - documents not merged into this PDF", not_merged or ["No document could be merged."]))).pages:
+            writer.add_page(page)
+    writer.add_metadata({"/Title": f"{title} - all documents", "/Producer": "STAWN QCMS"})
+    out = BytesIO(); writer.write(out)
+    return out.getvalue(), not_merged
+
+
+def _image_page_pdf(data: bytes, caption: str) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas as rl_canvas
+    image = ImageReader(BytesIO(data))
+    iw, ih = image.getSize()
+    pw, ph = A4
+    margin = 36
+    scale = min((pw - 2 * margin) / iw, (ph - 2 * margin - 24) / ih, 1.0)
+    w, h = iw * scale, ih * scale
+    buffer = BytesIO()
+    pdf = rl_canvas.Canvas(buffer, pagesize=A4)
+    pdf.setFont("Helvetica", 10); pdf.drawString(margin, ph - margin - 10, str(caption)[:95])
+    pdf.drawImage(image, (pw - w) / 2, ph - margin - 24 - h, width=w, height=h)
+    pdf.showPage(); pdf.save()
+    return buffer.getvalue()
+
+
+def _text_page_pdf(heading: str, lines: Sequence[str]) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas as rl_canvas
+    buffer = BytesIO()
+    pdf = rl_canvas.Canvas(buffer, pagesize=A4)
+    y = A4[1] - 52
+    pdf.setFont("Helvetica-Bold", 13); pdf.drawString(40, y, heading[:90]); y -= 26
+    pdf.setFont("Helvetica", 10)
+    for line in lines:
+        if y < 60:
+            break
+        pdf.drawString(40, y, f"- {line}"[:110]); y -= 16
+    pdf.setFont("Helvetica", 9); pdf.drawString(40, 40, "Open the QR link to download every file individually or as a ZIP.")
+    pdf.showPage(); pdf.save()
+    return buffer.getvalue()
+
+
 # ----------------------------------------------------------------------------- service
 class RMTCQRLabelService:
     def __init__(self, repo: Any = None, *, storage_client: Callable[[], Any] | None = None) -> None:
@@ -428,18 +582,25 @@ class RMTCQRLabelService:
         grade, supplier = self._names(record)
         return label_lines(record, grade=grade, supplier=supplier, parts=self.part_numbers(record))
 
-    def urls(self, record: Mapping[str, Any]) -> dict[str, str]:
+    def urls(self, record: Mapping[str, Any], *, ensure: bool = False) -> dict[str, str]:
+        """QR target URLs. TOKEN mode: the public URL of the active token (created when ``ensure`` and the RMTC is
+        approved); falls back to the login-protected app URL when no token exists / can be created."""
         app_url = rmtc_app_url(record.get("rmtc_number"), app_base_url(self.repo))
         token_url = ""
         if QR_CONTENT.upper() == "TOKEN":
             try:
                 token_url = self.tokens.url_for(str(record.get("id") or ""))
-            except Exception:
+                if not token_url and ensure and qr_codes.is_rmtc_approved(record):
+                    row, _created = self.tokens.ensure_token(record)
+                    token_url = qr_codes.certificate_url(str(row.get("token"))) if qr_codes.valid_token(row.get("token")) else ""
+            except Exception as exc:
+                LOGGER.warning("RMTC public QR token not available for %s: %s", record.get("id"), exc)
                 token_url = ""
-        return {"app_url": app_url, "token_url": token_url, "qr_url": qr_target_url(app_url, token_url)}
+        return {"app_url": app_url, "token_url": token_url, "qr_url": qr_target_url(app_url, token_url),
+                "public": "1" if token_url and QR_CONTENT.upper() == "TOKEN" else ""}
 
-    def assets(self, record: Mapping[str, Any]) -> dict[str, Any]:
-        urls = self.urls(record)
+    def assets(self, record: Mapping[str, Any], *, ensure: bool = False) -> dict[str, Any]:
+        urls = self.urls(record, ensure=ensure)
         lines = self.lines(record)
         target = urls["qr_url"]
         return {
@@ -449,6 +610,120 @@ class RMTCQRLabelService:
             "label_pdf": label_pdf_bytes(target, lines),
             "file_stem": f"RMTC_{qr_codes.safe_file_token(record.get('rmtc_number'))}",
         }
+
+    # ------------------------------------------------------------ R40 · public documents (same list as the public page)
+    def public_documents(self, record: Mapping[str, Any], token_row: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Documents the public QR page lists, in the same order: certificate PDF first, then every ACTIVE RMTC
+        attachment (supplier certificate, attachments 2 / 3, microstructure photos ...; never the QR label, never
+        customer-only entity types), then the legacy ``rmtc_copy_path``; de-duplicated by storage path, same tenant only."""
+        from core.customer_privacy import CUSTOMER_ONLY_ENTITY_TYPES
+
+        rid = str(record.get("id") or "")
+        tenant = str(getattr(self.repo, "tenant_id", "") or record.get("tenant_id") or "")
+        if token_row is None:
+            token_row = self.tokens.active_token(rid) or {}
+        in_tenant = lambda path: bool(path) and ".." not in path and (not tenant or path.startswith(f"{tenant}/"))
+        docs: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        cert = str((token_row or {}).get("certificate_path") or "").strip()
+        if in_tenant(cert):
+            seen.add(cert)
+            docs.append({"id": "certificate", "label": PUBLIC_DOC_LABELS["CERTIFICATE"], "file_name": cert.rsplit("/", 1)[-1],
+                         "object_path": cert, "mime_type": "application/pdf", "document_type": "CERTIFICATE"})
+        try:
+            rows = self.repo.select("document_attachments", eq={"entity_type": ENTITY_TYPE, "entity_id": rid, "status": "ACTIVE"},
+                                    order_by="created_at", limit=60) or []
+        except Exception:
+            rows = []
+        rows = [dict(r) for r in rows if str(r.get("status") or "ACTIVE").upper() == "ACTIVE"
+                and str(r.get("document_type") or "") != DOCUMENT_TYPE
+                and str(r.get("entity_type") or ENTITY_TYPE) not in CUSTOMER_ONLY_ENTITY_TYPES
+                and (not tenant or not r.get("tenant_id") or str(r.get("tenant_id")) == tenant)]
+        rows.sort(key=lambda r: _doc_rank(str(r.get("document_type") or "")))
+        for row in rows:
+            path = str(row.get("object_path") or "").strip()
+            if not in_tenant(path) or path in seen:
+                continue
+            seen.add(path)
+            dtype = str(row.get("document_type") or "")
+            docs.append({"id": str(row.get("id")), "label": _doc_label(dtype), "file_name": str(row.get("file_name") or path.rsplit("/", 1)[-1]),
+                         "object_path": path, "mime_type": str(row.get("mime_type") or ""), "document_type": dtype})
+        copy = str(record.get("rmtc_copy_path") or "").strip()
+        if in_tenant(copy) and copy not in seen:
+            docs.append({"id": "copy", "label": PUBLIC_DOC_LABELS["RMTC_COPY"], "file_name": copy.rsplit("/", 1)[-1],
+                         "object_path": copy, "mime_type": "", "document_type": "RMTC_COPY"})
+        return docs
+
+    def download_document(self, doc: Mapping[str, Any]) -> bytes:
+        client = self._client()
+        if client is None:
+            raise RuntimeError("Live Supabase session is required to download RMTC documents.")
+        return bytes(client.storage.from_(BUCKET).download(str(doc.get("object_path"))))
+
+    def documents_zip(self, record: Mapping[str, Any], docs: Sequence[Mapping[str, Any]] | None = None) -> tuple[bytes, list[str]]:
+        """ZIP of all public documents (unique names, 50 MB cap). Returns (zip bytes, skipped file names)."""
+        docs = list(docs if docs is not None else self.public_documents(record))
+        return documents_zip_bytes([(d, self._safe_download(d)) for d in docs])
+
+    def documents_combined_pdf(self, record: Mapping[str, Any], docs: Sequence[Mapping[str, Any]] | None = None) -> tuple[bytes, list[str]]:
+        docs = list(docs if docs is not None else self.public_documents(record))
+        return combined_pdf_bytes([(d, self._safe_download(d)) for d in docs], title=f"RMTC {record.get('rmtc_number') or ''}")
+
+    def _safe_download(self, doc: Mapping[str, Any]) -> bytes | None:
+        try:
+            return self.download_document(doc)
+        except Exception as exc:
+            LOGGER.warning("RMTC document %s not downloaded: %s", doc.get("file_name"), exc)
+            return None
+
+    # ------------------------------------------------------------ R40 · refresh / revoke / bulk
+    def refresh_public(self, rmtc_id: str, *, send_email: bool = False) -> dict[str, Any]:
+        """Ensure the public token, re-store the customer-safe certificate PDF and the QR label (approval hook)."""
+        return self.on_rmtc_approved(rmtc_id, send_email=send_email)
+
+    def revoke_and_renew(self, rmtc_id: str) -> dict[str, Any]:
+        """Mark the active token(s) revoked and create a new token + certificate + label. Old printed labels stop working."""
+        result: dict[str, Any] = {"ok": False, "revoked": 0, "warnings": []}
+        try:
+            record = self.repo.get("rmtc_approvals", str(rmtc_id)) or {}
+            if not qr_codes.is_rmtc_approved(record):
+                result["warnings"].append("RMTC is not approved; QR not changed.")
+                return result
+            result["revoked"] = self.tokens.revoke_active(str(rmtc_id))
+        except Exception as exc:
+            result["warnings"].append(f"QR could not be revoked: {exc}")
+            return result
+        renewed = self.on_rmtc_approved(str(rmtc_id), send_email=False)
+        result.update({k: v for k, v in renewed.items() if k != "warnings"})
+        result["warnings"].extend(renewed.get("warnings") or [])
+        return result
+
+    def has_public_certificate(self, rmtc_id: str) -> bool:
+        row = self.tokens.active_token(str(rmtc_id)) or {}
+        return qr_codes.valid_token(row.get("token")) and bool(str(row.get("certificate_path") or "").strip())
+
+    def bulk_create_missing(self, records: Sequence[Mapping[str, Any]], *, progress: Callable[[int, int, str], None] | None = None) -> dict[str, Any]:
+        """Create public QR + certificate (+ label) for every approved RMTC without one; existing ones are skipped."""
+        summary: dict[str, Any] = {"created": 0, "skipped": 0, "failed": 0, "warnings": []}
+        approved = [r for r in records if qr_codes.is_rmtc_approved(r)]
+        for index, record in enumerate(approved, start=1):
+            rid = str(record.get("id") or "")
+            number = str(record.get("rmtc_number") or rid)
+            if progress:
+                try:
+                    progress(index, len(approved), number)
+                except Exception:
+                    pass
+            if self.has_public_certificate(rid):
+                summary["skipped"] += 1
+                continue
+            result = self.on_rmtc_approved(rid, send_email=False)
+            if result.get("ok") and result.get("certificate_path"):
+                summary["created"] += 1
+            else:
+                summary["failed"] += 1
+                summary["warnings"].extend(f"{number}: {w}" for w in (result.get("warnings") or [])[:2])
+        return summary
 
     # ------------------------------------------------------------ attachment
     def _client(self):
@@ -514,7 +789,9 @@ class RMTCQRLabelService:
             f"RMTC {number} has been approved ({str(record.get('disposition') or '').replace('_', ' ').title()}).\n\n"
             + "\n".join(lines[1:])
             + "\n\nAttached: the QR label (PNG) and the RMTC record PDF. Print the QR label and stick it at the location where this material is stored."
-            + f"\nScan the QR (QCMS login required) to open / download the approved RMTC certificate: {assets.get('url')}"
+            + (f"\nPublic link (no login - anyone with this QR / link can open and download all RMTC documents; opens one PDF with the document list on page 1 followed by every document): {assets.get('url')}"
+               if is_public_url(assets.get("url")) else
+               f"\nScan the QR (QCMS login required) to open / download the approved RMTC certificate: {assets.get('url')}")
             + (f"\nQCMS (after login): {assets.get('app_url')}" if assets.get("app_url") and assets.get("app_url") != assets.get("url") else "")
             + "\n"
         )
@@ -538,18 +815,27 @@ class RMTCQRLabelService:
 
     # ------------------------------------------------------------ approval hook
     def on_rmtc_approved(self, rmtc_id: str, *, send_email: bool = True) -> dict[str, Any]:
-        """Token + certificate snapshot (core.qr_codes), QR label PNG attachment, Quality e-mail. Never raises."""
-        result: dict[str, Any] = {"ok": False, "warnings": [], "url": "", "app_url": "", "emailed": 0, "attachment": None}
+        """R40: public token + customer-safe certificate PDF (certificate_path) + QR label PNG attachment (public URL)
+        + Quality e-mail with the public link. Never raises."""
+        result: dict[str, Any] = {"ok": False, "warnings": [], "url": "", "app_url": "", "emailed": 0, "attachment": None,
+                                  "certificate_path": "", "public": False}
         try:
             record = self.repo.get("rmtc_approvals", str(rmtc_id)) or {}
             if not qr_codes.is_rmtc_approved(record):
                 result["warnings"].append("RMTC is not approved; QR not generated.")
                 return result
-            if QR_CONTENT.upper() == "TOKEN":  # legacy public-token mode only; "APP" encodes no secret
-                snapshot = self.tokens.on_rmtc_approved(str(rmtc_id), send_email=False)
-                result["warnings"].extend(w for w in snapshot.get("warnings") or [] if "not approved" not in w)
+            if QR_CONTENT.upper() == "TOKEN":
+                try:
+                    token_row, created = self.tokens.ensure_token(record)
+                    result["created"] = created
+                    try:
+                        result["certificate_path"] = self.tokens.store_certificate(str(rmtc_id), token_row)
+                    except Exception as exc:
+                        result["warnings"].append(f"Certificate PDF could not be stored: {exc}")
+                except Exception as exc:
+                    result["warnings"].append(f"Public QR code could not be created (login link used instead): {exc}")
             assets = self.assets(record)
-            result.update({"ok": True, "url": assets["url"], "app_url": assets["app_url"]})
+            result.update({"ok": True, "url": assets["url"], "app_url": assets["app_url"], "public": bool(assets.get("public"))})
             attachment: dict | None = None
             try:
                 attachment = self.store_label(record, assets["png"], assets["file_stem"])
@@ -573,7 +859,7 @@ class RMTCQRLabelService:
         return result
 
 
-def print_qr(record: Mapping[str, Any], repo: Any) -> tuple[str, list[str], str]:
+def print_qr(record: Mapping[str, Any], repo: Any) -> tuple[str, list[str], str]:  # existing token only (no insert while printing)
     """(qr_url, caption lines, app_url) for the RMTC print PDF - empty when the RMTC is not approved."""
     if not qr_codes.is_rmtc_approved(record):
         return "", [], ""
@@ -587,4 +873,6 @@ __all__ = [
     "requested_rmtc", "remember_qr_request", "pending_qr_request", "qr_matrix", "qr_png_bytes", "label_png_bytes", "label_pdf_bytes", "label_lines", "qty_text", "is_quality_department",
     "quality_recipients", "RMTCQRLabelService", "print_qr",
     "QR_DOWNLOAD_FORMATS", "qr_jpeg_bytes", "qr_pdf_bytes", "qr_download_files", "qr_png", "qr_jpeg", "qr_pdf",
+    "PUBLIC_NOTICE", "is_public_url", "scan_hint", "labels_pdf_bytes", "PUBLIC_DOC_LABELS", "unique_file_names",
+    "documents_zip_bytes", "combined_pdf_bytes",
 ]

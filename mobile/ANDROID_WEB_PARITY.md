@@ -4,7 +4,7 @@ Generated from `streamlit_app.py` (PAGE_ITEMS / ROUTE_MODULE) and the Android ca
 Status: **NATIVE** = native Android screen/module; **WEB LINK** = opens the website page inside the app (reason below);
 **MISSING** = no native screen yet (the route opens the website page in the app). Owner = R39 agent responsible.
 
-**Web routes: 123 · native: 120 · web link: 3 · missing: 0**
+**Web routes: 124 · native: 121 · web link: 3 · missing: 0**
 
 | Route | Web title | Web group | Android module / screen | Status | Owner |
 |---|---|---|---|---|---|
@@ -102,6 +102,7 @@ Status: **NATIVE** = native Android screen/module; **WEB LINK** = opens the webs
 | `rmtc-part` | RMTC Part Worksheet | RMTC | `rmtc` · RMTC Approvals | NATIVE | Q |
 | `rmtc-records` | RMTC Records | Dashboard | `rmtc` · RMTC Approvals | NATIVE | Q |
 | `rmtc-approval` | RMTC Approval | RMTC | `rmtc` · RMTC Approvals | NATIVE | Q |
+| `rmtc-qr` | RMTC QR Codes | RMTC | RMTC QR Codes (IncQrScreen, below the RMTC modules) | NATIVE | M (R40) |
 | `inward-records` | Material Inward Records | Dashboard | `inward` · Material Inward | NATIVE | Q |
 | `osp-material-out` | OSP Material Out | OSP | `osp_material_out` · OSP Material Out | NATIVE | O |
 | `osp-sample-receipt` | OSP Sample Receipt | OSP | `osp_register` · OSP Register - OSP Register record action 'Sample Receipt' | NATIVE | O |

@@ -49,6 +49,10 @@ public final class CatIncoming {
             .child("Decision Reopen History", "rmtc_decision_revisions", "rmtc_approval_id", "reopened_at.desc", new String[][]{
                 {"reopened_at", "Reopened At"}, {"reason", "Reason"}, {"previous_status", "Previous Status"}, {"previous_disposition", "Previous Disposition"}})
             .attach("RMTC", "rmtc"));
+        // R40: RMTC QR Codes - directly below the RMTC modules (web route rmtc-qr, RMTC navigation group)
+        list.add(new Module("rmtc_qr", "RMTC QR Codes", Catalog.QUALITY, SECTION, "rmtc_approvals")
+            .desc("Public QR per approved RMTC · download all RMTC documents (no login)")
+            .custom(IncQrScreen::new).readOnly().noEdit());
 
         // ---------------------------------------------------------------- Material inward
         list.add(new Module("inward", "Material Inward", Catalog.QUALITY, SECTION, "inward_lots")

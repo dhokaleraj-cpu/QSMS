@@ -160,7 +160,7 @@ def test_web_pages_show_both_scales():
 # ----------------------------------------------------------------------------- mobile
 def test_android_chem_grid_and_versions():
     gradle = read(ROOT / "mobile/android_qcms_app/app/build.gradle")
-    assert "versionCode 370" in gradle and "versionName '3.7.0'" in gradle
+    assert "versionCode 371" in gradle and "versionName '3.7.1'" in gradle
     grid = read(JAVA / "ChemGrid.java")
     assert balanced(grid)
     for token in ('"1.5875"', '"25.4"', "static double sixteenths(", "static List<List<String[]>> bands(", "PDF_BAND_COLUMNS = 14",
@@ -208,4 +208,4 @@ def test_ios_chem_grid_and_versions():
 
 def test_about_versions():
     about = read(ROOT / "core/about.py")
-    assert 'ANDROID_VERSION = "3.7.0"' in about and 'IOS_VERSION = "1.3.0"' in about
+    assert 'ANDROID_VERSION = "3.7.1"' in about and 'IOS_VERSION = "1.3.0"' in about

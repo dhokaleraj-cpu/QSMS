@@ -944,7 +944,9 @@ final class RptReports {
         String qrUrl = rmtcQrUrl(api, id, record);
         if (!qrUrl.isEmpty())
         {
-            d.blocks.add(new RptDoc.Labeled(new String[][]{vrow("Material Location QR", "Scan to open / download this approved RMTC certificate (QCMS login required): " + qrUrl)}, f(42, 152), new int[]{0}, false, body));
+            boolean pub = qrUrl.startsWith(IncQrPublic.PUBLIC_BASE);  // R40: public token link (no login) or the website fallback
+            d.blocks.add(new RptDoc.Labeled(new String[][]{vrow("Material Location QR", (pub ? "Scan to open / download this approved RMTC certificate and all RMTC documents (no login): "
+                : "Scan to open / download this approved RMTC certificate (QCMS login required): ") + qrUrl)}, f(42, 152), new int[]{0}, false, body));
             try {  // R39: the QR itself (same matrix as the website, IncQrCode)
                 d.blocks.add(new RptDoc.Photos(java.util.Collections.singletonList(new RptDoc.Photo("Material location QR · " + str(record.opt("rmtc_number")),
                     IncQrCode.png(IncQrCode.encode(qrUrl), 6, 4))), 5, 30, false));
@@ -984,13 +986,16 @@ final class RptReports {
 
     static final String QCMS_WEBSITE = "https://vf6fa9hrhxquqxmfgyy4wf.streamlit.app";
 
-    /** R38: QR of an approved RMTC = login-protected website link <website>/rmtc-records?rmtc=<RMTC number> (no secret); "" when not approved. */
+    /** R40: QR of an approved RMTC = public token link (IncQrPublic.activeUrl, read only - the active public token); fallback = the R38
+     *  login-protected website link <website>/rmtc-records?rmtc=<RMTC number>; "" when not approved. */
     static String rmtcQrUrl(Api api, String id, JSONObject record) {
         try {
             String st = str(record.opt("status")), disp = str(record.opt("disposition"));
             if (!(st.equals("APPROVED") || st.equals("PARTIALLY_APPROVED")) || !(disp.equals("ACCEPTED") || disp.equals("ACCEPTED_UNDER_RESERVE"))) return "";
             String number = str(record.opt("rmtc_number"));
             if (number.isEmpty() || number.equals("-")) return "";
+            String pub = IncQrPublic.activeUrl(api, id);
+            if (!pub.isEmpty()) return pub;
             return QCMS_WEBSITE + "/rmtc-records?rmtc=" + Api.enc(number).replace("+", "%20");
         } catch (Exception e) {
             return "";
