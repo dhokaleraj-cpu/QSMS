@@ -52,7 +52,8 @@ final class GenCentres {
             {"rep_global_balance", "Heat Number Global Balance", "RMTC plan, inward, OSP movement and global steel balance"},
             {"rep_heat_transactions", "Heat Transaction Report", "Every steel / production movement per heat"},
             {"rep_osp_balance", "OSP Heat Movement", "OSP outward, inward, material at vendor, balance to send"},
-            {"rmtc", "RMTC Register", "RMTC records, heat details, validation and decision history"}};
+            {"rmtc", "RMTC Register", "RMTC records, heat details, validation and decision history"},
+            {"inventory_reports", "Inventory & Stock Reports", "Stock by stage, RM by heat, forging / OSP stock, FG & dispatch, movement ledger"}};
         private static final String[][] QUALITY = {
             {"inward", "Material Inward", "Material inward, supplier, heat, RMTC and quantity records"},
             {"dimensional_reports", "Dimensional Inspection", "Dimensional results, conclusion, final decision, print layout PDF"},
@@ -72,6 +73,8 @@ final class GenCentres {
             {"rep_inward_register", "Inward Register", "Material inward with RMTC and quality status"},
             {"rep_rmtc_usage", "Heat RMTC Usage", "Planned vs inward steel per RMTC part"},
             {"kpi_dashboards", "KPI Dashboards", "Management dashboards with charts"},
+            {"module_kpis", "Module KPIs", "Every module's KPI cards · tap for the records"},
+            {"my_dashboards", "My Dashboards", "Your own KPI cards, charts and tables"},
             {"report_builder", "Report Builder", "Build any report with filters, totals and charts"},
             {"master_lists", "Master Lists", "Clean lists of every master"}};
 

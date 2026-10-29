@@ -24,5 +24,13 @@ public final class CatAdmin {
         list.add(new Module("master_import", "Master Import", Catalog.MORE, SECTION, "")
             .desc("Import masters from a CSV file with the website's duplicate-safe rules")
             .custom(AdmImportScreen::new).readOnly().noEdit());
+        // R39: Licence & Company (company admin edits; others view) and the STAWN Developer Console (STAWN developers only -
+        // hidden from the catalogue for everybody else by Catalog.sections, and checked again by the screen and every qcms_dev_* RPC)
+        list.add(new Module("licence_company", "Licence & Company", Catalog.MORE, SECTION, "")
+            .desc("STAWN QCMS licence, company profile and logo, WhatsApp auto messages (company admin)")
+            .custom(LicCompanyScreen::new).readOnly().noEdit());
+        list.add(new Module(Catalog.DEVELOPER_CONSOLE, "STAWN Developer Console", Catalog.MORE, SECTION, "")
+            .desc("All companies and licence keys, company admins, any company profile, login cover photo, trial-data purge (STAWN only)")
+            .custom(DevConsoleScreen::new).readOnly().noEdit());
     }
 }

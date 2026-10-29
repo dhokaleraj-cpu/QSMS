@@ -97,6 +97,13 @@ public final class CatMasters {
             .action("Metallurgical requirements", "", push((a, row) -> new MstPartMetScreen(a, row)))
             .action("Standards", "", push((a, row) -> new MstPartStandardsScreen(a, row)))
             .action("Controlled drawings", "", push((a, row) -> new MstPartDrawingsScreen(a, row)))
+            // R39 (web R38): Part processes & drawings, ECN / PCN of the Part, Sections applicable (MstPartSections hides N/A sections)
+            .action("Part processes & drawings", "", push((a, row) -> new MstPartProcessScreen(a, row)))
+            .action("ECN / PCN of this Part", "", (a, row, refresh) -> a.push(new EcnRegisterScreen(a, row.optString("id"))))
+            .action("Sections applicable", "", push((a, row) -> new MstPartSections(a, row)))
+            .child("Part processes", "part_process_routes", "part_id", "operation_no.asc",
+                new String[][]{{"operation_no", "Op No."}, {"process_id", "Process"}, {"is_mandatory", "Mandatory"}, {"source_type", "Source"},
+                    {"remarks", "Remarks"}, {"status", "Status"}})
             .child("Approved / alternate grades", "part_material_grade_links", "part_id", "is_primary.desc",
                 new String[][]{{"material_grade_id", "Material Grade"}, {"is_primary", "Primary"}, {"status", "Status"}})
             .child("Raw material details", "part_raw_material_details", "part_id", "sequence_no.asc",
@@ -181,7 +188,8 @@ public final class CatMasters {
             .col("employee_code", "Employee Code").col("first_name", "First Name").col("last_name", "Last Name").col("email", "Email")
             .col("department", "Department").col("designation", "Designation").col("plant", "Plant").col("mobile_number", "Mobile")
             .col("reports_to_employee_id", "Reports To").col("status", "Status").statuses("ACTIVE", "INACTIVE", "LEFT")
-            .action("Upload employee photo", "", MstPeople::uploadPhoto)
+            .action("Photo, reporting line, escalation & approval routes", "", (a, row, refresh) -> a.push(new EmpDetailsScreen(a, Lookups.j(row, "id"))))
+            .action("Upload / replace employee photo", "", MstPeople::uploadPhoto)
             .action("View employee photo", "photo_storage_path!=EMPTY", (a, row, refresh) -> MstPeople.viewPhoto(a, row));
         MstForm.Spec empSpec = MstForm.Spec.custom(MstPeople::employeeFields, MstPeople::saveEmployee)
             .note("Employee code is generated automatically when blank and remains editable");

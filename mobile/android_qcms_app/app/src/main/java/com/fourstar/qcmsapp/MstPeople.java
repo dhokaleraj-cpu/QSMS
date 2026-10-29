@@ -86,22 +86,40 @@ public final class MstPeople {
         return id != null ? api.update("employees", id, p) : api.insert("employees", p);
     }
 
-    /** Employee photo: {tenant}/employees/{id}/photo_{id}.{ext} (upsert) → employees.photo_storage_path. */
+    /** employee_service.PHOTO_MAX_BYTES */
+    static final int PHOTO_MAX_BYTES = 3 * 1024 * 1024;
+
+    /** employee_service.photo_path: {tenant}/employees/{id}/photo_{id}.{jpg|png} (jpeg -> jpg; other types refused). */
+    static String photoPath(String tenantId, String employeeId, String filename) throws Api.ApiException {
+        String f = filename == null ? "" : filename;
+        int dot = f.lastIndexOf('.');
+        String ext = dot >= 0 && dot < f.length() - 1 ? f.substring(dot + 1).toLowerCase(Locale.ROOT) : "jpg";
+        if ("jpeg".equals(ext)) ext = "jpg";
+        if (!"jpg".equals(ext) && !"png".equals(ext)) throw new Api.ApiException(422, "Use a JPG or PNG photo.");
+        return tenantId + "/employees/" + employeeId + "/photo_" + employeeId + "." + ext;
+    }
+
+    /** employee_service.upload_employee_photo: store in quality-documents (upsert) and save employees.photo_storage_path. Background thread. */
+    static String storePhoto(Api api, String employeeId, Attachments.FileData f) throws Exception {
+        if (f == null || f.data == null || f.data.length == 0) throw new Api.ApiException(422, "The selected photo is empty.");
+        if (f.data.length > PHOTO_MAX_BYTES) throw new Api.ApiException(422, "Use a photo smaller than 3 MB.");
+        String path = photoPath(api.tenantId, employeeId, f.name);
+        api.upload(path, f.data, path.endsWith(".png") ? "image/png" : "image/jpeg", true);
+        api.update("employees", employeeId, new JSONObject().put("photo_storage_path", path));
+        LicService.clearImages();
+        return path;
+    }
+
+    /** Upload / replace the employee photo (R38 Employee Master photo, also shown in the top-bar avatar). */
     static void uploadPhoto(MainActivity a, JSONObject row, Runnable refresh) {
         Api api = Api.get(a);
         String id = Lookups.j(row, "id");
-        a.pickFile("Employee Photo", true, f -> {
+        a.pickFile("Employee Photo (JPG / PNG, max 3 MB)", true, f -> {
             a.toast("Uploading photo…");
-            Api.async(() -> {
-                int dot = f.name.lastIndexOf('.');
-                String ext = dot >= 0 && dot < f.name.length() - 1 ? f.name.substring(dot + 1).toLowerCase(Locale.ROOT) : "jpg";
-                String path = api.tenantId + "/employees/" + id + "/photo_" + id + "." + ext;
-                api.upload(path, f.data, f.mime == null ? "image/jpeg" : f.mime, true);
-                api.update("employees", id, new JSONObject().put("photo_storage_path", path));
-                return true;
-            }, (ok, err) -> {
+            Api.async(() -> storePhoto(api, id, f), (ok, err) -> {
                 if (err != null) { a.toast("Upload failed: " + Api.message(err)); return; }
                 a.toast("Employee photo uploaded successfully.");
+                if (id.equals(api.employeeId)) LicBrand.refresh(a);
                 refresh.run();
             });
         });

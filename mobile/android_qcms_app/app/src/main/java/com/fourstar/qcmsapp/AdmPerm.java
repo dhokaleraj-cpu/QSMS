@@ -25,9 +25,9 @@ final class AdmPerm {
         {"PART_MASTER", "Part Master"}, {"MATERIAL_GRADE", "Material Grade"}, {"REFERENCE_MASTERS", "Reference Masters"},
         {"EMPLOYEE_MASTER", "Employee Master"}, {"RMTC_ENTRY", "RMTC Entry"}, {"MATERIAL_INWARD", "Material Inward"},
         {"OSP_TRANSACTIONS", "OSP Transactions"}, {"INSPECTION_LAYOUTS", "Inspection Layouts"}, {"DIMENSIONAL_REPORT", "Dimensional Report"},
-        {"METLAB_REPORT", "MetLAB Report"}, {"NPD_APQP", "NPD & APQP"}, {"QC_CALCULATION_TOOLS", "QC Calculation Tools"},
+        {"METLAB_REPORT", "MetLAB Report"}, {"NPD_APQP", "NPD & APQP"}, {"PPAP", "PPAP"}, {"QC_CALCULATION_TOOLS", "QC Calculation Tools"},
         {"COMPLAINT_MANAGEMENT", "Complaint Management"}, {"CALIBRATION_VALIDATION", "Calibration & Validation"},
-        {"SUPPLY_CHAIN", "Supply Chain"}, {"USER_ACCESS", "Users & Access"}};
+        {"SUPPLY_CHAIN", "Supply Chain"}, {"INDIRECT_PURCHASE", "Indirect Purchase"}, {"USER_ACCESS", "Users & Access"}};
 
     /** Permission columns in grid order with the website column headers. */
     static final String[][] PERMS = {

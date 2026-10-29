@@ -18,7 +18,7 @@ def all_sources() -> str:
 
 def test_version_340():
     gradle = read(APP / "app/build.gradle")
-    assert "versionCode 360" in gradle and "versionName '3.6.0'" in gradle  # R38 bump
+    assert "versionCode 370" in gradle and "versionName '3.7.0'" in gradle  # R38 bump
     assert "3.3.0" not in gradle
     assert "implementation" not in gradle  # still framework only (no AndroidX / Firebase SDK)
     assert "service_role" not in gradle
@@ -90,7 +90,8 @@ def test_global_search_merges_server_rows_and_modules():
         assert f'"{field}"' in search, field
     assert "static List<Result> modules(" in search and "static List<Result> merge(" in search
     assert "GenSearch.server(" in screen and "GenSearch.everywhere(" in screen and "GenSearch.merge(" in screen
-    assert "Notif.open(a, r.table, r.recordId, r.route" in screen
+    # R39: hits open via GenTarget (child row -> parent record, then Notif.open)
+    assert "Notif.open(a, r.table, r.recordId, r.route" in screen or "GenTarget.open(a, r.table, r.recordId, r.route" in screen
 
 
 def test_licence_block_and_about():

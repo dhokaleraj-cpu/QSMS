@@ -25,6 +25,8 @@ public final class AdmUsersScreen extends Screen {
     static final String[] TABS = {"Create User", "User Permissions", "Role & Department Defaults", "Audit & Activity", "My Password"};
     private static int lastTab = 1;
     private static String selectedUid = "";
+    /** R35 / R39: employee picked in "Create login for an Employee without login" (prefills the Create User form). */
+    private static String prefillEmployee = "";
 
     private LinearLayout tabsHolder, body;
     List<JSONObject> employees = new ArrayList<>();
@@ -144,25 +146,45 @@ public final class AdmUsersScreen extends Screen {
     // ------------------------------------------------------------------ A. Create user
     private void renderCreate() {
         LinearLayout s = AdmUi.section(a, body, "A", "CREATE USER", "Create the login and optionally link one Employee Master record. Employee email is never overwritten by login administration.");
-        EditText full = AdmUi.field(a, s, "Full Name", "", "Full Name");
-        EditText email = AdmUi.field(a, s, "Login / Company Email", "", "name@company.com");
+        // R35 (user_access.py): one-tap prefill for an active employee that has no QCMS login yet
+        Map<String, String> without = EmpLinks.withoutLogin(employees);
+        if (!without.containsKey(prefillEmployee)) prefillEmployee = "";
+        if (!without.isEmpty()) {
+            List<String> wIds = new ArrayList<>();
+            wIds.add("");
+            wIds.addAll(without.keySet());
+            List<String> wLabels = new ArrayList<>();
+            for (String id : wIds) wLabels.add(id.isEmpty() ? "— Select employee —" : without.get(id));
+            AdmUi.choice(a, s, "Create login for an Employee without login (prefills the form)", wIds, wLabels, prefillEmployee, v -> { prefillEmployee = v; renderTabs(); });
+        }
+        JSONObject pre = empById.get(prefillEmployee);
+        String preName = pre == null ? "" : (AdmPy.j(pre, "first_name") + " " + AdmPy.j(pre, "last_name")).trim();
+        EditText full = AdmUi.field(a, s, "Full Name", preName, "Full Name");
+        EditText email = AdmUi.field(a, s, "Login / Company Email", pre == null ? "" : AdmPy.j(pre, "email"), "name@company.com");
         email.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
         final String[] role = {AdmPerm.ROLES[0]};
         AdmUi.choice(a, s, "QCMS Role", roles(), role[0], v -> role[0] = v);
-        final String[] employee = {""};
+        final String[] employee = {pre == null ? "" : prefillEmployee};
         List<String> ids = employeeIds(true);
         TextView dept = Ui.text(a, "", 11.5f, Ui.MUTED, false);
-        AdmUi.choice(a, s, "Employee Link", ids, employeeLabels(ids, "— Not linked —"), "", v -> {
+        AdmUi.choice(a, s, "Employee Link", ids, employeeLabels(ids, "— Not linked —"), employee[0], v -> {
             employee[0] = v;
             dept.setText(deptCaption(v));
         });
         final String[] status = {AdmPerm.ACCESS_STATUSES[0]};
         AdmUi.choice(a, s, "Access Status", statuses(), status[0], v -> status[0] = v);
         EditText password = AdmUi.password(a, s, "Temporary Password", "At least 10 characters");
-        dept.setText(deptCaption(""));
+        dept.setText(deptCaption(employee[0]));
         dept.setPadding(0, dp(6), 0, 0);
         s.addView(dept);
+        CheckBox mismatchOk = AdmUi.check(a, "Link even if the Employee Master email differs from the login email", false);
+        s.addView(mismatchOk, Ui.matchWrap(a, 6));
         AdmUi.primary(a, s, "Create User", v -> {
+            String problem = EmpLinks.linkProblem(empById.get(employee[0]), AdmUi.text(email), "");
+            if (!problem.isEmpty() && !mismatchOk.isChecked()) {
+                a.toast(problem + " Tick 'Link even if … differs' to confirm, or choose the correct employee.");
+                return;
+            }
             Button b = (Button) v;
             AdmUi.enable(b, false);
             Api.async(() -> {
@@ -180,6 +202,7 @@ public final class AdmUsersScreen extends Screen {
                 if (err != null) { a.toast(Api.message(err)); return; }
                 String msg = AdmPy.j(res, "message");
                 a.toast(msg.isEmpty() ? "User created successfully." : msg);
+                prefillEmployee = "";
                 a.rebuild();
             });
         });
@@ -259,7 +282,11 @@ public final class AdmUsersScreen extends Screen {
             }
         };
         refreshDept[0].run();
+        CheckBox mismatchOk = AdmUi.check(a, "I confirm this Employee belongs to this login (when the link check warns)", false);
+        s.addView(mismatchOk, Ui.matchWrap(a, 6));
         AdmUi.primary(a, s, "Update User / Employee Link", v -> {
+            String mismatch = EmpLinks.linkProblem(empById.get(employee[0]), AdmPy.j(user, "email"), uid);
+            if (!mismatch.isEmpty() && !mismatchOk.isChecked()) { a.toast(mismatch + " Tick the confirmation to link anyway."); return; }
             Button b = (Button) v;
             AdmUi.enable(b, false);
             Api.async(() -> {
@@ -279,6 +306,13 @@ public final class AdmUsersScreen extends Screen {
                 a.rebuild();
             });
         });
+        // R35 (user_access.py): Employee ↔ Login link check
+        List<List<String>> checks = EmpLinks.linkCheckRows(employees, users);
+        if (checks.isEmpty()) s.addView(AdmUi.note(a, "Every Employee ↔ Login link matches by email.", "green"), Ui.matchWrap(a, 10));
+        else {
+            s.addView(AdmUi.note(a, checks.size() + " link(s) need attention. QCMS does not change them automatically – correct each one with 'Update User / Employee Link' above.", "amber"), Ui.matchWrap(a, 10));
+            s.addView(new DataGrid(a, "Employee ↔ Login link check", AdmUi.listOf("Employee", "Employee Email", "Linked Login", "Issue"), checks, 260, null), Ui.matchWrap(a, 6));
+        }
 
         JSONObject effective = new JSONObject();
         try {
@@ -434,19 +468,8 @@ public final class AdmUsersScreen extends Screen {
         });
     }
 
-    /**
-     * auth.update_user({"password": p}) of the signed-in user. Needs Api.updatePassword(String) (PUT /auth/v1/user);
-     * looked up at runtime so this screen works as soon as the framework provides it.
-     */
+    /** auth.update_user({"password": p}) of the signed-in user (PUT /auth/v1/user). */
     static void changeOwnPassword(Api api, String password) throws Exception {
-        java.lang.reflect.Method m;
-        try { m = Api.class.getMethod("updatePassword", String.class); }
-        catch (NoSuchMethodException e) { throw new Api.ApiException(501, "Changing your own password is not available in this app version yet. Use the QCMS website (Users & Access → My Password)."); }
-        try { m.invoke(api, password); }
-        catch (java.lang.reflect.InvocationTargetException e) {
-            Throwable t = e.getCause();
-            if (t instanceof Exception) throw (Exception) t;
-            throw e;
-        }
+        api.updatePassword(password);
     }
 }

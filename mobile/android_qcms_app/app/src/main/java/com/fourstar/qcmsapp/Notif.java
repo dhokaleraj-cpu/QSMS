@@ -289,7 +289,16 @@ final class Notif {
             {"master-lists", "master_lists"}, {"records-center", "records_centre"}, {"reports-home", "reports_centre"},
             {"my-account", "my_account"}, {"about", "about"}, {"user-access", "user_access"}, {"system-settings", "system_settings"},
             {"email-send", "email_send"}, {"email-sent", "email_sent"}, {"email-groups", "email_groups"}, {"email-settings", "email_server"},
-            {"print-designer", "print_designer"}, {"master-import", "master_import"}};
+            {"print-designer", "print_designer"}, {"master-import", "master_import"},
+            // R39 (agent G): routes added for web parity
+            {"inventory-reports", "inventory_reports"}, {"kpi-drilldown", "module_kpis"}, {"kpi-details", "kpi_dashboards"},
+            {"reference-entry", "customers"}, {"reference-records", "customers"}, {"heat-transaction-report", "rep_heat_transactions"},
+            {"osp-balance-report", "rep_osp_balance"}, {"supply-order-mis", "customer_orders"}, {"supply-chain-report", "customer_orders"},
+            {"osp-sample-receipt", "osp_register"}, {"osp-dimensional", "osp_register"}, {"osp-metlab", "osp_register"},
+            {"complaint-email-settings", "email_server"}, {"ppap-home", "ppap"}, {"ppap-package", "ppap"}, {"ppap-templates", "ppap"},
+            {"ecn-register", "ecn_register"}, {"indirect-purchase", "indirect_purchase_orders"}, {"indirect-po", "indirect_purchase_orders"},
+            {"indirect-po-list", "indirect_purchase_orders"}, {"indirect-po-approval", "indirect_po_approval"}, {"indirect-requisition", "indirect_requisitions"},
+            {"indirect-inward", "indirect_grns"}, {"indirect-items", "indirect_items"}, {"indirect-stock", "indirect_stock"}};
         for (String[] r : m) ROUTE_MODULES.put(r[0], r[1]);
     }
 
@@ -327,6 +336,10 @@ final class Notif {
         }
         Module m = moduleForTable(table, route);
         if (m != null && hasId) { a.push(new RecordScreen(a, m, id)); return; }
+        // R39: detail rows open their parent record; tables without an app module open as a read-only record view
+        if (m == null && hasId && table != null && !table.isEmpty()) { GenTarget.open(a, table, id, route, title); return; }
+        Integer homeTab = GenTarget.TAB_ROUTES.get(r);
+        if (homeTab != null) { a.openTab(homeTab); return; }
         String key = ROUTE_MODULES.get(r);
         Module byRoute = key == null ? null : Catalog.get(key);
         if (byRoute != null) {

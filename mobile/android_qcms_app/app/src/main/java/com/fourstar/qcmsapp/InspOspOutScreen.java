@@ -33,6 +33,11 @@ final class InspOspOutScreen extends Screen {
     private String partId = "";
     private final Set<String> selected = new HashSet<>();
     private List<JSONObject> specs = new ArrayList<>();
+    // R38/R39: the Returnable Delivery Challan is captured with the Material Out (entered once, saved together)
+    private List<JSONObject> branches = new ArrayList<>();
+    private JSONObject prices;
+    private String pricesKey = "";
+    private String suggestedFor = null;
     // edit
     private JSONObject doc;
     private List<JSONObject> lines = new ArrayList<>();
@@ -107,6 +112,7 @@ final class InspOspOutScreen extends Screen {
             r.put("supplier_rmtc_number", InspUtil.j(c, "certificate_reference"));
         }
         candidates = out;
+        branches = OspChallan.branches(api);
     }
 
     private void loadDocument() throws Exception {
@@ -168,18 +174,49 @@ final class InspOspOutScreen extends Screen {
                 return Lookups.join(p == null ? "" : InspUtil.j(p, "process_code") + " · " + InspUtil.j(p, "process_name"), InspUtil.j(r, "process_specification").isEmpty() ? "-" : InspUtil.j(r, "process_specification"));
             })).req());
         f.add(Field.lookup("vendor_id", "OSP Vendor", Lookups.ospVendors().where("&or=(approval_status.eq.APPROVED,approval_status.is.null)")).req());
-        f.add(Field.date("dispatch_date", "Material Out Date").req());
-        f.add(Field.date("expected_return_date", "Expected Return Date").req());
-        f.add(Field.text("dispatch_challan", "Material Out Challan Number"));
-        f.add(Field.area("remarks", "Dispatch Remarks"));
+        List<String> bIds = new ArrayList<>(), bNames = new ArrayList<>();
+        String defaultBranch = "";
+        for (JSONObject b : branches) {
+            bIds.add(InspUtil.j(b, "id"));
+            bNames.add(InspUtil.j(b, "branch_name") + " · " + SupPdfKit.first(InspUtil.j(b, "plant_code"), InspUtil.j(b, "branch_code")));
+        }
+        JSONObject def = OspChallan.defaultBranch(branches);
+        if (def != null) defaultBranch = InspUtil.j(def, "id");
+        if (!bIds.isEmpty()) f.add(Field.select("branch_id", "Plant / Company Branch (challan series)", bIds.toArray(new String[0])).labels(bNames.toArray(new String[0])));
+        f.add(Field.date("dispatch_date", "Material Out / Challan Date").req());
+        f.add(Field.date("expected_return_date", "Expected Return / Delivery Date").req());
+        f.add(Field.text("dispatch_challan", "Material Out Challan Number").req().hint("Suggested from the branch challan series (JWC + plant + number). You can overwrite it."));
+        f.add(Field.lookup("ship_to_party_id", "Ship To (empty = Same as OSP Vendor)", new Field.Lookup("parties", "id,party_code,party_name,party_types,city,status",
+            "&status=eq.ACTIVE", "party_name.asc", Lookups.PARTY)));
+        f.add(Field.text("user_name", "User"));
+        f.add(Field.select("ship_via", "Ship Via", OspChallan.SHIP_VIA_OPTIONS).labels(OspChallan.SHIP_VIA_OPTIONS));
+        f.add(Field.select("incoterm", "Incoterm", OspChallan.INCOTERM_OPTIONS).labels(OspChallan.INCOTERM_OPTIONS));
+        f.add(Field.select("payment_term", "Payment Term", OspChallan.PAYMENT_TERM_OPTIONS).labels(OspChallan.PAYMENT_TERM_OPTIONS));
+        f.add(Field.text("vehicle_number", "Vehicle No"));
+        f.add(Field.text("transporter_name", "Transporter"));
+        f.add(Field.text("eway_bill_number", "E-way Bill No"));
+        f.add(Field.text("reference_details", "Reference Details"));
+        f.add(Field.text("old_po_details", "Old PO Details"));
+        f.add(Field.text("process_text", "Process To Be Done"));
+        f.add(Field.number("shipping_amount", "Shipping (INR)").range(0, Double.MAX_VALUE));
+        f.add(Field.number("other_amount", "Other (INR)").range(0, Double.MAX_VALUE));
+        f.add(Field.area("remarks", "Dispatch Remarks (printed as the challan remarks)"));
         String spec = form == null ? InspUtil.j(specs.get(0), "id") : form.str("process_specification_id");
         Map<String, String> keep = new LinkedHashMap<>();
-        if (form != null) for (String k : new String[]{"vendor_id", "dispatch_date", "expected_return_date", "dispatch_challan", "remarks"}) keep.put(k, form.str(k));
+        if (form != null) for (String k : CHALLAN_KEEP) keep.put(k, form.str(k));
         form = new FormView(a, f);
         form.set("process_specification_id", spec);
         form.set("dispatch_date", Ui.today());
         form.set("expected_return_date", LocalDate.now().plusDays(7).toString());
+        if (!defaultBranch.isEmpty()) form.set("branch_id", defaultBranch);
+        form.set("user_name", api.fullName);
+        form.set("ship_via", OspChallan.SHIP_VIA_OPTIONS[0]);
+        form.set("incoterm", OspChallan.INCOTERM_OPTIONS[0]);
+        form.set("payment_term", OspChallan.PAYMENT_TERM_OPTIONS[0]);
+        form.set("process_text", processName(spec).toUpperCase(java.util.Locale.ROOT));
         for (Map.Entry<String, String> e : keep.entrySet()) if (!e.getValue().isEmpty()) form.set(e.getKey(), e.getValue());
+        if (form.str("dispatch_challan").isEmpty()) suggestNumber(form.str("branch_id"));
+        loadPrices(spec);
         LinearLayout fc = Ui.card(a);
         fc.addView(form);
         add(fc, 8);
@@ -188,9 +225,14 @@ final class InspOspOutScreen extends Screen {
         grid = new RowsEditor(a, "Heat lines", Arrays.asList(
             Field.info("_label", "Source"),
             Field.number("quantity_dispatched", "Out Qty pcs").range(1, Double.MAX_VALUE).req(),
-            Field.number("sample_quantity", "Sample Qty pcs").range(1, 20).req()),
-            Arrays.asList(new String[]{"rmtc_number", "RMTC"}, new String[]{"heat_number", "Heat Number"}, new String[]{"inward_number", "Inward / Lot"},
-                new String[]{"osp_available_quantity_pcs", "Available pcs"}, new String[]{"quantity_dispatched", "Out Qty pcs"}, new String[]{"sample_quantity", "Sample Qty pcs"}));
+            Field.number("sample_quantity", "Sample Qty pcs").range(1, 20).req(),
+            Field.number("unit_price", "Unit Price (challan)").range(0, Double.MAX_VALUE),
+            Field.number("gst_percent", "GST %").range(0, 100),
+            Field.text("uom", "UOM"),
+            Field.text("batch_code", "Batch Code (blank = FSI batch)")),
+            Arrays.asList(new String[]{"rmtc_number", "RMTC"}, new String[]{"supplier_rmtc_number", "Supplier RMTC"}, new String[]{"heat_number", "Heat Number"}, new String[]{"inward_number", "Inward / Lot"},
+                new String[]{"osp_available_quantity_pcs", "Available pcs"}, new String[]{"quantity_dispatched", "Out Qty pcs"}, new String[]{"sample_quantity", "Sample Qty pcs"},
+                new String[]{"unit_price", "Unit Price"}, new String[]{"gst_percent", "GST %"}, new String[]{"uom", "UOM"}, new String[]{"batch_code", "Batch Code"}));
         grid.fixedRows();
         double specSample = Math.max(1, InspUtil.dbl(byId(specs, spec), "sample_quantity"));
         List<JSONObject> rows = new ArrayList<>();
@@ -204,23 +246,90 @@ final class InspOspOutScreen extends Screen {
                 if (r.optString("rmtc_number", "").isEmpty()) r.put("rmtc_number", "Opening / legacy");
                 r.put("quantity_dispatched", avail);
                 r.put("sample_quantity", Math.min(specSample, avail));
+                r.put("unit_price", OspChallan.f(prices, "unit_price"));
+                r.put("gst_percent", prices != null && prices.has("gst_percent") ? OspChallan.f(prices, "gst_percent") : OspChallan.DEFAULT_GST);
+                r.put("uom", SupPdfKit.first(OspChallan.s(prices, "uom"), OspChallan.DEFAULT_UOM));
+                r.put("batch_code", "");
             } catch (Exception ignored) { }
             rows.add(r);
         }
         grid.setRows(rows);
         add(Ui.label(a, "Heat lines · tap a line to change quantities"), 12);
         add(grid, 4);
-        add(Ui.text(a, "One Material Out document; a separate FSI batch is generated for each heat line. Samples and inward quantities remain independent for each batch.", 11.5f, Ui.MUTED, false), 4);
+        add(Ui.text(a, "One Material Out document; a separate FSI batch is generated for each heat line. Samples and inward quantities remain independent for each batch. "
+            + "Unit Price / GST % / Batch Code print on the Returnable Delivery Challan (blank Batch Code prints the FSI batch). No customer details print on the challan.", 11.5f, Ui.MUTED, false), 4);
         form.onChange((k, v) -> {
+            if ("branch_id".equals(k)) suggestNumber(form.str("branch_id"));
+            if ("process_specification_id".equals(k)) {
+                form.set("process_text", processName(form.str("process_specification_id")).toUpperCase(java.util.Locale.ROOT));
+                loadPrices(form.str("process_specification_id"));
+            }
             if ("process_specification_id".equals(k) && grid != null) {
                 double ss = Math.max(1, InspUtil.dbl(byId(specs, form.str("process_specification_id")), "sample_quantity"));
                 for (JSONObject r : grid.rows()) try { r.put("sample_quantity", Math.min(ss, InspUtil.dbl(r, "osp_available_quantity_pcs"))); } catch (Exception ignored) { }
                 grid.refresh();
             }
         });
-        Button save = Ui.primary(a, "Create OSP Material Out");
+        Button save = Ui.primary(a, "Create OSP Material Out + Returnable Delivery Challan");
         save.setOnClickListener(v -> create(save));
         add(save, 16);
+        add(Ui.text(a, "Saves the Material Out and its Returnable Delivery Challan in one step; the record then opens with Details · Print · Vendor returns.", 11.5f, Ui.MUTED, false), 4);
+    }
+
+    private static final String[] CHALLAN_KEEP = {"vendor_id", "dispatch_date", "expected_return_date", "dispatch_challan", "remarks", "branch_id", "ship_to_party_id", "user_name",
+        "ship_via", "incoterm", "payment_term", "vehicle_number", "transporter_name", "eway_bill_number", "reference_details", "old_po_details", "process_text",
+        "shipping_amount", "other_amount"};
+
+    private String processName(String specId) {
+        JSONObject spec = byId(specs, specId);
+        JSONObject p = spec == null ? null : Lookups.rowOf(Lookups.processes(), InspUtil.j(spec, "process_id"));
+        return InspUtil.j(p, "process_name");
+    }
+
+    /** challans.next_number(branch): JWC + plant + number (rpc qcms_next_osp_challan_number, Python fallback). */
+    private void suggestNumber(String branchId) {
+        String key = branchId == null ? "" : branchId;
+        if (key.equals(suggestedFor)) return;
+        suggestedFor = key;
+        FormView target = form;
+        Api.async(() -> OspChallan.nextNumber(api, key), (no, err) -> {
+            if (err != null || no == null || target != form) return;
+            form.set("dispatch_challan", no);
+        });
+    }
+
+    /** challans.default_prices(part, None, process): last challan price for the part / process, else the price master. */
+    private void loadPrices(String specId) {
+        JSONObject spec = byId(specs, specId);
+        String processId = InspUtil.j(spec, "process_id");
+        String key = partId + "|" + processId;
+        if (key.equals(pricesKey)) return;
+        pricesKey = key;
+        Api.async(() -> OspChallan.defaultPrices(api, partId, null, processId), (p, err) -> {
+            if (err != null || p == null || !key.equals(pricesKey)) return;
+            prices = p;
+            if (grid == null) return;
+            for (JSONObject r : grid.rows()) try {
+                if (OspChallan.f(r, "unit_price") == 0) r.put("unit_price", OspChallan.f(p, "unit_price"));
+                r.put("gst_percent", OspChallan.f(p, "gst_percent"));
+                if (OspChallan.s(r, "uom").isEmpty() || OspChallan.DEFAULT_UOM.equals(OspChallan.s(r, "uom"))) r.put("uom", SupPdfKit.first(OspChallan.s(p, "uom"), OspChallan.DEFAULT_UOM));
+            } catch (Exception ignored) { }
+            grid.refresh();
+        });
+    }
+
+    /** Challan header of the one-form entry (header of save_material_out_challan). */
+    private JSONObject challanHeader() throws Exception {
+        JSONObject h = new JSONObject();
+        h.put("challan_number", form.str("dispatch_challan"));
+        h.put("challan_date", form.str("dispatch_date"));
+        h.put("delivery_date", form.str("expected_return_date"));
+        h.put("vendor_id", form.str("vendor_id"));
+        for (String k : new String[]{"branch_id", "ship_to_party_id", "user_name", "ship_via", "incoterm", "payment_term", "vehicle_number", "transporter_name",
+            "eway_bill_number", "reference_details", "old_po_details", "process_text", "remarks"}) h.put(k, form.str(k));
+        h.put("shipping_amount", OspChallan.f(form.str("shipping_amount")));
+        h.put("other_amount", OspChallan.f(form.str("other_amount")));
+        return h;
     }
 
     private static JSONObject byId(List<JSONObject> l, String id) {
@@ -288,10 +397,35 @@ final class InspOspOutScreen extends Screen {
                     .put("quantity_dispatched", qty).put("sample_quantity", sample));
             }
         } catch (Exception e) { a.toast(e.getMessage()); return; }
+        // R38: validate the challan part BEFORE the stock-allocating Material Out RPC, so a challan problem never leaves a half entry.
+        final JSONObject challanHeader;
+        final List<JSONObject> challanLines = new ArrayList<>();
+        try {
+            challanHeader = challanHeader();
+            int index = 0;
+            List<JSONObject> probe = new ArrayList<>();
+            for (JSONObject r : grid.rows()) {
+                index++;
+                JSONObject l = new JSONObject();
+                l.put("line_no", index);
+                l.put("item_code", JSONObject.NULL);
+                l.put("unit_price", OspChallan.f(r.opt("unit_price")));
+                l.put("gst_percent", OspChallan.s(r, "gst_percent").isEmpty() ? OspChallan.DEFAULT_GST : OspChallan.f(r.opt("gst_percent")));
+                l.put("uom", SupPdfKit.first(OspChallan.s(r, "uom"), OspChallan.DEFAULT_UOM));
+                l.put("batch_code", OspChallan.s(r, "batch_code"));
+                challanLines.add(l);
+                probe.add(new JSONObject(l.toString()).put("osp_job_id", "pending"));
+            }
+            OspChallan.cleanHeader(challanHeader);
+            OspChallan.cleanLines(probe);
+        } catch (Exception e) { a.toast(Api.message(e)); return; }
         button.setEnabled(false);
         button.setText("Saving…");
         String req = requestId;
         Api.async(() -> {
+            if (OspChallan.duplicateNumber(api, form.str("dispatch_challan"), null))
+                throw new Api.ApiException(409, "Challan Number " + form.str("dispatch_challan").trim().toUpperCase(java.util.Locale.ROOT)
+                    + " is already used by another Material Out. Use the suggested series number.");
             JSONObject header = new JSONObject();
             header.put("vendor_id", form.str("vendor_id"));
             header.put("process_id", InspUtil.j(spec, "process_id"));
@@ -306,13 +440,27 @@ final class InspOspOutScreen extends Screen {
             if (saved == null || InspUtil.j(saved, "id").isEmpty() || savedLines == null || savedLines.length() != clean.length()) {
                 throw new Api.ApiException(500, "Material Out save could not be confirmed. Retry the same entry to recover its saved document.");
             }
+            // R38 save_material_out_challan: the challan right after the Material Out (one retry, re-using a header a failed attempt inserted)
+            for (int i = 0; i < challanLines.size() && i < savedLines.length(); i++) challanLines.get(i).put("osp_job_id", InspUtil.j(savedLines.optJSONObject(i), "id"));
+            Exception challanError = OspChallan.saveWithRetry(api, InspUtil.j(saved, "id"), challanHeader, challanLines);
+            if (challanError != null) {
+                JSONObject pendingLines = new JSONObject().put("lines", OspRecordView.toArray(challanLines));
+                OspChallan.PENDING.put(InspUtil.j(saved, "id"), new JSONObject[]{challanHeader, pendingLines});
+                saved.put("_challan_error", Api.message(challanError));
+            }
             return saved;
         }, (saved, err) -> {
             button.setEnabled(true);
-            button.setText("Create OSP Material Out");
+            button.setText("Create OSP Material Out + Returnable Delivery Challan");
             if (err != null) { a.toast(Api.message(err)); return; }   // same request id is re-used on retry
             requestId = InspUtil.uuid();
-            a.toast("Material Out " + InspUtil.j(saved, "material_out_number") + " saved · " + saved.optJSONArray("lines").length() + " separately traceable heat batches.");
+            String number = form.str("dispatch_challan").trim().toUpperCase(java.util.Locale.ROOT);
+            if (InspUtil.j(saved, "_challan_error").isEmpty())
+                a.toast("Material Out " + InspUtil.j(saved, "material_out_number") + " saved with Returnable Delivery Challan " + number + " · "
+                    + saved.optJSONArray("lines").length() + " separately traceable heat batches.");
+            else
+                a.confirm("Challan still to be saved", "Material Out " + InspUtil.j(saved, "material_out_number") + " is saved (stock allocated), but its challan could not be saved: "
+                    + InspUtil.j(saved, "_challan_error") + ".\n\nDo NOT create the Material Out again - open Details → Complete challan details (your entries are filled in) and save to retry.", "OK", () -> { });
             Module m = Catalog.get("osp_material_out");
             a.replaceTop(new RecordScreen(a, m == null ? Catalog.adhoc("osp_material_outs") : m, InspUtil.j(saved, "id")));
         });

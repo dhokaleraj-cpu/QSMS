@@ -160,6 +160,7 @@ final class IncRmtcAdded extends Screen {
             IncRmtcFlow.run(a, "Saving added Part decision…", () -> {
                 api.rpc("qsms_decide_added_rmtc_part", new JSONObject().put("p_rmtc_id", rid).put("p_part_id", pid).put("p_disposition", d)
                     .put("p_reason", reason.isEmpty() ? JSONObject.NULL : reason).put("p_approved_by_employee_id", appr));
+                IncQrLabel.onApproved(api, rid, false);  // R39 (web _run_qr_hook send_email=False): refresh the stored QR label (parts line)
                 return "Added Part final decision saved. Existing accepted Parts remain released.";
             }, this::reload);
         });

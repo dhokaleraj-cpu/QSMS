@@ -117,6 +117,11 @@ public final class RecordScreen extends Screen implements ExportKit.RecordPrint 
         if (!m.description.isEmpty()) head.addView(Ui.text(a, m.title, 12, Ui.MUTED, false));
         add(head, 2);
 
+        // ---- R39: OSP Material Out = Returnable Delivery Challan record (Details · Print · Vendor returns)
+        if ("osp_material_outs".equals(m.table)) add(OspRecordView.build(a, id, null, true, this::reload), 8);
+        // ---- R39: approved RMTC - material-location QR (PNG / JPEG / PDF / 100 x 60 mm label) and sections applicable
+        if ("rmtc_approvals".equals(m.table)) add(IncQrLabel.panel(a, rec, this::reload), 8);
+
         // ---- actions
         LinearLayout actions = Ui.vbox(a);
         if (m.canCreate() && m.editable && !m.idField.isEmpty()) {
@@ -126,6 +131,7 @@ public final class RecordScreen extends Screen implements ExportKit.RecordPrint 
         }
         for (Module.Act act : m.actions) {
             if (!when(rec, act.when)) continue;
+            if ("parts".equals(m.table) && !MstPartSections.showAction(rec, act.label)) continue;   // R39 Part sections applicable
             Button b = Ui.outline(a, act.label, Ui.TEAL);
             b.setOnClickListener(v -> act.action.run(a, row, this::reload));
             actions.addView(b, Ui.matchWrap(a, 8));
@@ -155,7 +161,7 @@ public final class RecordScreen extends Screen implements ExportKit.RecordPrint 
         add(details, 2);
 
         // ---- child tables
-        for (Module.Child child : m.children) addChild(child);
+        for (Module.Child child : m.children) if (!"parts".equals(m.table) || MstPartSections.showChild(rec, child.table)) addChild(child);   // R39 N/A sections hidden
 
         // ---- photos & documents
         if (m.attachEntity != null) addAttachments();

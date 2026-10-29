@@ -40,6 +40,7 @@ public final class CatMore {
             .col("project_code", "Project / NPD No.").col("part_id", "Part").col("customer_id", "Customer").col("submission_level", "PPAP Level")
             .col("target_submission_date", "Target Submission").col("coordinator", "Coordinator").col("completion_percent", "Completion %").col("status", "Status")
             .statuses("IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED")
+            .action("PPAP packages (open / create)", "", (a, row, refresh) -> PpapHomeScreen.fromApqp(a, row))   // R39 PPAP link
             .child("APQP gates / deliverables", "ppap_documents", "ppap_project_id", "sequence_no.asc", new String[][]{
                 {"sequence_no", "Seq"}, {"apqp_phase", "APQP Phase"}, {"document_type", "Activity / Deliverable"}, {"document_number", "Evidence / Doc No."},
                 {"owner", "Owner"}, {"due_date", "Due Date"}, {"status", "Status"}, {"approved_date", "Approved"}})

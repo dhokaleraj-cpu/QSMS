@@ -1032,9 +1032,19 @@ def _render_rmtc_qr_panel(repo:Any,record:dict,*,can_manage:bool,key:str)->None:
             st.caption(f"QCMS link (after login): {assets['app_url']}")
         if stored:
             st.caption(f"QR label stored as RMTC attachment: {stored.get('file_name')} · {str(stored.get('updated_at') or stored.get('created_at') or '')[:19].replace('T',' ')}")
-        d1,d2=st.columns(2,gap='small')
-        d1.download_button('Download QR PNG',assets['png'],file_name=f"{assets['file_stem']}_QR_Label.png",mime='image/png',icon=':material/qr_code_2:',width='stretch',key=f'rmtc_qr_png_{key}_{rid}')
-        d2.download_button('Print Label PDF (100 x 60 mm)',assets['label_pdf'],file_name=f"{assets['file_stem']}_QR_Label.pdf",mime='application/pdf',icon=':material/print:',width='stretch',key=f'rmtc_qr_label_{key}_{rid}',help='Print label: open the PDF and print it on a 100 x 60 mm sticker; write the storage location in the Location box.')
+        # R39: QR download in PNG / JPEG / PDF (A6 page) besides the 100 x 60 mm label PDF
+        from core.rmtc_qr import qr_jpeg, qr_pdf
+        d1,d3,d4=st.columns(3,gap='small')
+        d1.download_button('Download QR PNG',assets['png'],file_name=f"{assets['file_stem']}_QR.png",mime='image/png',icon=':material/image:',width='stretch',key=f'rmtc_qr_png_{key}_{rid}')
+        try:
+            d3.download_button('Download QR JPEG',qr_jpeg(assets['url'],assets['lines']),file_name=f"{assets['file_stem']}_QR.jpg",mime='image/jpeg',icon=':material/photo:',width='stretch',key=f'rmtc_qr_jpeg_{key}_{rid}')
+        except Exception as exc:
+            d3.caption(f'JPEG not available: {exc}')
+        try:
+            d4.download_button('Download QR PDF',qr_pdf(assets['url'],assets['lines'],title=f"RMTC {record.get('rmtc_number') or ''} QR"),file_name=f"{assets['file_stem']}_QR.pdf",mime='application/pdf',icon=':material/picture_as_pdf:',width='stretch',key=f'rmtc_qr_pdf_{key}_{rid}',help='QR code with the RMTC text on one A6 page.')
+        except Exception as exc:
+            d4.caption(f'PDF not available: {exc}')
+        st.download_button('Print Label PDF (100 x 60 mm)',assets['label_pdf'],file_name=f"{assets['file_stem']}_QR_Label.pdf",mime='application/pdf',icon=':material/print:',width='stretch',key=f'rmtc_qr_label_{key}_{rid}',help='Print label: open the PDF and print it on a 100 x 60 mm sticker; write the storage location in the Location box.')
         r1,r2=st.columns(2,gap='small')
         if r1.button('Refresh QR Label',icon=':material/sync:',width='stretch',disabled=not can_manage,key=f'rmtc_qr_refresh_{key}_{rid}',help='Re-store the QR label PNG attachment (after an edit / added Part).'):
             _run_qr_hook(repo,rid,send_email=False);st.rerun()

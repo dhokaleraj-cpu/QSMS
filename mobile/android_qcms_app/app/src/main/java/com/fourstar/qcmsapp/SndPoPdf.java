@@ -345,6 +345,7 @@ final class SndPoPdf {
         int drawn = firstPage(overflow, firstGrand);
         for (Object[] o : overflow) historyContinuationPages((JSONObject) o[0], castList(o[1]));
         if (drawn < items.size()) continuationItems(items.subList(drawn, items.size()), !firstGrand[0]);
+        if (show("show_amendment_history")) amendmentHistoryPages();   // R39 (web R37b)
         termsPages();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         doc.writeTo(out);
@@ -888,6 +889,120 @@ final class SndPoPdf {
     }
 
     private void footer(String text) { g.centre(W / 2, 27, text, 5.8f, false, GREY); }
+
+    // ------------------------------------------------------------------ R39 · amendment history (web R37b _amendment_history_pages)
+    /** Loads the amendment register (oldest first, with line before / after) into header["amendments"]. Best effort. */
+    static void attachAmendments(Api api, JSONObject header) {
+        try {
+            if (SndData.n(header, "amendment_no") <= 0) return;
+            String poId = SndData.s(header, "id");
+            JSONArray rows = api.rows("supply_po_amendments?select=*&purchase_order_id=eq." + Api.enc(poId) + "&order=amendment_no.asc&limit=500");
+            boolean approved = "APPROVED".equalsIgnoreCase(SndData.s(header, "approval_status"));
+            String approvedAt = SndData.s(header, "approved_at");
+            JSONArray out = new JSONArray();
+            for (int i = 0; i < rows.length(); i++) {
+                JSONObject a = new JSONObject(rows.getJSONObject(i).toString());
+                try {
+                    a.put("lines", api.rows("supply_po_amendment_lines?select=*&amendment_id=eq." + Api.enc(SndData.s(a, "id")) + "&order=line_no.asc&limit=500"));
+                } catch (Exception e) { a.put("lines", new JSONArray()); }
+                String st = SndData.s(a, "status").isEmpty() ? "PENDING_APPROVAL" : SndData.s(a, "status").toUpperCase(Locale.ROOT);
+                if ("PENDING_APPROVAL".equals(st) && approved && !approvedAt.isEmpty() && approvedAt.compareTo(SndData.s(a, "created_at")) >= 0) st = "APPROVED";
+                a.put("status", st);
+                out.put(a);
+            }
+            header.put("amendments", out);
+        } catch (Exception ignored) { }
+    }
+
+    private static String qtyFmt(double v) {
+        String t = String.format(Locale.US, "%,.3f", v);
+        return t.contains(".") ? t.replaceAll("0+$", "").replaceAll("\\.$", "") : t;
+    }
+
+    /** _amendment_rows: one row per changed line, or one "PO terms" row for a header-only amendment. */
+    static List<String[]> amendmentRows(JSONObject header) {
+        List<String[]> rows = new ArrayList<>();
+        JSONArray list = header == null ? null : header.optJSONArray("amendments");
+        if (list == null) return rows;
+        List<JSONObject> sorted = new ArrayList<>();
+        for (int i = 0; i < list.length(); i++) if (list.optJSONObject(i) != null) sorted.add(list.optJSONObject(i));
+        sorted.sort((x, y) -> Double.compare(SndData.n(x, "amendment_no"), SndData.n(y, "amendment_no")));
+        for (JSONObject amd : sorted) {
+            StringBuilder terms = new StringBuilder();
+            JSONObject hc = amd.optJSONObject("header_changes");
+            if (hc != null) {
+                Iterator<String> it = hc.keys();
+                while (it.hasNext()) {
+                    String k = it.next();
+                    JSONObject v = hc.optJSONObject(k);
+                    if (v == null) continue;
+                    String o = k.contains("date") ? date(SndData.s(v, "old")) : SndData.s(v, "old");
+                    String n = k.contains("date") ? date(SndData.s(v, "new")) : SndData.s(v, "new");
+                    if (terms.length() > 0) terms.append("; ");
+                    terms.append(Ui.pretty(k)).append(": ").append(o.isEmpty() ? "-" : o).append(" -> ").append(n.isEmpty() ? "-" : n);
+                }
+            }
+            String no = String.valueOf((int) Math.round(SndData.n(amd, "amendment_no")));
+            String reason = SndData.s(amd, "reason") + (terms.length() > 0 ? " | " + terms : "");
+            String ad = date(SndData.s(amd, "amendment_date")), ef = date(SndData.s(amd, "effective_date"));
+            JSONArray lines = amd.optJSONArray("lines");
+            if (lines == null || lines.length() == 0) { rows.add(new String[]{no, ad, ef, reason, "PO terms", "-", "-"}); continue; }
+            for (int i = 0; i < lines.length(); i++) {
+                JSONObject l = lines.optJSONObject(i);
+                if (l == null) continue;
+                double op = SndData.n(l, "old_unit_price"), np = SndData.n(l, "new_unit_price"), oq = SndData.n(l, "old_quantity"), nq = SndData.n(l, "new_quantity");
+                String uom = SndData.s(l, "uom");
+                String price = Math.abs(op - np) > 1e-9 ? money(op) + " -> " + money(np) : money(np);
+                String qty = (Math.abs(oq - nq) > 1e-9 ? qtyFmt(oq) + " -> " + qtyFmt(nq) : qtyFmt(nq)) + (uom.isEmpty() ? "" : " " + uom);
+                String item = SndData.s(l, "item_no").isEmpty() ? "-" : SndData.s(l, "item_no");
+                rows.add(i == 0 ? new String[]{no, ad, ef, reason, item, price, qty} : new String[]{"", "", "", "", item, price, qty});
+            }
+        }
+        return rows;
+    }
+
+    private void amendmentHistoryPages() {
+        List<String[]> rows = amendmentRows(header);
+        if (rows.isEmpty()) return;
+        float[] widths = {36, 54, 54, 0, 92, 96, 92};
+        String[] titles = {"AMD NO.", "AMD DATE", "EFFECTIVE", "REASON / TERMS CHANGED", "ITEM", "UNIT PRICE OLD -> NEW", "QTY OLD -> NEW"};
+        float left = 28, right = 28, total = W - left - right;
+        float others = 0;
+        for (int i = 0; i < widths.length; i++) if (i != 3) others += widths[i];
+        widths[3] = total - others;
+        int index = 0;
+        while (index < rows.size()) {
+            continuationHeader("PURCHASE ORDER · AMENDMENT HISTORY");
+            float top = H - 96;
+            bar(left, top, total, "AMENDMENT HISTORY · PO NUMBER UNCHANGED · LATEST AMENDMENT PRINTED IN THE PO HEADER", 15);
+            float y = top - 15, x = left;
+            for (int i = 0; i < widths.length; i++) {
+                rules(); g.fill = fillOrWhite("head_fill"); g.rect(x, y - 15, widths[i], 15, true, true);
+                text(x + 3, y - 10.4f, titles[i], 5.3f, true, DARK, widths[i] - 6);
+                x += widths[i];
+            }
+            y -= 15;
+            int start = index;
+            while (index < rows.size()) {
+                String[] row = rows.get(index);
+                List<String> reason = wrapLines(row[3], widths[3] - 6, 5.4f, false, 8);
+                float rowH = Math.max(15f, 6f + 7.2f * reason.size());
+                if (y - rowH < 50 && index > start) break;
+                x = left;
+                for (int col = 0; col < widths.length; col++) {
+                    g.fill = WHITE; rules(); g.rect(x, y - rowH, widths[col], rowH, true, true);
+                    if (col == 3) {
+                        for (int li = 0; li < reason.size(); li++) text(x + 3, y - 8.6f - li * 7.2f, reason.get(li), 5.4f, false, TEXT, widths[col] - 6);
+                    } else text(x + 3, y - 9.6f, row[col], 5.6f, col == 0, col == 0 ? accent() : TEXT, widths[col] - 6);
+                    x += widths[col];
+                }
+                y -= rowH;
+                index++;
+            }
+            footer("QCMS controlled Purchase Order amendment record · prices and quantities apply from the Effective Date.");
+            showPage();
+        }
+    }
 
     private void historyContinuationPages(JSONObject item, List<JSONObject> history) {
         List<JSONObject> remaining = new ArrayList<>(history);

@@ -79,6 +79,17 @@ final class GenKpiScreen extends Screen {
 
     private void render() {
         page.removeAllViews();
+        // R39: website KPI Dashboards views - Modules (module infographic cards) and My Dashboards (custom)
+        LinearLayout views = Ui.hbox(a);
+        android.widget.Button mods = Ui.outline(a, "Modules", Ui.TEAL);
+        mods.setOnClickListener(v -> a.push(new KpiModules.ModulesScreen(a)));
+        android.widget.Button mine = Ui.outline(a, "My Dashboards", Ui.TEAL);
+        mine.setOnClickListener(v -> a.push(new GenDashScreen(a)));
+        LinearLayout.LayoutParams lp = Ui.weight(1);
+        lp.rightMargin = dp(6);
+        views.addView(mods, lp);
+        views.addView(mine, Ui.weight(1));
+        add(views, 0);
         if (boards.isEmpty()) {
             add(Ui.empty(a, "You do not have View permission for any module used by the KPI dashboards."), 0);
             return;

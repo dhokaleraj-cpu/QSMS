@@ -113,13 +113,13 @@ final class Licence {
         String reason = s.isNull("reason") ? "" : s.optString("reason", "");
         if (!reason.isEmpty()) card.addView(Ui.text(a, reason, 11.5f, Ui.MUTED, false), Ui.matchWrap(a, 6));
         if (s.optBoolean("is_company_admin", false) || s.optBoolean("is_stawn_developer", false)) {
-            Button web = Ui.outline(a, "Licence & Company (website)", Ui.TEAL);
-            web.setOnClickListener(v -> a.openWeb("Licence & Company", "licence-company"));
+            Button web = Ui.outline(a, "Licence & Company", Ui.TEAL);
+            web.setOnClickListener(v -> a.push(new LicCompanyScreen(a)));
             card.addView(web, Ui.matchWrap(a, 10));
         }
         if (s.optBoolean("is_stawn_developer", false)) {
-            Button dev = Ui.outline(a, "STAWN Developer Console (website)", Ui.TEAL_DARK);
-            dev.setOnClickListener(v -> a.openWeb("STAWN Developer Console", "stawn-developer"));
+            Button dev = Ui.outline(a, "STAWN Developer Console", Ui.TEAL_DARK);
+            dev.setOnClickListener(v -> a.push(new DevConsoleScreen(a)));
             card.addView(dev, Ui.matchWrap(a, 8));
         }
         return card;
@@ -222,7 +222,7 @@ final class Licence {
         out.setOnClickListener(v -> a.signOut());
         root.addView(out, Ui.matchWrap(a, 8));
 
-        TextView foot = Ui.text(a, GenCentres.About.COPYRIGHT + "\nApp v" + BuildConfig.VERSION_NAME + " · Signed in as " + api.email, 11, Ui.MUTED, false);
+        TextView foot = Ui.text(a, GenCentres.About.COPYRIGHT + "\nSigned in as " + api.email, 11, Ui.MUTED, false);
         foot.setGravity(Gravity.CENTER);
         foot.setPadding(0, Ui.dp(a, 24), 0, 0);
         root.addView(foot);

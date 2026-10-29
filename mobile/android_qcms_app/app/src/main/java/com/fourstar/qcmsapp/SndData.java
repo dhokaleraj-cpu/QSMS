@@ -47,7 +47,7 @@ final class SndData {
         /** Workflow event used to send the PO to the supplier (app_pages/supply_chain.py). */
         String releaseEvent() { return "RAW_MATERIAL".equalsIgnoreCase(s(header, "po_type")) ? "RM_PO_CREATED" : "FORGING_PO_CREATED"; }
         String releaseNextStage() { return "RM_PO_CREATED".equals(releaseEvent()) ? "Raw Material Receipt" : "Forging Receipt"; }
-        String fileName() { return (number().isEmpty() ? "Purchase_Order" : number()) + ".pdf"; }
+        String fileName() { return downloadFileName(header); }   // R38: <PO>[_AmdN].pdf
     }
 
     // ------------------------------------------------------------------ small value helpers (like _s / _n)
@@ -236,6 +236,39 @@ final class SndData {
         return out;
     }
 
+    /** R39 · customer_privacy.supplier_safe_po: print options of anything that reaches a supplier never show the customer source reference. */
+    static JSONObject supplierSafeOptions(JSONObject options) {
+        JSONObject out = new JSONObject();
+        try {
+            if (options != null) { Iterator<String> it = options.keys(); while (it.hasNext()) { String k = it.next(); out.put(k, options.opt(k)); } }
+            out.put("show_source_reference", false);
+        } catch (Exception ignored) { }
+        return out;
+    }
+
+    /** R39 · supplier_safe_po(header, items): header print_options without source reference, every line stripped of customer keys. */
+    static Po supplierSafe(Po po) {
+        Po out = new Po();
+        try {
+            out.header = new JSONObject(po.header.toString());
+            out.header.put("print_options", supplierSafeOptions(obj(po.header, "print_options")));
+            for (JSONObject it : po.items) out.items.add(OspChallan.stripCustomer(it));
+        } catch (Exception e) { out.header = po.header; out.items = po.items; }
+        out.supplier = po.supplier;
+        out.layout = po.layout;
+        out.attachments = po.attachments;
+        return out;
+    }
+
+    /** R38 po_download_file_name: "<PO no>.pdf" or "<PO no>_Amd<n>.pdf" (file-system safe). */
+    static String downloadFileName(JSONObject header) {
+        String number = s(header, "po_number");
+        if (number.isEmpty()) number = "Purchase_Order";
+        int amd = (int) Math.round(n(header, "amendment_no"));
+        String name = amd > 0 ? number + "_Amd" + amd : number;
+        return name.replaceAll("[\\\\/:*?\"<>|]+", "-") + ".pdf";
+    }
+
     /** purchase_order_pdf_bytes: per-PO show_* flags override the saved layout. */
     static JSONObject printLayout(JSONObject layout, JSONObject options) {
         JSONObject l = normalizeLayout(layout == null ? new JSONObject() : layout);
@@ -257,6 +290,7 @@ final class SndData {
         JSONArray h = api.rows("supply_purchase_orders?select=*&id=eq." + Api.enc(poId));
         if (h.length() == 0) throw new Api.ApiException(404, "Purchase Order not found or not visible for your role.");
         po.header = enrichApprover(api, h.getJSONObject(0));
+        SndPoPdf.attachAmendments(api, po.header);   // R39: amendment history pages (web R37b)
         po.layout = loadLayout(api);
         String supplierId = s(po.header, "supplier_id");
         if (!supplierId.isEmpty()) {
@@ -427,7 +461,7 @@ final class SndData {
             if (!exact.isEmpty()) rows = exact;
         }
         List<JSONObject> same = new ArrayList<>();
-        for (JSONObject r : rows) if (uom.isEmpty() || s(r, "uom").equalsIgnoreCase(uom)) same.add(r);
+        for (JSONObject r : rows) if (uom.isEmpty() || SupSvc.samePriceUom(s(r, "uom"), uom)) same.add(r);   // R37b: NOS = PCS
         if (!same.isEmpty()) rows = same;
         Collections.sort(rows, (x, y) -> {
             int c = s(x, "start_date").compareTo(s(y, "start_date"));
@@ -444,6 +478,7 @@ final class SndData {
             o.put("start_date", r.opt("start_date"));
             o.put("end_date", r.opt("end_date"));
             o.put("price", r.opt("price"));
+            for (String k : new String[]{"freight", "tool_cost", "packing_forwarding", "profit", "icc_rejection"}) o.put(k, r.opt(k));
             o.put("currency", s(r, "currency").isEmpty() ? "INR" : s(r, "currency"));
             o.put("uom", s(r, "uom").isEmpty() ? uom : s(r, "uom"));
             o.put("remarks", s(r, "remarks"));

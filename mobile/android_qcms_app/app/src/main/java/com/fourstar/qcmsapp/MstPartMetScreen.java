@@ -124,6 +124,44 @@ public final class MstPartMetScreen extends MstPartGrid {
 
     @Override
     protected void addExtra(LinearLayout box) {
+        // R39: metallurgical view - the Part's material grade chemistry and its Jominy band as HORIZONTAL grids
+        LinearLayout grids = Ui.vbox(a);
+        box.addView(grids, Ui.matchWrap(a, 0));
+        grids.addView(Ui.text(a, "Loading chemistry / Jominy…", 12, Ui.MUTED, false));
+        String gradeId = Lookups.j(part, "material_grade_id");
+        Api.async(() -> {
+            List<JSONObject> chem = gradeId.isEmpty() ? new ArrayList<>() : list(api.rows("material_grade_elements?select=*&material_grade_id=eq." + Api.enc(gradeId) + "&limit=200"));
+            List<JSONObject> jom = list(api.rows("part_jominy_requirements?select=*&part_id=eq." + Api.enc(partId) + "&order=sequence_no.asc&limit=100"));
+            JSONArray dist = Lookups.rows(api, MstPartJominyScreen.DISTANCES);
+            List<JSONObject> active = new ArrayList<>();
+            for (JSONObject r : jom) {
+                String st = Lookups.j(r, "status");
+                if (!st.isEmpty() && !"ACTIVE".equals(st)) continue;
+                for (int i = 0; i < dist.length(); i++) {
+                    JSONObject d = dist.optJSONObject(i);
+                    if (d != null && Lookups.j(d, "id").equals(Lookups.j(r, "jominy_distance_id"))) r.put("distance_16th", d.opt("distance_16th"));
+                }
+                active.add(r);
+            }
+            return new Object[]{chem, active};
+        }, (res, err) -> {
+            grids.removeAllViews();
+            if (err != null || res == null) { grids.addView(Ui.text(a, "Chemistry / Jominy not loaded: " + Api.message(err), 12, Ui.AMBER_FG, false)); return; }
+            @SuppressWarnings("unchecked") List<JSONObject> chem = (List<JSONObject>) res[0];
+            @SuppressWarnings("unchecked") List<JSONObject> jom = (List<JSONObject>) res[1];
+            grids.addView(Ui.label(a, "Chemical composition (material grade) · elements across"));
+            if (chem.isEmpty()) grids.addView(Ui.text(a, "No chemistry limits for this Part's material grade.", 12, Ui.MUTED, false));
+            else {
+                List<String[]> t = RptReports.chemHorizontal(chem, new String[][]{{"Minimum", "minimum"}, {"Maximum", "maximum"}});
+                grids.addView(new DataGrid(a, ChemGrid.headers(t), ChemGrid.data(t), 200, null), Ui.matchWrap(a, 4));
+            }
+            grids.addView(Ui.label(a, "Jominy band · inch / mm"), Ui.matchWrap(a, 10));
+            if (jom.isEmpty()) grids.addView(Ui.text(a, "No Jominy requirements for this Part.", 12, Ui.MUTED, false));
+            else {
+                List<String[]> t = RptReports.jominyHorizontal(jom, new String[][]{{"Min HRC", "minimum_hrc"}, {"Max HRC", "maximum_hrc"}});
+                grids.addView(new DataGrid(a, ChemGrid.headers(t), ChemGrid.data(t), 220, null), Ui.matchWrap(a, 4));
+            }
+        });
         Button gen = Ui.outline(a, "Create / Update Final Dispatch Metallurgical Inspection Layout", Ui.TEAL);
         gen.setEnabled(!activeRows.isEmpty());
         if (activeRows.isEmpty()) box.addView(Ui.text(a, "Save at least one requirement to generate the Final MetLAB layout.", 11.5f, Ui.MUTED, false));

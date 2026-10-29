@@ -1,4 +1,4 @@
-// STAWN QCMS · R38 · qcms-ppap-due-notifier
+// STAWN QCMS · R38 + R39 · qcms-ppap-due-notifier
 // Daily (pg_cron 'qcms-ppap-due-notifier-daily', scheduler token auth like the other QCMS notifiers):
 //   PPAP elements that are Pending / In progress / Rejected, belong to an active package and are due within N days
 //   (default 3, schedule PPAP_DOCUMENT_DUE.days_ahead) or overdue -> ONE digest e-mail per responsible employee
@@ -7,11 +7,22 @@
 //   e.g. "Quality · PPAP elements due · 3 item(s) · 28-10-2026". Deduplicated per employee and day through
 //   qcms_notification_outbox.dedupe_key. Also raises the in-app / mobile notifications (qcms_ppap_due_notifications).
 // Mirrors core/ppap_service.due_digests (tests/test_r38_ppap.py).
+// R39: each digest also carries the PART DETAILS of every package in it and the current DRAWINGS & SPECIFICATIONS
+//   (public.qcms_ppap_part_context: finish / forging / HT / process drawings, process specs, linked customer standards).
+//   Drawings first, then specifications, are attached from the private bucket while the mail stays within
+//   18 files / 10 MB; the rest (and files missing in storage) are listed by name. Dedupe unchanged (one digest per
+//   employee and day, dedupe_key PPAP_ELEMENT_DUE:<date>:<employee>).
+// R39 attachment rule (daily reminders must not resend the same drawings every day): a drawing / specification is
+//   ATTACHED only when it was not already attached to the same person in a SENT PPAP e-mail (assignment e-mail
+//   PPAP_ASSIGNMENT or an earlier reminder) within the last ATTACH_REPEAT_DAYS = 7 days. So the first reminder carries
+//   the files, later daily reminders list them ("attached on DD-MM-YYYY"), they are attached again once a week, and a
+//   new drawing revision (new object path) is attached at once. The part details are in every reminder.
 // Body (optional, manual runs): { "days_ahead": 3, "local_date": "2026-10-28", "dry_run": true }
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import nodemailer from "npm:nodemailer@6.9.16";
-import { clean, companyName, emailShell, htmlTable, textTable, type Col, type Cell, type Row } from "./reminder_kit.ts";
+import { Buffer } from "node:buffer";
+import { clean, companyName, emailShell, esc, htmlTable, textTable, type Col, type Cell, type MailAttachment, type Row } from "./reminder_kit.ts";
 
 const jsonHeaders = { "Content-Type": "application/json" };
 const SCHEDULE_KEY = "PPAP_DOCUMENT_DUE";
@@ -24,9 +35,17 @@ const DEPARTMENT_LABEL: Record<string, string> = {
   production: "Production", management: "Management", admin: "Admin", administration: "Admin", hr: "HR", accounts: "Accounts",
   marketing: "Marketing", businessdevelopment: "Business Development", maintenance: "Maintenance", dispatch: "Dispatch", logistics: "Logistics",
 };
+const MAX_MAIL_BYTES = 10 * 1024 * 1024;   // same cap as the PPAP assignment e-mail (qcms_ppap_assignment_mail)
+const MAX_MAIL_FILES = 18;
+export const ATTACH_REPEAT_DAYS = 7;   // re-attach the same file to the same person at most once a week
+const PPAP_MAIL_EVENTS = ["PPAP_ASSIGNMENT", "PPAP_DOCUMENT_DUE_DIGEST"];
+const DOC_HEADERS: Col[] = ["Package", "Document", "File", "Drawing No.", "Rev.", "E-mail"];
 const HEADERS: Col[] = ["#", "Part", "PPAP No.", "Package", "Element", { label: "Due Date", kind: "date" }, { label: "Days Overdue", kind: "number" }, "Status"];
 
-type DueRow = { part: string; ppap_no: string; package_no: string; element: string; due_date: string; days_overdue: number; status: string };
+type DueRow = { part: string; ppap_no: string; package_no: string; element: string; due_date: string; days_overdue: number; status: string; package_id?: string };
+type PartDoc = { bucket?: string; object_path?: string; file_name?: string; mime_type?: string; size_bytes?: number; in_storage?: boolean;
+  kind?: string; category?: string; revision?: string; drawing_number?: string };
+type PartContext = { package?: Row; part?: Row | null; customer?: string | null; owner?: Row | null; documents?: PartDoc[] };
 
 export function departmentLabel(value: unknown): string {
   const raw = String(value ?? "").trim().replace(/\s+/g, " ");
@@ -89,6 +108,7 @@ export function buildDigests(packages: Row[], elements: Row[], employees: Row[],
       part: clean(pkg.customer_part_no) || "-", ppap_no: clean(pkg.customer_ppap_no) || "-", package_no: clean(pkg.package_no),
       element: `${String(Number(e.element_no || 0)).padStart(2, "0")} ${clean(e.element_name)}`.trim(),
       due_date: due, days_overdue: Math.max(0, daysBetween(due, today)), status: STATUS_LABEL[status] || status,
+      package_id: String(pkg.id),
     };
     grouped.set(owner, [...(grouped.get(owner) || []), row]);
   }
@@ -112,6 +132,78 @@ export function buildDigests(packages: Row[], elements: Row[], employees: Row[],
   }
   digests.sort((a, b) => a.email.toLowerCase().localeCompare(b.email.toLowerCase()));
   return digests;
+}
+
+function partLabel(ctx: PartContext | null | undefined, fallback: string): string {
+  const part = ctx?.part || {};
+  const label = [clean(part.part_number), clean(part.part_name) ? `(${clean(part.part_name)})` : ""].filter(Boolean).join(" ");
+  return label || clean(ctx?.package?.customer_part_no) || fallback || "-";
+}
+
+/** PART DETAILS block of one package (internal e-mail: the customer name is allowed). */
+export function partDetailsHtml(packageNo: string, ctx: PartContext | null | undefined): string {
+  const part = ctx?.part || {}, pkg = ctx?.package || {};
+  const grade = clean(part.material_grade);
+  const pairs: Array<[string, string]> = [
+    ["PPAP Package No.", clean(pkg.package_no) || packageNo], ["Customer PPAP No.", clean(pkg.customer_ppap_no)],
+    ["Part Number", clean(part.part_number)], ["FSI Part Number", clean(part.fsi_part_number)], ["Part Name", clean(part.part_name)],
+    ["Customer", clean(ctx?.customer)], ["Customer Part No.", clean(pkg.customer_part_no)], ["Material Grade", grade],
+    ["Drawing No. / Rev.", [clean(part.drawing_number), clean(part.drawing_revision)].filter(Boolean).join(" / Rev. ")],
+    ["Customer Due Date", dmy(clean(pkg.customer_due_date))], ["Submission Level", pkg.submission_level ? `Level ${pkg.submission_level}` : ""],
+  ].filter(([, v]) => clean(v)) as Array<[string, string]>;
+  const td = "padding:5px 8px;border:1px solid #D3DCE1;font-size:12px;vertical-align:top";
+  return `<div style="font-size:14px;font-weight:700;color:#0F6E6E;margin:12px 0 6px 0">Part details · ${esc(clean(pkg.package_no) || packageNo)}</div>`
+    + `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-family:Arial,Helvetica,sans-serif">`
+    + pairs.map(([k, v]) => `<tr><td style="${td};background:#F3F7F7;font-weight:700;width:30%">${esc(k)}</td><td style="${td}">${esc(v)}</td></tr>`).join("")
+    + `</table>`;
+}
+export function partDetailsText(packageNo: string, ctx: PartContext | null | undefined): string {
+  const part = ctx?.part || {}, pkg = ctx?.package || {};
+  const lines = [`Part details · ${clean(pkg.package_no) || packageNo}`,
+    `  Part: ${partLabel(ctx, "-")}`, clean(part.fsi_part_number) ? `  FSI Part Number: ${clean(part.fsi_part_number)}` : "",
+    clean(ctx?.customer) ? `  Customer: ${clean(ctx?.customer)}` : "", clean(part.material_grade) ? `  Material Grade: ${clean(part.material_grade)}` : "",
+    clean(part.drawing_number) ? `  Drawing No. / Rev.: ${clean(part.drawing_number)}${clean(part.drawing_revision) ? " / Rev. " + clean(part.drawing_revision) : ""}` : "",
+    clean(pkg.customer_due_date) ? `  Customer Due Date: ${dmy(clean(pkg.customer_due_date))}` : ""];
+  return lines.filter(Boolean).join("\n");
+}
+
+/** object_path -> date (YYYY-MM-DD) of the files already attached to this person in a SENT PPAP e-mail since ``sinceIso``. */
+export async function recentAttachmentPaths(admin: any, tenantId: string, email: string, sinceIso: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  try {
+    const { data } = await admin.from("qcms_notification_outbox").select("recipient_email,attachment_manifest,sent_at,created_at")
+      .eq("tenant_id", tenantId).in("event_key", PPAP_MAIL_EVENTS).eq("status", "SENT").gte("created_at", `${sinceIso}T00:00:00Z`)
+      .order("created_at", { ascending: false }).limit(500);
+    for (const r of (data || []) as Row[]) {
+      if (clean(r.recipient_email).toLowerCase() !== email.toLowerCase()) continue;
+      const when = clean(r.sent_at || r.created_at).slice(0, 10);
+      for (const m of (Array.isArray(r.attachment_manifest) ? r.attachment_manifest : []) as Row[]) {
+        const path = clean(m?.object_path);
+        if (path && !m?.generated && !out.has(path)) out.set(path, when);
+      }
+    }
+  } catch (_e) { /* no history: attach as usual */ }
+  return out;
+}
+
+/** Pick attachments: drawings first, then specifications (context order), within 18 files / 10 MB; the rest are listed. */
+export function planAttachments(docs: Array<PartDoc & { package_no: string }>, maxFiles = MAX_MAIL_FILES, maxBytes = MAX_MAIL_BYTES,
+                                recentlySent: Map<string, string> = new Map()) {
+  const seen = new Set<string>();
+  const ordered = [...docs.filter((d) => d.kind === "drawing"), ...docs.filter((d) => d.kind !== "drawing")];
+  const attach: Array<PartDoc & { package_no: string }> = [], listed: Array<PartDoc & { package_no: string; reason: string }> = [];
+  let bytes = 0;
+  for (const d of ordered) {
+    const path = clean(d.object_path);
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    const size = Number(d.size_bytes || 0) > 0 ? Number(d.size_bytes) : 2 * 1024 * 1024;
+    if (d.in_storage === false) { listed.push({ ...d, reason: "File not found in storage - open it in QCMS" }); continue; }
+    if (recentlySent.has(path)) { listed.push({ ...d, reason: `Attached on ${dmy(recentlySent.get(path) || "")} - open it in QCMS` }); continue; }
+    if (attach.length < maxFiles && bytes + size <= maxBytes) { attach.push(d); bytes += size; }
+    else listed.push({ ...d, reason: "Not attached (e-mail size) - open it in QCMS" });
+  }
+  return { attach, listed, bytes };
 }
 
 Deno.serve(async (req: Request) => {
@@ -162,24 +254,80 @@ Deno.serve(async (req: Request) => {
         connectionTimeout: Number(settings.timeout_seconds || 20) * 1000, greetingTimeout: Number(settings.timeout_seconds || 20) * 1000, socketTimeout: Number(settings.timeout_seconds || 20) * 1000,
       });
       const company = await companyName(admin, tenantId, settings);
+      const contexts = new Map<string, PartContext | null>();
+      const fileCache = new Map<string, Buffer | null>();
+      const contextOf = async (packageId: string): Promise<PartContext | null> => {
+        if (!packageId) return null;
+        if (!contexts.has(packageId)) {
+          try {
+            const { data } = await admin.rpc("qcms_ppap_part_context", { p_package_id: packageId });
+            contexts.set(packageId, (data || null) as PartContext | null);
+          } catch (_e) { contexts.set(packageId, null); }
+        }
+        return contexts.get(packageId) || null;
+      };
+      const download = async (bucket: string, path: string): Promise<Buffer | null> => {
+        const key = `${bucket}/${path}`;
+        if (!fileCache.has(key)) {
+          try {
+            const { data: blob, error } = await admin.storage.from(bucket).download(path);
+            fileCache.set(key, error || !blob ? null : Buffer.from(await blob.arrayBuffer()));
+          } catch (_e) { fileCache.set(key, null); }
+        }
+        return fileCache.get(key) || null;
+      };
 
       for (const digest of digests) {
         const { data: exists } = await admin.from("qcms_notification_outbox").select("id").eq("tenant_id", tenantId).eq("dedupe_key", digest.dedupe_key).maybeSingle();
         if (exists?.id) { result.skipped_duplicates += 1; continue; }
-        const cells: Cell[][] = digest.rows.map((r, i) => [i + 1, r.part, r.ppap_no, r.package_no, r.element, r.due_date, r.days_overdue || null, r.days_overdue ? `Overdue · ${r.status}` : r.status]);
+        // R39: part details + current drawings / specifications of every package in this digest
+        const packageIds = Array.from(new Set(digest.rows.map((r) => String(r.package_id || "")).filter(Boolean)));
+        const partSections: string[] = [], partTexts: string[] = [];
+        const allDocs: Array<PartDoc & { package_no: string }> = [];
+        const labelByPackage = new Map<string, string>();
+        for (const packageId of packageIds) {
+          const ctx = await contextOf(packageId);
+          const packageNo = digest.rows.find((r) => r.package_id === packageId)?.package_no || "";
+          labelByPackage.set(packageId, partLabel(ctx, digest.rows.find((r) => r.package_id === packageId)?.part || ""));
+          if (!ctx) continue;
+          partSections.push(partDetailsHtml(packageNo, ctx));
+          partTexts.push(partDetailsText(packageNo, ctx));
+          for (const d of (Array.isArray(ctx.documents) ? ctx.documents : [])) allDocs.push({ ...d, package_no: clean(ctx.package?.package_no) || packageNo });
+        }
+        const recent = await recentAttachmentPaths(admin, tenantId, digest.email, addDays(today, -(ATTACH_REPEAT_DAYS - 1)));
+        const plan = planAttachments(allDocs, MAX_MAIL_FILES, MAX_MAIL_BYTES, recent);
+        const attachments: MailAttachment[] = [];
+        const manifest: Row[] = [];
+        const status = new Map<string, string>();
+        for (const d of plan.attach) {
+          const bucket = clean(d.bucket) || "quality-documents", path = clean(d.object_path);
+          const content = await download(bucket, path);
+          if (!content) { status.set(path, "Could not be downloaded - open it in QCMS"); continue; }
+          attachments.push({ filename: clean(d.file_name) || path.split("/").pop() || "document", content, contentType: clean(d.mime_type) || "application/octet-stream" });
+          manifest.push({ bucket, object_path: path, file_name: clean(d.file_name), mime_type: clean(d.mime_type) || "application/octet-stream", generated: false });
+          status.set(path, "Attached");
+        }
+        for (const d of plan.listed) status.set(clean(d.object_path), d.reason);
+        const docCells: Cell[][] = [...plan.attach, ...plan.listed].map((d) => [d.package_no, clean(d.category), clean(d.file_name), clean(d.drawing_number), clean(d.revision), status.get(clean(d.object_path)) || "-"]);
+        const cells: Cell[][] = digest.rows.map((r, i) => [i + 1, labelByPackage.get(String(r.package_id || "")) || r.part, r.ppap_no, r.package_no, r.element, r.due_date, r.days_overdue || null, r.days_overdue ? `Overdue · ${r.status}` : r.status]);
         const open = digest.rows.length - digest.overdue;
         const intro = [`Dear ${digest.name || "Colleague"},`, "",
           `The PPAP elements below are assigned to you and are due within ${daysAhead} day(s) or overdue.`,
           `Overdue: ${digest.overdue} · due soon: ${open} · report date ${dmy(today)}.`,
           digest.cc.length ? "Your reporting manager is copied because at least one element is overdue." : "",
-          "Please upload the documents and set the element status in QCMS → PPAP → Package."];
-        const html = emailShell({ title: "PPAP elements due / overdue", company, intro, sections: [htmlTable(HEADERS, cells, { caption: `PPAP elements · ${digest.rows.length} item(s)` })] });
-        const text = `${intro.join("\n")}\n\n${textTable(HEADERS, cells)}`;
+          "Please upload the documents and set the element status in QCMS → PPAP → Package.",
+          plan.attach.length + plan.listed.length ? `The part details and the current drawings / specifications are below; they are attached while the e-mail size allows (files already sent to you in the last ${ATTACH_REPEAT_DAYS} days are listed only).` : ""];
+        const sections = [htmlTable(HEADERS, cells, { caption: `PPAP elements · ${digest.rows.length} item(s)` }), ...partSections,
+          htmlTable(DOC_HEADERS, docCells, { caption: `Current drawings & specifications · ${attachments.length} attached` })];
+        const html = emailShell({ title: "PPAP elements due / overdue", company, intro, sections });
+        const text = `${intro.join("\n")}\n\n${textTable(HEADERS, cells)}\n\n${partTexts.join("\n\n")}\n\nCURRENT DRAWINGS & SPECIFICATIONS\n`
+          + (docCells.length ? textTable(DOC_HEADERS, docCells) : "No controlled drawing or specification is stored for these parts yet.");
         const { data: outbox, error: insertError } = await admin.from("qcms_notification_outbox").insert({
           tenant_id: tenantId, event_key: "PPAP_DOCUMENT_DUE_DIGEST", recipient_email: digest.email, recipient_name: digest.name || null,
           cc_emails: digest.cc, subject: digest.subject, body_text: text, body_html: html, template_key: "PPAP_DOCUMENT_DUE_DIGEST",
-          context: { schedule_key: SCHEDULE_KEY, report_date: today, days_ahead: daysAhead, record_count: digest.rows.length, overdue_count: digest.overdue, department: departmentLabel(digest.department) || "Quality", module_key: "PPAP" },
-          attachment_manifest: [], dedupe_key: digest.dedupe_key, is_automatic: true, scheduled_for: now.toISOString(), status: "PENDING",
+          context: { schedule_key: SCHEDULE_KEY, report_date: today, days_ahead: daysAhead, record_count: digest.rows.length, overdue_count: digest.overdue, department: departmentLabel(digest.department) || "Quality", module_key: "PPAP",
+            package_ids: packageIds, attached_count: attachments.length, listed_files: plan.listed.map((d) => clean(d.file_name)) },
+          attachment_manifest: manifest, dedupe_key: digest.dedupe_key, is_automatic: true, scheduled_for: now.toISOString(), status: "PENDING",
         }).select("id").single();
         if (insertError) {
           if (String(insertError.message || "").toLowerCase().includes("duplicate")) { result.skipped_duplicates += 1; continue; }
@@ -190,6 +338,7 @@ Deno.serve(async (req: Request) => {
           await transporter.sendMail({
             from: quoted(clean(settings.sender_name), settings.sender_email), to: quoted(digest.name, digest.email),
             cc: digest.cc.length ? digest.cc : undefined, replyTo: settings.reply_to || undefined, subject: digest.subject, text, html,
+            attachments: attachments.length ? attachments : undefined,
           });
           await admin.from("qcms_notification_outbox").update({ status: "SENT", sent_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq("id", outbox.id);
           result.sent += 1;

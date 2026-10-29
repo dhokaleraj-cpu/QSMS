@@ -50,6 +50,79 @@ final class SndMail {
         return (value == null ? "" : value).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "");
     }
 
+    // ------------------------------------------------------------------ R39 (web R38): department in e-mail subjects
+    /** notification_service.DEPARTMENT_LABELS (normalised key -> label). */
+    static final String[][] DEPARTMENT_LABELS = {
+        {"quality", "Quality"}, {"qa", "Quality"}, {"qc", "Quality"}, {"metlab", "MetLAB"}, {"lab", "MetLAB"},
+        {"supplychain", "Supply Chain"}, {"scm", "Supply Chain"}, {"purchase", "Purchase"}, {"procurement", "Purchase"},
+        {"stores", "Stores"}, {"store", "Stores"}, {"npd", "NPD"}, {"rd", "R & D"}, {"engineering", "Engineering"},
+        {"production", "Production"}, {"management", "Management"}, {"admin", "Admin"}, {"administration", "Admin"},
+        {"hr", "HR"}, {"accounts", "Accounts"}, {"marketing", "Marketing"}, {"businessdevelopment", "Business Development"},
+        {"maintenance", "Maintenance"}, {"dispatch", "Dispatch"}};
+    /** notification_service.EVENT_DEPARTMENTS (event / module key prefix -> department, first match wins). */
+    static final String[][] EVENT_DEPARTMENTS = {
+        {"RMTC", "Quality"}, {"METLAB", "MetLAB"}, {"LAB_", "MetLAB"}, {"DIMENSIONAL", "Quality"}, {"INSPECTION", "Quality"},
+        {"COMPLAINT", "Quality"}, {"CUSTOMER_COMPLAINT", "Quality"}, {"SUPPLIER_COMPLAINT", "Quality"}, {"CALIBRATION", "Quality"},
+        {"GAUGE", "Quality"}, {"PPAP", "Quality"}, {"AUDIT", "Quality"}, {"SETUP", "Quality"}, {"OSP_SAMPLE", "Quality"},
+        {"NPD", "NPD"}, {"APQP", "NPD"}, {"ECN", "NPD"}, {"PART_PROCESS", "NPD"},
+        {"INDIRECT", "Purchase"}, {"PURCHASE", "Purchase"}, {"PO_CONFIRMATION", "Purchase"},
+        {"PO_", "Supply Chain"}, {"RM_", "Supply Chain"}, {"FORGING", "Supply Chain"}, {"CUSTOMER_ORDER", "Supply Chain"},
+        {"SUPPLY", "Supply Chain"}, {"OSP", "Supply Chain"},
+        {"MATERIAL_INWARD", "Stores"}, {"INWARD", "Stores"}, {"STORE", "Stores"}, {"INVENTORY", "Stores"},
+        {"EMAIL_SERVER", "Admin"}, {"DELETE", "Admin"}, {"DELETION", "Admin"}, {"USER", "Admin"}, {"LICENCE", "Admin"}};
+    private static final Pattern QCMS_SUBJECT_PREFIX = Pattern.compile("^\\s*(?:STAWN\\s+)?QCMS\\s*(?:[·:|\\-–—]\\s*)", Pattern.CASE_INSENSITIVE);
+
+    private static String knownDepartment(String norm) {
+        for (String[] d : DEPARTMENT_LABELS) if (d[0].equals(norm)) return d[1];
+        return null;
+    }
+
+    /** notification_service.department_label: known label, "" for QCMS team / all / none, else the value (UPPER -> Title). */
+    static String departmentLabel(String value) {
+        String raw = (value == null ? "" : value).trim().replaceAll("\\s+", " ");
+        String norm = normDept(raw);
+        if (raw.isEmpty() || norm.equals("qcmsteam") || norm.equals("qcms") || norm.equals("all") || norm.equals("none")) return "";
+        String known = knownDepartment(norm);
+        if (known != null) return known;
+        if (raw.equals(raw.toUpperCase(Locale.ROOT)) && !raw.equals(raw.toLowerCase(Locale.ROOT)) && raw.length() > 3) {
+            StringBuilder b = new StringBuilder();
+            boolean start = true;
+            for (char c : raw.toCharArray()) {
+                b.append(start ? Character.toUpperCase(c) : Character.toLowerCase(c));
+                start = !Character.isLetter(c);
+            }
+            return b.toString();
+        }
+        return raw;
+    }
+
+    /** notification_service.event_department. */
+    static String eventDepartment(String eventKey) {
+        String key = (eventKey == null ? "" : eventKey).trim().toUpperCase(Locale.ROOT);
+        for (String[] d : EVENT_DEPARTMENTS) if (key.startsWith(d[0])) return d[1];
+        return "";
+    }
+
+    /**
+     * notification_service.department_subject: every notification subject starts with the related department - a leading
+     * "QCMS ·" is replaced by it, any other subject gets it in front (unless it already starts with a department label).
+     * No department known -> unchanged. Use it for every mail the app queues in qcms_notification_outbox for an event.
+     */
+    static String departmentSubject(String subject, String department, String eventKey) {
+        String text = subject == null ? "" : subject.trim();
+        String label = departmentLabel(department);
+        if (label.isEmpty()) label = eventDepartment(eventKey);
+        if (label.isEmpty() || text.isEmpty()) return text;
+        java.util.regex.Matcher m = QCMS_SUBJECT_PREFIX.matcher(text);
+        if (m.find()) return label + " · " + text.substring(m.end());
+        if (text.contains("·")) {
+            String head = text.split("·", 2)[0].trim();
+            if (knownDepartment(normDept(head)) != null) return text;
+            for (String[] d : DEPARTMENT_LABELS) if (d[1].equals(head)) return text;
+        }
+        return label + " · " + text;
+    }
+
     static String employeeName(JSONObject e) {
         String n = (SndData.s(e, "first_name") + " " + SndData.s(e, "last_name")).trim();
         return n.isEmpty() ? SndData.s(e, "employee_code") : n;

@@ -32,7 +32,10 @@ final class IncRmtcWorksheet extends Screen {
     private double inputWeight, currentPartInward, currentExistingRemaining, globalHeat, currentCommit, heatInward;
 
     private FormView plan, di;
-    private RowsEditor chem, jom, req;
+    private IncRmtcHGrid chem, jom;   // R39: horizontal grids (elements / distances are columns)
+    private RowsEditor req;
+    private LinkedHashMap<String, Boolean> sections;   // R39: sections applicable for this RMTC
+    private final List<JSONObject> naRequirements = new ArrayList<>();
     private TextView planNote, diNote;
     private Button save;
     private boolean planExceeds = false;
@@ -84,7 +87,8 @@ final class IncRmtcWorksheet extends Screen {
         JSONArray src = IncRmtcData.sourceDetails(api, partId);
         JSONObject hs = IncRmtcData.heatSummary(api, Lookups.j(h, "heat_number"));
         List<JSONObject> usage = IncRmtcData.heatUsage(api, Lookups.j(h, "heat_number"));
-        return new Object[]{h, cov, p, pa, pt, g, exChem, exJom, exReq, chemT, jomT, reqT, src, hs, usage};
+        LinkedHashMap<String, Boolean> secs = IncRmtcSections.load(api, rid, h);  // R39 (core.section_applicability.rmtc_sections)
+        return new Object[]{h, cov, p, pa, pt, g, exChem, exJom, exReq, chemT, jomT, reqT, src, hs, usage, secs};
     }
 
     private static Map<String, JSONObject> by(JSONArray rows, String key) {
@@ -92,6 +96,8 @@ final class IncRmtcWorksheet extends Screen {
         for (JSONObject r : IncCalc.list(rows)) m.put(Lookups.j(r, key), r);
         return m;
     }
+
+    static final String NA_REMARK = "Section not applicable for this RMTC";
 
     private static List<String[]> cols(String[][] c) { return new ArrayList<>(Arrays.asList(c)); }
 
@@ -112,7 +118,12 @@ final class IncRmtcWorksheet extends Screen {
         JSONArray src = (JSONArray) r[12];
         heatSummary = (JSONObject) r[13];
         List<JSONObject> usage = (List<JSONObject>) r[14];
+        sections = (LinkedHashMap<String, Boolean>) r[15];
         a.rebuildTitle(this);
+        // ---- R39: sections applicable (this RMTC) - unticked sections are hidden and saved NOT_APPLICABLE
+        add(IncRmtcSections.card(a, rid, sections, true, m -> a.replaceTop(new IncRmtcWorksheet(a, rid, partId))), 0);
+        final boolean chemOn = IncRmtcSections.on(sections, "chemistry"), jomOn = IncRmtcSections.on(sections, "jominy"),
+            diOn = IncRmtcSections.on(sections, "di_value");
 
         // ---- part selector
         if (covered.size() > 1) {
@@ -176,10 +187,12 @@ final class IncRmtcWorksheet extends Screen {
         updatePlan();
 
         // ---- C chemistry
-        add(Ui.label(a, "C · CHEMICAL COMPOSITION"), 14);
-        add(Ui.text(a, "Limits come from this Part Master material grade. Actual values are entered from the RMTC. Tap a row to enter the actual value.", 11.5f, Ui.MUTED, false), 2);
+        if (chemOn) {
+            add(Ui.label(a, "C · CHEMICAL COMPOSITION"), 14);
+            add(Ui.text(a, "Limits come from this Part Master material grade. Elements are columns: enter the Actual % from the RMTC; untick Applicable for an element that does not apply.", 11.5f, Ui.MUTED, false), 2);
+        }
         List<JSONObject> chemRows = new ArrayList<>();
-        for (JSONObject t : IncCalc.list(chemT)) {
+        for (JSONObject t : RptReports.orderedChem(IncCalc.list(chemT))) {
             JSONObject old = exChem.get(Lookups.j(t, "id"));
             JSONObject row = new JSONObject();
             try {
@@ -188,26 +201,32 @@ final class IncRmtcWorksheet extends Screen {
                 row.put("minimum_value", IncCalc.jo(t, "minimum"));
                 row.put("maximum_value", IncCalc.jo(t, "maximum"));
                 row.put("unit", IncCalc.firstText(Lookups.j(t, "unit"), "%"));
-                row.put("actual_value", old == null ? JSONObject.NULL : IncCalc.jo(old, "actual_value"));
-                row.put("applicable", old == null || !Rules.NOT_APPLICABLE.equals(Lookups.j(old, "result")));
+                row.put("actual_value", old == null || !chemOn ? JSONObject.NULL : IncCalc.jo(old, "actual_value"));
+                row.put("applicable", chemOn && (old == null || !Rules.NOT_APPLICABLE.equals(Lookups.j(old, "result"))));
+                if (!chemOn) row.put("remarks", NA_REMARK);
                 if (old != null) row.put("_existing_id", old.opt("id"));
             } catch (Exception ignored) { }
             chemRows.add(row);
         }
-        chem = new RowsEditor(a, "Chemistry", Arrays.asList(
-            Field.info("element", "Element"), Field.info("minimum_value", "Minimum %"), Field.info("maximum_value", "Maximum %"),
-            Field.number("actual_value", "Actual %"), Field.bool("applicable", "Applicable")),
-            cols(new String[][]{{"element", "Element"}, {"minimum_value", "Minimum %"}, {"maximum_value", "Maximum %"}, {"actual_value", "Actual %"},
-                {"applicable", "Applicable"}, {"result", "Status"}})).fixedRows();
+        chem = new IncRmtcHGrid(a).header(t -> RptReports.chemHead(t.opt("element")))
+            .line("Minimum %", "minimum_value", IncRmtcHGrid.INFO).line("Maximum %", "maximum_value", IncRmtcHGrid.INFO)
+            .line("Actual %", "actual_value", IncRmtcHGrid.NUMBER).line("Applicable", "applicable", IncRmtcHGrid.BOOL)
+            .line("Status", "result", IncRmtcHGrid.STATUS);
         chem.setRows(chemRows);
-        add(chem, 4);
-        if (chemRows.isEmpty()) add(Ui.text(a, "No chemistry limits exist for this material grade in Masters.", 12, Ui.AMBER_FG, false), 2);
+        if (chemOn) {
+            add(chem.view(), 4);
+            if (chemRows.isEmpty()) add(Ui.text(a, "No chemistry limits exist for this material grade in Masters.", 12, Ui.AMBER_FG, false), 2);
+        }
 
         // ---- D jominy
-        add(Ui.label(a, "D · JOMINY RESULTS"), 14);
-        add(Ui.text(a, "Actual Jominy, Actual Status, Calculated Jominy (JUST.xls formulas from the chemistry) and Calculated Status.", 11.5f, Ui.MUTED, false), 2);
+        if (jomOn) {
+            add(Ui.label(a, "D · JOMINY RESULTS"), 14);
+            add(Ui.text(a, "Distances are columns (J n/16\" with the Distance (mm) row, 1/16\" = 1.5875 mm). Rows: Min / Max HRC, Actual Jominy, Actual Status, Calculated Jominy (JUST.xls formulas from the chemistry), Calculated Status.", 11.5f, Ui.MUTED, false), 2);
+        }
         List<JSONObject> jomRows = new ArrayList<>();
-        for (JSONObject t : jomT) {
+        List<JSONObject> jomSorted = new ArrayList<>(jomT);
+        java.util.Collections.sort(jomSorted, (x, y) -> Integer.compare(ChemGrid.sixteenthOf(x) == 0 ? 999 : ChemGrid.sixteenthOf(x), ChemGrid.sixteenthOf(y) == 0 ? 999 : ChemGrid.sixteenthOf(y)));
+        for (JSONObject t : jomSorted) {
             JSONObject old = exJom.get(Lookups.j(t, "jominy_distance_id"));
             JSONObject row = new JSONObject();
             try {
@@ -217,45 +236,68 @@ final class IncRmtcWorksheet extends Screen {
                 row.put("distance_16th", t.optInt("distance_16th", 0));
                 row.put("minimum_hrc", IncCalc.jo(t, "minimum_hrc"));
                 row.put("maximum_hrc", IncCalc.jo(t, "maximum_hrc"));
-                row.put("actual_hrc", old == null ? JSONObject.NULL : IncCalc.jo(old, "actual_hrc"));
-                row.put("applicable", old == null || !"NOT_APPLICABLE".equals(IncCalc.firstText(Lookups.j(old, "applicability"), "APPLICABLE")));
+                row.put("actual_hrc", old == null || !jomOn ? JSONObject.NULL : IncCalc.jo(old, "actual_hrc"));
+                row.put("applicable", jomOn && (old == null || !"NOT_APPLICABLE".equals(IncCalc.firstText(Lookups.j(old, "applicability"), "APPLICABLE"))));
+                if (!jomOn) row.put("remarks", NA_REMARK);
+                int s16 = ChemGrid.sixteenthOf(t);
+                row.put("_mm", s16 > 0 ? RptReports.jominyMm(s16) : Lookups.j(t, "distance_mm"));
                 if (old != null) row.put("_existing_id", old.opt("id"));
             } catch (Exception ignored) { }
             jomRows.add(row);
         }
-        jom = new RowsEditor(a, "Jominy", Arrays.asList(
-            Field.info("distance_label", "Distance"), Field.info("distance_mm", "MM"), Field.info("minimum_hrc", "Min HRC"), Field.info("maximum_hrc", "Max HRC"),
-            Field.number("actual_hrc", "Actual Jominy (HRC)"), Field.bool("applicable", "Applicable")),
-            cols(new String[][]{{"distance_label", "Distance"}, {"distance_mm", "MM"}, {"minimum_hrc", "Min HRC"}, {"maximum_hrc", "Max HRC"},
-                {"actual_hrc", "Actual Jominy"}, {"result", "Actual Jominy Status"}, {"calculated_hrc", "Calculated Jominy"},
-                {"calculated_result", "Calculated Jominy Status"}, {"applicable", "Applicable"}})).fixedRows();
+        jom = new IncRmtcHGrid(a).header(t -> {
+                int s16 = ChemGrid.sixteenthOf(t);
+                return s16 > 0 ? "J" + s16 + "/16\"" : IncRmtcHGrid.dash(t.opt("distance_label"));
+            })
+            .line("Distance (mm)", "_mm", IncRmtcHGrid.INFO).line("Min HRC", "minimum_hrc", IncRmtcHGrid.INFO).line("Max HRC", "maximum_hrc", IncRmtcHGrid.INFO)
+            .line("Actual Jominy", "actual_hrc", IncRmtcHGrid.NUMBER).line("Actual Status", "result", IncRmtcHGrid.STATUS)
+            .line("Calculated Jominy", "calculated_hrc", IncRmtcHGrid.INFO).line("Calculated Status", "calculated_result", IncRmtcHGrid.STATUS)
+            .line("Applicable", "applicable", IncRmtcHGrid.BOOL);
         jom.setRows(jomRows);
-        add(jom, 4);
-        if (jomRows.isEmpty()) add(Ui.text(a, "No Jominy requirements exist for this Part in Part Master.", 12, Ui.MUTED, false), 2);
+        if (jomOn) {
+            add(jom.view(), 4);
+            if (jomRows.isEmpty()) add(Ui.text(a, "No Jominy requirements exist for this Part in Part Master.", 12, Ui.MUTED, false), 2);
+        }
 
         // ---- E DI
-        add(Ui.label(a, "E · DI VALUE"), 14);
-        add(Ui.text(a, "Actual and calculated DI use the supplied DI Hardenability workbook factor table.", 11.5f, Ui.MUTED, false), 2);
+        if (diOn) {
+            add(Ui.label(a, "E · DI VALUE"), 14);
+            add(Ui.text(a, "Actual and calculated DI use the supplied DI Hardenability workbook factor table.", 11.5f, Ui.MUTED, false), 2);
+        }
         di = new FormView(a, Arrays.asList(
             Field.select("grain_size", "Grain Size (ASTM E-112)", "4", "5", "6", "7", "8").req(),
             Field.bool("di_applicable", "DI Applicable"),
             Field.number("actual_di", "Actual DI").range(0, Double.MAX_VALUE)));
-        add(di, 4);
+        if (diOn) add(di, 4);
         int grain = (int) IncCalc.f(partApproval.opt("grain_size"));
         di.set("grain_size", String.valueOf(grain >= 4 && grain <= 8 ? grain : 6));
-        di.set("di_applicable", !"NOT_APPLICABLE".equals(Lookups.j(partApproval, "calculated_di_status")));
+        di.set("di_applicable", diOn && !"NOT_APPLICABLE".equals(Lookups.j(partApproval, "calculated_di_status")));
         di.set("actual_di", Ui.num(IncCalc.f(partApproval.opt("actual_di")), 4).replace(",", ""));
         diNote = Ui.text(a, "", 12.5f, Ui.TEXT, true);
-        add(diNote, 4);
+        if (diOn) add(diNote, 4);
         di.onChange((k, v) -> recalc());
 
         // ---- F requirements
         add(Ui.label(a, "F · HEAT TREATMENT & OTHER REQUIREMENTS"), 14);
         add(Ui.text(a, "Not Applicable is available and does not block Draft saving.", 11.5f, Ui.MUTED, false), 2);
         List<JSONObject> reqRows = new ArrayList<>();
+        naRequirements.clear();
         for (JSONObject t : IncCalc.list(reqT)) {
             JSONObject old = exReq.get(Lookups.j(t, "id"));
             JSONObject row = new JSONObject();
+            if (!IncRmtcSections.requirementApplicable(t.opt("parameter_name"), sections)) {  // R39: na_requirement_rows
+                try {
+                    row.put("source_requirement_id", t.opt("id"));
+                    row.put("requirement_name", IncCalc.jo(t, "parameter_name"));
+                    row.put("requirement_value", IncCalc.jo(t, "requirement_value"));
+                    row.put("actual_value", old == null ? "" : Lookups.j(old, "actual_value"));
+                    row.put("applicable", false);
+                    row.put("result", Rules.NOT_APPLICABLE);
+                    row.put("sequence_no", IncCalc.jo(t, "sequence_no"));
+                } catch (Exception ignored) { }
+                naRequirements.add(row);
+                continue;
+            }
             try {
                 row.put("source_requirement_id", t.opt("id"));
                 row.put("requirement_name", IncCalc.jo(t, "parameter_name"));
@@ -273,6 +315,7 @@ final class IncRmtcWorksheet extends Screen {
                 {"actual_value", "RMTC Actual / Observation"}, {"applicable", "Applicable"}, {"result", "Status"}})).fixedRows();
         req.setRows(reqRows);
         add(req, 4);
+        if (!naRequirements.isEmpty()) add(Ui.text(a, naRequirements.size() + " requirement row(s) are NOT APPLICABLE for this RMTC (Sections Applicable) - hidden and saved as Not Applicable.", 11.5f, Ui.MUTED, false), 2);
 
         chem.onChanged(this::recalc);
         jom.onChanged(this::recalc);
@@ -375,6 +418,7 @@ final class IncRmtcWorksheet extends Screen {
         final List<JSONObject> chemRows = new ArrayList<>(chem.rows());
         final List<JSONObject> jomRows = new ArrayList<>(jom.rows());
         final List<JSONObject> reqRows = new ArrayList<>(req.rows());
+        reqRows.addAll(naRequirements);  // R39: hidden (not applicable) requirement rows are saved NOT_APPLICABLE
         final double weightIn = inputWeight;
         saving = true;
         save.setEnabled(false);
@@ -401,7 +445,7 @@ final class IncRmtcWorksheet extends Screen {
                 o.put("actual_value", IncCalc.jo(row, "actual_value"));
                 o.put("unit", IncCalc.firstText(Lookups.j(row, "unit"), "%"));
                 o.put("result", IncCalc.firstText(Lookups.j(row, "result"), Rules.NOT_EVALUATED));
-                o.put("remarks", JSONObject.NULL);
+                o.put("remarks", Lookups.j(row, "remarks").isEmpty() ? JSONObject.NULL : row.opt("remarks"));
                 chemPayload.put(o);
             }
             normaliseIds(chemPayload);
@@ -424,7 +468,7 @@ final class IncRmtcWorksheet extends Screen {
                 o.put("calculated_hrc", IncCalc.jn(calc));
                 o.put("calculated_result", IncCalc.band(calc, row.opt("minimum_hrc"), row.opt("maximum_hrc"), app));
                 o.put("applicability", app ? "APPLICABLE" : "NOT_APPLICABLE");
-                o.put("remarks", JSONObject.NULL);
+                o.put("remarks", Lookups.j(row, "remarks").isEmpty() ? JSONObject.NULL : row.opt("remarks"));
                 jomPayload.put(o);
             }
             normaliseIds(jomPayload);

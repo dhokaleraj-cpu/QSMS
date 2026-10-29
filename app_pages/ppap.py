@@ -25,7 +25,7 @@ from core.db_errors import db_message, missing_fields_message
 from core.ppap_service import (
     CREATE_FROM_APQP_KEY, DEPARTMENTS, ELEMENT_STATUS_LABELS, MODULE_KEY, OPEN_REQUEST_KEY, PACKAGE_STATUSES, PSW_STATUSES,
     ROUTE_HOME, ROUTE_PACKAGE, ROUTE_TEMPLATES, STATUS_COLORS, SUBMISSION_LEVELS, UI_ELEMENT_STATUSES,
-    PpapService, by_responsible, default_department, dmy, element_folder, element_state, foreign_party_recipients,
+    PpapService, assignment_mail_message, by_responsible, default_department, dmy, element_folder, element_state, foreign_party_recipients,
     match_part, package_cover_xlsx, package_index_pdf, package_progress, parse_date, parse_tracker, party_emails,
     portfolio_kpis, safe_name, split_emails, status_from_label, status_label, submission_method, template_sort_key,
     tracker_workbook_bytes,
@@ -39,10 +39,34 @@ NOT_SET = "— Not assigned —"
 STATE_LABELS = {"completed": "Completed", "na": "NA", "overdue": "Overdue", "due_soon": "Due ≤ 3 days", "submitted": "Submitted",
                 "rejected": "Rejected", "open": "Pending / In progress", "not_planned": "No due date"}
 STATUS_OPTIONS = [ELEMENT_STATUS_LABELS[c] for c in UI_ELEMENT_STATUSES]
+MAIL_FLASH_KEY = "ppap_assignment_mail_flash"   # R39: assignment e-mail outcome shown after the save rerun
 PREVIEW_TYPES = {"pdf": "pdf", "png": "image", "jpg": "image", "jpeg": "image", "gif": "image", "bmp": "image", "webp": "image"}
 
 
 # ----------------------------------------------------------------------------- helpers
+def send_assignment_mail(service: PpapService, package_id: Any, element_ids: Any = None, *, resend: bool = False) -> dict:
+    """R39: queue + send the assignment e-mail (part details, drawings, specifications) to the responsible person(s);
+    the outcome is kept in the session and shown on the package page after the rerun. Never raises / never blocks saving."""
+    try:
+        result = service.send_assignment_mail(str(package_id), element_ids, resend=resend)
+    except Exception as exc:   # defensive: the service itself never raises
+        result = {"queued": 0, "sent": 0, "failed": 0, "error": str(exc)}
+    try:
+        st.session_state[MAIL_FLASH_KEY] = {"package_id": str(package_id), "result": dict(result)}
+    except Exception:
+        pass
+    return result
+
+
+def _show_assignment_mail_flash(package_id: str) -> None:
+    flash = st.session_state.get(MAIL_FLASH_KEY)
+    if not isinstance(flash, Mapping) or str(flash.get("package_id")) != str(package_id):
+        return
+    st.session_state.pop(MAIL_FLASH_KEY, None)
+    level, text = assignment_mail_message(flash.get("result"))
+    {"success": st.success, "warning": st.warning}.get(level, st.info)(text, icon=":material/mail:")
+
+
 def ppap_permissions(profile: Mapping[str, Any] | None = None) -> dict[str, bool]:
     """Module PPAP rights; without an explicit PPAP permission row the NPD & APQP rights apply (mirrors qcms_ppap_can)."""
     profile = profile if profile is not None else (st.session_state.get("profile") or {})
@@ -512,6 +536,8 @@ def _render_package(repo: Repository, service: PpapService, perms: Mapping[str, 
                         saved = service.create_package(payload, default_due=default_due if isinstance(default_due, date) else None,
                                                        responsible_employee_id=default_resp or None)
                         message = f"PPAP package {saved.get('package_no')} created with the element list from the PPAP template."
+                        if saved.get("id"):
+                            send_assignment_mail(service, saved["id"])   # R39: e-mail the responsible person(s) right away
                     st.session_state.pop(CREATE_FROM_APQP_KEY, None)
                     st.session_state[OPEN_REQUEST_KEY] = str(saved.get("id") or (existing or {}).get("id") or "")
                     save_success_popup(message, queue_for_rerun=True)
@@ -545,6 +571,16 @@ def _render_package(repo: Repository, service: PpapService, perms: Mapping[str, 
         st.session_state["apqp_project_edit_request_id"] = str(apqp["id"])
         _switch_to("apqp")
 
+    _show_assignment_mail_flash(package_id)
+    m1, m2 = st.columns([3, 1.4], gap="small", vertical_alignment="center")
+    m1.caption("Responsible persons get an e-mail with the part details, current drawings and specifications when elements are "
+               "assigned to them (and a daily reminder for elements due within 3 days or overdue).")
+    if m2.button("Send assignment e-mail again", icon=":material/forward_to_inbox:", key=f"ppap_assign_mail_{package_id}",
+                 disabled=not (perms.get("can_edit") or perms.get("can_create")), width="stretch"):
+        with st.spinner("Sending the assignment e-mail…"):
+            send_assignment_mail(service, package_id, None, resend=True)
+        st.session_state[OPEN_REQUEST_KEY] = package_id
+        st.rerun()
     _render_elements(service, perms, today, existing, package_elements, docs_by_element, employee_labels)
     _render_documents(service, perms, existing, package_elements, docs_by_element)
     _render_notes(service, perms, today, package_id)
@@ -619,6 +655,8 @@ def _render_elements(service: PpapService, perms: Mapping[str, bool], today: dat
                                  "remarks": r.get("Remarks") if isinstance(r.get("Remarks"), str) else ""})
                 assigned = service.save_elements(package_id, rows)
                 notified = service.notify_assignments(existing, assigned)
+                if service.last_mail_element_ids:   # R39: only the newly assigned / re-dated elements' responsible persons
+                    send_assignment_mail(service, package_id, list(service.last_mail_element_ids))
                 save_success_popup(f"PPAP elements saved. {notified} responsible employee notification(s) sent." if assigned else "PPAP elements saved.", queue_for_rerun=True)
                 st.session_state[OPEN_REQUEST_KEY] = package_id
                 st.rerun()
@@ -637,6 +675,8 @@ def _render_elements(service: PpapService, perms: Mapping[str, bool], today: dat
                 assigned = service.bulk_assign(package_id, chosen, responsible_employee_id=bulk_resp or None,
                                                due_date=bulk_due if isinstance(bulk_due, date) else None, status=bulk_status or None)
                 service.notify_assignments(existing, assigned)
+                if service.last_mail_element_ids:   # R39
+                    send_assignment_mail(service, package_id, list(service.last_mail_element_ids))
                 save_success_popup(f"{len(chosen)} element(s) updated.", queue_for_rerun=True)
                 st.session_state[OPEN_REQUEST_KEY] = package_id
                 st.rerun()

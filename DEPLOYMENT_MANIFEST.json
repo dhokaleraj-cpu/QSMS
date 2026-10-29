@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R38",
+  "release_revision": "R39b",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -666,5 +666,24 @@
     "ecn_pcn_on_drawing_replacement_fsi_806_f05",
     "osp_material_out_and_challan_merged",
     "edge_function_auto_deploy_from_updater"
+  ],
+  "r39_changes": [
+    "android_3_7_0_web_parity_120_of_123_routes_native",
+    "android_developer_console_licences_companies_login_cover_purge",
+    "android_licence_company_branding_employee_photo_escalation",
+    "android_osp_single_material_out_challan_register_queues",
+    "android_indirect_purchase_po_amendment_approved_po_download",
+    "android_ppap_document_manager_send_to_customer",
+    "ppap_assignment_email_part_details_drawings_specs_on_create_and_reassign",
+    "ppap_reminders_with_part_details_weekly_reattach",
+    "rmtc_qr_download_png_jpeg_pdf_label_web_and_android",
+    "android_rmtc_sections_horizontal_chem_jominy_quality_qr_email",
+    "android_part_processes_ecn_register_sections",
+    "android_module_kpis_dashboards_inventory_reports_exact_record_open",
+    "android_department_first_email_subjects"
+  ],
+  "r39b_changes": [
+    "test_java_qr_matrix_skips_macos_java_launcher_stub_without_jdk",
+    "updater_banner_text"
   ]
 }

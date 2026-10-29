@@ -20,6 +20,7 @@
     "supabase/migrations/20261028130000_qcms_r38_part_process_ecn.sql",
     "supabase/migrations/20261028100000_qcms_r38_rmtc_qr_chem.sql",
     "supabase/migrations/20261028140000_qcms_r38_misc.sql",
-    "supabase/migrations/20261028120000_qcms_r38_ppap.sql"
+    "supabase/migrations/20261028120000_qcms_r38_ppap.sql",
+    "supabase/migrations/20261029100000_qcms_r39_ppap_mail.sql"
   ]
 }

@@ -90,41 +90,29 @@ public final class MstPartPriceScreen extends MstPartGrid {
         return d == null ? JSONObject.NULL : d;
     }
 
+    /**
+     * R39 (web R37b core/price_history_service.py): rows are saved BY ROW ID through PriceHistoryPlan - the whole grid is
+     * validated first (no partial save), the previous open period is closed automatically and writes are ordered so the
+     * database non-overlap guard always passes (editing a Start Date / UOM no longer inserts an overlapping period).
+     */
     @Override
     protected String store(List<JSONObject> rows) throws Exception {
-        List<JSONObject> sorted = new ArrayList<>(rows);
-        sorted.sort((x, y) -> {        // sort_values("Start Date", na_position="last")
-            String a1 = day(x.opt("start_date")), b1 = day(y.opt("start_date"));
-            if (a1.isEmpty() && b1.isEmpty()) return 0;
-            if (a1.isEmpty()) return 1;
-            if (b1.isEmpty()) return -1;
-            return a1.compareTo(b1);
-        });
-        List<JSONObject> payloads = new ArrayList<>();
-        for (JSONObject row : sorted) {
-            String start = day(row.opt("start_date")), end = day(row.opt("end_date"));
-            Double price = MstSave.dbl(row.opt("price"));
-            if (start.isEmpty() && price == null) continue;
-            if (start.isEmpty()) throw new Api.ApiException(422, "Start Date is required for every price-history row.");
-            if (!end.isEmpty() && end.compareTo(start) < 0) throw new Api.ApiException(422, "Price History End Date cannot be earlier than Start Date.");
+        List<JSONObject> edited = new ArrayList<>();
+        for (JSONObject row : rows) {
             JSONObject p = new JSONObject();
-            p.put("supplier_id", supplierId);
-            p.put("raw_material_detail_id", rawId);
-            p.put("start_date", start);
-            p.put("end_date", end.isEmpty() ? JSONObject.NULL : end);
-            p.put("price", price == null ? 0.0 : price);
-            p.put("freight", money(row, "freight"));
-            p.put("tool_cost", money(row, "tool_cost"));
-            p.put("packing_forwarding", money(row, "packing_forwarding"));
-            p.put("profit", money(row, "profit"));
-            p.put("icc_rejection", money(row, "icc_rejection"));
+            p.put("id", Lookups.j(row, "id"));
+            p.put("start_date", day(row.opt("start_date")));
+            p.put("end_date", day(row.opt("end_date")));
+            p.put("price", money(row, "price"));
+            for (String k : new String[]{"freight", "tool_cost", "packing_forwarding", "profit", "icc_rejection"}) p.put(k, money(row, k));
             p.put("currency", Lookups.j(row, "currency").isEmpty() ? "INR" : Lookups.j(row, "currency"));
             p.put("uom", Lookups.j(row, "uom").isEmpty() ? "KGS" : Lookups.j(row, "uom"));
-            p.put("remarks", MstSave.orNull(Lookups.j(row, "remarks")));
+            p.put("remarks", Lookups.j(row, "remarks"));
             p.put("status", Lookups.j(row, "status").isEmpty() ? "ACTIVE" : Lookups.j(row, "status"));
-            payloads.add(p);
+            edited.add(p);
         }
-        MstSave.saveRows(api, "part_supplier_price_history", partId, payloads, "part_id", "supplier_id", "raw_material_detail_id", "uom", "start_date");
-        return "Supplier / FSI Part price history saved successfully.";
+        PriceHistoryPlan plan = PriceHistoryPlan.save(api, partId, supplierId, rawId, edited);
+        String closed = plan.autoClosed.isEmpty() ? "" : " Previous period closed automatically: " + String.join("; ", plan.autoClosed) + ".";
+        return plan.changed() == 0 ? "No price-history change to save." : "Supplier / FSI Part price history saved successfully (" + plan.changed() + " row(s))." + closed;
     }
 }

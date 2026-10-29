@@ -12,6 +12,13 @@ import java.util.Map;
 public final class Catalog {
     public static final int HOME = 0, SUPPLY = 1, QUALITY = 2, MASTERS = 3, MORE = 4;
     public static final String[] TAB_NAMES = {"Home", "Supply", "Quality", "Masters", "More"};
+    /** R39: module shown only to STAWN developers (qcms_licence_status.is_stawn_developer). */
+    public static final String DEVELOPER_CONSOLE = "stawn_developer";
+
+    /** R39: developer-only modules are listed only for the STAWN developer login. */
+    static boolean listed(Module m) {
+        return !DEVELOPER_CONSOLE.equals(m.key) || LicService.isDeveloper();
+    }
 
     private static List<Module> modules;
 
@@ -26,6 +33,7 @@ public final class Catalog {
             CatCalib.register(list);       // Quality tab: assets, calibration, standard room, complaints
             CatMasters.register(list);     // Masters tab
             CatMore.register(list);        // More tab: NPD / APQP, QC tools, reports, records
+            CatPpap.register(list);        // R39: PPAP Document Manager (More · NPD / APQP) + ECN / PCN register (Masters · Parts)
             CatGeneral.register(list);     // More tab: search, KPI dashboards, reports, traceability, account
             CatEmail.register(list);       // More tab: email send / sent / groups
             CatAdmin.register(list);       // More tab: administration
@@ -49,7 +57,7 @@ public final class Catalog {
     public static Map<String, List<Module>> sections(int tab) {
         Map<String, List<Module>> out = new LinkedHashMap<>();
         for (Module m : all()) {
-            if (m.tab != tab) continue;
+            if (m.tab != tab || !listed(m)) continue;
             List<Module> list = out.get(m.section);
             if (list == null) { list = new ArrayList<>(); out.put(m.section, list); }
             list.add(m);

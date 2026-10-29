@@ -64,6 +64,8 @@ MAX_EMAIL_BYTES = 10 * 1024 * 1024      # above this the customer gets a secure 
 MAX_EMAIL_FILES = 18                    # qcms-send-email attaches at most 20 files (index PDF + documents)
 SIGNED_LINK_SECONDS = 7 * 24 * 3600     # secure link validity (7 days)
 BUCKET = "quality-documents"
+ASSIGNMENT_RPC = "qcms_ppap_assignment_mail"            # R39: server-side assignment e-mail (web + Android call the same RPC)
+SEND_EMAIL_FUNCTION = "qcms-send-email"                # dispatcher: {"outbox_ids": [...]} sends attachment_manifest storage files
 OPEN_REQUEST_KEY = "ppap_package_open_request_id"      # Records Centre / Global Search / APQP page -> open a package
 CREATE_FROM_APQP_KEY = "ppap_create_from_apqp_id"     # APQP page -> prefill a new package from an APQP project
 
@@ -83,6 +85,37 @@ _STATUS_ALIASES = {
     "REJECTED": "REJECTED", "REJECT": "REJECTED", "NOT OK": "REJECTED", "NG": "REJECTED",
     "NOT STARTED": "NOT_STARTED", "NOT_STARTED": "NOT_STARTED", "": "NOT_STARTED",
 }
+
+
+# ----------------------------------------------------------------------------- R39 assignment e-mail helpers
+def assignment_mail_message(result: Mapping[str, Any] | None) -> tuple[str, str]:
+    """(level, text) for the outcome of ``PpapService.send_assignment_mail``; level is success / info / warning."""
+    result = dict(result or {})
+    queued, sent, failed = int(result.get("queued") or 0), int(result.get("sent") or 0), int(result.get("failed") or 0)
+    if result.get("error") and not queued:
+        return "warning", f"Assignment e-mail was not sent: {result['error']}"
+    if not queued:
+        return "info", ("No assignment e-mail was needed: no open element with a responsible person who has an e-mail address "
+                        "(or the same e-mail was already sent today).")
+    if failed or result.get("error"):
+        detail = f" ({result.get('error')})" if result.get("error") else ""
+        return "warning", (f"Assignment e-mail: {sent} sent, {failed} failed of {queued}{detail}. "
+                           "Check Settings → E-mail server; failed mails stay in the outbox for a retry.")
+    if sent >= queued:
+        return "success", f"Assignment e-mail sent to {sent} responsible person(s) with the part details, drawings and specifications."
+    return "info", f"Assignment e-mail queued for {queued} responsible person(s); {sent} sent so far."
+
+
+def needs_assignment_mail(before: Mapping[str, Any] | None, after: Mapping[str, Any]) -> bool:
+    """True when the element needs an assignment e-mail: a responsible person was newly set / changed, or the due date
+    changed while a responsible person is assigned (open elements only)."""
+    before = dict(before or {})
+    responsible = str(after.get("responsible_employee_id") or "")
+    if not responsible or normalize_status(after.get("status")) in CLOSED_STATUSES:
+        return False
+    if responsible != str(before.get("responsible_employee_id") or ""):
+        return True
+    return (iso(after.get("due_date")) or None) != (iso(before.get("due_date")) or None)
 
 
 # ----------------------------------------------------------------------------- small helpers
@@ -859,6 +892,7 @@ class PpapService:
             from core.repository import Repository
             repo = Repository()
         self.repo = repo
+        self.last_mail_element_ids: list[str] = []
 
     # ------------------------------------------------------------- reads
     def element_master(self, *, active_only: bool = False) -> list[dict]:
@@ -1042,6 +1076,7 @@ class PpapService:
         """Save edited element rows; returns [{element, employee_id}] for newly assigned responsible employees."""
         current = {str(e["id"]): e for e in self.elements(package_id)}
         assigned: list[dict] = []
+        self.last_mail_element_ids = []   # R39: elements whose responsible person / due date changed -> assignment e-mail
         for row in rows:
             element_id = str(row.get("id") or "")
             status = status_from_label(row.get("status") or "NOT_STARTED")
@@ -1067,11 +1102,15 @@ class PpapService:
                     saved = self.repo.update("ppap_package_elements", element_id, changes)
                     if changes.get("responsible_employee_id"):
                         assigned.append({"element": {**before, **saved}, "employee_id": changes["responsible_employee_id"]})
+                    if needs_assignment_mail(before, {**before, **(saved or {}), **changes}):
+                        self.last_mail_element_ids.append(element_id)
             elif row.get("element_no") not in (None, ""):
                 saved = self.repo.insert("ppap_package_elements", {"package_id": str(package_id), "element_no": int(float(row["element_no"])),
                                                                    "element_name": str(row.get("element_name") or f"Element {row['element_no']}"), **payload})
                 if payload.get("responsible_employee_id"):
                     assigned.append({"element": saved, "employee_id": payload["responsible_employee_id"]})
+                    if saved and saved.get("id") and needs_assignment_mail(None, {**payload, **saved}):
+                        self.last_mail_element_ids.append(str(saved["id"]))
         self.refresh_progress(package_id)
         return assigned
 
@@ -1108,6 +1147,47 @@ class PpapService:
             except Exception:
                 continue
         return sent
+
+    def send_assignment_mail(self, package_id: str, element_ids: Sequence[str] | None = None, *, resend: bool = False,
+                             app_url: str | None = None, dispatcher: Any = None) -> dict[str, Any]:
+        """R39: e-mail each responsible person of the package (or only of ``element_ids``) their open elements with the
+        part details and the current drawings / specifications (server RPC ``qcms_ppap_assignment_mail`` queues one
+        outbox row per person, then ``qcms-send-email`` sends it with the storage files attached). Never raises:
+        returns {"queued", "sent", "failed", "outbox_ids", "error"} so saving a package is never blocked by e-mail."""
+        result: dict[str, Any] = {"queued": 0, "sent": 0, "failed": 0, "outbox_ids": [], "error": ""}
+        ids = [str(x) for x in (element_ids or []) if x]
+        if element_ids is not None and not ids:
+            return result
+        if app_url is None:
+            try:
+                from core.rmtc_qr import app_base_url
+                app_url = app_base_url(self.repo)
+            except Exception:
+                app_url = None
+        try:
+            outbox = self.repo.rpc(ASSIGNMENT_RPC, {"p_package_id": str(package_id), "p_element_ids": ids or None,
+                                                    "p_resend": bool(resend), "p_app_url": app_url or None})
+        except Exception as exc:
+            result["error"] = str(exc)[:300]
+            return result
+        if isinstance(outbox, str):
+            outbox = [x for x in outbox.strip("{}").split(",") if x]
+        result["outbox_ids"] = [str(x) for x in (outbox or []) if x]
+        result["queued"] = len(result["outbox_ids"])
+        if not result["outbox_ids"]:
+            return result
+        try:
+            if dispatcher is None:
+                from core.notification_service import NotificationService
+                dispatcher = NotificationService._invoke
+            data = dispatcher(result["outbox_ids"]) or {}
+            result["sent"] = int(data.get("sent") or 0)
+            result["failed"] = int(data.get("failed") or 0)
+            if data.get("error"):
+                result["error"] = str(data.get("error"))[:300]
+        except Exception as exc:
+            result["error"] = str(exc)[:300]
+        return result
 
     def add_note(self, package_id: str, note: str, *, note_date: date | None = None, author: str = "", source: str = "MANUAL") -> dict:
         text = str(note or "").strip()

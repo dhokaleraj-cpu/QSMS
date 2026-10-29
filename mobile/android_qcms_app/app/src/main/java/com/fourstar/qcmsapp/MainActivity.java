@@ -52,6 +52,9 @@ public class MainActivity extends Activity {
     private WebScreen activeWeb;
     private TextView brandView;
     private TextView bellBadge;
+    /** R39: licensed company logo + user avatar (Employee Master photo) on the right of the top bar. */
+    private android.widget.ImageView companyLogoView, avatarPhoto;
+    private TextView avatarText;
     private boolean foreground = false;
     /** R35: screen to open once the shell is shown (e.g. "notifications" from a system notification). */
     private String pendingOpen;
@@ -164,8 +167,22 @@ public class MainActivity extends Activity {
         root.setPadding(p, Ui.dp(this, 48), p, p);
         scroll.addView(root);
 
+        // R39: login cover photo set by the STAWN developer (public bucket qcms-public/login/cover.*), like the website login
+        android.widget.ImageView cover = new android.widget.ImageView(this);
+        cover.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        cover.setBackground(Ui.round(Color.parseColor("#E6F2F2"), 0, 0, 16, this));
+        cover.setClipToOutline(true);
+        cover.setContentDescription("Login cover photo");
+        android.graphics.Bitmap known = LicBrand.cachedCover();
+        if (known != null) cover.setImageBitmap(known); else cover.setVisibility(View.GONE);
+        root.addView(cover, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 170)));
+        Api.async(() -> LicBrand.loginCover(this), (bmp, err) -> {
+            if (bmp != null) { cover.setImageBitmap(bmp); cover.setVisibility(View.VISIBLE); } else cover.setVisibility(View.GONE);
+        });
+
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(this, 72), Ui.dp(this, 72));
         lp.gravity = Gravity.CENTER_HORIZONTAL;
+        lp.topMargin = Ui.dp(this, 16);
         root.addView(logo(), lp);
         TextView name = Ui.text(this, "STAWN QCMS", 22, Ui.TEAL_DARK, true);
         name.setGravity(Gravity.CENTER);
@@ -244,7 +261,8 @@ public class MainActivity extends Activity {
             bio.setOnClickListener(v -> unlockWithBiometric());
         }
 
-        TextView foot = Ui.text(this, "v" + BuildConfig.VERSION_NAME + " · Secure Supabase login · locks after 15 min in background", 11, Ui.MUTED, false);
+        // R39 (website R38 rule): the app version is shown only in User details (My Account) and on the About page
+        TextView foot = Ui.text(this, "Secure Supabase login · locks after 15 min in background", 11, Ui.MUTED, false);
         foot.setGravity(Gravity.CENTER);
         foot.setPadding(0, Ui.dp(this, 28), 0, 0);
         root.addView(foot);
@@ -336,6 +354,7 @@ public class MainActivity extends Activity {
     void signOut() {
         Notif.cancelAll(this);
         Licence.status = null;
+        LicBrand.clear(this);
         api.signOut();
         showLogin(null);
     }
@@ -442,19 +461,43 @@ public class MainActivity extends Activity {
         titles.addView(titleView);
         titles.addView(subtitleView);
         top.addView(titles, Ui.weight(1));
+        // R39 (website R38 header): licensed company logo on the right, before the user (tap = Licence & Company)
+        companyLogoView = new android.widget.ImageView(this);
+        companyLogoView.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        companyLogoView.setBackground(Ui.round(Color.WHITE, 0, 0, 8, this));
+        companyLogoView.setPadding(Ui.dp(this, 2), Ui.dp(this, 2), Ui.dp(this, 2), Ui.dp(this, 2));
+        companyLogoView.setContentDescription("Company logo");
+        companyLogoView.setVisibility(View.GONE);
+        companyLogoView.setOnClickListener(v -> { if (!(stack.peek() instanceof LicCompanyScreen)) push(new LicCompanyScreen(this)); });
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 32));
+        clp.gravity = Gravity.CENTER_VERTICAL;
+        clp.leftMargin = Ui.dp(this, 4);
+        top.addView(companyLogoView, clp);
         // R37: "+" quick actions (New transaction · New e-mail · New query / AI)
         Button plus = barButton("+");
         plus.setTextSize(28);
         plus.setContentDescription("Quick actions: new transaction, e-mail, query");
         plus.setOnClickListener(v -> KpiDetails.quickActions(this));
-        top.addView(plus, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 48)));
-        top.addView(bell(), new LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 48)));
-        Button export = barButton("⇩");
-        export.setOnClickListener(v -> exportCurrent());
-        top.addView(export, new LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 48)));
-        Button refresh = barButton("↻");
-        refresh.setOnClickListener(v -> { Screen s = stack.peek(); if (s != null) s.reload(); });
-        top.addView(refresh, new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)));
+        top.addView(plus, new LinearLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 48)));
+        top.addView(bell(), new LinearLayout.LayoutParams(Ui.dp(this, 42), Ui.dp(this, 48)));
+        // R39: user avatar (Employee Master photo, initials otherwise) - tap = User details / My Account (app version shown there)
+        FrameLayout avatar = new FrameLayout(this);
+        avatar.setBackground(Ui.round(Color.parseColor("#0E4F52"), Color.WHITE, 1, 17, this));
+        avatar.setClipToOutline(true);
+        avatarText = Ui.text(this, LicBrand.initials(api), 12, Color.WHITE, true);
+        avatarText.setGravity(Gravity.CENTER);
+        avatar.addView(avatarText, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        avatarPhoto = new android.widget.ImageView(this);
+        avatarPhoto.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        avatarPhoto.setVisibility(View.GONE);
+        avatar.addView(avatarPhoto, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        avatar.setContentDescription("User details");
+        avatar.setOnClickListener(v -> { if (!(stack.peek() instanceof GenAccountScreen)) openModule("my_account"); });
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(Ui.dp(this, 34), Ui.dp(this, 34));
+        alp.gravity = Gravity.CENTER_VERTICAL;
+        alp.leftMargin = Ui.dp(this, 2);
+        alp.rightMargin = Ui.dp(this, 4);
+        top.addView(avatar, alp);
         root.addView(top, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         // R33: global search at the top of every screen
@@ -490,6 +533,15 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 42));
         glp.leftMargin = Ui.dp(this, 6);
         searchRow.addView(go, glp);
+        // R39: export / refresh moved next to the search box so the top bar has room for the company logo and the avatar
+        Button export = barButton("⇩");
+        export.setContentDescription("Download / print / e-mail this screen");
+        export.setOnClickListener(v -> exportCurrent());
+        searchRow.addView(export, new LinearLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 42)));
+        Button refresh = barButton("↻");
+        refresh.setContentDescription("Refresh");
+        refresh.setOnClickListener(v -> { Screen s = stack.peek(); if (s != null) s.reload(); });
+        searchRow.addView(refresh, new LinearLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 42)));
         root.addView(searchRow, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         content = new FrameLayout(this);
@@ -523,7 +575,23 @@ public class MainActivity extends Activity {
         refreshBell();
         askNotificationPermission();
         checkLicence(false);
+        refreshBrand();
         if (pendingOpen != null) openPending();
+    }
+
+    /** R39: load the company logo and the user's employee photo into the top bar (cached; LicBrand.refresh forces a reload). */
+    void refreshBrand() {
+        if (companyLogoView == null || avatarPhoto == null) return;
+        android.graphics.Bitmap l = LicBrand.cachedLogo(api), p = LicBrand.cachedAvatar(api);
+        if (l != null) { companyLogoView.setImageBitmap(l); companyLogoView.setVisibility(View.VISIBLE); }
+        if (p != null) { avatarPhoto.setImageBitmap(p); avatarPhoto.setVisibility(View.VISIBLE); }
+        if (avatarText != null) avatarText.setText(LicBrand.initials(api));
+        final android.widget.ImageView logoView = companyLogoView, photoView = avatarPhoto;
+        Api.async(() -> new android.graphics.Bitmap[]{LicBrand.companyLogo(this, api), LicBrand.userPhoto(this, api)}, (res, err) -> {
+            if (res == null) return;
+            if (res[0] != null) { logoView.setImageBitmap(res[0]); logoView.setVisibility(View.VISIBLE); } else logoView.setVisibility(View.GONE);
+            if (res[1] != null) { photoView.setImageBitmap(res[1]); photoView.setVisibility(View.VISIBLE); } else photoView.setVisibility(View.GONE);
+        });
     }
 
     private Button backButton;

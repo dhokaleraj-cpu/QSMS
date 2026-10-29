@@ -99,6 +99,10 @@ public final class PoDetailScreen extends Screen implements ExportKit.RecordPrin
         card.addView(Ui.pair(a, "Incoterm · Ship via", h.optString("incoterm") + " · " + h.optString("ship_via")));
         if (!h.isNull("quotation_reference")) card.addView(Ui.pair(a, "Quotation", h.optString("quotation_reference") + " · " + Ui.date(h.optString("quotation_date"))));
         if (!h.isNull("approved_at")) card.addView(Ui.pair(a, "Approved", Ui.date(h.optString("approved_at"))));
+        if (h.optDouble("amendment_no", 0) > 0) {   // R39 (web R37b): Amendment No. · Amendment Date · Effective Date
+            card.addView(Ui.pair(a, "Amendment", SupSvc.poDisplayNumber(h) + " · " + Ui.date(h.optString("amendment_date")) + " · effective " + Ui.date(h.optString("amendment_effective_date"))));
+            if (!h.isNull("amendment_reason")) card.addView(Ui.pair(a, "Amendment reason", h.optString("amendment_reason")));
+        }
         if (cancelled) card.addView(Ui.pair(a, "Cancel reason", h.optString("cancellation_reason")));
         add(card, 2);
 
@@ -165,6 +169,11 @@ public final class PoDetailScreen extends Screen implements ExportKit.RecordPrin
         web.setOnClickListener(v -> SndPdfView.forPo(a, id));
         add(web, 10);
         if (!cancelled) {
+            // R39 (web R37b): controlled amendment - PO number stays, Amendment No. + Effective Date, price history, back to approval
+            int amd = (int) Math.round(h.optDouble("amendment_no", 0));
+            Button amend = Ui.outline(a, "Amend PO · next = Amendment " + (amd + 1) + " (price / qty from an Effective Date)", Ui.TEAL_DARK);
+            amend.setOnClickListener(v -> a.push(new SupPoAmendScreen(a, id)));
+            add(amend, 10);
             Button cancel = Ui.outline(a, "Cancel PO (reason required)", Ui.ORANGE);
             cancel.setOnClickListener(v -> a.askText("Cancel " + number, "Reason for cancellation", "Cancel PO", true, reason -> cancel(reason)));
             add(cancel, 10);
@@ -254,6 +263,34 @@ public final class PoDetailScreen extends Screen implements ExportKit.RecordPrin
             }
             a.toast(send ? "Approved. Check the email preview and send." : "Purchase Order approved.");
             done.run();
+            autoDownloadApproved(a, id);   // R38: approved PO copy downloads + opens right after approval
+        });
+    }
+
+    /**
+     * R39 (web R38 _po_approved_auto_download): right after approval the supplier-safe copy of the approved PO
+     * (no customer source reference) is saved to Downloads as "<PO>[_AmdN].pdf" and opened in the PDF viewer.
+     */
+    static void autoDownloadApproved(MainActivity a, String id) {
+        Api api = Api.get(a);
+        Api.async(() -> {
+            SndData.Po po = SndData.load(api, id);
+            if (!po.approved()) return null;
+            byte[] pdf = SndPoPdf.build(SndData.supplierSafe(po), null);
+            String name = SndData.downloadFileName(po.header);
+            return new Object[]{name, SndFiles.saveToDownloads(a, name, pdf, ExportKit.PDF), pdf};
+        }, (r, err) -> {
+            if (err != null) { a.toast("The approved PO copy could not be generated for download: " + Api.message(err)); return; }
+            if (r == null) return;
+            String name = (String) r[0];
+            SndFiles.Saved saved = (SndFiles.Saved) r[1];
+            if (saved != null && saved.uri != null) {
+                a.toast("Purchase Order approved - " + name + " saved to Downloads.");
+                SndFiles.open(a, saved.uri, ExportKit.PDF);
+            } else {
+                a.toast("Purchase Order approved - " + name + (saved == null ? "" : " saved: " + saved.where));
+                SndPdfView.show(a, "Approved PO", name, (byte[]) r[2]);
+            }
         });
     }
 

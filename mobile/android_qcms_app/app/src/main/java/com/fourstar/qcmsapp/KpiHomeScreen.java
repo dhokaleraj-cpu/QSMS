@@ -332,6 +332,11 @@ final class KpiHomeScreen extends Screen {
     private static final Map<String, Long> MODULE_AT = new HashMap<>();
 
     private void moduleCards(String dept, LinearLayout holder) {
+        // R39: module infographic groups (qcms_module_kpis); the qcms_module_cards strip is the fallback
+        KpiModules.fillDepartment(a, holder, dept, this::pauseAuto, () -> moduleCardsLegacy(dept, holder));
+    }
+
+    private void moduleCardsLegacy(String dept, LinearLayout holder) {
         JSONArray cached = MODULE_CACHE.get(dept);
         Long at = MODULE_AT.get(dept);
         if (cached != null) fillModules(holder, cached, dept);

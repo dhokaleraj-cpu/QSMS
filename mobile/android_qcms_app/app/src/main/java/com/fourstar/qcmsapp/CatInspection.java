@@ -89,10 +89,13 @@ public final class CatInspection {
 
         // ---------------------------------------------------------------- OSP material out
         list.add(new Module("osp_material_out", "OSP Material Out", Catalog.QUALITY, OSP, "osp_material_outs")
-            .desc("Multi-heat dispatch documents to approved OSP vendors")
+            .desc("Material Out = Returnable Delivery Challan (one form) · record: Details · Print · Vendor returns")
             .titleField("material_out_number").status("")
             .col("material_out_number", "Material Out").col("created_at", "Created")
-            .editor((a, id, prefill) -> new InspOspOutScreen(a, id))
+            // R39: new = one Material Out + challan form; Edit = "Correct challan details" (Material Out + challan together)
+            .editor((a, id, prefill) -> id == null ? new InspOspOutScreen(a, null) : new OspChallanEdit(a, id, null))
+            // R39 (web R38 section B): register = one row per Material Out with its challan number, balances and challan state
+            .custom(OspMoRegister::new)
             .readOnly()
             .action("Delete Material Out document", "", InspOsp::deleteMaterialOut)
             .child("Heat lines (OSP jobs)", "osp_jobs", "material_out_id", "material_out_line_no.asc", new String[][]{
@@ -111,6 +114,7 @@ public final class CatInspection {
             .col("production_available_quantity", "Production Qty Available").col("status", "Status")
             .statuses("AT_VENDOR", "COMPLETED", "REJECTED", "CANCELLED")
             .noEdit().readOnly()
+            .action("Material Out / Challan record (Details · Print · Vendor returns)", "", OspRecordScreen::open)
             .action("Sample Receipt", "status!=REJECTED|CANCELLED", InspOsp::sampleReceipt)
             .action("Sample Dimensional inspection", "sample_received_date!=EMPTY", (a, row, refresh) -> InspOsp.openInspection(a, row, "DIMENSIONAL", "OSP_SAMPLE"))
             .action("Sample MetLAB inspection", "sample_received_date!=EMPTY", (a, row, refresh) -> InspOsp.openInspection(a, row, "METLAB", "OSP_SAMPLE"))
@@ -128,6 +132,11 @@ public final class CatInspection {
                 {"report_number", "Report"}, {"inspection_scope", "Stage"}, {"inspection_date", "Date"}, {"disposition", "Decision"}, {"status", "Status"}})
             .child("OSP MetLAB reports", "lab_tests", "osp_job_id", "updated_at.desc", new String[][]{
                 {"report_number", "Report"}, {"inspection_scope", "Stage"}, {"test_date", "Date"}, {"disposition", "Decision"}, {"status", "Status"}}));
+
+        // ---------------------------------------------------------------- R39: OSP inspection queues (web osp_inspections · R37 fixes)
+        list.add(new Module("osp_inspection_queues", "OSP Inspection Queues", Catalog.QUALITY, OSP, "v_qsms_osp_register")
+            .desc("Sample / Receipt × Dimensional / MetLAB · pending and released-without-report batches")
+            .custom(OspQueueScreen::new).readOnly().noEdit());
 
         // ---------------------------------------------------------------- OSP receipts (read-only register)
         list.add(new Module("osp_receipts", "OSP Inward Receipts", Catalog.QUALITY, OSP, "osp_receipts")

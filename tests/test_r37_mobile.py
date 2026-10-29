@@ -20,7 +20,7 @@ def balanced(src: str) -> bool:
 # ------------------------------------------------------------------ versions
 def test_versions():
     gradle = read(AND / "app/build.gradle")
-    assert "versionCode 360" in gradle and "versionName '3.6.0'" in gradle
+    assert "versionCode 370" in gradle and "versionName '3.7.0'" in gradle
     mp = read(IOS / "make_project.py")
     assert 'else "1.3.0"' in mp and 'else "4"' in mp
     assert 'VERSION="1.3.0"' in read(IOS / "BUILD_STAWN_QCMS_iOS.command")
@@ -41,7 +41,8 @@ def test_android_kpi_records_drilldown():
     for col in ("source_table", "record_id", "reference", "part", "party", "status", "record_date", "detail"):
         assert f'"{col}"' in k, col
     # row opens the record natively (record screen / module / web fallback through Notif.open)
-    assert "Notif.open(a, table, id, route, title)" in k
+    # R39: via GenTarget.open (detail row -> parent record, then Notif.open)
+    assert "Notif.open(a, table, id, route, title)" in k or "GenTarget.open(a, table, id, route, title)" in k
     # RPC missing / failing -> fall back to the module
     assert "opening the module" in k and "a.back();" in k
     home = read(JAVA / "KpiHomeScreen.java")
@@ -68,7 +69,8 @@ def test_android_plus_quick_actions():
 
 def test_android_print_pdf_everywhere():
     k = read(JAVA / "KpiDetails.java")
-    assert "static void printRecord(" in k and "RptReports.forRecord(api, module, id)" in k and "Catalog.adhoc(table)" in k
+    # R39: printRecord resolves detail rows to their parent first (GenTarget.resolve), then prints that record
+    assert "static void printRecord(" in k and ("RptReports.forRecord(api, module, id)" in k or "RptReports.forRecord(api, printModule(" in k) and "Catalog.adhoc(table)" in k
     search = read(JAVA / "GenSearchScreen.java")
     assert ".onLongRow(" in search and "KpiDetails.printRecord(a, r.table, id, r.route)" in search
     sheet = read(JAVA / "SheetView.java")

@@ -49,6 +49,9 @@ public final class CatSupply {
             .child("Forging PO stages", "supply_forging_orders", "purchase_order_id", "created_at.asc", new String[][]{{"customer_order_id", "Customer Order"}, {"order_qty_pcs", "Qty pcs"}, {"heat_number", "Heat"}, {"status", "Status"}})
             .action("Preview / approve / cancel", "", (a, row, refresh) -> a.push(new PoDetailScreen(a, Lookups.j(row, "id"))))
             .action("Supplier confirmation", "approval_status=APPROVED;status!=CANCELLED", (a, row, refresh) -> a.push(new SupConfirmScreen(a, Lookups.j(row, "id"))))
+            // R39 (web R37b): controlled amendment - Amendment No. / Date / Effective Date, latest price, price history, back to approval
+            .action("Amend PO (price / qty from an Effective Date)", "status!=CANCELLED", (a, row, refresh) -> a.push(new SupPoAmendScreen(a, Lookups.j(row, "id"))))
+            .child("Amendments", "supply_po_amendments", "purchase_order_id", "amendment_no.asc", new String[][]{{"amendment_no", "Amd No."}, {"amendment_date", "Amendment Date"}, {"effective_date", "Effective Date"}, {"reason", "Reason"}, {"status", "Status"}})
             .editor((a, id, prefill) -> id == null ? new SupPoScreen(a, prefill) : new SupPoEditScreen(a, id)));
 
         // 4. Supplier PO confirmations
@@ -126,6 +129,44 @@ public final class CatSupply {
             .col("part_number", "Part").col("heat_number", "Heat").col("heat_code", "Heat Code").col("quantity", "Qty").col("source_name", "Source")
             .col("process_name", "Process").col("result", "Result").col("status", "Status")
             .readOnly().noEdit());
+
+        // R39 · Indirect Purchase (web app_pages/indirect_purchase.py, module key INDIRECT_PURCHASE) - separate from Direct POs
+        registerIndirect(list, T);
+    }
+
+    static final String INDIRECT = "Indirect Purchase";
+
+    static void registerIndirect(List<Module> list, int T) {
+        list.add(new Module("indirect_purchase_orders", "Indirect Purchase Orders", T, INDIRECT, "indirect_purchase_orders")
+            .desc("IPO series · approval route · print PDF · e-mail to supplier · cancel")
+            .titleField("po_number").custom(IndScreens.PoList::new)
+            .editor((a, id, prefill) -> id == null ? new IndScreens.PoEdit(a, null, null) : new IndScreens.PoView(a, id)).readOnly().noEdit());
+        list.add(new Module("indirect_po_approval", "Indirect PO Approval", T, INDIRECT, "indirect_purchase_orders")
+            .desc("Pending approval worklist · approve / reject with remarks").custom(IndScreens.Approvals::new).readOnly().noEdit());
+        list.add(new Module("indirect_requisitions", "Purchase Requisitions", T, INDIRECT, "indirect_purchase_requisitions")
+            .desc("New requisition · approve / reject · convert to Indirect PO").titleField("pr_number").custom(IndScreens.Requisitions::new)
+            .editor((a, id, prefill) -> new IndScreens.PrEdit(a)).readOnly().noEdit());
+        list.add(new Module("indirect_grns", "Indirect Inward (GRN)", T, INDIRECT, "indirect_grns")
+            .desc("Goods receipt notes against Indirect PO / petty cash · print · approve GRN without PO")
+            .titleField("grn_number").status("status")
+            .col("grn_number", "GRN No.").col("grn_date", "GRN Date").col("grn_type", "Type").col("supplier_name", "Supplier").col("supplier_invoice_no", "Invoice")
+            .col("challan_no", "Challan").col("department", "Department").col("grand_total", "Grand Total", "money").col("approval_status", "Approval").col("status", "Status")
+            .child("GRN lines", "indirect_grn_items", "grn_id", "line_no.asc", new String[][]{{"line_no", "#"}, {"item_name", "Item"}, {"uom", "UOM"}, {"received_qty", "Received"},
+                {"accepted_qty", "Accepted"}, {"rejected_qty", "Rejected"}, {"rejection_reason", "Reject Reason"}})
+            .action("GRN PDF · View · Download · Print · Share", "", IndScreens::grnPdf)
+            .action("Approve GRN (without PO)", "approval_status=PENDING_APPROVAL", (a, row, refresh) -> IndScreens.grnDecide(a, row, refresh, true))
+            .action("Reject GRN (without PO)", "approval_status=PENDING_APPROVAL", (a, row, refresh) -> IndScreens.grnDecide(a, row, refresh, false))
+            .readOnly().noEdit());
+        list.add(new Module("indirect_items", "Indirect Item Master", T, INDIRECT, "indirect_items")
+            .desc("Indirect items, categories, UOM, GST %, HSN and last price").titleField("item_code").order("item_code.asc")
+            .col("item_code", "Item Code").col("item_name", "Item").col("category", "Category").col("uom", "UOM").col("gst_percent", "GST %").col("hsn_sac", "HSN/SAC")
+            .col("last_price", "Last Price").col("status", "Status").statuses("ACTIVE", "INACTIVE").readOnly().noEdit());
+        list.add(new Module("indirect_stock", "Indirect Stock Ledger", T, INDIRECT, "indirect_stock_ledger")
+            .desc("Receipts (GRN), issues, returns, opening and adjustments with the running balance").order("txn_date.desc")
+            .titleField("reference_no").col("txn_date", "Date").col("item_id", "Item").col("txn_type", "Type")
+            .col("qty_in", "In").col("qty_out", "Out").col("balance_after", "Balance").col("reference_no", "Reference")
+            .col("department", "Department").col("storage_location", "Location").col("remarks", "Remarks")
+            .search("reference_no", "department", "remarks").readOnly().noEdit());
     }
 
     static JSONObject none() { return null; }

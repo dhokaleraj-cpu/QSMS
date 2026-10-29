@@ -15,6 +15,9 @@ public final class MstPartJominyScreen extends MstPartGrid {
     static final Field.Lookup DISTANCES = new Field.Lookup("jominy_distances", "id,distance_label,distance_16th", "&status=eq.ACTIVE", "distance_16th.asc",
         r -> Lookups.j(r, "distance_label") + " · " + Ui.num(r.optDouble("distance_16th", 0) * 25.4 / 16, 2) + " mm");
 
+    private JSONArray distances = new JSONArray();
+    private android.widget.LinearLayout hbox;
+
     public MstPartJominyScreen(MainActivity a, JSONObject part) { super(a, part); }
 
     @Override protected String heading() { return "Jominy requirements"; }
@@ -24,6 +27,7 @@ public final class MstPartJominyScreen extends MstPartGrid {
     @Override
     protected List<JSONObject> load() throws Exception {
         JSONArray distances = Lookups.rows(api, DISTANCES);
+        this.distances = distances;
         List<JSONObject> rows = list(api.rows("part_jominy_requirements?select=*&part_id=eq." + Api.enc(partId) + "&order=sequence_no.asc&limit=100"));
         for (JSONObject r : rows) {
             if (Lookups.j(r, "jominy_distance_id").isEmpty()) {
@@ -50,6 +54,39 @@ public final class MstPartJominyScreen extends MstPartGrid {
     @Override
     protected List<String[]> columns() {
         return cols("jominy_distance_id", "Distance (inch) · MM", "minimum_hrc", "Minimum HRC", "maximum_hrc", "Maximum HRC", "status", "Status");
+    }
+
+    /** R39: horizontal Jominy view (distances are columns; J n/16" header + Distance (mm) row, n x 1.5875 mm). */
+    @Override
+    protected void addExtra(android.widget.LinearLayout box) {
+        box.addView(Ui.label(a, "Horizontal view · Jominy band (inch / mm)"));
+        hbox = Ui.vbox(a);
+        box.addView(hbox, Ui.matchWrap(a, 4));
+        editor.onChanged(this::horizontal);
+        horizontal();
+    }
+
+    private void horizontal() {
+        if (hbox == null) return;
+        hbox.removeAllViews();
+        List<JSONObject> rows = new ArrayList<>();
+        for (JSONObject r : editor.rows()) {
+            if (!Lookups.j(r, "status").isEmpty() && !"ACTIVE".equals(Lookups.j(r, "status"))) continue;
+            try {
+                JSONObject c = new JSONObject(r.toString());
+                for (int i = 0; i < distances.length(); i++) {
+                    JSONObject d = distances.optJSONObject(i);
+                    if (d != null && Lookups.j(d, "id").equals(Lookups.j(r, "jominy_distance_id"))) {
+                        c.put("distance_16th", d.opt("distance_16th"));
+                        c.put("distance_label", d.opt("distance_label"));
+                    }
+                }
+                rows.add(c);
+            } catch (Exception ignored) { }
+        }
+        if (rows.isEmpty()) { hbox.addView(Ui.text(a, "No Jominy requirement rows.", 12, Ui.MUTED, false)); return; }
+        List<String[]> t = RptReports.jominyHorizontal(rows, new String[][]{{"Min HRC", "minimum_hrc"}, {"Max HRC", "maximum_hrc"}});
+        hbox.addView(new DataGrid(a, ChemGrid.headers(t), ChemGrid.data(t), 220, null));
     }
 
     @Override

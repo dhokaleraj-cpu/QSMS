@@ -423,6 +423,30 @@ public final class Api {
         try { raw("DELETE", "/storage/v1/object/" + BUCKET + "/" + encPath(path), null, null, null); } catch (Exception ignored) { }
     }
 
+    // R39 (Licence & Company / STAWN Developer Console): tables keyed by tenant_id and the public bucket qcms-public
+    /** PATCH rows matching a PostgREST filter (e.g. "tenant_id=eq.x"); returns the JSON array body. */
+    public String patchWhere(String table, String filter, JSONObject values) throws Exception {
+        return authed("PATCH", "/rest/v1/" + table + "?" + filter, values.toString(), "return=representation").body;
+    }
+
+    /** INSERT one row exactly as given (no id / tenant_id added - for tables keyed by tenant_id). */
+    public String insertRaw(String table, JSONObject values) throws Exception {
+        return authed("POST", "/rest/v1/" + table, values.toString(), "return=representation").body;
+    }
+
+    /** Upload to another storage bucket (e.g. qcms-public, developer-only write). */
+    public void uploadTo(String bucket, String path, byte[] data, String mime, boolean upsert, String cacheControl) throws Exception {
+        java.util.Map<String, String> h = new java.util.HashMap<>();
+        h.put("x-upsert", upsert ? "true" : "false");
+        h.put("cache-control", cacheControl == null ? "3600" : cacheControl);
+        raw("POST", "/storage/v1/object/" + bucket + "/" + encPath(path), data, mime, h);
+    }
+
+    /** Remove one object from a bucket; false when it was not there / not allowed. */
+    public boolean removeFrom(String bucket, String path) {
+        try { raw("DELETE", "/storage/v1/object/" + bucket + "/" + encPath(path), null, null, null); return true; } catch (Exception e) { return false; }
+    }
+
     public String signedUrl(String path, int seconds) throws Exception {
         byte[] body = new JSONObject().put("expiresIn", seconds).toString().getBytes(StandardCharsets.UTF_8);
         JSONObject r = new JSONObject(new String(raw("POST", "/storage/v1/object/sign/" + BUCKET + "/" + encPath(path), body, "application/json", null), StandardCharsets.UTF_8));

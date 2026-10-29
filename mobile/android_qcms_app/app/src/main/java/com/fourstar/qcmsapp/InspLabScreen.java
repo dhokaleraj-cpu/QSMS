@@ -230,7 +230,7 @@ final class InspLabScreen extends Screen {
             if (job == null) { contextProblem = "The OSP job could not be loaded."; return; }
             partId = InspUtil.j(job, "part_id");
             part = InspUtil.get(api, "parts", partId);
-            planOptions = InspUtil.plans(api, "METLAB", partId, true, InspUtil.j(job, "process_id"), null, "OSP_PROCESS");
+            planOptions = InspOsp.ospPlans(api, "METLAB", job);   // R39: web R35/R37 layout fallback (name match / only OSP layout)
             if (planOptions.isEmpty()) { contextProblem = "No Approved OSP MetLAB layout matches Part " + InspUtil.j(job, "part_number") + " and Process " + InspUtil.j(job, "process_name") + "."; return; }
             String want = !saved.isEmpty() ? saved : manualPlanId;
             plan = !want.isEmpty() && byId(planOptions, want) != null ? byId(planOptions, want) : planOptions.get(0);

@@ -33,10 +33,21 @@ final class GenAccountScreen extends Screen {
         newPage();
         add(Ui.label(a, "A · Login account"), 0);
         LinearLayout info = Ui.card(a);
+        // R39 (website R38 User details): Employee Master photo, company and the app version (shown only here and on About)
+        android.widget.ImageView photo = new android.widget.ImageView(a);
+        photo.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        photo.setBackground(Ui.round(Ui.BG, Ui.LINE, 1, 32, a));
+        photo.setClipToOutline(true);
+        photo.setVisibility(View.GONE);
+        info.addView(photo, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        Api.async(() -> LicBrand.userPhoto(a, api), (bmp, err) -> { if (bmp != null) { photo.setImageBitmap(bmp); photo.setVisibility(View.VISIBLE); } });
         info.addView(Ui.pair(a, "Name", api.fullName));
         info.addView(Ui.pair(a, "Email / Username", api.email));
         info.addView(Ui.pair(a, "QCMS Role", roleLabel(api.role)));
         if (!api.employeeLabel.isEmpty()) info.addView(Ui.pair(a, "Employee", api.employeeLabel));
+        String company = Licence.company(api);
+        if (!company.isEmpty()) info.addView(Ui.pair(a, "Company", company));
+        info.addView(Ui.pair(a, "App version", "Android app v" + BuildConfig.VERSION_NAME + " · Website v" + RptPdf.WEB_VERSION));
         add(info, 2);
 
         add(Ui.label(a, "B · Change login password"), 14);

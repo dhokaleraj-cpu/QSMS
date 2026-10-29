@@ -24,6 +24,8 @@ final class IncRmtcDecide extends Screen {
     private final List<FormView> forms = new ArrayList<>();
     private FormView approverForm;
     private Button save;
+    private List<JSONObject> chemistry = new ArrayList<>(), jominy = new ArrayList<>();
+    private java.util.LinkedHashMap<String, Boolean> sections;
 
     IncRmtcDecide(MainActivity a, String rmtcId) { super(a); this.rid = rmtcId; }
 
@@ -43,7 +45,11 @@ final class IncRmtcDecide extends Screen {
             for (JSONObject c : cov) ids.add(Lookups.j(c, "part_id"));
             IncRmtcData.addMissingParts(api, p, ids);
             Lookups.rows(api, IncCalc.employeeLookup("RMTC_APPROVE"));
-            return new Object[]{r, cov, p};
+            // R39: entered chemistry / Jominy for the horizontal review grids + sections applicable
+            List<JSONObject> ch = IncCalc.list(api.rows("rmtc_chemistry_results?select=*&rmtc_approval_id=eq." + Api.enc(rid) + "&limit=500"));
+            List<JSONObject> jo = IncCalc.list(api.rows("rmtc_jominy_results?select=*&rmtc_approval_id=eq." + Api.enc(rid) + "&limit=500"));
+            java.util.LinkedHashMap<String, Boolean> sec = IncRmtcSections.load(api, rid, r);
+            return new Object[]{r, cov, p, ch, jo, sec};
         }, (res, err) -> {
             page.removeAllViews();
             if (err != null) { page.addView(error(err, this::reload)); return; }
@@ -51,6 +57,10 @@ final class IncRmtcDecide extends Screen {
             @SuppressWarnings("unchecked") List<JSONObject> c = (List<JSONObject>) res[1];
             @SuppressWarnings("unchecked") Map<String, JSONObject> p = (Map<String, JSONObject>) res[2];
             covered = c; parts = p;
+            @SuppressWarnings("unchecked") List<JSONObject> ch = (List<JSONObject>) res[3];
+            @SuppressWarnings("unchecked") List<JSONObject> jo = (List<JSONObject>) res[4];
+            @SuppressWarnings("unchecked") java.util.LinkedHashMap<String, Boolean> sec = (java.util.LinkedHashMap<String, Boolean>) res[5];
+            chemistry = ch; jominy = jo; sections = sec;
             a.rebuildTitle(this);
             render();
         });
@@ -64,6 +74,7 @@ final class IncRmtcDecide extends Screen {
         head.addView(Ui.pair(a, "Final Disposition", Ui.pretty(IncCalc.firstText(Lookups.j(record, "disposition"), "PENDING"))));
         head.addView(Ui.pair(a, "Covered Parts", String.valueOf(covered.size())));
         add(head, 0);
+        reviewGrids();
         boolean open = "APPROVAL_PENDING".equals(Lookups.j(record, "status"));
         if (!open) add(Ui.text(a, "Decisions can be saved only while the RMTC is Approval Pending (current: " + Ui.pretty(Lookups.j(record, "status")) + ").", 12.5f, Ui.AMBER_FG, false), 8);
         add(Ui.text(a, "Reason is mandatory for On Hold, Accepted Under Reserve and Rejected, and for Accepted when the automated recommendation is not Approved.", 11.5f, Ui.MUTED, false), 8);
@@ -124,7 +135,38 @@ final class IncRmtcDecide extends Screen {
                 if (err != null) { a.toast(Api.message(err)); return; }
                 String d = res instanceof JSONObject ? Lookups.j((JSONObject) res, "disposition") : "";
                 a.toast("RMTC decision saved" + (d.isEmpty() ? "." : " as " + Ui.pretty(d) + "."));
+                // R39: same as the website (_run_qr_hook): approved -> QR label PNG attachment + Quality-department e-mail
+                Api.async(() -> IncQrLabel.approved(IncRmtcData.rmtc(api, rid)) ? IncQrLabel.onApproved(api, rid, true) : null, (qr, qerr) -> {
+                    if (qr != null) a.toast(IncQrLabel.summary(qr));
+                });
                 a.back();
             });
+    }
+
+    /** R39 · rmtc_pages._render_approval_grids: entered chemistry / Jominy per Part as HORIZONTAL grids; not-applicable sections hidden. */
+    private void reviewGrids() {
+        boolean showChem = IncRmtcSections.on(sections, "chemistry"), showJom = IncRmtcSections.on(sections, "jominy");
+        List<String> off = IncRmtcSections.notApplicableLabels(sections);
+        if (!off.isEmpty()) add(Ui.text(a, "Sections not applicable for this RMTC: " + String.join(", ", off), 12, Ui.AMBER_FG, false), 6);
+        boolean any = false;
+        for (JSONObject c : covered) {
+            String pid = Lookups.j(c, "part_id");
+            List<JSONObject> ch = new ArrayList<>(), jo = new ArrayList<>();
+            if (showChem) for (JSONObject r : chemistry) if (pid.equals(Lookups.j(r, "part_id")) && !"NOT_APPLICABLE".equalsIgnoreCase(Lookups.j(r, "result"))) ch.add(r);
+            if (showJom) for (JSONObject r : jominy) if (pid.equals(Lookups.j(r, "part_id")) && !"NOT_APPLICABLE".equalsIgnoreCase(Lookups.j(r, "applicability"))) jo.add(r);
+            if (ch.isEmpty() && jo.isEmpty()) continue;
+            if (!any) add(Ui.label(a, "CHEMISTRY & JOMINY REVIEW"), 12);
+            any = true;
+            String number = Lookups.j(parts.containsKey(pid) ? parts.get(pid) : new JSONObject(), "part_number");
+            if (number.isEmpty()) number = pid;
+            if (!ch.isEmpty()) {
+                List<String[]> t = RptReports.chemHorizontal(ch, new String[][]{{"Minimum", "minimum_value"}, {"Maximum", "maximum_value"}, {"Actual", "actual_value"}, {"Status", "result"}});
+                add(new DataGrid(a, number + " · Chemical Composition", ChemGrid.headers(t), ChemGrid.data(t), 260, null), 4);
+            }
+            if (!jo.isEmpty()) {
+                List<String[]> t = RptReports.jominyHorizontal(jo, new String[][]{{"Min HRC", "minimum_hrc"}, {"Max HRC", "maximum_hrc"}, {"Actual HRC", "actual_hrc"}, {"Result", "result"}});
+                add(new DataGrid(a, number + " · Jominy (inch / mm)", ChemGrid.headers(t), ChemGrid.data(t), 300, null), 4);
+            }
+        }
     }
 }

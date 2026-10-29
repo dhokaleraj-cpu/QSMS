@@ -266,6 +266,95 @@ def label_pdf_bytes(text: str, lines: Sequence[str], *, width_mm: float = LABEL_
     return buffer.getvalue()
 
 
+# ----------------------------------------------------------------------------- R39 · QR download formats (PNG / JPEG / PDF)
+A6_WIDTH_MM = 105.0
+A6_HEIGHT_MM = 148.0
+QR_DOWNLOAD_FORMATS = ("PNG", "JPEG", "PDF")
+
+
+def qr_jpeg_bytes(text: str, lines: Sequence[str] = (), *, scale: int = 10, quality: int = 95) -> bytes:
+    """QR (+ caption lines when given) as a JPEG (white background, RGB). Uses Pillow (ships with Streamlit)."""
+    from PIL import Image
+    png = label_png_bytes(text, lines, scale=scale) if lines else qr_png_bytes(text, scale=scale)
+    image = Image.open(BytesIO(png))
+    if image.mode in ("RGBA", "LA", "P"):
+        image = image.convert("RGBA")
+        background = Image.new("RGB", image.size, (255, 255, 255))
+        background.paste(image, mask=image.split()[-1])
+        image = background
+    else:
+        image = image.convert("RGB")
+    out = BytesIO()
+    image.save(out, format="JPEG", quality=quality, subsampling=0, optimize=True)
+    return out.getvalue()
+
+
+def qr_pdf_bytes(text: str, lines: Sequence[str] = (), *, width_mm: float = A6_WIDTH_MM, height_mm: float = A6_HEIGHT_MM,
+                 title: str = "RMTC QR code") -> bytes:
+    """One A6 page (portrait): large QR centred at the top, caption text underneath (vector QR, prints sharp)."""
+    from reportlab.graphics import renderPDF
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas as rl_canvas
+
+    buffer = BytesIO()
+    page_w, page_h = width_mm * mm, height_mm * mm
+    pdf = rl_canvas.Canvas(buffer, pagesize=(page_w, page_h))
+    pdf.setTitle(title)
+    pad = 6 * mm
+    qr_size = min(page_w - 2 * pad, page_h * 0.55)
+    renderPDF.draw(qr_codes.qr_drawing(text, qr_size), pdf, (page_w - qr_size) / 2, page_h - pad - qr_size)
+    pdf.setLineWidth(0.7); pdf.rect(2 * mm, 2 * mm, page_w - 4 * mm, page_h - 4 * mm)
+    y = page_h - pad - qr_size - 6 * mm
+    avail = page_w - 2 * pad
+    for index, line in enumerate(lines):
+        font, size = ("Helvetica-Bold", 12) if index == 0 else ("Helvetica", 9)
+        pdf.setFont(font, size)
+        value = str(line)
+        while value and pdf.stringWidth(value, font, size) > avail:
+            value = value[:-1]
+        pdf.drawCentredString(page_w / 2, y, value)
+        y -= size + 4
+        if y < pad + 6 * mm:
+            break
+    pdf.setFont("Helvetica-Oblique", 6.5)
+    pdf.drawCentredString(page_w / 2, pad, "Scan with a phone: QCMS login opens this record.")
+    pdf.showPage(); pdf.save()
+    return buffer.getvalue()
+
+
+def qr_download_files(text: str, lines: Sequence[str], file_stem: str) -> list[dict[str, Any]]:
+    """Download buttons for the QR: PNG (QR + caption), JPEG (QR + caption), PDF (A6 page). Never raises; a format that
+    cannot be rendered is skipped."""
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", str(file_stem or "QR")).strip("_") or "QR"
+    builders = (
+        ("PNG", f"{stem}_QR.png", "image/png", lambda: label_png_bytes(text, lines)),
+        ("JPEG", f"{stem}_QR.jpg", "image/jpeg", lambda: qr_jpeg_bytes(text, lines)),
+        ("PDF", f"{stem}_QR.pdf", "application/pdf", lambda: qr_pdf_bytes(text, lines)),
+    )
+    out: list[dict[str, Any]] = []
+    for fmt, name, mime, build in builders:
+        try:
+            out.append({"format": fmt, "file_name": name, "mime": mime, "data": build()})
+        except Exception:
+            LOGGER.warning("QR %s download could not be rendered", fmt, exc_info=True)
+    return out
+
+
+def qr_png(text: str, lines: Sequence[str] = ()) -> bytes:
+    """R39: QR (+ caption lines) as PNG."""
+    return label_png_bytes(text, lines) if lines else qr_png_bytes(text)
+
+
+def qr_jpeg(text: str, lines: Sequence[str] = ()) -> bytes:
+    """R39: QR (+ caption lines) as JPEG."""
+    return qr_jpeg_bytes(text, lines)
+
+
+def qr_pdf(text: str, lines: Sequence[str] = (), *, title: str = "RMTC QR code") -> bytes:
+    """R39: QR + caption on one A6 PDF page."""
+    return qr_pdf_bytes(text, lines, title=title)
+
+
 def is_quality_department(value: Any) -> bool:
     raw = str(value or "").casefold()
     key = re.sub(r"[^a-z0-9&]+", "", raw)
@@ -497,4 +586,5 @@ __all__ = [
     "DEFAULT_APP_URL", "EVENT_KEY", "DOCUMENT_TYPE", "QR_CONTENT", "app_base_url", "rmtc_app_url", "qr_target_url",
     "requested_rmtc", "remember_qr_request", "pending_qr_request", "qr_matrix", "qr_png_bytes", "label_png_bytes", "label_pdf_bytes", "label_lines", "qty_text", "is_quality_department",
     "quality_recipients", "RMTCQRLabelService", "print_qr",
+    "QR_DOWNLOAD_FORMATS", "qr_jpeg_bytes", "qr_pdf_bytes", "qr_download_files", "qr_png", "qr_jpeg", "qr_pdf",
 ]

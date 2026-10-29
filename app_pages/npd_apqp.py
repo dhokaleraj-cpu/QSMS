@@ -1177,6 +1177,9 @@ def _render_apqp_ppap_link(repo: Repository, project: Mapping[str, Any], perms: 
             try:
                 created = service.create_package(service.header_from_apqp(project, parts),
                                                  default_due=_optional_date(project.get("target_submission_date")))
+                if created.get("id"):   # R39: assignment e-mail to the responsible person(s); never blocks
+                    from app_pages.ppap import send_assignment_mail
+                    send_assignment_mail(service, created["id"])
                 save_success_popup(f"PPAP package {created.get('package_no')} created from APQP project {project.get('project_code')}.", queue_for_rerun=True)
                 st.session_state[OPEN_REQUEST_KEY] = str(created.get("id") or "")
                 if ROUTE_PACKAGE in pages:

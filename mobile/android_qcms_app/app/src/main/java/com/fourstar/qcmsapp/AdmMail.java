@@ -195,7 +195,9 @@ final class AdmMail {
         if (!enriched.has("next_stage")) enriched.put("next_stage", r != null && !AdmPy.j(r, "next_stage").isEmpty() ? AdmPy.j(r, "next_stage") : "Next QCMS stage");
         if (!enriched.has("department")) enriched.put("department", r == null ? "" : AdmPy.j(r, "department"));
         String subjectTemplate = t != null && !AdmPy.j(t, "subject_template").isEmpty() ? AdmPy.j(t, "subject_template") : (r == null ? "" : AdmPy.j(r, "subject_template"));
-        return subjectTemplate.isEmpty() ? defaultSubject(event) : AdmPy.templateText(subjectTemplate, map(enriched));
+        String subject = subjectTemplate.isEmpty() ? defaultSubject(event) : AdmPy.templateText(subjectTemplate, map(enriched));
+        // R39 (web R38): the subject starts with the related department instead of "QCMS"
+        return SndMail.departmentSubject(subject, AdmPy.j(enriched, "department"), event);
     }
 
     /**
@@ -225,6 +227,8 @@ final class AdmMail {
         String bodyTemplate = t == null ? "" : AdmPy.j(t, "body_template");
         String finalSubject = !subjectTemplate.isEmpty() ? AdmPy.templateText(subjectTemplate, map(enriched))
             : (subject == null || subject.isEmpty() ? defaultSubject(event) : subject).trim();
+        // R39 (web R38 NotificationService.enqueue): department first in the subject (context / route department, else event key)
+        finalSubject = SndMail.departmentSubject(finalSubject, AdmPy.j(enriched, "department"), event);
         String finalBody = !bodyTemplate.isEmpty() ? AdmPy.templateText(bodyTemplate, map(enriched)) : (bodyText == null ? "" : bodyText.trim());
         if (finalBody.isEmpty()) {
             String doc = AdmPy.j(enriched, "document_no"), ns = AdmPy.j(enriched, "next_stage");

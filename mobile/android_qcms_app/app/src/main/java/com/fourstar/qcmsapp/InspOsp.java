@@ -101,12 +101,36 @@ final class InspOsp {
             v.put("quantity_received", InspUtil.fmt(Math.max(remaining, 1)));
         } catch (Exception ignored) { }
         Api api = Api.get(a);
-        InspUtil.formDialog(a, "OSP Material Inward · balance " + Ui.num(remaining, 0) + " pcs", receiptFields(Math.max(remaining, 1)), v, "Create OSP Inward", (form, values) -> Api.async(() -> {
+        List<Field> fields = receiptFields(Math.max(remaining, 1));
+        // R37: one entry updates both - the receipt is the vendor return on the Material Out challan (osp_challan.link_receipt)
+        fields.add(fields.size() - 1, Field.text("return_vehicle", "Return Vehicle No").hint("Printed in 'Supplier Details for Returnable Challan' on the Material Out challan."));
+        fields.add(fields.size() - 1, Field.number("return_rejected", "Rejected / not returned at vendor (pcs)").range(0, Double.MAX_VALUE)
+            .hint("Reduces the challan balance; the receipt quantity is the returned quantity."));
+        InspUtil.formDialog(a, "OSP Material Inward · balance " + Ui.num(remaining, 0) + " pcs", fields, v, "Create OSP Inward", (form, values) -> Api.async(() -> {
             JSONObject args = receiptArgs(form);
             args.put("p_osp_job_id", InspUtil.j(job, "id"));
             Object res = api.rpcValue("qsms_receive_osp_batch", args);
-            return res instanceof JSONObject ? InspUtil.j((JSONObject) res, "receipt_number") : "";
-        }, (no, err) -> done(a, err, "OSP Inward " + (no == null ? "" : no) + " saved successfully. Post-receipt inspections are now pending.", refresh)));
+            JSONObject saved = res instanceof JSONObject ? (JSONObject) res : new JSONObject();
+            String note;
+            try {
+                JSONObject current = saved.optJSONObject("current_receipt");
+                String receiptId = InspUtil.j(current, "id");
+                if (receiptId.isEmpty()) {
+                    JSONArray latest = api.rows("osp_receipts?select=id&osp_job_id=eq." + Api.enc(InspUtil.j(job, "id")) + "&order=created_at.desc&limit=1");
+                    if (latest.length() > 0) receiptId = latest.getJSONObject(0).optString("id");
+                }
+                JSONObject raw = InspUtil.get(api, "osp_jobs", InspUtil.j(job, "id"));
+                Double rej = form.num("return_rejected");
+                JSONObject linked = OspChallan.linkReceipt(api, InspUtil.j(job, "id"), InspUtil.j(raw, "material_out_id"), receiptId, form.str("return_vehicle"), rej == null ? 0 : rej, "");
+                note = linked != null ? " · Vendor return added to the Material Out challan." : " · Shown as a vendor return on the Material Out challan.";
+            } catch (Exception linkError) {
+                note = " · Challan return details not saved (" + Api.message(linkError) + "); add them in OSP Material Out.";
+            }
+            return InspUtil.j(saved, "receipt_number") + "|" + note;
+        }, (res, err) -> {
+            String[] parts = res == null ? new String[]{"", ""} : res.split("\\|", 2);
+            done(a, err, "OSP Inward " + parts[0] + " saved successfully. Post-receipt inspections are now pending." + (parts.length > 1 ? parts[1] : ""), refresh);
+        }));
     }
 
     static void editReceipt(MainActivity a, JSONObject rec, Runnable refresh) {
@@ -181,6 +205,115 @@ final class InspOsp {
         });
     }
 
+    // ================================================================== R39 (web R35 / R37 OSP queue + layout fixes)
+    /** OSPService.name_matched_layouts: approved OSP layouts whose layout name contains the job's process name. */
+    static List<JSONObject> nameMatchedLayouts(List<JSONObject> layouts, String processName) {
+        String name = processName == null ? "" : processName.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+        List<JSONObject> out = new ArrayList<>();
+        if (name.length() < 3) return out;
+        for (JSONObject l : layouts) if (InspUtil.j(l, "layout_name").replaceAll("\\s+", " ").toLowerCase(Locale.ROOT).contains(name)) out.add(l);
+        return out;
+    }
+
+    /** OSPService.fallback_layouts (mirror of DB qcms_osp_layout_acceptable): name match, else the only OSP layout of the Part at an
+     *  OSP stage whose Process is not one of the Part's own OSP processes. */
+    static List<JSONObject> fallbackLayouts(List<JSONObject> layouts, JSONObject job, java.util.Set<String> partOspProcessIds, java.util.Set<String> ospStageIds) {
+        List<JSONObject> named = nameMatchedLayouts(layouts, InspUtil.j(job, "process_name"));
+        if (!named.isEmpty()) return named;
+        List<JSONObject> out = new ArrayList<>();
+        if (layouts.size() == 1) {
+            JSONObject only = layouts.get(0);
+            boolean stageOk = ospStageIds == null || ospStageIds.contains(InspUtil.j(only, "inspection_stage_id"));
+            boolean processOk = partOspProcessIds == null || !partOspProcessIds.contains(InspUtil.j(only, "process_id"));
+            if (stageOk && processOk) out.add(only);
+        }
+        return out;
+    }
+
+    /**
+     * Approved OSP layouts offered for an OSP job (osp_inspections section A, R35/R37): Part + Process first; else an approved OSP
+     * layout of the Part registered under another Process (name match / only layout) - the DB save trigger accepts the same
+     * fallback, so the draft save of e.g. "CASE CARBURIZING 9265" no longer fails.
+     */
+    static List<JSONObject> ospPlans(Api api, String reportType, JSONObject job) throws Exception {
+        String partId = InspUtil.j(job, "part_id");
+        List<JSONObject> plans = InspUtil.plans(api, reportType, partId, true, InspUtil.j(job, "process_id"), null, "OSP_PROCESS");
+        if (!plans.isEmpty()) return plans;
+        List<JSONObject> partLayouts = InspUtil.plans(api, reportType, partId, true, null, null, "OSP_PROCESS");
+        if (partLayouts.isEmpty()) return plans;
+        java.util.Set<String> processes = new java.util.HashSet<>(), stages = new java.util.HashSet<>();
+        for (JSONObject s : InspUtil.list(api.rows("part_process_specifications?select=process_id&part_id=eq." + Api.enc(partId) + "&inward_type=eq.OSP_PROCESS&limit=500")))
+            processes.add(InspUtil.j(s, "process_id"));
+        for (JSONObject s : InspUtil.list(api.rows("inspection_stages?select=id,stage_code,stage_name&limit=500")))
+            if ((InspUtil.j(s, "stage_code") + " " + InspUtil.j(s, "stage_name")).toUpperCase(Locale.ROOT).contains("OSP")) stages.add(InspUtil.j(s, "id"));
+        return fallbackLayouts(partLayouts, job, processes, stages);
+    }
+
+    /** OSPService.inspection_gate_closed (R37): the stage gate is decided - the batch leaves the Pending / New queue. */
+    static boolean inspectionGateClosed(JSONObject row, String scope) {
+        String status = InspUtil.j(row, "status").toUpperCase(Locale.ROOT);
+        if ("CANCELLED".equals(status) || "REJECTED".equals(status)) return true;
+        List<String> decided = Arrays.asList("ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED");
+        if ("OSP_SAMPLE".equals(scope)) return decided.contains(InspUtil.j(row, "sample_gate_status").toUpperCase(Locale.ROOT));
+        return "COMPLETED".equals(status) || "CLOSED".equals(status) || decided.contains(InspUtil.j(row, "receipt_quality_disposition").toUpperCase(Locale.ROOT));
+    }
+
+    /** OSPService._inspection_candidates: required (flag / approved layout / part layout) + ready + stage decision still pending. */
+    static List<JSONObject> inspectionCandidates(Api api, String scope, String reportType) throws Exception {
+        boolean dim = "DIMENSIONAL".equals(reportType);
+        String dispositionKey = ("OSP_SAMPLE".equals(scope) ? "sample_" : "receipt_") + (dim ? "dimensional" : "metlab") + "_disposition";
+        List<JSONObject> register = InspUtil.list(api.rows("v_qsms_osp_register?select=*&order=created_at.desc&limit=5000"));
+        java.util.Set<String> layoutSpecs = new java.util.HashSet<>();
+        java.util.Map<String, List<JSONObject>> partLayouts = new java.util.HashMap<>();
+        for (JSONObject l : InspUtil.list(api.rows("inspection_plans?select=id,part_id,process_id,layout_name,source_process_specification_id,inward_type&status=eq.APPROVED&layout_type=eq."
+            + reportType + "&limit=5000"))) {
+            if (!InspUtil.j(l, "source_process_specification_id").isEmpty()) layoutSpecs.add(InspUtil.j(l, "source_process_specification_id"));
+            if ("OSP_PROCESS".equals(InspUtil.j(l, "inward_type"))) partLayouts.computeIfAbsent(InspUtil.j(l, "part_id"), k -> new ArrayList<>()).add(l);
+        }
+        List<JSONObject> rows = new ArrayList<>();
+        List<String> decided = Arrays.asList("ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED");
+        for (JSONObject row : register) {
+            boolean byFlag = row.optBoolean(dim ? "dimensional_required" : "metlab_required", false);
+            boolean byLayout = layoutSpecs.contains(InspUtil.j(row, "process_specification_id"));
+            String status = InspUtil.j(row, "status").toUpperCase(Locale.ROOT);
+            if (!byFlag && !byLayout && !"COMPLETED".equals(status) && !"CLOSED".equals(status)) {
+                List<JSONObject> cands = partLayouts.getOrDefault(InspUtil.j(row, "part_id"), new ArrayList<>());
+                for (JSONObject l : cands) if (InspUtil.j(l, "process_id").equals(InspUtil.j(row, "process_id"))) byLayout = true;
+                if (!byLayout) byLayout = !nameMatchedLayouts(cands, InspUtil.j(row, "process_name")).isEmpty();
+            }
+            if (!byFlag && !byLayout) continue;
+            boolean ready = "OSP_SAMPLE".equals(scope) ? !InspUtil.j(row, "sample_received_date").isEmpty()
+                : InspUtil.dbl(row, "quantity_received") >= InspUtil.dbl(row, "quantity_dispatched") && InspUtil.dbl(row, "quantity_dispatched") > 0;
+            String disp = InspUtil.j(row, dispositionKey).isEmpty() ? "PENDING" : InspUtil.j(row, dispositionKey).toUpperCase(Locale.ROOT);
+            if (ready && !decided.contains(disp) && !"CANCELLED".equals(status)) rows.add(row);
+        }
+        return rows;
+    }
+
+    /** jobs_for_inspection: candidates whose stage gate is still open (R37 - released batches leave the Pending list). */
+    static List<JSONObject> jobsForInspection(List<JSONObject> candidates, String scope) {
+        List<JSONObject> out = new ArrayList<>();
+        for (JSONObject r : candidates) if (!inspectionGateClosed(r, scope)) out.add(r);
+        return out;
+    }
+
+    /** released_without_report: gate decided but no report of this stage (e.g. a draft deleted after release). */
+    static List<JSONObject> releasedWithoutReport(Api api, List<JSONObject> candidates, String scope, String reportType) throws Exception {
+        List<JSONObject> closed = new ArrayList<>();
+        for (JSONObject r : candidates) if (inspectionGateClosed(r, scope)) closed.add(r);
+        if (closed.isEmpty()) return closed;
+        java.util.Set<String> reported = new java.util.HashSet<>();
+        List<String> ids = new ArrayList<>();
+        for (JSONObject r : closed) ids.add(InspUtil.j(r, "id"));
+        String table = "DIMENSIONAL".equals(reportType) ? "inspection_reports" : "lab_tests";
+        for (int i = 0; i < ids.size(); i += 80)
+            for (JSONObject r : InspUtil.list(api.rows(table + "?select=osp_job_id&inspection_scope=eq." + scope + "&osp_job_id=in.(" + String.join(",", ids.subList(i, Math.min(ids.size(), i + 80))) + ")&limit=2000")))
+                reported.add(InspUtil.j(r, "osp_job_id"));
+        List<JSONObject> out = new ArrayList<>();
+        for (JSONObject r : closed) if (!reported.contains(InspUtil.j(r, "id"))) out.add(r);
+        return out;
+    }
+
     /**
      * OSP Dimensional / MetLAB inspection for one job and scope (OSP_SAMPLE / OSP_RECEIPT). One report per job + scope:
      * an existing report is opened, otherwise the queue rule of OSPService.jobs_for_inspection must hold.
@@ -205,7 +338,8 @@ final class InspOsp {
             if ("CANCELLED".equals(InspUtil.j(job, "status"))) throw new Api.ApiException(422, "This OSP job is cancelled.");
             String key = ("OSP_SAMPLE".equals(scope) ? "sample_" : "receipt_") + (dim ? "dimensional" : "metlab") + "_disposition";
             String disp = InspUtil.j(job, key).toUpperCase(Locale.ROOT);
-            if (Arrays.asList("ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED").contains(disp)) throw new Api.ApiException(422, "This OSP inspection step is already decided (" + Ui.pretty(disp) + ").");
+            // R37: a batch released without a report of this stage (draft deleted after release) may still record it
+            if (Arrays.asList("ACCEPTED", "ACCEPTED_UNDER_RESERVE", "REJECTED").contains(disp) && !inspectionGateClosed(job, scope)) throw new Api.ApiException(422, "This OSP inspection step is already decided (" + Ui.pretty(disp) + ").");
             return "";
         }, (rid, err) -> {
             if (err != null) { a.toast(Api.message(err)); return; }

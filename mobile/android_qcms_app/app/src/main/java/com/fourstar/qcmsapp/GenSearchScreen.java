@@ -151,7 +151,8 @@ final class GenSearchScreen extends Screen implements ExportDoc.Source {
     /** Opens a hit: module -> the module; server row -> the record natively or its website page; local -> the record. */
     private void open(GenSearch.Result r) {
         if (GenSearch.Result.MODULE.equals(r.kind)) { a.openModule(r.appModule); return; }
-        if (GenSearch.Result.SERVER.equals(r.kind)) { Notif.open(a, r.table, r.recordId, r.route, r.reference); return; }
+        // R39: the exact record (detail rows -> parent record, no app module -> read-only record view + Print PDF)
+        if (GenSearch.Result.SERVER.equals(r.kind)) { GenTarget.open(a, r.table, r.recordId, r.route, r.reference); return; }
         GenUtil.openRecord(a, r.table, r.record);
     }
 

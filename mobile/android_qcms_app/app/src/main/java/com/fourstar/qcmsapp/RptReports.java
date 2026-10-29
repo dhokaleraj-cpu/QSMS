@@ -801,6 +801,9 @@ final class RptReports {
             usage = list(api, "v_qsms_heat_steel_ledger?select=*&normalized_heat_number=eq." + Api.enc(norm) + "&order=created_at.desc&limit=500");
         }
         List<RptDoc.Photo> photos = slotPhotos(api, "RMTC", id, "RMTC_MICROSTRUCTURE_", record, 3);
+        // R39: sections Not Applicable for this RMTC (core.section_applicability) are omitted from the print
+        java.util.LinkedHashMap<String, Boolean> secs = IncRmtcSections.resolve(record, parts.values());
+        int mark;
 
         RptDoc d = new RptDoc("RMTC RECORD - " + str(or(record.opt("rmtc_number"), "QUALITY RECORD"))).file("QCMS_RMTC_" + str(record.opt("rmtc_number")));
         theme(api, d, "RMTC");
@@ -822,6 +825,9 @@ final class RptReports {
         d.blocks.add(new RptDoc.Labeled(header, f(29, 68, 29, 68), new int[]{0, 2}, false, body));
         if (truthy(record.opt("remarks")))
             d.blocks.add(new RptDoc.Labeled(new String[][]{vrow("RMTC Remarks", record.opt("remarks"))}, f(29, d.contentMm() - 29), new int[]{0}, false, body));
+        if (!IncRmtcSections.notApplicableLabels(secs).isEmpty())
+            d.blocks.add(new RptDoc.Labeled(new String[][]{vrow("Sections Not Applicable", String.join(", ", IncRmtcSections.notApplicableLabels(secs)))}, f(29, d.contentMm() - 29), new int[]{0}, false, body));
+        mark = d.blocks.size();
         d.space(1.6f);
         d.bar("GLOBAL HEAT QUANTITY BALANCE & RECORD LIST");
         String[][] bal = {
@@ -836,6 +842,7 @@ final class RptReports {
             r.opt("inward_steel_quantity_kg"), r.opt("remaining_planned_steel_quantity_kg"), or(r.opt("part_disposition"), r.opt("rmtc_disposition"), r.opt("rmtc_status"))));
         if (hr.size() == 1) hr.add(row(record.opt("rmtc_number"), record.opt("certificate_reference"), supplier.opt("party_name"), "-", "-", "-", "-", or(record.opt("disposition"), record.opt("status"))));
         rmtcGrid(d, hr, f(24, 27, 34, 21, 21, 21, 25, 21), 7.6f, 7);
+        cut(d, mark, IncRmtcSections.on(secs, "heat_balance"));
 
         d.space(1.6f);
         d.bar("COVERED PART WORKSHEET REGISTER");
@@ -851,6 +858,7 @@ final class RptReports {
         if (ps.size() == 1) ps.add(row("-", "-", "No covered part worksheets found", "", "", "", "", "Pending", "NOT_EVALUATED", "PENDING"));
         rmtcGrid(d, ps, f(17, 20, 27, 17, 16, 17, 18, 20, 21, 21), 7.6f, 7, 8, 9);
 
+        mark = d.blocks.size();
         d.space(1.6f);
         d.bar("SUPPLIER RMTC MECHANICAL PROPERTIES");
         List<String[]> mech = new ArrayList<>();
@@ -860,6 +868,7 @@ final class RptReports {
             for (Iterator<String> it = mr.keys(); it.hasNext(); ) { String k = it.next(); mech.add(row(RptDoc.title(k.replace("_", " ")), mr.opt(k), "Supplier RMTC")); }
         } else mech.add(row("Mechanical Properties", "No dedicated mechanical property values recorded", "Supplier RMTC"));
         rmtcGrid(d, mech, f(55, 94, 45), body);
+        cut(d, mark, IncRmtcSections.on(secs, "supplier_mechanical"));
 
         int wi = 0;
         for (JSONObject a : approvals) {
@@ -876,12 +885,15 @@ final class RptReports {
                 vrow("Planned Production Qty pcs", a.opt("planned_production_quantity_pcs"), "Input Weight kg", a.opt("input_weight_kg"), "Planned Steel kg", a.opt("planned_steel_quantity_kg")),
             };
             d.blocks.add(new RptDoc.Labeled(ident, f(25, 37, 27, 43, 27, 35), new int[]{0, 2, 4}, false, body));
+            mark = d.blocks.size();
             d.sub("Chemical Composition");
             List<JSONObject> pchem = new ArrayList<>();
             for (JSONObject r : chemistry) if (pid.equals(str(r.opt("part_id")))) pchem.add(r);
             List<String[]> cr = chemHorizontal(pchem, new String[][]{{"Minimum", "minimum_value"}, {"Maximum", "maximum_value"}, {"Actual", "actual_value"}, {"Status", "result"}});
             if (pchem.isEmpty()) { cr.clear(); cr.add(row("Element", "-")); cr.add(row("Actual", "No chemistry values recorded")); }
             for (List<String[]> band : ChemGrid.bands(cr, ChemGrid.PDF_BAND_COLUMNS)) rmtcGrid(d, band, spread(d, band.get(0).length, 22), 7.6f);
+            cut(d, mark, IncRmtcSections.on(secs, "chemistry"));
+            mark = d.blocks.size();
             d.sub("Jominy Results");
             List<JSONObject> pjom = new ArrayList<>();
             for (JSONObject r : jominy) if (pid.equals(str(r.opt("part_id")))) pjom.add(r);
@@ -889,10 +901,13 @@ final class RptReports {
                 {"Calculated HRC", "calculated_hrc"}, {"Calc. Status", "calculated_result"}, {"Applicable", "__na"}});
             if (pjom.isEmpty()) { jr.clear(); jr.add(row("Distance (inch)", "-")); jr.add(row("Actual HRC", "No Jominy values recorded")); }
             for (List<String[]> band : ChemGrid.bands(jr, ChemGrid.PDF_BAND_COLUMNS)) rmtcGrid(d, band, spread(d, band.get(0).length, 22), 7.6f);
+            cut(d, mark, IncRmtcSections.on(secs, "jominy"));
+            mark = d.blocks.size();
             d.sub("DI / Hardenability");
             String[][] di = {row("Grain Size ASTM E-112", "Actual DI", "Actual DI Status", "Calculated DI", "Calculated DI Status"),
                 row(a.opt("grain_size"), a.opt("actual_di"), a.opt("actual_di_status"), a.opt("calculated_di"), a.opt("calculated_di_status"))};
             rmtcGrid(d, Arrays.asList(di), f(42, 32, 42, 32, 46), body, 2, 4);
+            cut(d, mark, IncRmtcSections.on(secs, "di_value"));
             List<JSONObject> preq = new ArrayList<>(), mreq = new ArrayList<>(), oreq = new ArrayList<>();
             for (JSONObject r : requirements) if (pid.equals(str(r.opt("part_id")))) preq.add(r);
             String[] tokens = {"tensile", "yield", "elongation", "reduction", "impact", "proof", "mechanical", "uts"};
@@ -902,27 +917,39 @@ final class RptReports {
                 for (String t : tokens) if (n.contains(t)) isMech = true;
                 (isMech ? mreq : oreq).add(r);
             }
+            mark = d.blocks.size();
             d.sub("Mechanical Properties");
             List<String[]> mp = new ArrayList<>();
             mp.add(row("Property", "Specification", "Actual / Observation", "Unit", "Status", "Remarks"));
             for (JSONObject r : mreq) mp.add(row(or(r.opt("requirement_name"), r.opt("requirement_code")), r.opt("requirement_value"), r.opt("actual_value"), r.opt("unit"), r.opt("result"), r.opt("remarks")));
             if (mp.size() == 1) mp.add(row("Mechanical Properties", "As supplier RMTC / Part requirement", "No separate part-level mechanical property row", "", "NOT_EVALUATED", ""));
             rmtcGrid(d, mp, f(38, 42, 40, 18, 24, 32), 7.6f, 4);
+            cut(d, mark, IncRmtcSections.on(secs, "mechanical"));
+            mark = d.blocks.size();
             d.sub("Heat Treatment & Other Requirements");
             List<String[]> orq = new ArrayList<>();
             orq.add(row("Requirement", "Specification / Part Master", "RMTC Actual / Observation", "Unit", "Status", "Remarks"));
             for (JSONObject r : oreq) orq.add(row(or(r.opt("requirement_name"), r.opt("requirement_code")), r.opt("requirement_value"), r.opt("actual_value"), r.opt("unit"), r.opt("result"), r.opt("remarks")));
             if (orq.size() == 1) orq.add(row("-", "No additional requirements recorded", "", "", "NOT_EVALUATED", ""));
             rmtcGrid(d, orq, f(38, 45, 39, 18, 24, 30), 7.6f, 4);
+            cut(d, mark, IncRmtcSections.on(secs, "heat_treatment"));
         }
+        mark = d.blocks.size();
         d.keep(55);
         d.bar("RMTC MICROSTRUCTURE PHOTOGRAPHS");
         d.blocks.add(new RptDoc.Photos(photos, 3, 40, true));
+        cut(d, mark, IncRmtcSections.on(secs, "microstructure"));
         d.keep(44);
         d.bar("RMTC VALIDATION STATUS & FINAL DECISION");
         String qrUrl = rmtcQrUrl(api, id, record);
         if (!qrUrl.isEmpty())
-            d.blocks.add(new RptDoc.Labeled(new String[][]{vrow("Material Location QR", "Certificate download (QR label from QCMS web): " + qrUrl)}, f(42, 152), new int[]{0}, false, body));
+        {
+            d.blocks.add(new RptDoc.Labeled(new String[][]{vrow("Material Location QR", "Scan to open / download this approved RMTC certificate (QCMS login required): " + qrUrl)}, f(42, 152), new int[]{0}, false, body));
+            try {  // R39: the QR itself (same matrix as the website, IncQrCode)
+                d.blocks.add(new RptDoc.Photos(java.util.Collections.singletonList(new RptDoc.Photo("Material location QR · " + str(record.opt("rmtc_number")),
+                    IncQrCode.png(IncQrCode.encode(qrUrl), 6, 4))), 5, 30, false));
+            } catch (Exception ignored) { }
+        }
         if (approvals.isEmpty()) {
             rmtcGrid(d, Arrays.asList(row("Validation Check", "Status", "Validation Check", "Status"), row("Record", "NOT_EVALUATED", "Final Decision", "PENDING")), f(42, 55, 42, 55), body, 1, 3);
         } else {
@@ -968,6 +995,11 @@ final class RptReports {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    /** R39: drop the blocks added since mark when the RMTC section is Not Applicable. */
+    private static void cut(RptDoc d, int mark, boolean applicable) {
+        if (!applicable && mark >= 0 && mark < d.blocks.size()) d.blocks.subList(mark, d.blocks.size()).clear();
     }
 
     private static void rmtcGrid(RptDoc d, List<String[]> rows, float[] w, float cell, int... status) {

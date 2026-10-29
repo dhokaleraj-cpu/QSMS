@@ -377,6 +377,14 @@ final class SupSvc {
         return num(covering.get(0), "price");
     }
 
+    /** same_price_uom (R37b): NOS and PCS are the same count unit for price history. */
+    static boolean samePriceUom(String rowUom, String wanted) {
+        String a = rowUom == null ? "" : rowUom.trim().toUpperCase(Locale.ROOT), b = wanted == null ? "" : wanted.trim().toUpperCase(Locale.ROOT);
+        if (a.equals(b)) return true;
+        Set<String> count = new HashSet<>(Arrays.asList("NOS", "PCS", "NO", "PC", "EA"));
+        return count.contains(a) && count.contains(b);
+    }
+
     /** price_history (newest start first). */
     List<JSONObject> priceHistory(String partId, String supplierId, String uom, String rawId) throws Exception {
         List<JSONObject> rows = priceRows(partId, supplierId);
@@ -388,7 +396,7 @@ final class SupSvc {
         }
         if (uom != null && !uom.isEmpty()) {
             List<JSONObject> same = new ArrayList<>();
-            for (JSONObject r : rows) if (uom.equalsIgnoreCase(s(r, "uom"))) same.add(r);
+            for (JSONObject r : rows) if (samePriceUom(s(r, "uom"), uom)) same.add(r);
             if (!same.isEmpty()) rows = same;
         }
         return rows;
@@ -398,7 +406,7 @@ final class SupSvc {
     JSONArray priceHistoryForPo(String partId, String supplierId, String uom, String rawId) throws Exception {
         List<JSONObject> all = priceHistory(partId, supplierId, null, rawId);
         List<JSONObject> same = new ArrayList<>();
-        for (JSONObject r : all) if (uom == null || uom.isEmpty() || uom.equalsIgnoreCase(s(r, "uom"))) same.add(r);
+        for (JSONObject r : all) if (uom == null || uom.isEmpty() || samePriceUom(s(r, "uom"), uom)) same.add(r);
         List<JSONObject> rows = same.isEmpty() ? all : same;
         rows.sort((x, y) -> {
             int c = s(x, "start_date").compareTo(s(y, "start_date"));
@@ -474,15 +482,26 @@ final class SupSvc {
 
     /** _record_purchase_price: keep the controlled price history in step with the PO price. */
     void recordPurchasePrice(String partId, String supplierId, String rawId, String poDate, double price, String uom, String currency, String sourceItemId) throws Exception {
+        recordPurchasePrice(partId, supplierId, rawId, poDate, price, uom, currency, sourceItemId, null);
+    }
+
+    /**
+     * _record_purchase_price (R37b): price revision effective from poDate; also used by PO amendments (poDate = amendment
+     * Effective Date, remarks = "PO <no> Amd <n>: <reason>") so later POs pick up the amended price. Returns the written row.
+     */
+    JSONObject recordPurchasePrice(String partId, String supplierId, String rawId, String poDate, double price, String uom, String currency, String sourceItemId, String remarks) throws Exception {
         price = Math.max(price, 0);
-        if (price <= 0) return;
+        if (price <= 0) return null;
+        String note = remarks == null ? "" : remarks.trim();
+        if (note.length() > 500) note = note.substring(0, 500);
         String target = parseDate(poDate);
         if (target == null) target = LocalDate.now().toString();
         List<JSONObject> history = priceHistory(partId, supplierId, uom, rawId);
         for (JSONObject r : history) {
             if (d10(s(r, "start_date")).equals(target)) {
-                api.update("part_supplier_price_history", s(r, "id"), new JSONObject().put("price", price).put("currency", n(currency)).put("raw_material_detail_id", n(rawId)).put("source_purchase_order_item_id", sourceItemId));
-                return;
+                JSONObject upd = new JSONObject().put("price", price).put("currency", n(currency)).put("raw_material_detail_id", n(rawId)).put("source_purchase_order_item_id", sourceItemId);
+                if (!note.isEmpty()) upd.put("remarks", note);
+                return api.update("part_supplier_price_history", s(r, "id"), upd);
             }
         }
         JSONObject covering = null;
@@ -491,8 +510,8 @@ final class SupSvc {
             if (start.compareTo(target) <= 0 && (end.isEmpty() || target.compareTo(end) <= 0)) { covering = r; break; }
         }
         if (covering != null && Math.abs(num(covering, "price") - price) < 0.000001) {
-            if (s(covering, "source_purchase_order_item_id").isEmpty()) api.update("part_supplier_price_history", s(covering, "id"), new JSONObject().put("source_purchase_order_item_id", sourceItemId));
-            return;
+            if (s(covering, "source_purchase_order_item_id").isEmpty()) return api.update("part_supplier_price_history", s(covering, "id"), new JSONObject().put("source_purchase_order_item_id", sourceItemId));
+            return covering;
         }
         LocalDate nextStart = null;
         for (JSONObject r : history) {
@@ -508,9 +527,12 @@ final class SupSvc {
             api.update("part_supplier_price_history", s(covering, "id"), new JSONObject().put("end_date", LocalDate.parse(target).minusDays(1).toString()));
             newEnd = oldEnd.isEmpty() ? JSONObject.NULL : oldEnd;
         }
-        api.insert("part_supplier_price_history", new JSONObject().put("part_id", partId).put("supplier_id", supplierId).put("raw_material_detail_id", n(rawId))
-            .put("start_date", target).put("end_date", newEnd).put("price", price).put("currency", first(currency, "INR")).put("uom", first(uom, "KGS").toUpperCase(Locale.ROOT))
-            .put("source_purchase_order_item_id", sourceItemId).put("status", "ACTIVE"));
+        String unit = first(covering == null ? "" : s(covering, "uom"), history.isEmpty() ? "" : s(history.get(0), "uom"), uom, "KGS").toUpperCase(Locale.ROOT);
+        JSONObject row = new JSONObject().put("part_id", partId).put("supplier_id", supplierId).put("raw_material_detail_id", n(rawId))
+            .put("start_date", target).put("end_date", newEnd).put("price", price).put("currency", first(currency, "INR")).put("uom", unit)
+            .put("source_purchase_order_item_id", sourceItemId).put("status", "ACTIVE");
+        if (!note.isEmpty()) row.put("remarks", note);
+        return api.insert("part_supplier_price_history", row);
     }
 
     // ================================================================== grouping keys
@@ -1721,6 +1743,31 @@ final class SupSvc {
         List<JSONObject> sources = live("supply_purchase_order_sources?select=*&purchase_order_id=eq." + poId + "&order=created_at.asc&limit=10000");
         Map<String, List<JSONObject>> sourcesByItem = new HashMap<>();
         for (JSONObject src : sources) sourcesByItem.computeIfAbsent(s(src, "purchase_order_item_id"), k -> new ArrayList<>()).add(src);
+        // R35 / R37b: a changed line quantity (allocations untouched) goes to the Customer Order allocation(s):
+        // one source takes the new quantity, several sources take the difference on the last allocation.
+        for (JSONObject item : items) {
+            String iid = s(item, "id");
+            JSONObject upd = itemUpdates.get(iid);
+            List<JSONObject> itemSources = sourcesByItem.get(iid);
+            if (upd == null || itemSources == null || itemSources.isEmpty() || !upd.has("quantity") || s(upd, "quantity").isEmpty()) continue;
+            double requested = r3(num(upd.opt("quantity"))), currentSum = 0;
+            boolean touched = false;
+            for (JSONObject x : itemSources) {
+                currentSum += num(x, "allocated_qty");
+                JSONObject au2 = allocUpdates.get(s(x, "id"));
+                if (au2 != null && Math.abs(num(au2.opt("allocated_qty")) - num(x, "allocated_qty")) > 0.000001) touched = true;
+            }
+            currentSum = r3(currentSum);
+            if (touched || Math.abs(requested - currentSum) <= 0.000001) continue;
+            if (requested <= 0) throw new Rule("Purchase Order line quantity must be greater than zero. To remove an order from the PO use 'Remove' in PO Source Allocations.");
+            if (itemSources.size() == 1) allocUpdates.put(s(itemSources.get(0), "id"), new JSONObject().put("id", s(itemSources.get(0), "id")).put("allocated_qty", requested));
+            else {
+                JSONObject last = itemSources.get(itemSources.size() - 1);
+                double newLast = r3(num(last, "allocated_qty") + requested - currentSum);
+                if (newLast <= 0) throw new Rule("Line " + first(s(item, "item_no"), iid) + ": the reduction is larger than the last Customer Order allocation. Edit the individual allocations in PO Source Allocations instead.");
+                allocUpdates.put(s(last, "id"), new JSONObject().put("id", s(last, "id")).put("allocated_qty", newLast));
+            }
+        }
         boolean rmPo = "RAW_MATERIAL".equals(poType);
         List<JSONObject> stageRows = live((rmPo ? "supply_rm_purchase_orders" : "supply_forging_orders") + "?select=*&purchase_order_id=eq." + poId + "&limit=10000");
         Set<String> stageIds = new HashSet<>();
@@ -1862,6 +1909,173 @@ final class SupSvc {
                 .put("remarks", "PO revised after approval; supplier acknowledgement will be requested again after re-approval."));
         }
         return new JSONObject().put("header", revisedHeader).put("reapproval_required", wasApproved);
+    }
+
+    // ================================================================== R39 · PO amendment (web R37b, supply_chain_service)
+    static final String[] AMENDABLE_HEADER_FIELDS = {"delivery_date", "payment_term", "incoterm", "ship_via", "other_amount", "quotation_reference", "quotation_date", "remarks", "special_instructions"};
+
+    /** po_display_number: "PD9131000096 · Amd 2" for an amended PO, the plain PO number otherwise. */
+    static String poDisplayNumber(JSONObject header) {
+        String number = s(header, "po_number");
+        int amd = (int) Math.round(num(header, "amendment_no"));
+        return amd > 0 && !number.isEmpty() ? number + " \u00b7 Amd " + amd : number;
+    }
+
+    /** purchase_order_amendments: amendment register (oldest first) with line before / after; PENDING turns APPROVED once the PO is approved later. */
+    List<JSONObject> purchaseOrderAmendments(String poId, JSONObject header) {
+        List<JSONObject> out = new ArrayList<>();
+        List<JSONObject> rows;
+        try { rows = live("supply_po_amendments?select=*&purchase_order_id=eq." + Api.enc(poId) + "&order=amendment_no.asc&limit=500"); } catch (Exception e) { return out; }
+        String approvedAt = s(header, "approved_at");
+        boolean approved = "APPROVED".equals(up(header, "approval_status"));
+        for (JSONObject row : rows) {
+            try {
+                JSONObject item = new JSONObject(row.toString());
+                List<JSONObject> lines;
+                try { lines = live("supply_po_amendment_lines?select=*&amendment_id=eq." + Api.enc(s(row, "id")) + "&order=line_no.asc&limit=500"); } catch (Exception e) { lines = new ArrayList<>(); }
+                JSONArray arr = new JSONArray();
+                for (JSONObject l : lines) arr.put(l);
+                item.put("lines", arr);
+                String status = first(s(item, "status"), "PENDING_APPROVAL").toUpperCase(Locale.ROOT);
+                if ("PENDING_APPROVAL".equals(status) && approved && !approvedAt.isEmpty() && approvedAt.compareTo(s(item, "created_at")) >= 0) status = "APPROVED";
+                item.put("status", status);
+                out.add(item);
+            } catch (Exception ignored) { }
+        }
+        return out;
+    }
+
+    /** amendment_price_suggestion: price-history revision effective on the Effective Date (else the latest) of the line's Supplier + Part + RM record. */
+    JSONObject amendmentPriceSuggestion(JSONObject header, JSONObject item, String effectiveDate) throws Exception {
+        String supplierId = s(header, "supplier_id");
+        JSONObject part = get("parts", s(item, "part_id"));
+        JSONObject raw = get("part_raw_material_details", s(item, "raw_material_detail_id"));
+        if (supplierId.isEmpty() || empty(part)) return new JSONObject();
+        if (!t(raw, "source_part_id").isEmpty()) { JSONObject[] ctx = resolveRawSource(part, raw, supplierId); part = ctx[0]; raw = ctx[1]; }
+        String uom = s(item, "uom");
+        List<JSONObject> rows = new ArrayList<>();
+        for (JSONObject r : priceHistory(s(part, "id"), supplierId, uom.isEmpty() ? null : uom, s(raw, "id"))) if (!s(r, "start_date").isEmpty()) rows.add(r);
+        if (rows.isEmpty()) return new JSONObject();
+        String target = parseDate(effectiveDate);
+        if (target == null) target = LocalDate.now().toString();
+        List<JSONObject> covering = new ArrayList<>();
+        for (JSONObject r : rows) {
+            String st = d10(s(r, "start_date")), en = d10(s(r, "end_date"));
+            if (st.compareTo(target) <= 0 && (en.isEmpty() || target.compareTo(en) <= 0)) covering.add(r);
+        }
+        List<JSONObject> pool = covering.isEmpty() ? rows : covering;
+        pool.sort((x, y) -> { int c = s(y, "start_date").compareTo(s(x, "start_date")); return c != 0 ? c : s(y, "updated_at").compareTo(s(x, "updated_at")); });
+        JSONObject best = pool.get(0);
+        return new JSONObject().put("price", num(best, "price")).put("start_date", d10(s(best, "start_date"))).put("end_date", n(d10(s(best, "end_date"))))
+            .put("remarks", s(best, "remarks")).put("covering", !covering.isEmpty()).put("currency", first(s(best, "currency"), "INR")).put("uom", first(s(best, "uom"), uom));
+    }
+
+    private static Object amendValue(String key, Object v) {
+        if (v == null || v == JSONObject.NULL) return key.equals("other_amount") ? (Object) 0.0 : null;
+        if (key.equals("delivery_date") || key.equals("quotation_date")) return parseDate(String.valueOf(v));
+        if (key.equals("other_amount")) { try { return r2(Double.parseDouble(String.valueOf(v).trim().isEmpty() ? "0" : String.valueOf(v).trim())); } catch (Exception e) { return 0.0; } }
+        String t = String.valueOf(v).trim();
+        return t.isEmpty() || "null".equals(t) ? null : t;
+    }
+
+    /**
+     * amend_purchase_order (R37b): payload {reason, effective_date, lines:[{id, unit_price, quantity}], optional AMENDABLE_HEADER_FIELDS}.
+     * PO number stays; amendment no = previous + 1. Lines revised through updatePurchaseOrder (refresh_master_data=false, R35 rules:
+     * quantity to the Customer Order allocation, never below received; PO back to approval, approved PO needs supplier re-confirmation).
+     * A changed price goes to part_supplier_price_history from the Effective Date; amendment + line before / after are stored.
+     */
+    JSONObject amendPurchaseOrder(String poId, JSONObject p) throws Exception {
+        String reason = t(p, "reason");
+        if (reason.isEmpty()) throw new Rule("Amendment Reason is required.");
+        String effective = parseDate(s(p, "effective_date"));
+        if (effective == null) throw new Rule("Amendment Effective Date is required (dd-mm-yyyy).");
+        JSONObject header = get("supply_purchase_orders", poId);
+        if (empty(header)) throw new Rule("Purchase Order was not found.");
+        if ("CANCELLED".equals(up(header, "status"))) throw new Rule("A cancelled Purchase Order cannot be amended. Use Cancel & Reissue.");
+        List<JSONObject> existing;
+        try { existing = new ArrayList<>(list(api.rows("supply_po_amendments?select=amendment_no&purchase_order_id=eq." + Api.enc(poId) + "&limit=500"))); }
+        catch (Exception e) { throw new Rule("PO Amendment tables are not installed yet. Run the R37b Supabase update (20261027100000_qcms_r37b_po_amendment.sql) and try again."); }
+        int amendmentNo = (int) Math.round(num(header, "amendment_no"));
+        for (JSONObject r : existing) amendmentNo = Math.max(amendmentNo, (int) Math.round(num(r, "amendment_no")));
+        amendmentNo += 1;
+
+        Map<String, JSONObject> items = new LinkedHashMap<>();
+        for (JSONObject r : live("supply_purchase_order_items?select=*&purchase_order_id=eq." + poId + "&order=created_at.asc&limit=1000")) items.put(s(r, "id"), r);
+        List<Object[]> changes = new ArrayList<>();   // item, oldPrice, newPrice, oldQty, newQty, received, priceChanged, lineNo
+        JSONArray itemPayload = new JSONArray();
+        JSONArray lines = p.optJSONArray("lines");
+        for (int i = 0; lines != null && i < lines.length(); i++) {
+            JSONObject line = lines.getJSONObject(i);
+            JSONObject item = items.get(s(line, "id"));
+            int index = i + 1;
+            if (item == null) throw new Rule("Amendment line " + index + ": the PO line no longer exists. Refresh the page.");
+            String label = first(s(item, "item_no"), s(item, "fsi_part_number_snapshot"), "line " + index);
+            double oldPrice = Math.round(num(item, "unit_price") * 1e6) / 1e6, oldQty = r3(num(item, "quantity"));
+            double newPrice = s(line, "unit_price").isEmpty() ? oldPrice : Math.round(num(line, "unit_price") * 1e6) / 1e6;
+            double newQty = s(line, "quantity").isEmpty() ? oldQty : r3(num(line, "quantity"));
+            if (newPrice <= 0) throw new Rule(label + ": amended Unit Price must be greater than zero.");
+            if (newQty <= 0) throw new Rule(label + ": amended Quantity must be greater than zero.");
+            double received = purchaseOrderItemReceivedQty(item, header);
+            if (newQty + 0.0001 < received) throw new Rule(label + ": amended Quantity " + fmt(newQty, 3) + " cannot be below the quantity already received (" + fmt(received, 3) + ").");
+            boolean priceChanged = Math.abs(newPrice - oldPrice) > 0.000001, qtyChanged = Math.abs(newQty - oldQty) > 0.0001;
+            if (!priceChanged && !qtyChanged) continue;
+            itemPayload.put(new JSONObject().put("id", s(item, "id")).put("unit_price", newPrice).put("quantity", newQty));
+            changes.add(new Object[]{item, oldPrice, newPrice, oldQty, newQty, received, priceChanged, index});
+        }
+        JSONObject headerChanges = new JSONObject();
+        JSONObject update = new JSONObject().put("refresh_master_data", false).put("items", itemPayload);
+        for (String key : AMENDABLE_HEADER_FIELDS) {
+            if (!p.has(key)) continue;
+            Object nv = amendValue(key, p.opt(key)), ov = amendValue(key, header.opt(key));
+            boolean same = nv == null ? ov == null : ov != null && String.valueOf(nv).equals(String.valueOf(ov));
+            if (same) continue;
+            headerChanges.put(key, new JSONObject().put("old", ov == null ? JSONObject.NULL : ov).put("new", nv == null ? JSONObject.NULL : nv));
+            update.put(key, nv == null ? JSONObject.NULL : nv);
+        }
+        if (changes.isEmpty() && headerChanges.length() == 0) throw new Rule("Nothing was changed. Change a line price / quantity or a commercial field before saving the amendment.");
+
+        JSONObject revision = updatePurchaseOrder(poId, update);
+        String poNumber = s(header, "po_number"), supplierId = s(header, "supplier_id");
+        String currency = first(s(header, "currency"), "INR").toUpperCase(Locale.ROOT);
+        String note = "PO " + poNumber + " Amd " + amendmentNo + ": " + reason;
+        List<String> warnings = new ArrayList<>();
+        Map<String, String> priceRows = new HashMap<>();
+        for (Object[] ch : changes) {
+            if (!(Boolean) ch[6]) continue;
+            JSONObject item = (JSONObject) ch[0];
+            JSONObject part = get("parts", s(item, "part_id"));
+            JSONObject raw = get("part_raw_material_details", s(item, "raw_material_detail_id"));
+            if (!t(raw, "source_part_id").isEmpty()) { JSONObject[] ctx = resolveRawSource(part, raw, supplierId); part = ctx[0]; raw = ctx[1]; }
+            if (s(part, "id").isEmpty()) { warnings.add(s(item, "item_no") + ": no Part Master link - price history not updated."); continue; }
+            try {
+                String uom = first(s(item, "uom"), "RAW_MATERIAL".equals(s(header, "po_type")) ? "KGS" : "NOS");
+                JSONObject row = recordPurchasePrice(s(part, "id"), supplierId, s(raw, "id").isEmpty() ? null : s(raw, "id"), effective, (Double) ch[2], uom, currency, s(item, "id"), note);
+                if (row != null) priceRows.put(s(item, "id"), s(row, "id"));
+                JSONArray history = priceHistoryForPo(s(part, "id"), supplierId, s(item, "uom"), s(raw, "id"));
+                api.update("supply_purchase_order_items", s(item, "id"), new JSONObject().put("price_history_snapshot", head(history, 250)));
+            } catch (Exception e) {
+                warnings.add(s(item, "item_no") + ": price history not updated - " + friendlyPoError(e));
+            }
+        }
+        String today = LocalDate.now().toString();
+        JSONObject amendment = api.insert("supply_po_amendments", new JSONObject().put("purchase_order_id", poId).put("amendment_no", amendmentNo).put("amendment_date", today)
+            .put("effective_date", effective).put("reason", reason).put("header_changes", headerChanges).put("status", "PENDING_APPROVAL")
+            .put("created_by_employee_id", n(api.employeeId)));
+        JSONArray linesOut = new JSONArray();
+        for (Object[] ch : changes) {
+            JSONObject item = (JSONObject) ch[0];
+            linesOut.put(api.insert("supply_po_amendment_lines", new JSONObject().put("amendment_id", s(amendment, "id")).put("purchase_order_item_id", s(item, "id"))
+                .put("line_no", ch[7]).put("item_no", n(first(s(item, "item_no"), s(item, "fsi_part_number_snapshot")))).put("item_description", n(s(item, "item_description")))
+                .put("uom", n(s(item, "uom"))).put("currency", currency).put("old_unit_price", ch[1]).put("new_unit_price", ch[2]).put("old_quantity", ch[3])
+                .put("new_quantity", ch[4]).put("received_qty", ch[5]).put("price_history_id", n(priceRows.get(s(item, "id"))))));
+        }
+        JSONObject headerAfter = api.update("supply_purchase_orders", poId, new JSONObject().put("amendment_no", amendmentNo).put("amendment_date", today)
+            .put("amendment_effective_date", effective).put("amendment_reason", reason));
+        JSONArray warn = new JSONArray();
+        for (String w : warnings) warn.put(w);
+        return new JSONObject().put("header", headerAfter).put("amendment", amendment).put("lines", linesOut).put("amendment_no", amendmentNo)
+            .put("display_number", poDisplayNumber(empty(headerAfter) ? new JSONObject().put("po_number", poNumber).put("amendment_no", amendmentNo) : headerAfter))
+            .put("warnings", warn).put("reapproval_required", true).put("revision", revision);
     }
 
     // ================================================================== opening stock

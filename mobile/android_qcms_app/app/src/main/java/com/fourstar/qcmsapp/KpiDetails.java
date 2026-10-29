@@ -53,6 +53,15 @@ final class KpiDetails {
         String route = s(card, "route");
         JSONObject drill = card == null ? null : card.optJSONObject("drill");
         if (drill != null && !s(drill, "table").isEmpty()) { openDrill(a, drill, label, route); return; }
+        if (drill != null && (!s(drill, "key").isEmpty() || !s(drill, "rpc").isEmpty())) {
+            // R39: R37 drill contract (mobile/KPI_DRILL_CONTRACT.md): qcms_kpi_drilldown(p_card_key) + open_route
+            JSONObject args = drill.optJSONObject("args");
+            String dk = s(drill, "key").isEmpty() && args != null ? s(args, "p_card_key") : s(drill, "key");
+            String open = s(drill, "open_route").isEmpty() ? route : s(drill, "open_route");
+            String title = s(drill, "title").isEmpty() ? label : s(drill, "title");
+            openCard(a, dk.isEmpty() ? s(card, "key") : dk, department, title, open);
+            return;
+        }
         String key = s(card, "key");
         if (key.isEmpty()) key = keyForLabel(label);
         openCard(a, key, department, label, route);
@@ -200,21 +209,28 @@ final class KpiDetails {
             return;
         }
         if ("supply_purchase_orders".equals(table)) { SndPdfView.forPo(a, id); return; }
+        final Api api = Api.get(a);
+        // R39: a detail row prints its parent record (web global search: _resolve_target + record print panel)
+        ExportKit.layoutMenu(a, () -> {
+            String[] t = GenTarget.resolve(api, table, id);
+            return RptReports.forRecord(api, printModule(t[0], t[0].equals(table) ? route : ""), t[1]);
+        });
+    }
+
+    static Module printModule(String table, String route) {
         Module m = Notif.moduleForTable(table, route);
         if (m == null || !"id".equals(m.idField)) {
             Module byTable = Catalog.forTable(table);
             m = byTable != null && "id".equals(byTable.idField) ? byTable : Catalog.adhoc(table);
         }
-        final Module module = m;
-        final Api api = Api.get(a);
-        ExportKit.layoutMenu(a, () -> RptReports.forRecord(api, module, id));
+        return m;
     }
 
     /** Long-press menu of a list row: open or print. */
     static void rowMenu(MainActivity a, String title, String table, String id, String route) {
         new AlertDialog.Builder(a).setTitle(title == null || title.isEmpty() ? "Record" : title)
             .setItems(new String[]{"Open record", "Print PDF · Preview / Save / Share"}, (d, w) -> {
-                if (w == 0) Notif.open(a, table, id, route, title);
+                if (w == 0) GenTarget.open(a, table, id, route, title);
                 else printRecord(a, table, id, route);
             })
             .setNegativeButton("Close", null).show();
@@ -302,6 +318,12 @@ final class KpiDetails {
      * its PostgREST record counts.
      */
     static void sectionModuleCards(MainActivity a, LinearLayout holder, int tab) {
+        // R39: module infographic groups (qcms_module_kpis, R37 contract); the older one-card-per-module strip
+        // (qcms_module_cards) stays as the fallback for databases without qcms_module_kpis
+        KpiModules.fillTab(a, holder, tab, () -> sectionModuleCardsLegacy(a, holder, tab));
+    }
+
+    static void sectionModuleCardsLegacy(MainActivity a, LinearLayout holder, int tab) {
         String[] depts = departmentsOfTab(tab);
         if (depts.length == 0) return;
         Api api = Api.get(a);
@@ -402,6 +424,10 @@ final class KpiDetails {
         {"Calibration / validation", "calibration_records", "calibration-validation", "CALIBRATION_VALIDATION"},
         {"Standard room inspection", "standard_room", "standard-room-inspection", "CALIBRATION_VALIDATION"},
         {"Purchase order", "purchase_orders", "supply-purchase-orders", "SUPPLY_CHAIN"},
+        // R39 (core/quick_add.py): indirect purchase + RM procurement (app module found by route when present)
+        {"Indirect PO", "", "indirect-po", "SUPPLY_CHAIN"},
+        {"Indirect requisition", "", "indirect-requisition", "SUPPLY_CHAIN"},
+        {"RM procurement", "rm_po_stages", "supply-rm-procurement", "SUPPLY_CHAIN"},
         {"Customer order", "customer_orders", "supply-customer-orders", "SUPPLY_CHAIN"},
         {"RM receipt", "rm_receipts", "supply-rm-receipt", "SUPPLY_CHAIN"},
         {"RM dispatch", "rm_dispatches", "supply-rm-dispatch", "SUPPLY_CHAIN"},
@@ -413,13 +439,14 @@ final class KpiDetails {
     };
 
     static void quickActions(MainActivity a) {
-        String[] items = {"＋ New transaction", "✉ New e-mail", "🔍 New query (global search)", "✦ Ask QCMS AI (Search & AI)"};
+        String[] items = {"＋ New transaction", "✉ New e-mail", "🔍 New query (global search)", "✦ Ask QCMS AI (Search & AI)", "▦ New dashboard (My Dashboards)"};
         new AlertDialog.Builder(a).setTitle("Quick actions")
             .setItems(items, (d, w) -> {
                 switch (w) {
                     case 0: newTransaction(a); break;
                     case 1: newEmail(a); break;
                     case 2: a.push(GenSearchScreen.newQuery(a)); break;   // empty query, keyboard up
+                    case 4: a.push(new GenDashScreen(a)); break;            // R39: web "+" → New dashboard
                     default: a.openSearchAi();
                 }
             })
@@ -453,18 +480,24 @@ final class KpiDetails {
             }
             List<String> labels = new ArrayList<>();
             for (String[] t : list) {
-                Module m = t[1].isEmpty() ? null : Catalog.get(t[1]);
+                Module m = moduleOf(t);
                 labels.add(t[0] + (m == null || !m.canCreate() ? "  (website form)" : ""));
             }
             new AlertDialog.Builder(a).setTitle("New transaction")
                 .setItems(labels.toArray(new String[0]), (d, w) -> {
                     String[] t = list.get(w);
-                    Module m = t[1].isEmpty() ? null : Catalog.get(t[1]);
+                    Module m = moduleOf(t);
                     if (m != null) a.newRecord(m.key);
                     else Notif.open(a, "", "", t[2], t[0]);   // website entry page (no native module)
                 })
                 .setNegativeButton("Back", null).show();
         });
+    }
+
+    /** App module of a quick action: its key, else the module registered for its website route. */
+    static Module moduleOf(String[] t) {
+        String key = t[1].isEmpty() ? Notif.ROUTE_MODULES.get(t[2]) : t[1];
+        return key == null ? null : Catalog.get(key);
     }
 
     static void newEmail(MainActivity a) {
@@ -478,6 +511,8 @@ final class KpiDetails {
         /** Generic drill (card "drill" object): PostgREST table + filter instead of qcms_kpi_records. */
         String drillTable = "";
         JSONObject drillFilter;
+        /** R39: rows already computed on the phone (custom dashboard widgets) - shown as they are. */
+        JSONArray preset;
         private JSONArray rows;
         private String filter = "";
         private LinearLayout list;
@@ -503,8 +538,16 @@ final class KpiDetails {
             page.addView(loading());
             Api.async(() -> {
                 if (drillTable != null && !drillTable.isEmpty()) return loadDrill(api, drillTable, filterQuery(drillFilter));
+                if (preset != null) return preset;
+                // R39: R37 contract - qcms_kpi_drilldown(p_card_key, p_limit) works for every key (module metric
+                // keys mk_* and start-dashboard keys); qcms_kpi_records on older databases; then the client drill
+                try {
+                    return api.rpcRows("qcms_kpi_drilldown", new JSONObject().put("p_card_key", key).put("p_limit", 500));
+                } catch (Exception drillErr) {
+                    if (drillErr instanceof Api.ApiException && ((Api.ApiException) drillErr).status == 401) throw drillErr;
+                }
                 JSONObject args = new JSONObject().put("p_card_key", key).put("p_limit", 500);
-                if (!department.isEmpty()) args.put("p_department", department);
+                args.put("p_department", department.isEmpty() ? JSONObject.NULL : department);
                 try {
                     return api.rpcRows("qcms_kpi_records", args);
                 } catch (Exception rpcErr) {
@@ -558,7 +601,7 @@ final class KpiDetails {
             list = Ui.vbox(a);
             add(list, 8);
             fill();
-            if (!route.isEmpty()) {
+            if (!route.isEmpty() && preset == null) {
                 android.widget.Button mod = Ui.outline(a, "Open the module", Ui.TEAL);
                 mod.setOnClickListener(v -> Notif.open(a, "", "", route, label));
                 add(mod, 12);
@@ -622,7 +665,7 @@ final class KpiDetails {
             actions.addView(open);
             card.addView(actions);
             final String title = ref.isEmpty() ? label : ref;
-            card.setOnClickListener(v -> Notif.open(a, table, id, route, title));
+            card.setOnClickListener(v -> GenTarget.open(a, table, id, route, title));
             card.setOnLongClickListener(v -> { rowMenu(a, title, table, id, route); return true; });
             return card;
         }

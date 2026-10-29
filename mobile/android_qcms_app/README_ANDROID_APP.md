@@ -24,11 +24,11 @@ Every grid scrolls left / right and up / down with a fixed header row and first 
 ## Build
 GitHub builds it automatically on every push to main that changes `mobile/android_qcms_app`
 (workflow **STAWN QCMS Android App APK**, artifact **QCMS-NATIVE-APP-APK**, file
-`STAWN_QCMS_v3.6.0.apk`). The test APK is signed with the fixed key `app/qcms-debug.keystore`,
+`STAWN_QCMS_v3.7.0.apk`). The test APK is signed with the fixed key `app/qcms-debug.keystore`,
 so a new APK installs over the previous one without uninstalling.
 
 Install on the phone: download the artifact zip from GitHub → Actions → latest run, unzip,
-open `STAWN_QCMS_v3.6.0.apk` on the phone, allow "Install unknown apps" for the browser / Files app.
+open `STAWN_QCMS_v3.7.0.apk` on the phone, allow "Install unknown apps" for the browser / Files app.
 The older WebView app (`com.fourstar.qcms.test`) can stay installed; this app is `com.fourstar.qcmsapp`.
 
 ## v3.0.0 (R30)
@@ -59,6 +59,18 @@ layout, Universal Record PDF for any other table). Asset and PO screens offer th
 Cards also honour a server "drill" object (table + PostgREST filter) and, on older databases, a label -> key map with
 client-side status filters. Supply / Quality / Masters / More tabs show the module infographic cards on top. "+" New transaction
 only lists modules with Create permission; New query opens Global Search with the keyboard up; search results have a Results PDF.
+
+## v3.7.0 (R39) - website parity
+- STAWN Developer Console (developer only): licences, companies, company admins, any company's profile / logo, login cover photo, trial-data purge.
+- Licence & Company; licensed company logo + employee photo in the top bar; app version only in My Account / About.
+- Employee photo, reports-to / escalation / direct reports / approval routes.
+- OSP: one Material Out + Returnable Delivery Challan form, register, record (Details / Print / Vendor returns), OSP queues.
+- Indirect Purchase (POs, approval, requisitions, GRN, items, stock ledger); PO amendments with effective date; approved PO PDF saved + opened.
+- PPAP Document Manager (packages, elements, documents, ZIP, send to customer, assignment e-mail with part details + drawings / specs).
+- RMTC QR: PNG / JPEG / PDF / 100 x 60 mm label, Quality e-mail on approval; sections applicable; horizontal chemistry / Jominy grids with mm row.
+- Part Processes with drawings / specs revisions, ECN / PCN (required when a drawing is replaced), ECN register, Part sections applicable.
+- Module KPI cards, My Dashboards, Inventory & Stock reports, search / KPI / notifications open the exact record; department-first e-mail subjects.
+- Parity matrix: mobile/ANDROID_WEB_PARITY.md (123 web routes: 120 native, 3 in-app web pages).
 
 ## v3.6.0 (R38)
 Chemistry and Jominy are horizontal everywhere in the app: elements (C, Mn, Si, S, P, Cr, Ni, Mo, ...) and Jominy distances

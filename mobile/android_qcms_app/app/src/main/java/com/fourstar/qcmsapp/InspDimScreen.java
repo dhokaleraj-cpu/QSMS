@@ -181,7 +181,7 @@ final class InspDimScreen extends Screen {
             if (job == null) { contextProblem = "The OSP job could not be loaded."; return; }
             partId = InspUtil.j(job, "part_id");
             part = InspUtil.get(api, "parts", partId);
-            planOptions = InspUtil.plans(api, "DIMENSIONAL", partId, true, InspUtil.j(job, "process_id"), null, "OSP_PROCESS");
+            planOptions = InspOsp.ospPlans(api, "DIMENSIONAL", job);   // R39: web R35/R37 layout fallback (name match / only OSP layout)
             if (planOptions.isEmpty()) { contextProblem = "No Approved OSP Dimensional layout matches Part " + InspUtil.j(job, "part_number") + " and Process " + InspUtil.j(job, "process_name") + ". Create / approve the OSP inspection layout."; return; }
             String saved = InspUtil.j(existing, "inspection_plan_id");
             String want = !saved.isEmpty() ? saved : manualPlanId;

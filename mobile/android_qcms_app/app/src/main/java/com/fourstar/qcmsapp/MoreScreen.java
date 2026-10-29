@@ -35,12 +35,18 @@ public final class MoreScreen {
         page.addView(link(a, "Home overview", "POs awaiting approval, calibrations due, deletion requests", v -> a.push(new HomeScreen(a))), Ui.matchWrap(a, 6));
         page.addView(link(a, "KPI start dashboard", "Quality · Supply Chain · Production · NPD · Management", v -> a.openTab(Catalog.HOME)), Ui.matchWrap(a, 6));
         AdmSettings.addAdminLinks(a, page);
+        // R39: Licence & Company and (STAWN developers only) the Developer Console
+        page.addView(link(a, "Licence & Company", "Licence, company profile and logo" + (LicService.isCompanyAdmin(api) || LicService.isDeveloper() ? "" : " · view only"),
+            v -> a.push(new LicCompanyScreen(a))), Ui.matchWrap(a, 6));
+        if (LicService.isDeveloper()) page.addView(link(a, "STAWN Developer Console", "Companies, licence keys, admins, login cover, trial-data purge",
+            v -> a.push(new DevConsoleScreen(a))), Ui.matchWrap(a, 6));
         page.addView(link(a, "About STAWN QCMS", "Version, developer, copyright and licence", v -> a.push(new GenCentres.AboutScreen(a))), Ui.matchWrap(a, 6));
         page.addView(link(a, "Open full QCMS website", "Everything as on the computer", v -> a.openWeb("QCMS", "")), Ui.matchWrap(a, 6));
         page.addView(link(a, "Sign out", "Remove the saved session from this phone",
             v -> a.confirm("Sign out?", "You will need your password to sign in again.", "Sign out", a::signOut)), Ui.matchWrap(a, 14));
         String company = Licence.company(api);
-        TextView about = Ui.text(a, "STAWN QCMS app v" + BuildConfig.VERSION_NAME + " · " + (company.isEmpty() ? "Four Star Industries" : company) + "\n" + GenCentres.About.COPYRIGHT + "\nSigned in as " + api.email
+        // R39 (website R38 rule): no app version here - it is shown only in User details (My Account) and on the About page
+        TextView about = Ui.text(a, "STAWN QCMS · " + (company.isEmpty() ? "Four Star Industries" : company) + "\n" + GenCentres.About.COPYRIGHT + "\nSigned in as " + api.email
             + (api.employeeLabel.isEmpty() ? "" : "\nEmployee " + api.employeeLabel) + (api.role.isEmpty() ? "" : " · " + Ui.pretty(api.role)), 11.5f, Ui.MUTED, false);
         about.setPadding(Ui.dp(a, 4), Ui.dp(a, 18), Ui.dp(a, 4), 0);
         page.addView(about);

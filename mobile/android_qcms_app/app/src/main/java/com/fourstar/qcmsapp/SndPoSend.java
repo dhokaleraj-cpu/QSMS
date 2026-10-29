@@ -115,6 +115,9 @@ public final class SndPoSend extends Screen {
         to = toEmail;
         cc = String.join("; ", finalCc);
         subject = subjectTemplate.isEmpty() ? "QCMS · " + titleCase(event.replace('_', ' ')) : SndMail.fill(subjectTemplate, context);
+        // R39 (web R38): department first in the subject instead of "QCMS"
+        String dept = SndData.s(context, "department");
+        subject = SndMail.departmentSubject(subject, dept.isEmpty() && route != null ? SndData.s(route, "department") : dept, event);
         body = bodyTemplate.isEmpty()
             ? "QCMS workflow notification\nDocument: " + orDash(SndData.s(context, "document_no")) + "\nNext stage: " + orDash(SndData.s(context, "next_stage"))
             : SndMail.fill(bodyTemplate, context);
@@ -401,7 +404,8 @@ public final class SndPoSend extends Screen {
             JSONArray manifest = new JSONArray();
             String uploaded = null;
             if (withPdf) {
-                byte[] pdf = SndPoPdf.build(po, sendOptions);
+                // R39 (web supplier_safe_po): the supplier copy never carries the customer source reference / customer keys
+                byte[] pdf = SndPoPdf.build(SndData.supplierSafe(po), SndData.supplierSafeOptions(sendOptions));
                 JSONObject m = SndMail.uploadExport(api, SndMail.exportFolder(api), po.fileName(), pdf, "application/pdf", true);
                 uploaded = m.optString("object_path");
                 manifest.put(m);
