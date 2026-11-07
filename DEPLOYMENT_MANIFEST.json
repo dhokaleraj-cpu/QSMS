@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R41",
+  "release_revision": "R41b",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -706,5 +706,8 @@
     "ios_public_rmtc_qr",
     "ios_github_build_macos15_xcode16_release_device_check",
     "android_3_8_0"
+  ],
+  "r41b_changes": [
+    "ios_build_uses_paid_team_never_free_personal_team_push_notifications"
   ]
 }

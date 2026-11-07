@@ -72,3 +72,24 @@ def test_reminder_functions_stop_when_schedule_deleted():
 def test_android_offers_delete():
     src = (ANDROID / "AdmEmailAuto.java").read_text(encoding="utf-8")
     assert "Delete reminder" in src and "qcms_notification_schedules" in src and "verifyPassword" in src
+
+
+def test_ios_build_never_uses_free_personal_team(monkeypatch):
+    """R41b: 'Personal development teams ... do not support the Push Notifications capability' - the paid team wins."""
+    import importlib.util
+    import plistlib
+    import types
+
+    ios = ROOT / "mobile/ios_stawn_qcms"
+    spec = importlib.util.spec_from_file_location("xcode_teams", ios / "xcode_teams.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    sample = {"IDEProvisioningTeamByIdentifier": {"acc": [
+        {"teamID": "858JDBMV9K", "teamName": "Rajesh Dhokale", "isFreeProvisioningTeam": True},
+        {"teamID": "ABCDE12345", "teamName": "STAWN PRECISION PRIVATE LIMITED", "isFreeProvisioningTeam": False}]}}
+    monkeypatch.setattr(mod, "subprocess", types.SimpleNamespace(run=lambda *a, **k: types.SimpleNamespace(stdout=plistlib.dumps(sample))))
+    assert [t["id"] for t in mod.teams() if not t["free"]] == ["ABCDE12345"]
+    assert mod.main(["x", "isfree", "858JDBMV9K"]) == 0 and mod.main(["x", "isfree", "ABCDE12345"]) == 1
+    cmd = (ios / "BUILD_STAWN_QCMS_iOS.command").read_text(encoding="utf-8")
+    assert 'TEAM_ID="$(python3 xcode_teams.py paid 2>/dev/null)"' in cmd and "python3 xcode_teams.py isfree" in cmd
+    assert cmd.index("xcode_teams.py paid") < cmd.index(".stawn_apple_team_id\" ]; then TEAM_ID=")

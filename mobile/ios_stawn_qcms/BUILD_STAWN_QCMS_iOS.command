@@ -50,23 +50,29 @@ if [ "$MODE" = "free" ]; then
   echo "max 3 apps; no push notifications (the in-app bell and inbox still work)."
   exit 0
 fi
-# ---- Apple Team ID: env > ~/.stawn_apple_team_id > signing certificate in the Keychain (saved once) ----
+# ---- Apple Team ID (R41b): env > PAID team in Xcode > Settings > Accounts > ~/.stawn_apple_team_id > Keychain certificate ----
+# A free "Personal Team" (your own name) cannot sign Push Notifications, so it is never used for this app.
 TEAM_ID="${STAWN_APPLE_TEAM_ID:-}"
+[ -z "$TEAM_ID" ] && TEAM_ID="$(python3 xcode_teams.py paid 2>/dev/null)"
 if [ -z "$TEAM_ID" ] && [ -f "$HOME/.stawn_apple_team_id" ]; then TEAM_ID="$(tr -d ' \n\r' < "$HOME/.stawn_apple_team_id")"; fi
 if [ -z "$TEAM_ID" ]; then
   for CN in "Apple Distribution" "Apple Development" "iPhone Distribution" "iPhone Developer"; do
-    TEAM_ID="$(security find-certificate -a -c "$CN" -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null | sed -n 's/.*OU *= *\([A-Z0-9]\{10\}\).*/\1/p' | head -1)"
+    for T in $(security find-certificate -a -c "$CN" -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null | sed -n 's/.*OU *= *\([A-Z0-9]\{10\}\).*/\1/p'); do
+      python3 xcode_teams.py isfree "$T" || { TEAM_ID="$T"; break; }
+    done
     [ -n "$TEAM_ID" ] && break
   done
 fi
-if [ -z "$TEAM_ID" ]; then
-  # R41: paid team (isFreeProvisioningTeam = 0) of the Apple ID signed in under Xcode > Settings > Accounts
-  TEAM_ID="$(defaults read com.apple.dt.Xcode IDEProvisioningTeams 2>/dev/null | tr -d '\n' | sed -n 's/.*isFreeProvisioningTeam = 0;[^}]*teamID = \([A-Z0-9]\{10\}\).*/\1/p' | head -1)"
-  [ -z "$TEAM_ID" ] && TEAM_ID="$(defaults read com.apple.dt.Xcode IDEProvisioningTeams 2>/dev/null | tr -d '\n' | sed -n 's/.*teamID = \([A-Z0-9]\{10\}\);[^}]*isFreeProvisioningTeam = 0.*/\1/p' | head -1)"
+if [ -n "$TEAM_ID" ] && python3 xcode_teams.py isfree "$TEAM_ID"; then
+  echo "Team $TEAM_ID is your free Personal Team - it cannot sign this app (Push Notifications). Ignoring it."
+  TEAM_ID=""
 fi
-if [ -z "$TEAM_ID" ] && [ -t 0 ]; then
-  echo "Apple Team ID not found. developer.apple.com > Account > Membership details > Team ID (10 characters)."
-  read -r -p "Enter your Apple Team ID (or press Enter to skip): " TEAM_ID
+if [ -z "$TEAM_ID" ]; then
+  echo "Teams known to Xcode:"; python3 xcode_teams.py list | sed 's/^/  /'
+fi
+if [ -z "$TEAM_ID" ] && [ -t 0 ] && [ "$MODE" != "check" ]; then
+  echo "Enter the Team ID of STAWN PRECISION PRIVATE LIMITED (developer.apple.com > Account > Membership details, 10 characters)."
+  read -r -p "Apple Team ID (or press Enter to skip): " TEAM_ID
 fi
 if [ -n "$TEAM_ID" ]; then
   echo "$TEAM_ID" > "$HOME/.stawn_apple_team_id"
