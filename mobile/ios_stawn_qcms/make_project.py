@@ -2,8 +2,8 @@
 import hashlib, os, sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, "STAWNQCMS")
-VERSION = sys.argv[1] if len(sys.argv) > 1 else "1.3.0"
-BUILD = sys.argv[2] if len(sys.argv) > 2 else "4"
+VERSION = sys.argv[1] if len(sys.argv) > 1 else "1.4.0"
+BUILD = sys.argv[2] if len(sys.argv) > 2 else "5"
 BUNDLE = "com.stawnprecision.qcms"
 # R36: free Apple ID ("Personal Team") build - no paid membership. Personal teams cannot sign Push Notifications,
 # so the push entitlement is left out and a separate bundle id is used (STAWN_PERSONAL_TEAM=1).
@@ -22,7 +22,7 @@ def uid(name):
     return hashlib.md5(name.encode()).hexdigest()[:24].upper()
 
 swift = sorted(f for f in os.listdir(SRC) if f.endswith(".swift"))
-resources = ["Assets.xcassets", "Resources/catalog.json"]
+resources = ["Assets.xcassets", "Resources/catalog.json", "PrivacyInfo.xcprivacy"]  # R41: App Store privacy manifest
 objs = []
 P = lambda k, v: objs.append(f"\t\t{k} = {v};")
 files = []
@@ -34,7 +34,7 @@ for f in swift:
 res = []
 for r in resources:
     ref, bf = uid("ref" + r), uid("bf" + r)
-    kind = "folder.assetcatalog" if r.endswith("xcassets") else "text.json"
+    kind = "folder.assetcatalog" if r.endswith("xcassets") else ("text.xml" if r.endswith("xcprivacy") else "text.json")
     P(ref, f'{{isa = PBXFileReference; lastKnownFileType = {kind}; path = "{r}"; sourceTree = "<group>"; }}')
     P(bf, f'{{isa = PBXBuildFile; fileRef = {ref}; }}')
     res.append((ref, bf))
@@ -80,9 +80,11 @@ if PERSONAL:
     target_common.pop("CODE_SIGN_ENTITLEMENTS", None)
 td, tr = uid("targetdebug"), uid("targetrelease")
 P(td, "{isa = XCBuildConfiguration; buildSettings = " + settings(target_common) + "; name = Debug; }")
-# Release (Archive / TestFlight) signs with the Apple Distribution certificate + App Store profile:
-# no registered iPhone / iPad is needed for TestFlight.
-P(tr, "{isa = XCBuildConfiguration; buildSettings = " + settings(target_common if PERSONAL else {**target_common, "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Distribution"}) + "; name = Release; }")
+# Release (Archive / TestFlight): automatic signing archives with "Apple Development" and the export step re-signs with the
+# Apple Distribution certificate + App Store profile - no registered iPhone / iPad is needed for TestFlight.
+# R41: no manual CODE_SIGN_IDENTITY here - with automatic signing a manually specified "Apple Distribution" identity makes
+# Xcode stop with "conflicting provisioning settings".
+P(tr, "{isa = XCBuildConfiguration; buildSettings = " + settings(target_common) + "; name = Release; }")
 pl, tl = uid("projlist"), uid("targetlist")
 P(pl, "{isa = XCConfigurationList; buildConfigurations = (" + pd + ", " + pr + "); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; }")
 P(tl, "{isa = XCConfigurationList; buildConfigurations = (" + td + ", " + tr + "); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; }")

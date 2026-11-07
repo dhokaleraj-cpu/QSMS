@@ -1,6 +1,8 @@
 #!/bin/bash
 # STAWN QCMS for iPhone and iPad - build check, open in Xcode, or archive + upload to TestFlight.
 #   ./BUILD_STAWN_QCMS_iOS.command              -> generate project, build check (simulator), open Xcode
+#   ./BUILD_STAWN_QCMS_iOS.command device       -> build + install on the iPhone / iPad connected by cable; registers the device
+#                                                  with your Apple Developer team automatically (fixes "Your team has no devices")
 #   ./BUILD_STAWN_QCMS_iOS.command testflight   -> archive + upload to App Store Connect (TestFlight)
 #   ./BUILD_STAWN_QCMS_iOS.command adhoc        -> archive + export a signed .ipa to ~/Downloads (registered devices)
 #   ./BUILD_STAWN_QCMS_iOS.command free         -> FREE Apple ID (no paid membership): install on your own iPhone / iPad
@@ -8,7 +10,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
-VERSION="1.3.0"
+VERSION="1.4.0"
 BUILD_NO="$(date +%Y%m%d%H%M)"
 MODE="${1:-check}"
 LOG="$HOME/Downloads/STAWN_QCMS_iOS_build_log.txt"
@@ -57,6 +59,11 @@ if [ -z "$TEAM_ID" ]; then
     [ -n "$TEAM_ID" ] && break
   done
 fi
+if [ -z "$TEAM_ID" ]; then
+  # R41: paid team (isFreeProvisioningTeam = 0) of the Apple ID signed in under Xcode > Settings > Accounts
+  TEAM_ID="$(defaults read com.apple.dt.Xcode IDEProvisioningTeams 2>/dev/null | tr -d '\n' | sed -n 's/.*isFreeProvisioningTeam = 0;[^}]*teamID = \([A-Z0-9]\{10\}\).*/\1/p' | head -1)"
+  [ -z "$TEAM_ID" ] && TEAM_ID="$(defaults read com.apple.dt.Xcode IDEProvisioningTeams 2>/dev/null | tr -d '\n' | sed -n 's/.*teamID = \([A-Z0-9]\{10\}\);[^}]*isFreeProvisioningTeam = 0.*/\1/p' | head -1)"
+fi
 if [ -z "$TEAM_ID" ] && [ -t 0 ]; then
   echo "Apple Team ID not found. developer.apple.com > Account > Membership details > Team ID (10 characters)."
   read -r -p "Enter your Apple Team ID (or press Enter to skip): " TEAM_ID
@@ -86,8 +93,41 @@ case "$MODE" in
     echo "  3. iPhone: Settings > Privacy & Security > Developer Mode > On (restart when asked)."
     echo "  4. In Xcode pick the iPhone / iPad at the top (not 'Any iOS Device') - Xcode registers it."
     echo "  5. Signing & Capabilities > Try Again, then press Run."
+    echo "Or let this script do it:  ./BUILD_STAWN_QCMS_iOS.command device"
     echo "No device at hand? Use TestFlight - no device registration needed:"
     echo "  ./BUILD_STAWN_QCMS_iOS.command testflight"
+    ;;
+  device)
+    [ -n "$TEAM_ID" ] || { echo "Set your Apple Team ID once:  echo YOURTEAMID > ~/.stawn_apple_team_id   (developer.apple.com > Account > Membership details)"; exit 1; }
+    say "INSTALL ON THE CONNECTED iPHONE / iPAD (team $TEAM_ID)"
+    DEV_JSON="$(mktemp -t stawn_devices).json"
+    xcrun devicectl list devices --json-output "$DEV_JSON" >/dev/null 2>&1 || true
+    UDID="${STAWN_DEVICE_UDID:-}"
+    if [ -z "$UDID" ]; then
+      UDID="$(python3 -c 'import json,sys
+try: devices = json.load(open(sys.argv[1])).get("result", {}).get("devices", [])
+except Exception: devices = []
+for d in devices:
+    hw = d.get("hardwareProperties", {})
+    if hw.get("platform") == "iOS" and hw.get("udid"):
+        print(hw["udid"]); break' "$DEV_JSON")"
+    fi
+    if [ -z "$UDID" ]; then
+      echo "No iPhone / iPad found. Connect it by cable, unlock it, tap 'Trust This Computer',"
+      echo "turn on Settings > Privacy & Security > Developer Mode (it restarts), then run this again."
+      exit 1
+    fi
+    echo "Device: $UDID"
+    rm -rf build && mkdir -p build
+    # -allowProvisioningDeviceRegistration adds this iPhone / iPad to the team and creates the development profile.
+    xcodebuild -project STAWNQCMS.xcodeproj -scheme STAWNQCMS -configuration Debug -destination "id=$UDID" \
+      -derivedDataPath build/dd DEVELOPMENT_TEAM="$TEAM_ID" -allowProvisioningUpdates -allowProvisioningDeviceRegistration build > "$LOG" 2>&1 \
+      || { grep -E "error:" "$LOG" | head -40; echo "Build failed - log: $LOG  (send it to Claude)"; exit 1; }
+    APP="$(find build/dd/Build/Products -maxdepth 2 -name 'STAWN QCMS.app' -print -quit)"
+    xcrun devicectl device install app --device "$UDID" "$APP" >> "$LOG" 2>&1 \
+      || { tail -20 "$LOG"; echo "Install failed - log: $LOG"; exit 1; }
+    echo "Installed STAWN QCMS v$VERSION on the device. First launch: Settings > General > VPN & Device Management is NOT needed for a paid team."
+    echo "Signing in Xcode now works too: pick this device at the top (not 'Any iOS Device') and press Run."
     ;;
   testflight|adhoc)
     [ -n "$TEAM_ID" ] || { echo "Set your Apple Team ID once:  echo YOURTEAMID > ~/.stawn_apple_team_id   (developer.apple.com > Membership)"; exit 1; }
@@ -119,5 +159,5 @@ PLIST
       echo "Uploaded to App Store Connect. In 10-30 minutes it appears in TestFlight (appstoreconnect.apple.com > Apps > STAWN QCMS > TestFlight)."
     fi
     ;;
-  *) echo "Usage: $0 [check|testflight|adhoc]"; exit 1 ;;
+  *) echo "Usage: $0 [check|device|testflight|adhoc|free]"; exit 1 ;;
 esac

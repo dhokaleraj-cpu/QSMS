@@ -9,10 +9,12 @@ enum AppConfig {
     /// Publishable (anon) key only - the service-role key is never in the app.
     static let supabaseKey = "sb_publishable_o1EpvnCYWnfJaSWQH5vfFA_EWzN4QGh"
     static let webURL = "https://vf6fa9hrhxquqxmfgyy4wf.streamlit.app"
+    /// R41: public RMTC QR (Supabase Edge Function qcms-rmtc-certificate, no login) - append the 32-character token.
+    static let publicQrBase = "https://xxrxopzxzyjnzumrwuwy.supabase.co/functions/v1/qcms-rmtc-certificate?t="
     static let bucket = "quality-documents"
     static let webVersion = "4.14.49"
-    static var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3.0" }
-    static var appBuild: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "4" }
+    static var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.4.0" }
+    static var appBuild: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "5" }
 }
 
 enum Theme {

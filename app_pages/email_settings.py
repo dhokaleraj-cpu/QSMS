@@ -281,6 +281,10 @@ def render() -> None:
         else:
             st.warning("Automatic notification schedules are not available. Apply the QCMS v4.14.7 database migration.")
 
+    # R41: permanently delete automatic reminder schedules (administrator + current password).
+    with stage_section("E1", "DELETE AUTOMATIC EMAIL REMINDERS", "Permanently removes the selected automatic reminder / digest schedules - their e-mails stop for everyone. To pause a reminder instead, switch off 'Enabled' above.", key="email_auto_schedule_delete"):
+        _render_schedule_delete(repo)
+
     with stage_section("E", "TEST & NOTIFICATION OUTBOX", "Send a test message or retry failed/pending notifications. Business transactions are never rolled back if email delivery fails.", key="email_settings_test"):
         test_email = st.text_input("Test Recipient Email", value=str(profile.get("email") or ""))
         c = st.columns(2, gap="small")
@@ -313,3 +317,34 @@ def render() -> None:
                 prepared = document_snapshots.refresh_pending(25, repo=repo)
             save_success_popup(f"Prepared {prepared} PDF attachment(s) for the reminder e-mails.", queue_for_rerun=True); st.rerun()
         st.caption("A PDF is attached only while it matches the current record; after an edit it is prepared again automatically (within 30 minutes of QCMS use) or with the button above.")
+
+
+def _render_schedule_delete(repo: Repository) -> None:
+    """R41: select automatic reminders and delete them after the current-password check."""
+    from core.reminder_admin import delete_schedules, impact_lines, schedule_label
+
+    try:
+        schedules = repo.select("qcms_notification_schedules", order_by="schedule_key", limit=500)
+    except Exception as exc:
+        st.error(db_message(exc))
+        return
+    if not schedules:
+        st.info("There are no automatic e-mail reminders to delete.")
+        return
+    labels = {str(r.get("id")): schedule_label(r) for r in schedules if r.get("id")}
+    chosen = st.multiselect("Automatic reminders to delete", list(labels), format_func=lambda v: labels.get(v, v), key="email_schedule_delete_ids")
+    if chosen:
+        rows = [r for r in schedules if str(r.get("id")) in chosen]
+        st.warning("\n".join(f"- {line}" for line in impact_lines(rows)))
+    c = st.columns([2, 3, 2], gap="small", vertical_alignment="bottom")
+    password = c[0].text_input("Current QCMS password", type="password", key="email_schedule_delete_password")
+    confirm = c[1].checkbox("I understand these reminders are deleted permanently.", key="email_schedule_delete_confirm")
+    if c[2].button("Delete selected reminders", type="primary", width="stretch", key="email_schedule_delete_button",
+                   disabled=not chosen or not confirm or not password):
+        try:
+            count = delete_schedules(repo, chosen, password)
+        except Exception as exc:
+            st.error(str(exc) if isinstance(exc, (ValueError, PermissionError)) else db_message(exc))
+        else:
+            save_success_popup(f"{count} automatic reminder(s) deleted.", queue_for_rerun=True)
+            st.rerun()

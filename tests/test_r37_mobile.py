@@ -20,14 +20,14 @@ def balanced(src: str) -> bool:
 # ------------------------------------------------------------------ versions
 def test_versions():
     gradle = read(AND / "app/build.gradle")
-    assert "versionCode 371" in gradle and "versionName '3.7.1'" in gradle
+    assert "versionCode 380" in gradle and "versionName '3.8.0'" in gradle
     mp = read(IOS / "make_project.py")
-    assert 'else "1.3.0"' in mp and 'else "4"' in mp
-    assert 'VERSION="1.3.0"' in read(IOS / "BUILD_STAWN_QCMS_iOS.command")
+    assert 'else "1.4.0"' in mp and 'else "5"' in mp
+    assert 'VERSION="1.4.0"' in read(IOS / "BUILD_STAWN_QCMS_iOS.command")
     core = read(SWIFT / "Core.swift")
-    assert '?? "1.3.0"' in core and '?? "4"' in core
+    assert '?? "1.4.0"' in core and '?? "5"' in core
     pbx = read(IOS / "STAWNQCMS.xcodeproj/project.pbxproj")
-    assert 'MARKETING_VERSION = "1.3.0"' in pbx and 'CURRENT_PROJECT_VERSION = "4"' in pbx
+    assert 'MARKETING_VERSION = "1.4.0"' in pbx and 'CURRENT_PROJECT_VERSION = "5"' in pbx
     assert '"QuickActions.swift"' in pbx and 'DEVELOPMENT_TEAM = ""' in pbx
     assert "## v3.5.0 (R37)" in read(AND / "README_ANDROID_APP.md")
     assert "## New in v1.2.0 (build 3, R37)" in read(IOS / "README_IOS.md")

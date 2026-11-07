@@ -64,4 +64,4 @@ def test_search_bar_about_and_build_tools():
     cmd = read(IOS / "BUILD_STAWN_QCMS_iOS.command")
     assert "iphonesimulator" in cmd and "testflight" in cmd and "-allowProvisioningUpdates" in cmd
     wf = read(ROOT / ".github/workflows/stawn-qcms-ios.yml")
-    assert "macos-14" in wf and "CODE_SIGNING_ALLOWED=NO" in wf
+    assert "macos-15" in wf and "CODE_SIGNING_ALLOWED=NO" in wf

@@ -185,6 +185,12 @@ enum WebRoutes {
         "kpi_dashboards": "kpi-dashboards", "report_builder": "report-builder", "master_lists": "master-lists", "traceability": "supply-traceability",
         "email_send": "email-send", "email_sent": "email-sent", "email_groups": "email-groups", "user_access": "user-access",
         "system_settings": "system-settings", "email_server": "email-settings", "print_designer": "print-designer", "master_import": "master-import",
+        // R41: modules added on the website / Android R35-R40 (native register where the table is listed, else the website page)
+        "indirect_purchase_orders": "indirect-po-list", "indirect_po_approval": "indirect-po-approval", "indirect_requisitions": "indirect-requisition",
+        "indirect_grns": "indirect-inward", "indirect_items": "indirect-items", "indirect_stock": "indirect-stock",
+        "rmtc_qr": "rmtc-qr", "osp_inspection_queues": "osp-dimensional", "ecn_register": "ecn-register", "ppap": "ppap-home",
+        "inventory_reports": "inventory-reports", "my_dashboards": "kpi-dashboards", "licence_company": "licence-company",
+        "email_reminders": "email-settings",
     ]
 
     static func path(for key: String) -> String? { map[key] }

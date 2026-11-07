@@ -20,6 +20,9 @@ Deno.serve(async(req:Request)=>{try{
    admin.from("qcms_module_approval_routes").select("id,module_key,department,level_no,level_name,employee_id,required,status,overdue_after_hours,overdue_after_days,notify_overdue").eq("tenant_id",tenantId).eq("module_key","SUPPLY_CHAIN").eq("status","ACTIVE").limit(500),
    admin.from("parties").select("id,party_name,party_code").eq("tenant_id",tenantId).limit(5000)]);
   if(!settings?.enabled||!settings?.smtp_host||!settings?.sender_email)continue;
+  // R41: the "Purchase Orders Pending Approval" reminder schedule controls these e-mails too - deleted or disabled = no overdue approval reminders.
+  const {data:gate}=await admin.from("qcms_notification_schedules").select("id,enabled").eq("tenant_id",tenantId).eq("schedule_key","PO_PENDING_APPROVAL").maybeSingle();
+  if(!gate||gate.enabled===false){skipped++;continue;}
   const em=new Map<string,Row>(employees.map((r:Row)=>[String(r.id),r]));const pm=new Map<string,Row>(parties.map((r:Row)=>[String(r.id),r]));
   const company=await companyName(admin,tenantId,settings);const snapCache:SnapshotCache=new Map();
   // R36: all lines of the pending POs once per tenant (part number, customer, qty, price, delivery date).

@@ -3,6 +3,7 @@
   "functions": [
     {"slug": "qcms-overdue-notifier", "verify_jwt": false},
     {"slug": "qcms-ppap-due-notifier", "verify_jwt": false},
-    {"slug": "qcms-rmtc-certificate", "verify_jwt": false}
+    {"slug": "qcms-rmtc-certificate", "verify_jwt": false},
+    {"slug": "qcms-po-approval-overdue", "verify_jwt": false}
   ]
 }

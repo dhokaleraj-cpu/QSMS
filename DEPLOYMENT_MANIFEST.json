@@ -381,7 +381,7 @@
   "schema_change_for_v41447": false,
   "schema_change_for_v41448": false,
   "schema_change_for_v41449": false,
-  "release_revision": "R40b",
+  "release_revision": "R41",
   "r8_database_contract": "QCMS_R8_MULTI_HEAT_OSP_READY",
   "r8_migration_preapplied": true,
   "r9_changes": [
@@ -696,5 +696,15 @@
   ],
   "r40b_changes": [
     "header_apptests_run_in_preview_mode_no_live_supabase_calls_mac_full_suite_timeout"
+  ],
+  "r41_changes": [
+    "delete_automatic_email_reminders_web_android_password_checked",
+    "ppap_and_po_approval_reminder_functions_stop_when_schedule_deleted",
+    "ios_1_4_0_signing_fix_device_mode_auto_registration_no_manual_distribution_identity",
+    "ios_privacy_manifest",
+    "ios_new_modules_indirect_ppap_ecn_rmtc_qr_web_pages",
+    "ios_public_rmtc_qr",
+    "ios_github_build_macos15_xcode16_release_device_check",
+    "android_3_8_0"
   ]
 }

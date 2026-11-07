@@ -160,7 +160,7 @@ def test_web_pages_show_both_scales():
 # ----------------------------------------------------------------------------- mobile
 def test_android_chem_grid_and_versions():
     gradle = read(ROOT / "mobile/android_qcms_app/app/build.gradle")
-    assert "versionCode 371" in gradle and "versionName '3.7.1'" in gradle
+    assert "versionCode 380" in gradle and "versionName '3.8.0'" in gradle
     grid = read(JAVA / "ChemGrid.java")
     assert balanced(grid)
     for token in ('"1.5875"', '"25.4"', "static double sixteenths(", "static List<List<String[]>> bands(", "PDF_BAND_COLUMNS = 14",
@@ -193,13 +193,13 @@ def test_ios_chem_grid_and_versions():
     rec = read(SWIFT / "RecordView.swift")
     assert balanced(rec) and "ChemGrid.combined(child.table, rows, cfk[\"part_id\"])" in rec
     pbx = read(IOS / "STAWNQCMS.xcodeproj/project.pbxproj")
-    assert '"ChemGrid.swift"' in pbx and 'MARKETING_VERSION = "1.3.0"' in pbx and 'CURRENT_PROJECT_VERSION = "4"' in pbx
+    assert '"ChemGrid.swift"' in pbx and 'MARKETING_VERSION = "1.4.0"' in pbx and 'CURRENT_PROJECT_VERSION = "5"' in pbx
     assert 'DEVELOPMENT_TEAM = ""' in pbx and pbx.count("{") == pbx.count("}")
     mp = read(IOS / "make_project.py")
-    assert 'else "1.3.0"' in mp and 'else "4"' in mp and "STAWN_PERSONAL_TEAM" in mp and "STAWN_APPLE_TEAM_ID" in mp
-    assert 'VERSION="1.3.0"' in read(IOS / "BUILD_STAWN_QCMS_iOS.command")
+    assert 'else "1.4.0"' in mp and 'else "5"' in mp and "STAWN_PERSONAL_TEAM" in mp and "STAWN_APPLE_TEAM_ID" in mp
+    assert 'VERSION="1.4.0"' in read(IOS / "BUILD_STAWN_QCMS_iOS.command")
     core = read(SWIFT / "Core.swift")
-    assert '?? "1.3.0"' in core and '?? "4"' in core
+    assert '?? "1.4.0"' in core and '?? "5"' in core
     assert "## New in v1.3.0 (build 4, R38)" in read(IOS / "README_IOS.md")
     # conservative Swift: no Swift 5.9+ constructs (if/switch expressions, macros, Observation)
     for src in (grid,):
@@ -208,4 +208,4 @@ def test_ios_chem_grid_and_versions():
 
 def test_about_versions():
     about = read(ROOT / "core/about.py")
-    assert 'ANDROID_VERSION = "3.7.1"' in about and 'IOS_VERSION = "1.3.0"' in about
+    assert 'ANDROID_VERSION = "3.8.0"' in about and 'IOS_VERSION = "1.4.0"' in about

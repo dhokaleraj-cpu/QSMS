@@ -224,7 +224,8 @@ Deno.serve(async (req: Request) => {
     const result = { tenants: 0, digests: 0, sent: 0, failed: 0, skipped_duplicates: 0, in_app: 0, dry_run: Boolean(body.dry_run) };
     for (const tenantId of tenants) {
       const { data: schedule } = await admin.from("qcms_notification_schedules").select("*").eq("tenant_id", tenantId).eq("schedule_key", SCHEDULE_KEY).maybeSingle();
-      if (schedule && schedule.enabled === false && !body.force) continue;
+      // R41: a deleted (missing) or disabled PPAP_DOCUMENT_DUE schedule stops the daily PPAP reminders.
+      if ((!schedule || schedule.enabled === false) && !body.force) continue;
       const timezone = String(schedule?.timezone || "Asia/Kolkata");
       const today = /^\d{4}-\d{2}-\d{2}$/.test(String(body.local_date || "")) ? String(body.local_date) : localDate(now, timezone);
       const daysAhead = Math.max(0, Number(body.days_ahead ?? schedule?.days_ahead ?? 3));

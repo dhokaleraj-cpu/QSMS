@@ -3,6 +3,20 @@
 Universal native app (iPhone + iPad, iOS / iPadOS 16 or newer). Same Supabase login, data, permissions (RLS) and
 print layouts as the website and the Android app. Only the publishable key is in the app.
 
+## New in v1.4.0 (build 5, R41)
+- **Signing fixed for the paid Apple Developer team** (STAWN PRECISION PRIVATE LIMITED):
+  - `./BUILD_STAWN_QCMS_iOS.command device` builds and installs on the iPhone / iPad connected by cable and registers it with the
+    team automatically (fixes "Your team has no devices" / "No profiles for 'com.stawnprecision.qcms' were found").
+  - Release no longer forces a manual "Apple Distribution" identity (that conflicts with automatic signing when archiving);
+    the TestFlight export still signs with Apple Distribution.
+  - The Team ID is read from Xcode > Settings > Accounts (paid team) when it is not saved yet.
+- App Store privacy manifest (PrivacyInfo.xcprivacy) added - required for TestFlight / App Store uploads.
+- New modules: Indirect Purchase (POs, requisitions, GRN, items, stock ledger), PPAP Document Manager, ECN / PCN Register
+  (native registers); RMTC QR Codes, OSP inspection queues, Inventory reports, My Dashboards, Licence & Company and
+  Automatic Email Reminders (website pages inside the app).
+- RMTC print PDF: the QR is the public link (no login; one scan opens every RMTC document).
+- GitHub build check now uses macOS 15 / Xcode 16 and also compiles the Release device build.
+
 ## New in v1.3.0 (build 4, R38)
 - **Horizontal chemistry and Jominy grids**: elements and Jominy distances are columns; Jominy shows the inch label
   (J5/16") and a Distance (mm) row (n/16 x 25.4 mm, J5/16" = 7.94 mm). RMTC, MetLAB, Material Grade and Part Master record

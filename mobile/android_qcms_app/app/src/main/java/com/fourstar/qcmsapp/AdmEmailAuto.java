@@ -153,6 +153,28 @@ final class AdmEmailAuto {
                 return api.update("qcms_notification_schedules", sid, p);
             }, (r, e) -> s.saved(b, "Automatic email schedule saved.", e));
         });
+        // R41: permanently delete this automatic reminder (administrator, current password re-checked first).
+        form.addView(Ui.text(a, "Delete reminder: removes this automatic e-mail for everyone (switch off 'Enabled' to pause it instead).", 11, Ui.MUTED, false), Ui.matchWrap(a, 12));
+        EditText pw = AdmUi.password(a, form, "Current QCMS password", "Required to delete");
+        AdmUi.outline(a, form, "Delete reminder", v -> {
+            String password = AdmUi.text(pw);
+            if (password.trim().isEmpty()) { a.toast("Enter your current QCMS password."); return; }
+            a.confirm("Delete reminder", "Delete \"" + AdmPy.j(schedule, "schedule_label") + "\" permanently? Its automatic e-mails stop for everyone.", "Delete", () -> {
+                Button b = (Button) v;
+                AdmUi.enable(b, false);
+                Api.async(() -> {
+                    try { api.verifyPassword(password); } catch (Exception e) { throw new Api.ApiException(403, "The password is incorrect. Nothing was deleted."); }
+                    api.delete("qcms_notification_schedules", sid);
+                    return true;
+                }, (ok, err) -> {
+                    AdmUi.enable(b, true);
+                    if (err != null) { a.toast(Api.message(err)); return; }
+                    scheduleId = "";
+                    a.toast("Automatic reminder deleted.");
+                    a.rebuild();
+                });
+            });
+        });
     }
 
     private static List<String> labels(AdmEmailScreen s, List<String> ids, String blank) {

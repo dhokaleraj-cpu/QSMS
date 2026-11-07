@@ -368,7 +368,13 @@ enum RptReports {
     static func rmtcQrUrl(_ id: String, _ record: Row) async -> String {
         let st = s(record["status"]), disp = s(record["disposition"])
         guard ["APPROVED", "PARTIALLY_APPROVED"].contains(st), ["ACCEPTED", "ACCEPTED_UNDER_RESERVE"].contains(disp) else { return "" }
-        // R38: login-protected website link (no secret in the QR)
+        // R41 (= web / Android R40): public QR - anyone who scans opens one PDF with every RMTC document, no login.
+        // The random 32-character token of rmtc_qr_tokens is the only key; the website link is the fallback.
+        let tokens = await Api.shared.list("rmtc_qr_tokens?select=token&rmtc_approval_id=eq.\(Api.enc(id))&revoked=eq.false&limit=1")
+        let token = s(tokens.first?["token"])
+        if token.count == 32, token.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) {
+            return AppConfig.publicQrBase + token
+        }
         let number = s(record["rmtc_number"])
         guard !number.isEmpty, number != "-" else { return "" }
         return "https://vf6fa9hrhxquqxmfgyy4wf.streamlit.app/rmtc-records?rmtc=" + Api.enc(number)
